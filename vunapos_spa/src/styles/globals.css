@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+	--color-background: #f9f9fc;
+	--color-on-background: #1a1c1e;
+
+	--color-surface: #f9f9fc;
+	--color-surface-container: #eeeef0;
+	--color-surface-container-low: #f3f3f6;
+	--color-surface-container-high: #e8e8ea;
+	--color-surface-container-highest: #e2e2e5;
+
+	--color-surface-variant: #e2e2e5;
+	--color-on-surface: #1a1c1e;
+	--color-on-surface-variant: #414754;
+
+	--color-primary: #0059bb;
+	--color-on-primary: #ffffff;
+	--color-primary-container: #0070ea;
+	--color-on-primary-container: #fefcff;
+
+	--color-secondary: #006e25;
+	--color-on-secondary: #ffffff;
+	--color-secondary-container: #80f98b;
+	--color-on-secondary-container: #007327;
+
+	--color-tertiary: #765700;
+	--color-on-tertiary: #ffffff;
+	--color-tertiary-container: #956e00;
+	--color-on-tertiary-container: #fffbff;
+
+	--color-outline: #717786;
+	--color-outline-variant: #c1c6d7;
+
+	--color-error: #ba1a1a;
+	--color-on-error: #ffffff;
+	--color-error-container: #ffdad6;
+	--color-on-error-container: #93000a;
+
+	--radius-sm: 0.125rem;
+	--radius-md: 0.25rem;
+	--radius-lg: 0.5rem;
+	--radius-xl: 0.75rem;
+
+	--spacing-touch: 44px;
+}
+
+@layer base {
+	html {
+		font-family: var(--font-sans);
+		background: var(--color-background);
+		color: var(--color-on-background);
+		height: 100%;
+		overflow: hidden;
+	}
+
+	body {
+		margin: 0;
+		min-width: 320px;
+		height: 100%;
+		min-height: 100dvh;
+		overflow: hidden;
+		background: var(--color-background);
+		color: var(--color-on-background);
+	}
+
+	button,
+	input,
+	textarea,
+	select {
+		font: inherit;
+	}
+
+	#root {
+		height: 100%;
+		overflow: hidden;
+	}
+}

@@ -1,0 +1,18 @@
+def profile_to_dict(profile, invoice_mode):
+	return {
+		"name": profile.name,
+		"company": profile.company,
+		"warehouse": profile.warehouse,
+		"price_list": profile.selling_price_list,
+		"currency": profile.currency,
+		"default_customer": profile.customer,
+		"modes_of_payment": [
+			{
+				"mode_of_payment": row.mode_of_payment,
+				"default": row.get("default"),
+			}
+			for row in profile.get("payments", [])
+		],
+		"print_format": profile.get("print_format"),
+		"invoice_mode": invoice_mode,
+	}

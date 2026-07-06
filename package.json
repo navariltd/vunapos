@@ -1,0 +1,10 @@
+{
+  "name": "vunapos",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "postinstall": "npm --prefix vunapos_spa install",
+    "dev": "npm --prefix vunapos_spa run dev",
+    "build": "npm --prefix vunapos_spa run build"
+  }
+}

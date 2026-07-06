@@ -1,0 +1,374 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ShoppingCart, X } from "lucide-react";
+
+import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
+import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
+import { Button } from "../../components/ui/Button";
+import { VunaApiError } from "../../services/vunaApi";
+import { CartPanel } from "./components/CartPanel";
+import { CheckoutDialog } from "./components/CheckoutDialog";
+import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
+import { ItemGrid } from "./components/ItemGrid";
+import { ItemSearch } from "./components/ItemSearch";
+import { useBootstrapData } from "./hooks/useBootstrapData";
+import { useItemSearch } from "./hooks/useItemSearch";
+import { usePOSInvoice } from "./hooks/usePOSInvoice";
+
+type POSHomePageProps = {
+	bootstrap?: ReturnType<typeof useBootstrapData>;
+};
+
+type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift";
+
+function printInvoiceHtml(printPayload: PrintPayload) {
+	const printFrame = document.createElement("iframe");
+	printFrame.style.position = "fixed";
+	printFrame.style.right = "0";
+	printFrame.style.bottom = "0";
+	printFrame.style.width = "0";
+	printFrame.style.height = "0";
+	printFrame.style.border = "0";
+	printFrame.setAttribute("aria-hidden", "true");
+	document.body.appendChild(printFrame);
+
+	const printDocument = printFrame.contentWindow?.document;
+	if (!printDocument) {
+		printFrame.remove();
+		return;
+	}
+
+	printDocument.open();
+	printDocument.write(printPayload.html);
+	printDocument.close();
+
+	window.setTimeout(() => {
+		printFrame.contentWindow?.focus();
+		printFrame.contentWindow?.print();
+		window.setTimeout(() => printFrame.remove(), 1000);
+	}, 100);
+}
+
+function getCheckoutErrorMessage(error: unknown) {
+	if (error instanceof VunaApiError) {
+		if (error.code === "PAYMENT_TOTAL_MISMATCH") {
+			return "Payment amount must match the invoice total.";
+		}
+		if (error.code === "INVOICE_ALREADY_SUBMITTED") {
+			return "This invoice has already been submitted.";
+		}
+		if (error.code === "EMPTY_INVOICE") {
+			return "Add at least one item before checkout.";
+		}
+	}
+	return error instanceof Error ? error.message : "Checkout failed";
+}
+
+export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
+	const [itemSearchQuery, setItemSearchQuery] = useState("");
+	const [selectedCustomer, setSelectedCustomer] = useState<CustomerDTO | null | undefined>(undefined);
+	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+	const [isCartOpen, setIsCartOpen] = useState(false);
+	const [activePage, setActivePage] = useState<POSPage>("Home");
+	const [pageError, setPageError] = useState<string | null>(null);
+	const [lastSubmittedInvoice, setLastSubmittedInvoice] = useState<InvoiceDTO | null>(null);
+	const [lastHeldInvoice, setLastHeldInvoice] = useState<InvoiceDTO | null>(null);
+
+	const ownBootstrap = useBootstrapData();
+	const bootstrap = providedBootstrap || ownBootstrap;
+	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
+	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data), [bootstrap.data]);
+
+	const activeCustomer = selectedCustomer === undefined ? defaultCustomer : selectedCustomer;
+
+	const items = useItemSearch(itemSearchQuery, bootstrap.data?.pos_profile, activeCustomer?.customer);
+	const invoice = usePOSInvoice({
+		posProfile: bootstrap.data?.pos_profile,
+		selectedCustomer: activeCustomer,
+	});
+	const listHeldInvoices = invoice.listHeld;
+	const restoreHeldInvoice = invoice.restoreHeldInvoice;
+
+	const error = pageError || bootstrap.error || items.error || invoice.error;
+
+	useEffect(() => {
+		if (!lastSubmittedInvoice && !lastHeldInvoice) {
+			return undefined;
+		}
+
+		const timeout = window.setTimeout(() => {
+			setLastSubmittedInvoice(null);
+			setLastHeldInvoice(null);
+		}, 5000);
+
+		return () => window.clearTimeout(timeout);
+	}, [lastHeldInvoice, lastSubmittedInvoice]);
+
+	useEffect(() => {
+		if (!bootstrap.data?.pos_profile) {
+			return;
+		}
+
+		listHeldInvoices().catch((err) => {
+			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
+		});
+	}, [bootstrap.data?.pos_profile, listHeldInvoices]);
+
+	const handleAddItem = async (item: ItemDTO) => {
+		setPageError(null);
+		setLastSubmittedInvoice(null);
+		try {
+			await invoice.addCartItem(item);
+		} catch (err) {
+			setPageError(err instanceof Error ? err.message : "Failed to add item");
+		}
+	};
+
+	const handleOpenCheckout = async () => {
+		setPageError(null);
+		setIsCartOpen(false);
+		setIsCheckoutOpen(true);
+	};
+
+	const handleHoldCart = async () => {
+		setPageError(null);
+		setLastSubmittedInvoice(null);
+		setLastHeldInvoice(null);
+		try {
+			const heldInvoice = await invoice.holdCart();
+			if (heldInvoice) {
+				setLastHeldInvoice(heldInvoice);
+				setSelectedCustomer(undefined);
+				setIsCartOpen(false);
+			}
+		} catch (err) {
+			setPageError(err instanceof Error ? err.message : "Failed to hold invoice");
+		}
+	};
+
+	const handleRefreshHeld = useCallback(async () => {
+		setPageError(null);
+		try {
+			await listHeldInvoices();
+		} catch (err) {
+			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
+		}
+	}, [listHeldInvoices]);
+
+	useEffect(() => {
+		const handleNavigation = (event: Event) => {
+			const page = (event as CustomEvent<{ page?: POSPage }>).detail?.page;
+			if (!page) {
+				return;
+			}
+
+			setActivePage(page);
+			if (page === "Invoices") {
+				handleRefreshHeld();
+			}
+		};
+
+		window.addEventListener("vunapos_nav", handleNavigation);
+		return () => window.removeEventListener("vunapos_nav", handleNavigation);
+	}, [handleRefreshHeld]);
+
+	const handleRestoreHeld = async (heldInvoice: HeldInvoiceDTO) => {
+		setPageError(null);
+		setLastSubmittedInvoice(null);
+		setLastHeldInvoice(null);
+		try {
+			const restoredInvoice = await restoreHeldInvoice(heldInvoice);
+			setSelectedCustomer(
+				restoredInvoice.customer
+					? {
+							customer: restoredInvoice.customer,
+							customer_name: restoredInvoice.customer_name || restoredInvoice.customer,
+						}
+					: null,
+			);
+			setActivePage("Home");
+			window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
+			setIsCartOpen(true);
+		} catch (err) {
+			setPageError(err instanceof Error ? err.message : "Failed to restore held invoice");
+		}
+	};
+
+	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
+		setPageError(null);
+		try {
+			const result = await invoice.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
+			setIsCheckoutOpen(false);
+			setSelectedCustomer(undefined);
+			setLastSubmittedInvoice(result?.invoice || null);
+			if (result?.printPayload) {
+				printInvoiceHtml(result.printPayload);
+			}
+		} catch (err) {
+			setPageError(getCheckoutErrorMessage(err));
+		}
+	};
+
+	if (bootstrap.isLoading) {
+		return (
+			<div className="flex min-h-[60vh] items-center justify-center">
+				<p className="text-sm font-medium text-on-surface-variant">Loading POS workspace...</p>
+			</div>
+		);
+	}
+
+	return (
+		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+			{error ? (
+				<div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
+					{error}
+				</div>
+			) : null}
+
+			{activePage === "Invoices" ? (
+				<section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4">
+					<div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+						<div className="flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<h2 className="text-lg font-semibold text-on-surface">Invoices</h2>
+								<p className="text-sm text-on-surface-variant">Restore held draft sales when the customer is ready.</p>
+							</div>
+							<Button
+								type="button"
+								variant="ghost"
+								onClick={() => {
+									setActivePage("Home");
+									window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
+								}}
+							>
+								Back to POS
+							</Button>
+						</div>
+						<HeldInvoicesPanel
+							currency={bootstrap.data?.currency}
+							heldInvoices={invoice.heldInvoices}
+							isLoading={invoice.isHeldLoading}
+							onRefresh={handleRefreshHeld}
+							onRestore={handleRestoreHeld}
+						/>
+					</div>
+				</section>
+			) : (
+				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_390px]">
+					<section className="flex min-w-0 min-h-0 flex-col p-4">
+						<ItemSearch
+							isLoading={items.isLoading}
+							value={itemSearchQuery}
+							onChange={setItemSearchQuery}
+						/>
+						<div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+							<ItemGrid
+								currency={bootstrap.data?.currency}
+								isLoading={items.isLoading}
+								items={items.items}
+								mutationDisabled={invoice.isMutating}
+								onAddItem={handleAddItem}
+							/>
+						</div>
+					</section>
+					<CartPanel
+						className="hidden xl:flex"
+						currency={bootstrap.data?.currency}
+						invoice={invoice.invoice}
+						isMutating={invoice.isMutating}
+						selectedCustomer={activeCustomer}
+						onCheckout={handleOpenCheckout}
+						onClearCustomer={() => setSelectedCustomer(null)}
+						onClearCart={invoice.clearCart}
+						onHold={handleHoldCart}
+						onRemoveItem={invoice.removeCartItem}
+						onSelectCustomer={setSelectedCustomer}
+						onUpdateQty={invoice.updateCartItemQty}
+					/>
+				</div>
+			)}
+
+			<button
+				type="button"
+				className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg xl:hidden"
+				onClick={() => setIsCartOpen(true)}
+				aria-label="Open cart"
+			>
+				<ShoppingCart className="size-6" />
+				{invoice.invoice?.items?.length ? (
+					<span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-error px-1 text-xs font-semibold text-on-error">
+						{invoice.invoice.items.length}
+					</span>
+				) : null}
+			</button>
+
+			{isCartOpen ? (
+				<div className="fixed inset-0 z-50 xl:hidden">
+					<button
+						type="button"
+						className="absolute inset-0 bg-black/30"
+						onClick={() => setIsCartOpen(false)}
+						aria-label="Close cart"
+					/>
+					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,26rem)] flex-col border-l border-outline-variant bg-surface shadow-xl">
+						<div className="flex h-12 shrink-0 items-center justify-between border-b border-outline-variant px-4">
+							<div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+								<ShoppingCart className="size-4 text-primary" />
+								Cart
+							</div>
+							<button
+								type="button"
+								className="flex h-touch w-touch items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
+								onClick={() => setIsCartOpen(false)}
+								aria-label="Close cart"
+							>
+								<X className="size-5" />
+							</button>
+						</div>
+						<CartPanel
+							className="flex-1 border-0"
+							currency={bootstrap.data?.currency}
+							invoice={invoice.invoice}
+							isMutating={invoice.isMutating}
+							selectedCustomer={activeCustomer}
+							onCheckout={handleOpenCheckout}
+							onClearCustomer={() => setSelectedCustomer(null)}
+							onClearCart={invoice.clearCart}
+							onHold={handleHoldCart}
+							onRemoveItem={invoice.removeCartItem}
+							onSelectCustomer={setSelectedCustomer}
+							onUpdateQty={invoice.updateCartItemQty}
+						/>
+					</div>
+				</div>
+			) : null}
+
+			<CheckoutDialog
+				currency={bootstrap.data?.currency}
+				invoice={invoice.invoice}
+				isOpen={isCheckoutOpen}
+				isSubmitting={invoice.isMutating}
+				modesOfPayment={paymentModes}
+				onClose={() => setIsCheckoutOpen(false)}
+				onConfirm={handleCheckout}
+			/>
+
+			{lastSubmittedInvoice?.docstatus === 1 ? (
+				<div
+					role="status"
+					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-lg"
+				>
+					Invoice {lastSubmittedInvoice.name} submitted for {getInvoiceTotal(lastSubmittedInvoice).toFixed(2)}.
+				</div>
+			) : null}
+
+			{lastHeldInvoice?.docstatus === 0 ? (
+				<div
+					role="status"
+					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-lg"
+				>
+					Invoice {lastHeldInvoice.name} held as draft.
+				</div>
+			) : null}
+		</div>
+	);
+}
