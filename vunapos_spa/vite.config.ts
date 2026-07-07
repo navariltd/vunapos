@@ -19,12 +19,12 @@ export default defineConfig({
 			theme_color: '#1976d2',
 			icons: [
 				{
-					src: 'logo.png',
+					src: 'vuna-192x192.png',
 					sizes: '192x192',
 					type: 'image/png'
 				},
 				{
-					src: 'logo.png',
+					src: 'vuna-512x512.png',
 					sizes: '512x512',
 					type: 'image/png'
 				},
