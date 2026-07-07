@@ -1,50 +1,97 @@
 @import "tailwindcss";
 
+/*
+ * Frappe desk design tokens (frappe/public/scss/espresso/_colors.scss,
+ * common/css_variables.scss, desk/css_variables.scss) ported to Tailwind's
+ * @theme so vunapos matches the desk UI: a neutral gray scale, a near-black
+ * primary action color, and flat, low-elevation surfaces.
+ */
 @theme {
-	--font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+	--font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
 
-	--color-background: #f9f9fc;
-	--color-on-background: #1a1c1e;
+	--color-background: #f8f8f8;
+	--color-on-background: #171717;
 
-	--color-surface: #f9f9fc;
-	--color-surface-container: #eeeef0;
-	--color-surface-container-low: #f3f3f6;
-	--color-surface-container-high: #e8e8ea;
-	--color-surface-container-highest: #e2e2e5;
+	--color-surface: #ffffff;
+	--color-surface-container: #f3f3f3;
+	--color-surface-container-low: #f8f8f8;
+	--color-surface-container-high: #ededed;
+	--color-surface-container-highest: #e2e2e2;
 
-	--color-surface-variant: #e2e2e5;
-	--color-on-surface: #1a1c1e;
-	--color-on-surface-variant: #414754;
+	--color-surface-variant: #ededed;
+	--color-on-surface: #171717;
+	--color-on-surface-variant: #525252;
 
-	--color-primary: #0059bb;
+	--color-primary: #171717;
 	--color-on-primary: #ffffff;
-	--color-primary-container: #0070ea;
-	--color-on-primary-container: #fefcff;
+	--color-primary-container: #383838;
+	--color-on-primary-container: #ffffff;
 
-	--color-secondary: #006e25;
+	--color-secondary: #16794c;
 	--color-on-secondary: #ffffff;
-	--color-secondary-container: #80f98b;
-	--color-on-secondary-container: #007327;
+	--color-secondary-container: #e4f5e9;
+	--color-on-secondary-container: #16794c;
 
-	--color-tertiary: #765700;
+	--color-tertiary: #91400d;
 	--color-on-tertiary: #ffffff;
-	--color-tertiary-container: #956e00;
-	--color-on-tertiary-container: #fffbff;
+	--color-tertiary-container: #fdfaed;
+	--color-on-tertiary-container: #91400d;
 
-	--color-outline: #717786;
-	--color-outline-variant: #c1c6d7;
+	--color-outline: #c7c7c7;
+	--color-outline-variant: #ededed;
 
-	--color-error: #ba1a1a;
+	--color-error: #cc2929;
 	--color-on-error: #ffffff;
-	--color-error-container: #ffdad6;
-	--color-on-error-container: #93000a;
+	--color-error-container: #fff0f0;
+	--color-on-error-container: #941f1f;
 
-	--radius-sm: 0.125rem;
-	--radius-md: 0.25rem;
-	--radius-lg: 0.5rem;
+	--radius-sm: 0.25rem;
+	--radius-md: 0.5rem;
+	--radius-lg: 0.625rem;
 	--radius-xl: 0.75rem;
 
 	--spacing-touch: 44px;
+
+	--animate-sheet-in: sheet-in 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+	--animate-sheet-out: sheet-out 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+	--animate-fade-in: fade-in 0.25s ease;
+	--animate-fade-out: fade-out 0.25s ease forwards;
+}
+
+@keyframes sheet-in {
+	from {
+		transform: translateY(100%);
+	}
+	to {
+		transform: translateY(0);
+	}
+}
+
+@keyframes sheet-out {
+	from {
+		transform: translateY(0);
+	}
+	to {
+		transform: translateY(100%);
+	}
+}
+
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes fade-out {
+	from {
+		opacity: 1;
+	}
+	to {
+		opacity: 0;
+	}
 }
 
 @layer base {
@@ -54,6 +101,10 @@
 		color: var(--color-on-background);
 		height: 100%;
 		overflow: hidden;
+		letter-spacing: 0.01em;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		text-rendering: optimizeLegibility;
 	}
 
 	body {

@@ -289,7 +289,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 			<button
 				type="button"
-				className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg xl:hidden"
+				className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-md xl:hidden"
 				onClick={() => setIsCartOpen(true)}
 				aria-label="Open cart"
 			>
@@ -309,7 +309,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onClick={() => setIsCartOpen(false)}
 						aria-label="Close cart"
 					/>
-					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,26rem)] flex-col border-l border-outline-variant bg-surface shadow-xl">
+					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,26rem)] flex-col border-l border-outline-variant bg-surface shadow-lg">
 						<div className="flex h-12 shrink-0 items-center justify-between border-b border-outline-variant px-4">
 							<div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
 								<ShoppingCart className="size-4 text-primary" />
@@ -355,7 +355,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{lastSubmittedInvoice?.docstatus === 1 ? (
 				<div
 					role="status"
-					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-lg"
+					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md"
 				>
 					Invoice {lastSubmittedInvoice.name} submitted for {getInvoiceTotal(lastSubmittedInvoice).toFixed(2)}.
 				</div>
@@ -364,7 +364,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{lastHeldInvoice?.docstatus === 0 ? (
 				<div
 					role="status"
-					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-lg"
+					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md"
 				>
 					Invoice {lastHeldInvoice.name} held as draft.
 				</div>
