@@ -1,8 +1,7 @@
 import frappe
+from erpnext.stock.get_item_details import get_item_details
 from frappe import _
 from frappe.utils import cint, flt, today
-
-from erpnext.stock.get_item_details import get_item_details
 
 from vunapos.dto.item import item_to_dict
 from vunapos.services.profile_service import resolve_pos_profile

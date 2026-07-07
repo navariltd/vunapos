@@ -56,5 +56,6 @@ jspm_packages/
 # Aider AI Chat
 .aider*
 
-vuna_pos/public/vuna_pos
-vuna_pos/www/vuna_pos.html
+vunapos/public/vunapos
+vunapos/www/vunapos.html
+vunapos/public/node_modules

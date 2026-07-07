@@ -56,11 +56,11 @@ export function Sidebar() {
 	return (
 		<aside
 			className={cn(
-				"hidden border-r border-outline-variant bg-surface p-3 transition-[width] lg:flex lg:flex-col",
+				"hidden border-r border-outline-variant bg-surface-container-low p-2 transition-[width] lg:flex lg:flex-col",
 				isCollapsed ? "w-[72px]" : "w-60",
 			)}
 		>
-			<nav className="space-y-1">
+			<nav className="space-y-0.5">
 				{items.map((item) => {
 					const Icon = item.icon;
 					const isActive = item.label === activePage;
@@ -70,10 +70,10 @@ export function Sidebar() {
 							type="button"
 							title={isCollapsed ? item.label : undefined}
 							className={cn(
-								"flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium hover:bg-surface-container-low",
+								"flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
 								isActive
-									? "bg-primary text-on-primary shadow-sm hover:bg-primary"
-									: "text-on-surface-variant hover:text-on-surface",
+									? "bg-surface text-on-surface shadow-sm"
+									: "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
 								isCollapsed && "justify-center px-0",
 							)}
 							onClick={() => handleNavAction(item.label)}
@@ -84,11 +84,11 @@ export function Sidebar() {
 					);
 				})}
 			</nav>
-			<div className="mt-auto border-t border-outline-variant pt-3">
+			<div className="mt-auto border-t border-outline-variant pt-2">
 				<button
 					type="button"
 					className={cn(
-						"flex h-touch w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
+						"flex h-touch w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
 						isCollapsed && "justify-center px-0",
 					)}
 					title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -116,9 +116,9 @@ export function BottomNav() {
 							key={item.label}
 							type="button"
 							className={cn(
-								"flex min-h-touch flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium",
+								"flex min-h-touch flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium transition-colors",
 								isActive
-									? "bg-primary text-on-primary"
+									? "bg-surface-container-high text-on-surface"
 									: "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
 							)}
 							onClick={() => handleNavAction(item.label)}

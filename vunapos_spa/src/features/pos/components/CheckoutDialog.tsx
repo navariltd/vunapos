@@ -72,7 +72,7 @@ function CheckoutDialogContent({
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-			<div className="w-full max-w-md rounded-lg border border-outline-variant bg-surface p-5 shadow-xl">
+			<div className="w-full max-w-md rounded-lg border border-outline-variant bg-surface p-5 shadow-lg">
 				<div className="flex items-start justify-between gap-4">
 					<div>
 						<h2 className="text-lg font-semibold text-on-surface">Checkout</h2>

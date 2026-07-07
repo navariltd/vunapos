@@ -16,15 +16,16 @@ export default defineConfig({
 			start_url: '/vunapos',
 			scope: '/',
 			display: 'standalone',
-			theme_color: '#1976d2',
+			theme_color: '#171717',
+			background_color: '#f8f8f8',
 			icons: [
 				{
-					src: 'logo.png',
+					src: 'vuna-192x192.png',
 					sizes: '192x192',
 					type: 'image/png'
 				},
 				{
-					src: 'logo.png',
+					src: 'vuna-512x512.png',
 					sizes: '512x512',
 					type: 'image/png'
 				},

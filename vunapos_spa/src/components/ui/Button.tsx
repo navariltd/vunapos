@@ -11,9 +11,9 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 const variants: Record<ButtonVariant, string> = {
-	primary: "bg-primary text-on-primary hover:bg-primary-container focus-visible:outline-primary",
-	secondary: "bg-secondary text-on-secondary hover:bg-secondary-container hover:text-on-secondary-container focus-visible:outline-secondary",
-	ghost: "bg-transparent text-on-surface hover:bg-surface-container-high focus-visible:outline-outline",
+	primary: "bg-primary text-on-primary hover:bg-primary-container focus-visible:outline-outline",
+	secondary: "bg-secondary text-on-secondary hover:bg-secondary-container hover:text-on-secondary-container focus-visible:outline-outline",
+	ghost: "bg-surface-container text-on-surface hover:bg-surface-container-high focus-visible:outline-outline",
 };
 
 const sizes: Record<ButtonSize, string> = {

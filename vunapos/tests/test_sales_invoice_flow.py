@@ -1,6 +1,6 @@
 import frappe
-from frappe.utils import add_days, flt, nowdate
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, flt, nowdate
 
 from vunapos.api.batch import allocate_batches
 from vunapos.api.sales import (
@@ -15,14 +15,14 @@ from vunapos.api.sales import (
 	remove_item,
 	restore_invoice,
 	submit_invoice,
-	update_item,
 	update_invoice_from_cart,
+	update_item,
 )
 from vunapos.tests.helpers import (
-	ensure_item_tax_template,
 	ensure_batch_stock,
-	ensure_test_batch_item,
+	ensure_item_tax_template,
 	ensure_sales_tax_template,
+	ensure_test_batch_item,
 	ensure_test_item,
 	ensure_test_pos_profile,
 	set_invoice_mode,
@@ -81,7 +81,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["allocated_qty"], 5)
-		self.assertEqual([row["batch_no"] for row in response["data"]["allocations"]], ["VUNA-BATCH-API-A", "VUNA-BATCH-API-B"])
+		self.assertEqual(
+			[row["batch_no"] for row in response["data"]["allocations"]],
+			["VUNA-BATCH-API-A", "VUNA-BATCH-API-B"],
+		)
 
 	def test_batch_item_with_one_available_batch_auto_allocates(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch One Item")
@@ -156,7 +159,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["errors"][0]["code"], "SERIAL_SELECTION_REQUIRED")
 
 	def test_batch_required_item_cannot_checkout_without_allocation(self):
-		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch Missing Allocation Item")
+		profile, warehouse, item_code = self._batch_profile_and_item(
+			"_Test Vuna Batch Missing Allocation Item"
+		)
 		ensure_batch_stock(item_code, warehouse, [("VUNA-BATCH-MISSING-A", 5, add_days(nowdate(), 30))])
 		set_invoice_mode("Sales Invoice")
 		invoice = create_invoice(pos_profile=profile)["data"]
@@ -168,7 +173,12 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		response = checkout_invoice(
 			invoice["doctype"],
 			invoice["name"],
-			payments=[{"mode_of_payment": "Cash", "amount": invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]}],
+			payments=[
+				{
+					"mode_of_payment": "Cash",
+					"amount": invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"],
+				}
+			],
 		)
 
 		self.assertFalse(response["ok"], response)
@@ -204,7 +214,12 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		response = checkout_invoice(
 			invoice["doctype"],
 			invoice["name"],
-			payments=[{"mode_of_payment": "Cash", "amount": invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]}],
+			payments=[
+				{
+					"mode_of_payment": "Cash",
+					"amount": invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"],
+				}
+			],
 		)
 
 		self.assertFalse(response["ok"], response)

@@ -1,8 +1,7 @@
 import frappe
+from erpnext.stock.doctype.batch.batch import get_batch_qty
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
-
-from erpnext.stock.doctype.batch.batch import get_batch_qty
 
 from vunapos.services.profile_service import resolve_pos_profile
 
@@ -233,11 +232,16 @@ def validate_batch_allocation(item_code, qty, allocations, warehouse=None):
 		if not batch_no or allocation_qty <= 0:
 			_throw("INVALID_BATCH_ALLOCATION", _("Invalid batch allocation for item {0}.").format(item_code))
 		if batch_no not in available:
-			_throw("INVALID_BATCH_ALLOCATION", _("Batch {0} is not available for item {1}.").format(batch_no, item_code))
+			_throw(
+				"INVALID_BATCH_ALLOCATION",
+				_("Batch {0} is not available for item {1}.").format(batch_no, item_code),
+			)
 		if allocation_qty > flt(available[batch_no]["available_qty"]):
 			_throw(
 				"INSUFFICIENT_BATCH_STOCK",
-				_("Only {0} units are available in batch {1}.").format(available[batch_no]["available_qty"], batch_no),
+				_("Only {0} units are available in batch {1}.").format(
+					available[batch_no]["available_qty"], batch_no
+				),
 				meta={"requested_qty": allocation_qty, "available_qty": available[batch_no]["available_qty"]},
 			)
 		total_qty += allocation_qty

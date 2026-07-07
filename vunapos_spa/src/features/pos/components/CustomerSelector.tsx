@@ -81,7 +81,7 @@ export function CustomerSelector({ onClear, onSelect, selectedCustomer }: Custom
 			</div>
 
 			{isOpen ? (
-				<div className="absolute left-0 right-0 z-30 mt-2 rounded-md border border-outline-variant bg-surface p-3 shadow-xl">
+				<div className="absolute left-0 right-0 z-30 mt-2 rounded-md border border-outline-variant bg-surface p-3 shadow-lg">
 					<div className="relative">
 						<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
 						<input
