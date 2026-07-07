@@ -15,7 +15,7 @@ def _failure_from_exception(exc):
 
 
 @frappe.whitelist()
-def get_item_batches(item_code, warehouse=None, pos_profile=None):
+def get_item_batches(item_code: str, warehouse: str | None = None, pos_profile: str | None = None):
 	try:
 		return success(
 			get_item_batches_service(item_code=item_code, warehouse=warehouse, pos_profile=pos_profile)

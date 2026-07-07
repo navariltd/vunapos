@@ -6,7 +6,12 @@ from vunapos.utils.response import failure, success
 
 
 @frappe.whitelist()
-def search_items(query=None, pos_profile=None, customer=None, limit=None):
+def search_items(
+	query: str | None = None,
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	limit: int | None = None,
+):
 	try:
 		return success(
 			search_items_service(query=query, pos_profile=pos_profile, customer=customer, limit=limit)
@@ -16,7 +21,7 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None):
 
 
 @frappe.whitelist()
-def get_item_details(item_code, pos_profile=None, customer=None):
+def get_item_details(item_code: str, pos_profile: str | None = None, customer: str | None = None):
 	try:
 		return success(
 			get_item_details_for_pos(item_code=item_code, pos_profile=pos_profile, customer=customer)
