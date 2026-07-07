@@ -21,7 +21,9 @@ def resolve_pos_profile(pos_profile=None):
 	else:
 		filters = {"disabled": 0}
 		user_profile = frappe.db.get_value("POS Profile User", {"user": frappe.session.user}, "parent")
-		profile_name = user_profile or frappe.db.get_value("POS Profile", filters, "name", order_by="modified desc")
+		profile_name = user_profile or frappe.db.get_value(
+			"POS Profile", filters, "name", order_by="modified desc"
+		)
 		if not profile_name:
 			frappe.throw(_("No enabled POS Profile found"))
 		require_read("POS Profile", profile_name)

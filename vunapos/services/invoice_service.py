@@ -1,15 +1,17 @@
 import json
 
 import frappe
+from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from frappe import _
 from frappe.utils import flt, get_datetime, nowdate
 
-from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
-
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
-from vunapos.services.batch_service import get_item_batches
-from vunapos.services.batch_service import get_item_tracking_flags, validate_batch_allocation
+from vunapos.services.batch_service import (
+	get_item_batches,
+	get_item_tracking_flags,
+	validate_batch_allocation,
+)
 from vunapos.services.item_service import get_priority_price_list
 from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read, require_write
@@ -254,10 +256,14 @@ def _validate_stock_qtys(item_qtys, profile):
 			if item.get("has_batch_no"):
 				_throw(
 					"INSUFFICIENT_BATCH_STOCK",
-					_("Only {0} units are available across valid batches for {1}.").format(actual_qty, item_code),
+					_("Only {0} units are available across valid batches for {1}.").format(
+						actual_qty, item_code
+					),
 					{"requested_qty": qty, "available_qty": actual_qty},
 				)
-			frappe.throw(_("Insufficient stock for {0}. Available quantity is {1}.").format(item_code, actual_qty))
+			frappe.throw(
+				_("Insufficient stock for {0}. Available quantity is {1}.").format(item_code, actual_qty)
+			)
 
 
 def _get_actual_qty(item_code, warehouse):
@@ -509,7 +515,10 @@ def validate_invoice_batch_allocations(doc):
 			continue
 		allocations = _get_row_batch_allocations(row)
 		if not allocations:
-			_throw("BATCH_ALLOCATION_REQUIRED", _("Batch allocation is required for item {0}.").format(row.item_code))
+			_throw(
+				"BATCH_ALLOCATION_REQUIRED",
+				_("Batch allocation is required for item {0}.").format(row.item_code),
+			)
 		validate_batch_allocation(row.item_code, row.qty, allocations, warehouse=row.get("warehouse"))
 		for allocation in allocations:
 			key = (row.item_code, row.get("warehouse"), allocation.get("batch_no"))
@@ -611,7 +620,9 @@ def _append_cart_items(doc, profile, items):
 def create_draft_invoice(pos_profile=None, customer=None):
 	invoice_doctype = _resolve_invoice_doctype()
 	require_create(invoice_doctype)
-	doc, _profile = _build_invoice_doc(pos_profile=pos_profile, customer=customer, invoice_doctype=invoice_doctype)
+	doc, _profile = _build_invoice_doc(
+		pos_profile=pos_profile, customer=customer, invoice_doctype=invoice_doctype
+	)
 	doc.insert(ignore_mandatory=True)
 	return invoice_to_dict(doc)
 

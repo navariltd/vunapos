@@ -1,6 +1,5 @@
 import frappe
-from frappe.utils import get_datetime
-from frappe.utils import now_datetime
+from frappe.utils import get_datetime, now_datetime
 
 
 def _first_value(doctype, filters, fieldname="name"):
@@ -49,7 +48,9 @@ def _tax_account(company):
 
 
 def _mode_of_payment_account(company):
-	mode_of_payment = "Cash" if frappe.db.exists("Mode of Payment", "Cash") else _first_value("Mode of Payment", {})
+	mode_of_payment = (
+		"Cash" if frappe.db.exists("Mode of Payment", "Cash") else _first_value("Mode of Payment", {})
+	)
 	if mode_of_payment and not frappe.db.exists(
 		"Mode of Payment Account", {"parent": mode_of_payment, "company": company}
 	):
@@ -108,7 +109,9 @@ def ensure_test_pos_profile():
 def ensure_sales_tax_template(rate=16, included_in_print_rate=0):
 	company = _company()
 	title = f"_Test Vuna {'Inclusive' if included_in_print_rate else 'Exclusive'} Tax {rate}"
-	existing = frappe.db.get_value("Sales Taxes and Charges Template", {"title": title, "company": company}, "name")
+	existing = frappe.db.get_value(
+		"Sales Taxes and Charges Template", {"title": title, "company": company}, "name"
+	)
 	if existing:
 		template = frappe.get_doc("Sales Taxes and Charges Template", existing)
 	else:
@@ -245,7 +248,12 @@ def ensure_batch_stock(item_code, warehouse, batches):
 			batch_name = batch.name
 		existing = frappe.db.get_value(
 			"Stock Ledger Entry",
-			{"item_code": item_code, "warehouse": warehouse, "batch_no": batch_name, "voucher_no": f"VUNA-{batch_id}"},
+			{
+				"item_code": item_code,
+				"warehouse": warehouse,
+				"batch_no": batch_name,
+				"voucher_no": f"VUNA-{batch_id}",
+			},
 			"name",
 		)
 		if existing:

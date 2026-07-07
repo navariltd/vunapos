@@ -10,7 +10,9 @@ def _batch_allocations(row):
 		return row._batch_allocations
 	if row.get("serial_and_batch_bundle"):
 		allocations = []
-		for entry in frappe.get_doc("Serial and Batch Bundle", row.get("serial_and_batch_bundle")).get("entries", []):
+		for entry in frappe.get_doc("Serial and Batch Bundle", row.get("serial_and_batch_bundle")).get(
+			"entries", []
+		):
 			if entry.get("batch_no"):
 				allocations.append(
 					{
