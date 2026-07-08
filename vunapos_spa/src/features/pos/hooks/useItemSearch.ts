@@ -4,46 +4,88 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import type { ItemDTO } from "../types";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 
-export function useItemSearch(query: string, posProfile?: string, customer?: string) {
-	const [debouncedQuery, setDebouncedQuery] = useState(query);
+
+export function useItemSearch(
+	query: string,
+	posProfile?: string,
+	customer?: string
+) {
+	const [debouncedQuery, setDebouncedQuery] = useState("");
+
 
 	useEffect(() => {
-		const timeout = window.setTimeout(() => {
-			setDebouncedQuery(query);
-		}, 300);
+		const timer = window.setTimeout(() => {
+			setDebouncedQuery(query.trim());
+		}, 500);
 
-		return () => window.clearTimeout(timeout);
+		return () => clearTimeout(timer);
 	}, [query]);
 
-	const response = useFrappeGetCall<unknown>(
+
+	const shouldSearch = debouncedQuery.length >= 2;
+
+
+	const params = useMemo(() => {
+		if (!shouldSearch) {
+			return undefined;
+		}
+
+		return {
+			query: debouncedQuery,
+			pos_profile: posProfile,
+			customer,
+		};
+
+	}, [
+		shouldSearch,
+		debouncedQuery,
+		posProfile,
+		customer,
+	]);
+
+
+	const {
+		data,
+		error,
+		isLoading,
+		isValidating,
+		mutate,
+	} = useFrappeGetCall(
 		vunaMethods.searchItems,
-		{ query: debouncedQuery, pos_profile: posProfile, customer },
-		["vunapos_items", debouncedQuery, posProfile || "", customer || ""],
+		params,
+		undefined,
+		{
+			dedupingInterval: 300000,
+			revalidateOnFocus: false,
+			errorRetryCount: 1,
+		}
 	);
 
-	const { error, items } = useMemo(() => {
-		if (!response.data) {
-			return { error: null, items: [] };
-		}
-		try {
-			const items = unwrapVunaResponse<ItemDTO[]>(response.data);
-			if (!Array.isArray(items)) {
-				return { error: "Failed to search items", items: [] };
-			}
-			return { error: null, items };
-		} catch (err) {
-			console.error(err);
-			return {
-				error: err instanceof Error ? err.message : "Failed to search items",
-				items: [],
-			};
-		}
-	}, [response.data]);
+
+	const items = useMemo(() => {
+		const result = unwrapVunaResponse<ItemDTO[]>(data);
+
+		return Array.isArray(result)
+			? result
+			: [];
+
+	}, [data]);
+
 
 	return {
-		error: error || response.error?.message || null,
-		isLoading: query !== debouncedQuery || response.isLoading,
 		items,
-		reload: response.mutate,
+
+		error:
+			error instanceof Error
+				? error.message
+				: null,
+
+		isLoading:
+			query.trim() !== debouncedQuery ||
+			isLoading,
+
+		isFetching: isValidating,
+
+		reload: mutate,
 	};
 }
