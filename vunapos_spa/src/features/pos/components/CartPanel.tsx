@@ -10,7 +10,7 @@ import { CustomerSelector } from "./CustomerSelector";
 type CartPanelProps = {
 	className?: string;
 	currency?: string;
-	invoice: InvoiceDTO | null;
+	invoice?: InvoiceDTO | null;
 	isMutating?: boolean;
 	onCheckout: () => void;
 	onClearCustomer: () => void;

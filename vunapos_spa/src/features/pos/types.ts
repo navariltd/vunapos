@@ -11,6 +11,14 @@ export type CustomerDTO = {
 	email_id?: string | null;
 };
 
+export type POSSessionDTO = {
+	has_opening_entry: boolean;
+	opening_entry: string | null;
+	ready: boolean;
+	status?: "OPEN" | "OPENING_REQUIRED";
+};
+
+
 export type BootstrapData = {
 	user?: unknown;
 	current_user?: string;
@@ -24,6 +32,7 @@ export type BootstrapData = {
 	mode_of_payments?: ModeOfPaymentDTO[];
 	print_format?: string | null;
 	invoice_mode?: "Sales Invoice" | "POS Invoice" | string;
+	session?: POSSessionDTO;
 };
 
 export type ItemDTO = {

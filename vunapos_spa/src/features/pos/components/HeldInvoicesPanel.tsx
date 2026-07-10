@@ -6,7 +6,7 @@ import { formatCurrency } from "../utils";
 
 type HeldInvoicesPanelProps = {
 	currency?: string;
-	heldInvoices: HeldInvoiceDTO[];
+	heldInvoices?: HeldInvoiceDTO[];
 	isLoading?: boolean;
 	onRefresh: () => void;
 	onRestore: (invoice: HeldInvoiceDTO) => void;
@@ -41,7 +41,7 @@ export function HeldInvoicesPanel({
 				<div>
 					<p className="text-sm font-semibold text-on-surface">Held Invoices</p>
 					<p className="text-xs text-on-surface-variant">
-						{heldInvoices.length ? `${heldInvoices.length} waiting` : "No held invoices"}
+						{heldInvoices?.length ? `${heldInvoices.length} waiting` : "No held invoices"}
 					</p>
 				</div>
 				<Button
@@ -57,7 +57,7 @@ export function HeldInvoicesPanel({
 				</Button>
 			</div>
 
-			{heldInvoices.length ? (
+			{heldInvoices?.length ? (
 				<div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
 					{heldInvoices.map((invoice) => (
 						<button

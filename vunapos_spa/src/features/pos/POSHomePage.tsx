@@ -14,6 +14,8 @@ import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useItemSearch } from "./hooks/useItemSearch";
 import { usePOSInvoice } from "./hooks/usePOSInvoice";
 
+import  POSOpeningEntryModal  from "../../components/PosOpenningEntryDialog";
+
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
 };
@@ -48,6 +50,8 @@ function printInvoiceHtml(printPayload: PrintPayload) {
 	}, 100);
 }
 
+
+
 function getCheckoutErrorMessage(error: unknown) {
 	if (error instanceof VunaApiError) {
 		if (error.code === "PAYMENT_TOTAL_MISMATCH") {
@@ -64,6 +68,30 @@ function getCheckoutErrorMessage(error: unknown) {
 }
 
 export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
+	 const getUserFriendlyError = (error: unknown): string => {
+	if (!error) {
+		return "";
+	}
+
+	const message =
+		error instanceof VunaApiError
+			? error.message
+			: error instanceof Error
+				? error.message
+				: typeof error === "object" && "message" in error
+					? String(error.message)
+					: String(error);
+
+	if (
+		message.includes("No POS Profile assigned to user") ||
+		message.includes("No POS Profile")
+	) {
+		return "No POS Profile has been assigned to your account. Please contact your administrator to complete your POS setup.";
+	}
+
+	return message || "An unexpected error occurred. Please contact your administrator.";
+};
+	const [showOpeningModal, setShowOpeningModal] = useState(false);
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
 	const [selectedCustomer, setSelectedCustomer] = useState<CustomerDTO | null | undefined>(undefined);
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -75,21 +103,40 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const ownBootstrap = useBootstrapData();
 	const bootstrap = providedBootstrap || ownBootstrap;
+	
 	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
-	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data), [bootstrap.data]);
+	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data) ?? [], [bootstrap.data]);
 
 	const activeCustomer = selectedCustomer === undefined ? defaultCustomer : selectedCustomer;
 
-	const items = useItemSearch(itemSearchQuery, bootstrap.data?.pos_profile, activeCustomer?.customer);
-	const invoice = usePOSInvoice({
-		posProfile: bootstrap.data?.pos_profile,
-		selectedCustomer: activeCustomer,
-	});
+const isPOSReady =
+	bootstrap.data?.session?.ready === true &&
+	bootstrap.data?.session?.status === "OPEN";
+
+
+const items = useItemSearch(
+	isPOSReady ? itemSearchQuery : "",
+	isPOSReady ? bootstrap.data?.pos_profile : undefined,
+	isPOSReady ? activeCustomer?.customer : undefined
+);
+
+
+const invoice = usePOSInvoice({
+	posProfile: isPOSReady ? bootstrap.data?.pos_profile : undefined,
+	selectedCustomer: isPOSReady ? activeCustomer : null,
+});
 	const listHeldInvoices = invoice.listHeld;
 	const restoreHeldInvoice = invoice.restoreHeldInvoice;
 
-	const error = pageError || bootstrap.error || items.error || invoice.error;
-
+const error = pageError
+	? getUserFriendlyError(pageError)
+	: bootstrap.error
+		? getUserFriendlyError(bootstrap.error)
+		: items.error
+			? getUserFriendlyError(items.error)
+			: invoice.error
+				? getUserFriendlyError(invoice.error)
+				: null;
 	useEffect(() => {
 		if (!lastSubmittedInvoice && !lastHeldInvoice) {
 			return undefined;
@@ -102,7 +149,28 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 		return () => window.clearTimeout(timeout);
 	}, [lastHeldInvoice, lastSubmittedInvoice]);
+useEffect(() => {
+		if (!bootstrap.data?.pos_profile) {
+			return;
+		}
 
+		listHeldInvoices().catch((err) => {
+			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
+		});
+	}, [bootstrap.data?.pos_profile, listHeldInvoices]);
+const isNoPOSProfileError = (err: unknown) => {
+	if (!err) return false;
+
+	const message =
+		err instanceof Error
+			? err.message
+			: String(err);
+
+	return message === "No POS Profile assigned to user";
+};
+
+const requiresPOSSetup = isNoPOSProfileError(bootstrap.error) 
+	
 	useEffect(() => {
 		if (!bootstrap.data?.pos_profile) {
 			return;
@@ -153,7 +221,26 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		}
 	}, [listHeldInvoices]);
+	useEffect(() => {
+	const session = bootstrap.data?.session;
 
+	if (!bootstrap.data?.pos_profile) {
+		setShowOpeningModal(false);
+		return;
+	}
+
+	if (!session?.ready) {
+		// POS profile exists but no opening entry
+		setShowOpeningModal(true);
+		return;
+	}
+
+	setShowOpeningModal(session.status !== "OPEN");
+
+}, [
+	bootstrap.data?.pos_profile,
+	bootstrap.data?.session
+]);
 	useEffect(() => {
 		const handleNavigation = (event: Event) => {
 			const page = (event as CustomEvent<{ page?: POSPage }>).detail?.page;
@@ -209,6 +296,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	};
 
 	if (bootstrap.isLoading) {
+		
 		return (
 			<div className="flex min-h-[60vh] items-center justify-center">
 				<p className="text-sm font-medium text-on-surface-variant">Loading POS workspace...</p>
@@ -216,13 +304,54 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		);
 	}
 
+
+
+
+if (requiresPOSSetup) {
+	return (
+		<div className="flex min-h-[60vh] items-center justify-center p-6">
+			<div className="max-w-md rounded-lg border border-error bg-error-container p-6 text-center">
+				<h2 className="text-lg font-semibold text-on-error-container">
+					POS Setup Required
+				</h2>
+
+				<p className="mt-3 text-sm text-on-error-container">
+					{error}
+				</p>
+
+				<p className="mt-4 text-sm font-medium text-on-error-container">
+					Please contact your administrator to assign a POS Profile.
+				</p>
+			</div>
+		</div>
+	);
+}
+
+
+if (!isPOSReady) {
+	return (
+		<POSOpeningEntryModal
+			isOpen={showOpeningModal}
+			onClose={() => {}}
+			onSuccess={() => {
+				window.location.reload();
+			}}
+		/>
+	);
+}
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
-			{error ? (
-				<div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
-					{error}
-				</div>
-			) : null}
+	{error ? (
+	<div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
+		<p className="font-semibold">
+			POS Setup Required
+		</p>
+
+		<p className="mt-1">
+			{error}
+		</p>
+	</div>
+) : null}
 
 			{activePage === "Invoices" ? (
 				<section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4">
@@ -245,7 +374,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 						<HeldInvoicesPanel
 							currency={bootstrap.data?.currency}
-							heldInvoices={invoice.heldInvoices}
+							heldInvoices={invoice.heldInvoices ?? []}
 							isLoading={invoice.isHeldLoading}
 							onRefresh={handleRefreshHeld}
 							onRestore={handleRestoreHeld}
@@ -264,7 +393,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							<ItemGrid
 								currency={bootstrap.data?.currency}
 								isLoading={items.isLoading}
-								items={items.items}
+								items={items.items ?? []}
 								mutationDisabled={invoice.isMutating}
 								onAddItem={handleAddItem}
 							/>
@@ -296,7 +425,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				<ShoppingCart className="size-6" />
 				{invoice.invoice?.items?.length ? (
 					<span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-error px-1 text-xs font-semibold text-on-error">
-						{invoice.invoice.items.length}
+						{invoice.invoice.items?.length}
 					</span>
 				) : null}
 			</button>
@@ -327,7 +456,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<CartPanel
 							className="flex-1 border-0"
 							currency={bootstrap.data?.currency}
-							invoice={invoice.invoice}
+							invoice={invoice?.invoice}
 							isMutating={invoice.isMutating}
 							selectedCustomer={activeCustomer}
 							onCheckout={handleOpenCheckout}
@@ -342,6 +471,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				</div>
 			) : null}
 
+<POSOpeningEntryModal
+  isOpen={showOpeningModal}
+  onClose={() => setShowOpeningModal(false)}
+  onSuccess={() => {
+		
+    setShowOpeningModal(false);
+    // refresh POS state here
+  }}
+ 
+/>
 			<CheckoutDialog
 				currency={bootstrap.data?.currency}
 				invoice={invoice.invoice}

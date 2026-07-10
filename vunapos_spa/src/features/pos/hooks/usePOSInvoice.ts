@@ -101,7 +101,7 @@ function localizePreviewInvoice(
 		source_invoice_name: sourceInvoice?.name,
 		customer: selectedCustomer?.customer || preview.customer,
 		customer_name: selectedCustomer?.customer_name || preview.customer_name,
-		items: preview.items.map((item) => {
+		items: (preview.items ?? []).map((item) => {
 			const metadata = metadataByItemCode.get(item.item_code);
 			return {
 				...item,
@@ -212,7 +212,28 @@ export function usePOSInvoice({ posProfile, selectedCustomer }: UsePOSInvoiceArg
 		},
 		[posProfile, previewInvoiceCall.call, selectedCustomer],
 	);
-
+if (!posProfile) {
+		return {
+			invoice: null,
+			error: new Error("No POS Profile assigned to user"),
+			isMutating: false,
+			heldInvoices: [],
+			listHeld: async () => [],
+			restoreHeldInvoice: async () => {
+				throw new Error("No POS Profile assigned to user");
+			},
+			addCartItem: async () => {
+				throw new Error("No POS Profile assigned to user");
+			},
+			holdCart: async () => null,
+			submitCart: async () => {
+				throw new Error("No POS Profile assigned to user");
+			},
+			clearCart: () => {},
+			removeCartItem: () => {},
+			updateCartItemQty: () => {},
+		};
+	}
 	const addCartItem = useCallback(
 		async (item: ItemDTO) => {
 			if (isStockControlled(item)) {
@@ -379,7 +400,7 @@ export function usePOSInvoice({ posProfile, selectedCustomer }: UsePOSInvoiceArg
 				invoice_name: invoice.name,
 			}),
 		);
-		setInvoice(updatedInvoice.items.length ? updatedInvoice : null);
+		setInvoice(updatedInvoice.items?.length ? updatedInvoice : null);
 	}, [clearInvoiceCall.call, invoice, listHeld, runMutation]);
 
 	const resetCart = useCallback(() => {

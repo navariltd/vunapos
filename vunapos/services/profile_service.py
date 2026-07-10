@@ -15,65 +15,31 @@ def get_invoice_mode():
 
 
 def resolve_pos_profile(pos_profile=None):
+	if pos_profile:
+		require_read("POS Profile", pos_profile)
 
-    if pos_profile:
+		profile = frappe.get_cached_doc("POS Profile", pos_profile)
 
-        require_read(
-            "POS Profile",
-            pos_profile
-        )
+	else:
+		profiles = frappe.get_all("POS Profile User", filters={"user": frappe.session.user}, pluck="parent")
 
-        profile = frappe.get_cached_doc(
-            "POS Profile",
-            pos_profile
-        )
+		if not profiles:
+			frappe.throw(_("No POS Profile assigned to user"))
 
-    else:
+		profile_name = frappe.db.get_value("POS Profile", {"name": ["in", profiles], "disabled": 0}, "name")
 
-        profiles = frappe.get_all(
-            "POS Profile User",
-            filters={
-                "user": frappe.session.user
-            },
-            pluck="parent"
-        )
+		if not profile_name:
+			frappe.throw(_("No enabled POS Profile assigned to user"))
 
-        if not profiles:
-            frappe.throw(
-                _("No POS Profile assigned to user")
-            )
+		require_read("POS Profile", profile_name)
 
-        profile_name = frappe.db.get_value(
-            "POS Profile",
-            {
-                "name": ["in", profiles],
-                "disabled": 0
-            },
-            "name"
-        )
+		profile = frappe.get_cached_doc("POS Profile", profile_name)
 
-        if not profile_name:
-            frappe.throw(
-                _("No enabled POS Profile assigned to user")
-            )
+	if profile.disabled:
+		frappe.throw(_("POS Profile {0} is disabled").format(profile.name))
 
-        require_read(
-            "POS Profile",
-            profile_name
-        )
+	return profile
 
-        profile = frappe.get_cached_doc(
-            "POS Profile",
-            profile_name
-        )
-
-    if profile.disabled:
-        frappe.throw(
-            _("POS Profile {0} is disabled")
-            .format(profile.name)
-        )
-
-    return profile
 
 def get_profile_defaults(pos_profile=None):
 	profile = resolve_pos_profile(pos_profile)
@@ -81,35 +47,28 @@ def get_profile_defaults(pos_profile=None):
 
 
 def get_bootstrap_data(pos_profile=None):
-
 	profile = resolve_pos_profile(pos_profile)
 	invoice_mode = get_invoice_mode()
 	data = profile_to_dict(profile, invoice_mode)
-	opening_entry = get_opening_entry(
-        frappe.session.user,
-        profile.name
-    )
+	opening_entry = get_opening_entry(frappe.session.user, profile.name)
 	data.update(
 		{
 			"current_user": frappe.session.user,
 			"pos_profile": profile.name,
-			 "session": {
-			"has_opening_entry": bool(opening_entry),
-			"opening_entry": opening_entry,
-			"ready": bool(opening_entry),
- }
+			"session": {
+				"has_opening_entry": bool(opening_entry),
+				"opening_entry": opening_entry,
+				"ready": bool(opening_entry),
+				"status": ("OPEN" if opening_entry else "OPENING_REQUIRED"),
+			},
 		}
 	)
 	return data
 
+
 def get_opening_entry(user, pos_profile):
-    return frappe.db.get_value(
-        "POS Opening Entry",
-        {
-            "user": user,
-            "pos_profile": pos_profile,
-            "docstatus": 1,
-            "status": "Open"
-        },
-        "name"
-    )
+	return frappe.db.get_value(
+		"POS Opening Entry",
+		{"user": user, "pos_profile": pos_profile, "docstatus": 1, "status": "Open"},
+		"name",
+	)

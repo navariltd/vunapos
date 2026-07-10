@@ -10,6 +10,13 @@ export function useItemSearch(
 	posProfile?: string,
 	customer?: string
 ) {
+	if (!posProfile) {
+		return {
+			items: [],
+			isLoading: false,
+			error: new Error("No POS Profile assigned to user"),
+		};
+	}
 	const [debouncedQuery, setDebouncedQuery] = useState("");
 
 
@@ -73,7 +80,7 @@ export function useItemSearch(
 
 
 	return {
-		items,
+		items:items ?? [],
 
 		error:
 			error instanceof Error
