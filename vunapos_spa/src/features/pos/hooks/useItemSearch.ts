@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { useFrappeGetCall } from "frappe-react-sdk";
+import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 
 import type { ItemDTO } from "../types";
-import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { itemRepository } from "../../../lib/repositories/itemRepository";
 
-export function useItemSearch(query: string, posProfile?: string, customer?: string) {
+// Read-path cutover (P5, I3): item search never touches the network - it's a Dexie
+// prefix/substring query against the last-synced catalog (useItemSearch's job is
+// speed and offline availability; freshness is the Cache Engine's job, separately).
+//
+// KNOWN GAP: pricing offline is the item's cached bootstrap rate (default-customer
+// pricing) - selecting a different customer with a distinct price list will not
+// re-price offline the way the previous online-only flow did. See invoiceEngine.ts.
+export function useItemSearch(query: string) {
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
 
 	useEffect(() => {
@@ -15,35 +22,12 @@ export function useItemSearch(query: string, posProfile?: string, customer?: str
 		return () => window.clearTimeout(timeout);
 	}, [query]);
 
-	const response = useFrappeGetCall<unknown>(
-		vunaMethods.searchItems,
-		{ query: debouncedQuery, pos_profile: posProfile, customer },
-		["vunapos_items", debouncedQuery, posProfile || "", customer || ""],
-	);
-
-	const { error, items } = useMemo(() => {
-		if (!response.data) {
-			return { error: null, items: [] };
-		}
-		try {
-			const items = unwrapVunaResponse<ItemDTO[]>(response.data);
-			if (!Array.isArray(items)) {
-				return { error: "Failed to search items", items: [] };
-			}
-			return { error: null, items };
-		} catch (err) {
-			console.error(err);
-			return {
-				error: err instanceof Error ? err.message : "Failed to search items",
-				items: [],
-			};
-		}
-	}, [response.data]);
+	const items = useLiveQuery(() => itemRepository.search(debouncedQuery, 60), [debouncedQuery]);
 
 	return {
-		error: error || response.error?.message || null,
-		isLoading: query !== debouncedQuery || response.isLoading,
-		items,
-		reload: response.mutate,
+		error: null as string | null,
+		isLoading: query !== debouncedQuery || items === undefined,
+		items: (items ?? []) as ItemDTO[],
+		reload: () => {},
 	};
 }

@@ -38,6 +38,7 @@ export type ItemDTO = {
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
 	barcode?: string | null;
+	item_tax_template?: string | null;
 };
 
 export type BatchAllocationDTO = {
@@ -87,6 +88,7 @@ export type InvoiceItemDTO = {
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
 	batch_allocations?: BatchAllocationDTO[];
+	item_tax_template?: string | null;
 };
 
 export type TaxDTO = {
@@ -136,6 +138,10 @@ export type HeldInvoiceDTO = {
 	rounded_total?: number;
 	total?: number;
 	currency?: string;
+	/** Set for a hold that only exists in this device's local queue (not yet synced to ERPNext). */
+	is_local?: boolean;
+	local_id?: string;
+	queue_status?: "pending" | "error";
 };
 
 export type PaymentInput = {
