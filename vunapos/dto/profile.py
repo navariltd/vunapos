@@ -6,6 +6,7 @@ def profile_to_dict(profile, invoice_mode):
 		"price_list": profile.selling_price_list,
 		"currency": profile.currency,
 		"default_customer": profile.customer,
+		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [
 			{
 				"mode_of_payment": row.mode_of_payment,

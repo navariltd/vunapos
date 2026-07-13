@@ -6,10 +6,12 @@ from vunapos.dto.customer import customer_to_dict
 from vunapos.utils.permissions import require_create, require_read
 
 
-def search_customers(query=None, limit=20):
+def search_customers(query=None, limit=20, since=None):
 	limit = cint(limit) or 20
 	query = (query or "").strip()
 	filters = {"disabled": 0}
+	if since:
+		filters["modified"] = [">", since]
 	or_filters = []
 	if query:
 		or_filters = [
