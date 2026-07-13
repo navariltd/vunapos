@@ -1,11 +1,6 @@
 @import "tailwindcss";
 
-/*
- * Frappe desk design tokens (frappe/public/scss/espresso/_colors.scss,
- * common/css_variables.scss, desk/css_variables.scss) ported to Tailwind's
- * @theme so vunapos matches the desk UI: a neutral gray scale, a near-black
- * primary action color, and flat, low-elevation surfaces.
- */
+/* Design tokens ported from Frappe desk's SCSS (_colors.scss, css_variables.scss) so vunapos matches desk's UI. */
 @theme {
 	--font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
 
@@ -92,6 +87,51 @@
 	to {
 		opacity: 0;
 	}
+}
+
+/*
+ * Dark values anchored to desk's own dark.scss (not invented) so both apps feel consistent.
+ * Overriding these custom properties re-themes the whole app - no per-component changes needed.
+ */
+:root[data-theme="dark"] {
+	--color-background: #171717;
+	--color-on-background: #f8f8f8;
+
+	--color-surface: #1c1c1c;
+	--color-surface-container: #232323;
+	--color-surface-container-low: #1c1c1c;
+	--color-surface-container-high: #2a2a2a;
+	--color-surface-container-highest: #313131;
+
+	--color-surface-variant: #232323;
+	--color-on-surface: #f8f8f8;
+	--color-on-surface-variant: #c7c7c7;
+
+	/* Desk's dark mode sets --btn-primary to a light gray (gray-300) - a
+	   near-black primary is invisible on a near-black background, so this
+	   inverts the same way desk's own does. */
+	--color-primary: #e2e2e2;
+	--color-on-primary: #171717;
+	--color-primary-container: #383838;
+	--color-on-primary-container: #f8f8f8;
+
+	--color-secondary: #4ade80;
+	--color-on-secondary: #171717;
+	--color-secondary-container: #16452e;
+	--color-on-secondary-container: #86efac;
+
+	--color-tertiary: #e8a13d;
+	--color-on-tertiary: #171717;
+	--color-tertiary-container: #4a3010;
+	--color-on-tertiary-container: #f3c579;
+
+	--color-outline: #525252;
+	--color-outline-variant: #383838;
+
+	--color-error: #eb9091;
+	--color-on-error: #171717;
+	--color-error-container: #3d1f1f;
+	--color-on-error-container: #eb9091;
 }
 
 @layer base {
