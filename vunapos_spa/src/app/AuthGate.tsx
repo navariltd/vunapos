@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useFrappeAuth } from "frappe-react-sdk";
 
+import { hasValidSessionCookie, shouldRedirectToLogin } from "./authGuard";
 import { CsrfTokenLoader } from "./CsrfTokenLoader";
 
 type AuthGateProps = {
@@ -8,6 +9,10 @@ type AuthGateProps = {
 };
 
 function redirectToLogin() {
+	// Guards against a nested redirect-to loop
+	if (window.location.pathname === "/login") {
+		return;
+	}
 	const redirectTo = `${window.location.origin}${window.location.pathname}${window.location.search}`;
 	window.location.href = `/login?redirect-to=${encodeURIComponent(redirectTo)}`;
 }
@@ -15,14 +20,20 @@ function redirectToLogin() {
 export function AuthGate({ children }: AuthGateProps) {
 	const { currentUser, isLoading, error } = useFrappeAuth();
 	const isGuest = !currentUser || currentUser === "Guest";
+	const shouldRedirect = shouldRedirectToLogin({
+		isLoading,
+		isGuest,
+		error,
+		hasSessionCookie: hasValidSessionCookie(),
+	});
 
 	useEffect(() => {
-		if (!isLoading && (isGuest || error)) {
+		if (shouldRedirect) {
 			redirectToLogin();
 		}
-	}, [error, isGuest, isLoading]);
+	}, [shouldRedirect]);
 
-	if (isLoading || (isGuest && !error)) {
+	if (isLoading) {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
 				<div className="text-sm font-medium text-on-surface-variant">Loading VunaPOS...</div>
@@ -30,7 +41,7 @@ export function AuthGate({ children }: AuthGateProps) {
 		);
 	}
 
-	if (isGuest || error) {
+	if (shouldRedirect) {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
 				<div className="text-sm font-medium text-on-surface-variant">Redirecting to login...</div>
@@ -38,5 +49,7 @@ export function AuthGate({ children }: AuthGateProps) {
 		);
 	}
 
+	// Confirmed session, or an unconfirmed one trusted via cookie (no server rejection
+	// yet); BootstrapGate separately checks whether cached data is enough to sell.
 	return <CsrfTokenLoader>{children}</CsrfTokenLoader>;
 }

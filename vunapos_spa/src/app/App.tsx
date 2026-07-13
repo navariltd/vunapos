@@ -4,12 +4,16 @@ import { POSHomePage } from "../features/pos/POSHomePage";
 import { useBootstrapData } from "../features/pos/hooks/useBootstrapData";
 import { AppProviders } from "./AppProviders";
 import { AuthGate } from "./AuthGate";
+import { BootstrapGate } from "./BootstrapGate";
+import { ConnectivityMonitor } from "./ConnectivityMonitor";
 
 export function App() {
 	return (
 		<AppProviders>
 			<AuthGate>
-				<AuthenticatedApp />
+				<BootstrapGate>
+					<AuthenticatedApp />
+				</BootstrapGate>
 			</AuthGate>
 		</AppProviders>
 	);
@@ -20,6 +24,7 @@ function AuthenticatedApp() {
 
 	return (
 		<>
+			<ConnectivityMonitor />
 			<AppShell
 				cashier={bootstrap.data?.current_user}
 				posProfile={bootstrap.data?.pos_profile}
