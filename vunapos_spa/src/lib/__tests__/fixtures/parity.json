@@ -1,0 +1,72 @@
+{
+  "item_code": "Item-001",
+  "item_rate": 1200.0,
+  "item_tax_template": "Kenya Tax - TC",
+  "item_tax_rows": [
+    {
+      "account_head": "VAT - TC",
+      "rate": 16.0
+    }
+  ],
+  "tax_settings": {
+    "add_taxes_from_item_tax_template": true,
+    "add_taxes_from_taxes_and_charges_template": false
+  },
+  "cases": [
+    {
+      "cart": [
+        {
+          "item_code": "Item-001",
+          "qty": 1
+        }
+      ],
+      "totals": {
+        "net_total": 1200.0,
+        "total_taxes_and_charges": 192.0,
+        "grand_total": 1392.0,
+        "rounded_total": 1392.0,
+        "paid_amount": 0.0,
+        "outstanding_amount": 1392.0,
+        "change_amount": 0.0
+      }
+    },
+    {
+      "cart": [
+        {
+          "item_code": "Item-001",
+          "qty": 3
+        }
+      ],
+      "totals": {
+        "net_total": 3600.0,
+        "total_taxes_and_charges": 576.0,
+        "grand_total": 4176.0,
+        "rounded_total": 4176.0,
+        "paid_amount": 0.0,
+        "outstanding_amount": 4176.0,
+        "change_amount": 0.0
+      }
+    },
+    {
+      "cart": [
+        {
+          "item_code": "Item-001",
+          "qty": 2
+        },
+        {
+          "item_code": "Item-001",
+          "qty": 5
+        }
+      ],
+      "totals": {
+        "net_total": 8400.0,
+        "total_taxes_and_charges": 1344.0,
+        "grand_total": 9744.0,
+        "rounded_total": 9744.0,
+        "paid_amount": 0.0,
+        "outstanding_amount": 9744.0,
+        "change_amount": 0.0
+      }
+    }
+  ]
+}
