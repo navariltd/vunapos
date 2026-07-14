@@ -103,7 +103,7 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		item_code = ensure_test_item()
 		set_invoice_mode("Sales Invoice")
 
-		since = now_datetime()
+		since = str(now_datetime())
 		time.sleep(1)
 
 		untouched_response = get_pos_bootstrap(pos_profile=profile, since=since)
@@ -127,7 +127,7 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		set_invoice_mode("Sales Invoice")
 		price_list = frappe.get_cached_value("POS Profile", profile, "selling_price_list")
 
-		since = now_datetime()
+		since = str(now_datetime())
 		time.sleep(1)
 
 		untouched_response = get_pos_bootstrap(pos_profile=profile, since=since)
@@ -173,7 +173,7 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		if not frappe.db.exists("Item", doomed_item.item_code):
 			doomed_item.insert(ignore_permissions=True)
 
-		since = now_datetime()
+		since = str(now_datetime())
 		time.sleep(1)
 		frappe.delete_doc("Item", doomed_item.item_code, ignore_permissions=True)
 
