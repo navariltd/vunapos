@@ -212,28 +212,6 @@ export function usePOSInvoice({ posProfile, selectedCustomer }: UsePOSInvoiceArg
 		},
 		[posProfile, previewInvoiceCall.call, selectedCustomer],
 	);
-if (!posProfile) {
-		return {
-			invoice: null,
-			error: new Error("No POS Profile assigned to user"),
-			isMutating: false,
-			heldInvoices: [],
-			listHeld: async () => [],
-			restoreHeldInvoice: async () => {
-				throw new Error("No POS Profile assigned to user");
-			},
-			addCartItem: async () => {
-				throw new Error("No POS Profile assigned to user");
-			},
-			holdCart: async () => null,
-			submitCart: async () => {
-				throw new Error("No POS Profile assigned to user");
-			},
-			clearCart: () => {},
-			removeCartItem: () => {},
-			updateCartItemQty: () => {},
-		};
-	}
 	const addCartItem = useCallback(
 		async (item: ItemDTO) => {
 			if (isStockControlled(item)) {

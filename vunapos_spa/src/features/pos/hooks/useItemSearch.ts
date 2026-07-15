@@ -8,16 +8,11 @@ import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 export function useItemSearch(
 	query: string,
 	posProfile?: string,
-	customer?: string
+	customer?: string,
+	enabled = true,
 ) {
-	if (!posProfile) {
-		return {
-			items: [],
-			isLoading: false,
-			error: new Error("No POS Profile assigned to user"),
-		};
-	}
 	const [debouncedQuery, setDebouncedQuery] = useState("");
+	const canLoadItems = Boolean(enabled && posProfile);
 
 
 	useEffect(() => {
@@ -29,11 +24,8 @@ export function useItemSearch(
 	}, [query]);
 
 
-	const shouldSearch = debouncedQuery.length >= 2;
-
-
 	const params = useMemo(() => {
-		if (!shouldSearch) {
+		if (!canLoadItems || !posProfile) {
 			return undefined;
 		}
 
@@ -44,7 +36,7 @@ export function useItemSearch(
 		};
 
 	}, [
-		shouldSearch,
+		canLoadItems,
 		debouncedQuery,
 		posProfile,
 		customer,
@@ -70,26 +62,32 @@ export function useItemSearch(
 
 
 	const items = useMemo(() => {
-		const result = unwrapVunaResponse<ItemDTO[]>(data);
+		if (!canLoadItems || !data) {
+			return [];
+		}
 
-		return Array.isArray(result)
-			? result
-			: [];
+		try {
+			const result = unwrapVunaResponse<ItemDTO[]>(data);
+			return Array.isArray(result) ? result : [];
+		} catch {
+			// The API error is exposed through the hook's error value. Do not throw
+			// during render, otherwise the POS setup dialog cannot be displayed.
+			return [];
+		}
 
-	}, [data]);
+	}, [canLoadItems, data]);
 
 
 	return {
 		items:items ?? [],
 
 		error:
-			error instanceof Error
+			canLoadItems && error instanceof Error
 				? error.message
 				: null,
 
 		isLoading:
-			query.trim() !== debouncedQuery ||
-			isLoading,
+			canLoadItems && (query.trim() !== debouncedQuery || isLoading),
 
 		isFetching: isValidating,
 

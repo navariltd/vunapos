@@ -1,6 +1,6 @@
 export type ModeOfPaymentDTO = {
 	mode_of_payment: string;
-	default?: boolean;
+	default?: number | boolean ;
 	account?: string;
 };
 

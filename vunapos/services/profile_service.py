@@ -72,3 +72,36 @@ def get_opening_entry(user, pos_profile):
 		{"user": user, "pos_profile": pos_profile, "docstatus": 1, "status": "Open"},
 		"name",
 	)
+
+
+@frappe.whitelist()
+def get_user_pos_profiles():
+	profiles = frappe.get_all("POS Profile User", filters={"user": frappe.session.user}, pluck="parent")
+
+	if not profiles:
+		frappe.throw(_("No POS Profile assigned to user"))
+
+	enabled_profiles = frappe.get_all(
+		"POS Profile",
+		filters={"name": ["in", profiles], "disabled": 0},
+		fields=[
+			"name",
+			"company",
+			"warehouse",
+			"currency",
+		],
+	)
+
+	if not enabled_profiles:
+		frappe.throw(_("No enabled POS Profile assigned to user"))
+
+	# Attach payment modes
+	for profile in enabled_profiles:
+		profile["modes_of_payment"] = frappe.get_all(
+			"POS Payment Method",
+			filters={"parent": profile.name},
+			fields=["mode_of_payment", "default"],
+			order_by="idx",
+		)
+
+	return enabled_profiles

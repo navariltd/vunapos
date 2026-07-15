@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ShoppingCart, X } from "lucide-react";
+import { CircleAlert, ShoppingCart, X } from "lucide-react";
 
 import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
@@ -13,6 +13,8 @@ import { ItemSearch } from "./components/ItemSearch";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useItemSearch } from "./hooks/useItemSearch";
 import { usePOSInvoice } from "./hooks/usePOSInvoice";
+import { useModesOfPaymentStore } from "../../store/modesOfPaymentStore";
+import { usePOSProfileStore } from "../../store/posProfileStore";
 
 import  POSOpeningEntryModal  from "../../components/PosOpenningEntryDialog";
 
@@ -67,6 +69,50 @@ function getCheckoutErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : "Checkout failed";
 }
 
+function isMissingPOSProfileError(error: unknown) {
+	if (!error) {
+		return false;
+	}
+
+	const message =
+		error instanceof Error
+			? error.message
+			: typeof error === "object" && "message" in error
+				? String(error.message)
+				: String(error);
+
+	return (
+		message.includes("No POS Profile assigned to user") ||
+		message.includes("No POS Profile has been assigned to your account")
+	);
+}
+
+function POSSetupRequiredDialog({ message }: { message: string }) {
+	return (
+		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+			<div
+				role="alertdialog"
+				aria-modal="true"
+				aria-labelledby="pos-setup-required-title"
+				className="w-full max-w-md rounded-xl border border-error bg-surface p-6 shadow-xl"
+			>
+				<div className="flex items-start gap-3">
+					<CircleAlert className="mt-0.5 size-6 shrink-0 text-error" aria-hidden="true" />
+					<div>
+						<h2 id="pos-setup-required-title" className="text-lg font-semibold text-on-surface">
+							POS setup required
+						</h2>
+						<p className="mt-2 text-sm text-on-surface-variant">{message}</p>
+						<p className="mt-4 text-sm font-medium text-on-surface">
+							Please contact your administrator to assign a POS Profile to your account.
+						</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
 	 const getUserFriendlyError = (error: unknown): string => {
 	if (!error) {
@@ -103,9 +149,29 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const ownBootstrap = useBootstrapData();
 	const bootstrap = providedBootstrap || ownBootstrap;
+	const storedPosProfile = usePOSProfileStore((state) => state.posDetails?.name);
+	const storedModesOfPayment = useModesOfPaymentStore((state) => state.modesOfPayment);
+	const storedModesPosProfile = useModesOfPaymentStore((state) => state.posProfile);
+	const setStoredModesOfPayment = useModesOfPaymentStore((state) => state.setModesOfPayment);
+
+	useEffect(() => {
+		const posProfile = bootstrap.data?.pos_profile;
+		setStoredModesOfPayment(posProfile, getPaymentModes(bootstrap.data));
+	}, [bootstrap.data, setStoredModesOfPayment]);
 	
-	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
-	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data) ?? [], [bootstrap.data]);
+	const defaultCustomer = useMemo(
+	() => normalizeDefaultCustomer(bootstrap.data ?? {}),
+	[bootstrap.data]
+);
+
+	const posProfile = storedPosProfile ?? bootstrap.data?.pos_profile;
+	const paymentModes = useMemo(
+		() =>
+			storedModesPosProfile === posProfile
+				? storedModesOfPayment
+				: getPaymentModes(bootstrap.data ?? {}),
+		[bootstrap.data, posProfile, storedModesOfPayment, storedModesPosProfile],
+	);
 
 	const activeCustomer = selectedCustomer === undefined ? defaultCustomer : selectedCustomer;
 
@@ -115,14 +181,15 @@ const isPOSReady =
 
 
 const items = useItemSearch(
-	isPOSReady ? itemSearchQuery : "",
-	isPOSReady ? bootstrap.data?.pos_profile : undefined,
-	isPOSReady ? activeCustomer?.customer : undefined
+	itemSearchQuery,
+	posProfile ?? undefined,
+	activeCustomer?.customer,
+	isPOSReady,
 );
 
 
 const invoice = usePOSInvoice({
-	posProfile: isPOSReady ? bootstrap.data?.pos_profile : undefined,
+	posProfile: isPOSReady ? posProfile ?? undefined : undefined,
 	selectedCustomer: isPOSReady ? activeCustomer : null,
 });
 	const listHeldInvoices = invoice.listHeld;
@@ -149,37 +216,19 @@ const error = pageError
 
 		return () => window.clearTimeout(timeout);
 	}, [lastHeldInvoice, lastSubmittedInvoice]);
-useEffect(() => {
-		if (!bootstrap.data?.pos_profile) {
-			return;
-		}
-
-		listHeldInvoices().catch((err) => {
-			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
-		});
-	}, [bootstrap.data?.pos_profile, listHeldInvoices]);
-const isNoPOSProfileError = (err: unknown) => {
-	if (!err) return false;
-
-	const message =
-		err instanceof Error
-			? err.message
-			: String(err);
-
-	return message === "No POS Profile assigned to user";
-};
-
-const requiresPOSSetup = isNoPOSProfileError(bootstrap.error) 
+	const requiresPOSSetup = [pageError, bootstrap.error, items.error, invoice.error, error].some(
+		isMissingPOSProfileError,
+	);
 	
 	useEffect(() => {
-		if (!bootstrap.data?.pos_profile) {
+		if (!isPOSReady) {
 			return;
 		}
 
 		listHeldInvoices().catch((err) => {
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		});
-	}, [bootstrap.data?.pos_profile, listHeldInvoices]);
+	}, [isPOSReady, listHeldInvoices]);
 
 	const handleAddItem = async (item: ItemDTO) => {
 		setPageError(null);
@@ -279,7 +328,13 @@ const requiresPOSSetup = isNoPOSProfileError(bootstrap.error)
 			setPageError(err instanceof Error ? err.message : "Failed to restore held invoice");
 		}
 	};
-
+console.log("POS DEBUG", {
+	bootstrap: bootstrap.data,
+	items: items.items,
+	paymentModes,
+	invoice: invoice.invoice,
+	error
+});
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
 		try {
@@ -308,27 +363,11 @@ const requiresPOSSetup = isNoPOSProfileError(bootstrap.error)
 
 
 if (requiresPOSSetup) {
-	return (
-		<div className="flex min-h-[60vh] items-center justify-center p-6">
-			<div className="max-w-md rounded-lg border border-error bg-error-container p-6 text-center">
-				<h2 className="text-lg font-semibold text-on-error-container">
-					POS Setup Required
-				</h2>
-
-				<p className="mt-3 text-sm text-on-error-container">
-					{error}
-				</p>
-
-				<p className="mt-4 text-sm font-medium text-on-error-container">
-					Please contact your administrator to assign a POS Profile.
-				</p>
-			</div>
-		</div>
-	);
+	return <POSSetupRequiredDialog message={getUserFriendlyError(error || bootstrap.error)} />;
 }
 
 
-if (!isPOSReady) {
+if (!isPOSReady && bootstrap.data?.pos_profile) {
 	return (
 		<POSOpeningEntryModal
 			isOpen={showOpeningModal}
@@ -471,16 +510,7 @@ if (!isPOSReady) {
 				</div>
 			) : null}
 
-<POSOpeningEntryModal
-  isOpen={showOpeningModal}
-  onClose={() => setShowOpeningModal(false)}
-  onSuccess={() => {
-		
-    setShowOpeningModal(false);
-    // refresh POS state here
-  }}
- 
-/>
+
 			<CheckoutDialog
 				currency={bootstrap.data?.currency}
 				invoice={invoice.invoice}

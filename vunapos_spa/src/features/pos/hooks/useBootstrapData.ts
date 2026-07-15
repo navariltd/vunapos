@@ -11,34 +11,24 @@ export function useBootstrapData(posProfile?: string) {
 		["vunapos_bootstrap", posProfile || ""],
 	);
 
-	const data = useMemo(() => {
+	const parsedResponse = useMemo(() => {
 		if (!response.data) {
-			return null;
+			return { data: null, error: null };
 		}
 		try {
-			return unwrapVunaResponse<BootstrapData>(response.data);
+			return { data: unwrapVunaResponse<BootstrapData>(response.data), error: null };
 		} catch (err) {
-			console.error(err);
-			return null;
+			return {
+				data: null,
+				error: err instanceof Error ? err.message : "Failed to load POS bootstrap data",
+			};
 		}
 	}, [response.data]);
 
-	const parseError = useMemo(() => {
-		if (!response.data) {
-			return null;
-		}
-		try {
-			unwrapVunaResponse<BootstrapData>(response.data);
-			return null;
-		} catch (err) {
-			return err instanceof Error ? err.message : "Failed to load POS bootstrap data";
-		}
-	}, [response.data]);
-
-	const error = parseError || response.error?.message || null;
+	const error = parsedResponse.error || response.error?.message || null;
 
 	return {
-		data,
+		data: parsedResponse.data,
 		error,
 		isLoading: response.isLoading,
 		reload: response.mutate,
