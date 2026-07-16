@@ -30,7 +30,7 @@ describe("invoiceRepository.create", () => {
 		});
 
 		expect(result.assembled.totals.grand_total).toBeCloseTo(232, 2);
-		expect(result.local_ref).toMatch(/^POS-[A-Z0-9]{4}-00001$/);
+		expect(result.local_ref).toMatch(/^POS-[A-Z0-9]{8}-00001$/);
 
 		const queued = await db.queue.get(result.local_id);
 		expect(queued?.status).toBe("pending");

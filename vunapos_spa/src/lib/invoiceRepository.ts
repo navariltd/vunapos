@@ -40,12 +40,19 @@ function localTimeString(date: Date): string {
 // Exported: shared with holdRepository.ts so sales and holds draw from the same
 // per-device counter instead of each independently starting at POS-XXXX-00001,
 // which would be confusing in the merged Invoices panel / Queue Inspector.
+//
+// 8 hex chars (32 bits, ~4.3 billion values) rather than 4 (16 bits, 65,536 values) -
+// the short version made cross-device local_ref collisions realistic at fleet scale
+// (birthday-paradox ~1% chance by ~600 devices), which matters now that local_ref is
+// also stored server-side (vunapos_invoice_number_offline). No server round trip needed
+// to guarantee this: crypto.randomUUID() already has far more entropy than a device
+// fleet could ever exhaust at this width, generated once and cached per device.
 export async function getOrCreateDevicePrefix(): Promise<string> {
 	const existing = await metaRepository.get<string>(META_KEYS.deviceId);
 	if (existing) {
 		return existing;
 	}
-	const prefix = `POS-${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+	const prefix = `POS-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
 	await metaRepository.set(META_KEYS.deviceId, prefix);
 	return prefix;
 }
