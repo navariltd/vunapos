@@ -5,11 +5,14 @@ import { reportReachable } from "./stores/connectivityStore";
 import { VunaApiError } from "../services/vunaApi";
 import type { QueueAttempt } from "./types";
 
-// §11.4 failure classification, §8.2 backoff schedule (1m -> 2m -> 5m -> 15m cap).
-// Never imports a React-bound Zustand hook (§4.4): this module runs outside any
-// component's lifecycle (timer, reconnect, click handler). Calling a store's vanilla
-// getState()/setState() (as reportReachable does) is fine - no component needed.
-const BACKOFF_SCHEDULE_MS = [60_000, 120_000, 300_000, 900_000];
+// This file runs outside React (timers, reconnect handlers), so it calls the store's
+// plain getState()/setState() here instead of the useXStore() hook.
+const BACKOFF_SCHEDULE_MS = [60_000, 120_000, 300_000, 900_000]; // 1m, 2m, 5m, 15m cap
+
+// Wait a while before deleting synced entries: right after a sale syncs, cartStore.ts
+// checks back on it (within ~6s) to show the real invoice number instead of a
+// placeholder - deleting it too soon would break that check.
+const SUCCEEDED_RETENTION_MS = 30_000;
 
 export function nextRetryDelayMs(priorAttemptCount: number): number {
 	const index = Math.min(priorAttemptCount, BACKOFF_SCHEDULE_MS.length - 1);
@@ -82,6 +85,7 @@ export async function drainQueue(options: { force?: boolean } = {}): Promise<Dra
 
 async function runDrainPass(options: { force?: boolean }, signal: LeaseSignal): Promise<DrainResult> {
 	await queueRepository.reclaimStaleSyncing();
+	await queueRepository.pruneSucceededBefore(new Date(Date.now() - SUCCEEDED_RETENTION_MS).toISOString());
 	let processed = 0;
 	const parked: string[] = [];
 	for (;;) {

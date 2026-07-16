@@ -112,4 +112,48 @@ describe("queueRepository", () => {
 	it("remove is a safe no-op for a local_id that doesn't exist", async () => {
 		await expect(queueRepository.remove("never-existed")).resolves.toBeUndefined();
 	});
+
+	describe("pruneSucceededBefore", () => {
+		it("deletes a succeeded entry (and its mapping) whose success predates the cutoff", async () => {
+			await queueRepository.append(makeEntry({ local_id: "old-success" }));
+			await queueRepository.markSucceeded(
+				"old-success",
+				{ at: "2026-07-10T08:00:00Z", outcome: "success" },
+				"ACC-SINV-OLD",
+			);
+
+			await queueRepository.pruneSucceededBefore("2026-07-10T09:00:00Z");
+
+			expect(await queueRepository.getByLocalId("old-success")).toBeUndefined();
+			expect(await db.mappings.get("old-success")).toBeUndefined();
+		});
+
+		it("keeps a succeeded entry whose success is newer than the cutoff", async () => {
+			await queueRepository.append(makeEntry({ local_id: "fresh-success" }));
+			await queueRepository.markSucceeded(
+				"fresh-success",
+				{ at: "2026-07-10T08:00:00Z", outcome: "success" },
+				"ACC-SINV-FRESH",
+			);
+
+			// Cutoff is before this entry succeeded - not stale yet, must survive
+			// (this is exactly the case that protects cartStore.ts's race-window read).
+			await queueRepository.pruneSucceededBefore("2026-07-10T07:59:00Z");
+
+			const row = await queueRepository.getByLocalId("fresh-success");
+			expect(row?.status).toBe("succeeded");
+			expect((await db.mappings.get("fresh-success"))?.server_name).toBe("ACC-SINV-FRESH");
+		});
+
+		it("never touches pending or error entries, regardless of cutoff", async () => {
+			await queueRepository.append(makeEntry({ local_id: "still-pending" }));
+			await queueRepository.append(makeEntry({ local_id: "parked" }));
+			await queueRepository.markError("parked", { at: "2026-07-10T08:00:00Z", outcome: "rejected" });
+
+			await queueRepository.pruneSucceededBefore("2099-01-01T00:00:00Z");
+
+			expect((await queueRepository.getByLocalId("still-pending"))?.status).toBe("pending");
+			expect((await queueRepository.getByLocalId("parked"))?.status).toBe("error");
+		});
+	});
 });

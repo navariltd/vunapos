@@ -185,6 +185,37 @@ describe("drainQueue", () => {
 		expect((await queueRepository.getByLocalId("reconnected-early"))?.status).toBe("succeeded");
 	});
 
+	it("prunes an old succeeded entry from a prior pass, but never one that just succeeded in this pass", async () => {
+		// "old" here predates syncEngine's retention window entirely (a real prior sync,
+		// not just an earlier tick), so it must already be gone by the time this pass runs.
+		await queueRepository.append(makeEntry({ local_id: "old", created_at: "2020-01-01T00:00:00Z" }));
+		await queueRepository.markSucceeded(
+			"old",
+			{ at: "2020-01-01T00:00:01Z", outcome: "success" },
+			"ACC-SINV-OLD",
+		);
+		await queueRepository.append(makeEntry({ local_id: "brand-new", created_at: "2026-07-10T08:00:00Z" }));
+		vi.spyOn(apiClient, "postInvoice").mockResolvedValue({
+			local_id: "brand-new",
+			invoice: "ACC-SINV-NEW",
+			status: "synced",
+			duplicate: false,
+		});
+
+		const result = await drainQueue();
+
+		expect(result).toEqual({ processed: 1, parked: [], stoppedReason: "empty" });
+		// Pruned: succeeded long before this pass even started.
+		expect(await queueRepository.getByLocalId("old")).toBeUndefined();
+		expect(await db.mappings.get("old")).toBeUndefined();
+		// Not pruned: this pass is exactly what just settled it - cartStore.ts's
+		// race-window read (getByLocalId right after drainQueue() resolves) depends on
+		// this still being readable.
+		const fresh = await queueRepository.getByLocalId("brand-new");
+		expect(fresh?.status).toBe("succeeded");
+		expect((await db.mappings.get("brand-new"))?.server_name).toBe("ACC-SINV-NEW");
+	});
+
 	it("refuses to run a second drain concurrently (single in-process mutex)", async () => {
 		await queueRepository.append(makeEntry({ local_id: "slow" }));
 		let resolvePost!: (value: apiClient.CreatePosInvoiceResult) => void;

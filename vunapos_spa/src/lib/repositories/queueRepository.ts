@@ -94,6 +94,28 @@ export const queueRepository = {
 		await db.queue.delete(localId);
 	},
 
+	/** Deletes succeeded entries (and their local_id -> server_name mapping) whose
+	 * success is older than cutoffIso - keeps the queue holding only what's actually
+	 * unsynced. Never touches an entry that succeeded during the current drain pass:
+	 * cartStore.ts reads a just-created entry back via getByLocalId right after racing
+	 * drainQueue() against a short timeout, so this must only ever prune entries that
+	 * were already "succeeded" going into this pass, not ones this pass just settled. */
+	async pruneSucceededBefore(cutoffIso: string): Promise<void> {
+		const rows = await db.queue.where("status").equals("succeeded").toArray();
+		const stale = rows.filter((row) => (row.attempts.at(-1)?.at ?? row.created_at) <= cutoffIso);
+		if (!stale.length) {
+			return;
+		}
+		await db.transaction("rw", [db.queue, db.mappings], async () => {
+			await Promise.all(
+				stale.map(async (row) => {
+					await db.queue.delete(row.local_id);
+					await db.mappings.delete(row.local_id);
+				}),
+			);
+		});
+	},
+
 	async summary(): Promise<{ pending: number; error: number; oldestPendingCreatedAt: string | null }> {
 		const rows = await db.queue.toArray();
 		const pending = rows.filter((row) => row.status === "pending" || row.status === "syncing");
