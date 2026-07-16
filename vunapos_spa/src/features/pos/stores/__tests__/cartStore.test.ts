@@ -483,7 +483,11 @@ describe("restoreLocalHold", () => {
 		await queueRepository.append(
 			makeHoldEntry({
 				local_id: "hold-1",
-				payload: { items: [{ item_code: "ITEM-1", qty: 3 }], customer: "CUST-1" },
+				payload: {
+					items: [{ item_code: "ITEM-1", qty: 3 }],
+					customer: "CUST-1",
+					local_ref: "POS-TEST-HOLD-00001",
+				},
 			}),
 		);
 
@@ -540,7 +544,7 @@ describe("restoreLocalHold", () => {
 		await queueRepository.append(
 			makeHoldEntry({
 				local_id: "hold-4",
-				payload: { items: [{ item_code: "NOT-CACHED", qty: 1 }] },
+				payload: { items: [{ item_code: "NOT-CACHED", qty: 1 }], local_ref: "POS-TEST-HOLD-00001" },
 			}),
 		);
 

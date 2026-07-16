@@ -105,6 +105,7 @@ export const invoiceRepository = {
 				grand_total: assembled.totals.grand_total,
 				rounded_total: assembled.totals.rounded_total,
 			},
+			local_ref: localRef,
 		};
 
 		const entry: QueueEntry = {

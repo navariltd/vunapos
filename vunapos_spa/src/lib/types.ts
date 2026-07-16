@@ -135,6 +135,10 @@ export type InvoicePayload = {
 		grand_total?: number;
 		rounded_total?: number;
 	};
+	/** Device-generated reference (e.g. "POS-XXXX-00001"), stored server-side on
+	 * vunapos_invoice_number_offline so a synced invoice can be traced back to the
+	 * offline sale that created it. */
+	local_ref: string;
 };
 
 // A hold has no payments yet and no "sale moment" (posting_date/time) - that's set
@@ -151,6 +155,7 @@ export type HoldPayload = {
 		grand_total?: number;
 		rounded_total?: number;
 	};
+	local_ref: string;
 };
 
 type QueueEntryCommon = {

@@ -17,7 +17,7 @@ from vunapos.tests.helpers import (
 )
 
 
-def _payload_for(profile, item_code, qty=1, customer=None):
+def _payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-00001"):
 	preview = preview_invoice_service(
 		pos_profile=profile,
 		customer=customer,
@@ -32,10 +32,11 @@ def _payload_for(profile, item_code, qty=1, customer=None):
 		"items": [{"item_code": item_code, "qty": qty}],
 		"payments": [{"mode_of_payment": mode_of_payment, "amount": amount}],
 		"totals": totals,
+		"local_ref": local_ref,
 	}
 
 
-def _hold_payload_for(profile, item_code, qty=1, customer=None):
+def _hold_payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-00001"):
 	preview = preview_invoice_service(
 		pos_profile=profile,
 		customer=customer,
@@ -46,6 +47,7 @@ def _hold_payload_for(profile, item_code, qty=1, customer=None):
 		"customer": customer,
 		"items": [{"item_code": item_code, "qty": qty}],
 		"totals": preview["totals"],
+		"local_ref": local_ref,
 	}
 
 
@@ -243,6 +245,21 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 		posting_date = frappe.db.get_value("Sales Invoice", response["data"]["invoice"], "posting_date")
 		self.assertEqual(str(posting_date), device_date)
 
+	def test_stores_the_devices_local_ref_on_the_submitted_invoice(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code, local_ref="POS-A1B2-00007")
+		key = frappe.generate_hash(length=20)
+
+		response = create_pos_invoice(payload=json.dumps(payload), idempotency_key=key, local_id="local-d")
+
+		self.assertTrue(response["ok"], response)
+		stored_local_ref = frappe.db.get_value(
+			"Sales Invoice", response["data"]["invoice"], "vunapos_invoice_number_offline"
+		)
+		self.assertEqual(stored_local_ref, "POS-A1B2-00007")
+
 
 class TestVunaPOSCreatePosHold(IntegrationTestCase):
 	def test_requires_idempotency_key_and_local_id(self):
@@ -310,6 +327,21 @@ class TestVunaPOSCreatePosHold(IntegrationTestCase):
 		held_response = list_held_invoices(pos_profile=profile)
 		self.assertTrue(held_response["ok"], held_response)
 		self.assertIn(invoice_name, [row["name"] for row in held_response["data"]])
+
+	def test_stores_the_devices_local_ref_on_the_held_invoice(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _hold_payload_for(profile, item_code, local_ref="POS-C3D4-00012")
+		key = frappe.generate_hash(length=20)
+
+		response = create_pos_hold(payload=json.dumps(payload), idempotency_key=key, local_id="hold-e")
+
+		self.assertTrue(response["ok"], response)
+		stored_local_ref = frappe.db.get_value(
+			"Sales Invoice", response["data"]["invoice"], "vunapos_invoice_number_offline"
+		)
+		self.assertEqual(stored_local_ref, "POS-C3D4-00012")
 
 	def test_hold_then_checkout_reuses_a_fresh_idempotency_key(self):
 		# Locks in the "no collision" design claim: a hold's idempotency key and a

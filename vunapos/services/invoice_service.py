@@ -20,6 +20,7 @@ SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
 HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
+LOCAL_REF_FIELD = "vunapos_invoice_number_offline"
 
 
 def _throw(code, message, meta=None):
@@ -954,6 +955,7 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		return {"local_id": local_id, "invoice": existing.name, "status": "synced", "duplicate": True}
 
 	payload = _invoice_payload(payload)
+	print(frappe.as_json(payload, 2))
 	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
 	require_create(invoice_doctype)
 
@@ -990,6 +992,7 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 		_set_if_has_field(doc, HELD_FIELD, 0)
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
+		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
 		doc.flags.ignore_mandatory = False
 		doc.save()
 		doc.submit()
@@ -1065,6 +1068,7 @@ def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
 		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 		_set_if_has_field(doc, HELD_FIELD, 1)
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
+		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
 		doc.flags.ignore_mandatory = False
 		doc.save()
 	except frappe.UniqueValidationError:

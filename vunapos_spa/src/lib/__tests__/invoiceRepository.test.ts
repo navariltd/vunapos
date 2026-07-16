@@ -37,6 +37,9 @@ describe("invoiceRepository.create", () => {
 		expect(queued?.payload.items).toEqual([{ item_code: "ITEM-1", qty: 2 }]);
 		expect(queued?.payload.totals?.grand_total).toBeCloseTo(232, 2);
 		expect(queued?.payload.customer).toBe("CUST-1");
+		// The device's local_ref rides along in the payload so the server can stamp it onto
+		// vunapos_invoice_number_offline - a synced invoice traces back to its offline sale.
+		expect(queued?.payload.local_ref).toBe(result.local_ref);
 	});
 
 	it("increments the local_ref counter across successive sales", async () => {

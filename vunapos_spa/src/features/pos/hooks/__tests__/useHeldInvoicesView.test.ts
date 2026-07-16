@@ -10,7 +10,12 @@ describe("mergeHeldInvoices (pure)", () => {
 			local_id: "hold-1",
 			local_ref: "POS-AAAA-00001",
 			status: "pending",
-			payload: { customer: "CUST-1", items: [{ item_code: "ITEM-1", qty: 1 }], totals: { grand_total: 116 } },
+			payload: {
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				totals: { grand_total: 116 },
+				local_ref: "POS-AAAA-00001",
+			},
 		});
 
 		const result = mergeHeldInvoices([], [entry]);

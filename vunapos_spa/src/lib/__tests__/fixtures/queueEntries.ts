@@ -8,9 +8,10 @@ type HoldQueueEntry = Extract<QueueEntry, { type: "hold_invoice" }>;
 // deliberately, so overriding one field can't widen `type`/`payload` into a
 // mismatched pair now that QueueEntry is a discriminated union.
 export function makeInvoiceEntry(overrides: Partial<InvoiceQueueEntry> = {}): QueueEntry {
+	const localRef = overrides.local_ref ?? "POS-TEST-00001";
 	return {
 		local_id: overrides.local_id ?? "local-1",
-		local_ref: overrides.local_ref ?? "POS-TEST-00001",
+		local_ref: localRef,
 		idempotency_key: overrides.idempotency_key ?? "idem-1",
 		type: "create_invoice",
 		schema_version: 1,
@@ -22,14 +23,16 @@ export function makeInvoiceEntry(overrides: Partial<InvoiceQueueEntry> = {}): Qu
 		payload: overrides.payload ?? {
 			items: [{ item_code: "ITEM-1", qty: 1 }],
 			payments: [{ mode_of_payment: "Cash", amount: 100 }],
+			local_ref: localRef,
 		},
 	};
 }
 
 export function makeHoldEntry(overrides: Partial<HoldQueueEntry> = {}): QueueEntry {
+	const localRef = overrides.local_ref ?? "POS-TEST-HOLD-00001";
 	return {
 		local_id: overrides.local_id ?? "hold-1",
-		local_ref: overrides.local_ref ?? "POS-TEST-HOLD-00001",
+		local_ref: localRef,
 		idempotency_key: overrides.idempotency_key ?? "hold-idem-1",
 		type: "hold_invoice",
 		schema_version: 1,
@@ -40,6 +43,7 @@ export function makeHoldEntry(overrides: Partial<HoldQueueEntry> = {}): QueueEnt
 		attempts: overrides.attempts ?? [],
 		payload: overrides.payload ?? {
 			items: [{ item_code: "ITEM-1", qty: 1 }],
+			local_ref: localRef,
 		},
 	};
 }
