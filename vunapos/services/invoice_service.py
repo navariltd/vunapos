@@ -955,7 +955,6 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		return {"local_id": local_id, "invoice": existing.name, "status": "synced", "duplicate": True}
 
 	payload = _invoice_payload(payload)
-	print(frappe.as_json(payload, 2))
 	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
 	require_create(invoice_doctype)
 
