@@ -1,6 +1,6 @@
 import { AlertCircle, Banknote, CheckCircle2, CreditCard, Wallet, X } from "lucide-react";
 import React, { useMemo,useEffect, useState } from "react";
-
+import { useCreatePOSOpeningEntry } from "../services/openingEntry";
 import type { ModeOfPaymentDTO } from "../features/pos/types";
 import { usePOSProfileStore } from "../store/posProfileStore";
 
@@ -21,8 +21,7 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
 }) => {
   const [step, setStep] = useState<"form" | "creating" | "success">("form");
   const [error, setError] = useState("");
-  const [openingAmounts, setOpeningAmounts] = useState<Record<string, number>>({});
-  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
+const [openingAmounts, setOpeningAmounts] = useState<Record<string, string>>({});  const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
 
   const {
     posDetails,
@@ -33,7 +32,12 @@ const POSOpeningModal: React.FC<POSOpeningModalProps> = ({
     // isLoadingProfiles,
   } = usePOSProfileStore();
 
- 
+ const {
+  createOpeningEntry,
+  isCreating,
+  error: createError,
+  // success,
+} = useCreatePOSOpeningEntry();
 
 
   /**
@@ -148,9 +152,15 @@ const selectedPOSProfile = useMemo(() => {
     }
   };
 
-  const updatePaymentAmount = (modeOfPayment: string, amount: number) => {
-    setOpeningAmounts((previous) => ({ ...previous, [modeOfPayment]: amount }));
-  };
+const updatePaymentAmount = (
+  modeOfPayment: string,
+  amount: string
+) => {
+  setOpeningAmounts((previous) => ({
+    ...previous,
+    [modeOfPayment]: amount,
+  }));
+};
 
 const handleCreateOpeningEntry = async () => {
   if (!posProfile) {
@@ -171,36 +181,45 @@ const handleCreateOpeningEntry = async () => {
     setError("");
     setStep("creating");
 
-    const payload = {
+   const openingBalance = paymentMethods.map((method) => ({
+  mode_of_payment: method.mode_of_payment,
+  opening_amount: Number(
+    openingAmounts[method.mode_of_payment] || 0
+  ),
+}));
+
+    console.log("Creating POS Opening Entry:", {
       pos_profile: posProfile,
-      payments: paymentMethods.map((method) => ({
-        mode_of_payment: method.mode_of_payment,
-        amount: openingAmounts[method.mode_of_payment] ?? 0,
-      })),
-    };
-
-    console.log("Opening Entry Payload:", payload);
+      opening_balance: openingBalance,
+    });
 
 
-    // TODO: Replace with your frappe API call
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1500)
-    );
+ const response = await createOpeningEntry(
+  openingBalance,
+  posProfile
+);
+
+if (response) {
+  setStep("success");
+
+  window.setTimeout(() => {
+    onSuccess?.();
+    onClose();
+  }, 1000);
+}
 
 
-    setStep("success");
+    
 
 
-    window.setTimeout(() => {
-      onSuccess?.();
-      onClose();
-    }, 1000);
 
 
-  } catch (error) {
+
+  } catch (err) {
+
     setError(
-      error instanceof Error
-        ? error.message
+      err instanceof Error
+        ? err.message
         : "Failed to create POS opening entry"
     );
 
@@ -217,13 +236,11 @@ useEffect(() => {
     const amounts = { ...current };
 
 
-    paymentMethods.forEach((mode) => {
-
-      if (amounts[mode.mode_of_payment] === undefined) {
-        amounts[mode.mode_of_payment] = 0;
-      }
-
-    });
+   paymentMethods.forEach((mode) => {
+  if (amounts[mode.mode_of_payment] === undefined) {
+    amounts[mode.mode_of_payment] = "";
+  }
+});
 
 
     return amounts;
@@ -290,13 +307,19 @@ useEffect(() => {
                         <p className="font-medium">{method.mode_of_payment}</p>
                         <p className="text-xs text-gray-500">{method.type}</p>
                       </div>
-                      <input
-                        type="number"
-                        min="0"
-                        value={openingAmounts[method.mode_of_payment] ?? 0}
-                        onChange={(event) => updatePaymentAmount(method.mode_of_payment, Number(event.target.value))}
-                        className="w-24 rounded border px-2 py-1"
-                      />
+                   <input
+  type="number"
+  min="0"
+  placeholder="0.00"
+  value={openingAmounts[method.mode_of_payment] ?? ""}
+  onChange={(event) =>
+    updatePaymentAmount(
+      method.mode_of_payment,
+      event.target.value
+    )
+  }
+  className="w-24 rounded border px-2 py-1"
+/>
                     </div>
                   ))}
                   {!paymentMethods.length && (
@@ -305,10 +328,10 @@ useEffect(() => {
                 </div>
               </div>
 
-              {error && (
+              {(error || createError) && (
                 <div className="flex gap-2 rounded bg-red-50 p-3 text-red-600">
                   <AlertCircle className="h-4 w-4 shrink-0" />
-                  {error}
+                  {error || createError}
                 </div>
               )}
 
@@ -324,10 +347,14 @@ useEffect(() => {
 <button
   type="button"
   onClick={handleCreateOpeningEntry}
-  disabled={!posProfile || paymentMethods.length === 0}
+  disabled={
+    !posProfile ||
+    paymentMethods.length === 0 ||
+    isCreating
+  }
   className="rounded bg-blue-600 px-4 py-2 text-white disabled:cursor-not-allowed disabled:opacity-50"
 >
-  Start POS Session
+  {isCreating ? "Starting..." : "Start POS Session"}
 </button>
 </div>
             </div>
