@@ -1,4 +1,4 @@
-def item_to_dict(item, rate=None, actual_qty=None, barcode=None):
+def item_to_dict(item, rate=None, actual_qty=None, barcode=None, item_tax_template=None):
 	return {
 		"item_code": item.item_code,
 		"item_name": item.item_name,
@@ -10,4 +10,6 @@ def item_to_dict(item, rate=None, actual_qty=None, barcode=None):
 		"is_stock_item": item.is_stock_item,
 		"allow_negative_stock": item.allow_negative_stock,
 		"barcode": barcode,
+		"modified": item.get("modified"),
+		"item_tax_template": item_tax_template,
 	}

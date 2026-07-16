@@ -191,11 +191,11 @@
    "read_only_depends_on": null,
    "report_hide": 0,
    "reqd": 0,
-   "search_index": 0,
+   "search_index": 1,
    "show_dashboard": 0,
    "sort_options": 0,
    "translatable": 0,
-   "unique": 0,
+   "unique": 1,
    "width": null
   }
  ],

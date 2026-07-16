@@ -1,4 +1,4 @@
-import { ArchiveRestore, RefreshCw } from "lucide-react";
+import { AlertTriangle, ArchiveRestore, RefreshCw, Smartphone } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { HeldInvoiceDTO } from "../types";
@@ -59,35 +59,56 @@ export function HeldInvoicesPanel({
 
 			{heldInvoices.length ? (
 				<div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
-					{heldInvoices.map((invoice) => (
-						<button
-							key={`${invoice.doctype}-${invoice.name}`}
-							type="button"
-							className="w-full rounded-md border border-outline-variant bg-surface p-3 text-left hover:bg-surface-container"
-							onClick={() => onRestore(invoice)}
-						>
-							<div className="flex items-start justify-between gap-3">
-								<div className="min-w-0">
-									<p className="truncate text-sm font-semibold text-on-surface">{invoice.name}</p>
-									<p className="truncate text-xs text-on-surface-variant">
-										{invoice.customer_name || invoice.customer || "No customer"}
-									</p>
-									{invoice.modified ? (
-										<p className="mt-1 text-xs text-on-surface-variant">{formatModified(invoice.modified)}</p>
-									) : null}
-								</div>
-								<div className="shrink-0 text-right">
-									<p className="text-sm font-semibold text-on-surface">
-										{formatCurrency(invoice.total, invoice.currency || currency)}
-									</p>
-									<div className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
-										<ArchiveRestore className="size-3" />
-										Restore
+					{heldInvoices.map((invoice) => {
+						const isParked = invoice.queue_status === "error";
+						const isLocalPending = Boolean(invoice.is_local) && !isParked;
+						return (
+							<button
+								key={`${invoice.doctype}-${invoice.name}`}
+								type="button"
+								className={`w-full rounded-md border p-3 text-left ${
+									isParked
+										? "border-error bg-error-container text-on-error-container hover:bg-error-container/80"
+										: "border-outline-variant bg-surface hover:bg-surface-container"
+								}`}
+								onClick={() => onRestore(invoice)}
+							>
+								<div className="flex items-start justify-between gap-3">
+									<div className="min-w-0">
+										<p className="truncate text-sm font-semibold">{invoice.name}</p>
+										<p className={`truncate text-xs ${isParked ? "opacity-90" : "text-on-surface-variant"}`}>
+											{invoice.customer_name || invoice.customer || "No customer"}
+										</p>
+										{invoice.modified ? (
+											<p className={`mt-1 text-xs ${isParked ? "opacity-75" : "text-on-surface-variant"}`}>
+												{formatModified(invoice.modified)}
+											</p>
+										) : null}
+										{isParked ? (
+											<div className="mt-1 inline-flex items-center gap-1 text-xs font-medium">
+												<AlertTriangle className="size-3" />
+												Needs attention
+											</div>
+										) : isLocalPending ? (
+											<div className="mt-1 inline-flex items-center gap-1 text-xs text-on-surface-variant">
+												<Smartphone className="size-3" />
+												Saved on this device
+											</div>
+										) : null}
+									</div>
+									<div className="shrink-0 text-right">
+										<p className="text-sm font-semibold">
+											{formatCurrency(invoice.total, invoice.currency || currency)}
+										</p>
+										<div className={`mt-1 inline-flex items-center gap-1 text-xs ${isParked ? "" : "text-primary"}`}>
+											<ArchiveRestore className="size-3" />
+											Restore
+										</div>
 									</div>
 								</div>
-							</div>
-						</button>
-					))}
+							</button>
+						);
+					})}
 				</div>
 			) : null}
 		</div>

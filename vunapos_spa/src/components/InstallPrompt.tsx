@@ -37,10 +37,8 @@ function rememberDismissal() {
 	window.localStorage.setItem(DISMISS_KEY, String(Date.now()));
 }
 
-// Chrome on Android no longer shows an install banner on its own — the app has to
-// capture `beforeinstallprompt`, suppress it, and drive its own bottom-sheet UI that
-// later calls `.prompt()`. iOS Safari never fires that event at all, so it gets a
-// manual "Add to Home Screen" hint instead.
+// Chrome/Android no longer auto-shows an install banner, so we capture
+// `beforeinstallprompt` and display our own sheet.
 export function InstallPrompt() {
 	const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 	const [isOpen, setIsOpen] = useState(false);

@@ -1,46 +1,39 @@
 import { useMemo } from "react";
-import { useFrappeGetCall } from "frappe-react-sdk";
+import { useFrappeAuth } from "frappe-react-sdk";
+import { useLiveQuery } from "dexie-react-hooks";
 
 import type { BootstrapData } from "../types";
-import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { applyDelta } from "../../../lib/cacheEngine";
+import { profileRepository } from "../../../lib/repositories/profileRepository";
 
-export function useBootstrapData(posProfile?: string) {
-	const response = useFrappeGetCall<unknown>(
-		vunaMethods.getBootstrapData,
-		{ pos_profile: posProfile },
-		["vunapos_bootstrap", posProfile || ""],
-	);
+//  The POS profile comes from the local cache, reactively
+// (useLiveQuery re-renders the moment the Cache Engine writes a fresher profile)
+export function useBootstrapData() {
+	const profile = useLiveQuery(() => profileRepository.getActive());
+	const { currentUser } = useFrappeAuth();
 
-	const data = useMemo(() => {
-		if (!response.data) {
+	const data = useMemo<BootstrapData | null>(() => {
+		if (!profile) {
 			return null;
 		}
-		try {
-			return unwrapVunaResponse<BootstrapData>(response.data);
-		} catch (err) {
-			console.error(err);
-			return null;
-		}
-	}, [response.data]);
-
-	const parseError = useMemo(() => {
-		if (!response.data) {
-			return null;
-		}
-		try {
-			unwrapVunaResponse<BootstrapData>(response.data);
-			return null;
-		} catch (err) {
-			return err instanceof Error ? err.message : "Failed to load POS bootstrap data";
-		}
-	}, [response.data]);
-
-	const error = parseError || response.error?.message || null;
+		return {
+			current_user: currentUser || undefined,
+			pos_profile: profile.name,
+			company: profile.company,
+			warehouse: profile.warehouse,
+			price_list: profile.price_list,
+			currency: profile.currency,
+			default_customer: profile.default_customer as BootstrapData["default_customer"],
+			modes_of_payment: profile.modes_of_payment,
+			print_format: profile.print_format,
+			invoice_mode: profile.invoice_mode,
+		};
+	}, [profile, currentUser]);
 
 	return {
 		data,
-		error,
-		isLoading: response.isLoading,
-		reload: response.mutate,
+		error: null as string | null,
+		isLoading: profile === undefined,
+		reload: () => applyDelta(),
 	};
 }

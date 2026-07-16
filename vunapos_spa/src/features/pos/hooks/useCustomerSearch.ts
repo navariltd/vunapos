@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { useFrappePostCall } from "frappe-react-sdk";
+import { useLiveQuery } from "dexie-react-hooks";
 
 import type { CustomerDTO } from "../types";
-import { createCustomer, unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { createCustomer, vunaMethods } from "../../../services/vunaApi";
+import { customerRepository } from "../../../lib/repositories/customerRepository";
 
+// Search is local (Dexie), never network. Creating a customer still requires
+// connectivity - master data is server-authoritative and there's no offline
+// create/reconcile flow yet, so offline sales fall back to the default walk-in customer.
 export function useCustomerSearch(query: string) {
 	const createCall = useFrappePostCall(vunaMethods.createCustomer);
 	const [isCreating, setIsCreating] = useState(false);
@@ -19,33 +24,17 @@ export function useCustomerSearch(query: string) {
 		return () => window.clearTimeout(timeout);
 	}, [query]);
 
-	const response = useFrappeGetCall<unknown>(
-		vunaMethods.searchCustomers,
-		{ query: debouncedQuery, limit: 12 },
-		["vunapos_customers", debouncedQuery],
-	);
+	const cachedCustomers = useLiveQuery(() => customerRepository.search(debouncedQuery, 20), [debouncedQuery]);
 
-	const { customers, searchError } = useMemo(() => {
-		if (!response.data) {
-			return { customers: createdCustomers, searchError: null };
-		}
-		try {
-			const rows = unwrapVunaResponse<CustomerDTO[]>(response.data);
-			const merged = [...createdCustomers];
-			for (const row of rows) {
-				if (!merged.some((created) => created.customer === row.customer)) {
-					merged.push(row);
-				}
+	const customers = useMemo(() => {
+		const merged = [...createdCustomers];
+		for (const row of cachedCustomers ?? []) {
+			if (!merged.some((created) => created.customer === row.customer)) {
+				merged.push(row as CustomerDTO);
 			}
-			return { customers: merged, searchError: null };
-		} catch (err) {
-			console.error(err);
-			return {
-				customers: createdCustomers,
-				searchError: err instanceof Error ? err.message : "Failed to search customers",
-			};
 		}
-	}, [createdCustomers, response.data]);
+		return merged;
+	}, [cachedCustomers, createdCustomers]);
 
 	const create = useCallback(
 		async (params: { customer_name: string; mobile_no?: string; email_id?: string }) => {
@@ -72,9 +61,9 @@ export function useCustomerSearch(query: string) {
 	return {
 		create,
 		customers,
-		error: createError || searchError || response.error?.message || null,
+		error: createError,
 		isCreating,
-		isLoading: query !== debouncedQuery || response.isLoading,
-		search: response.mutate,
+		isLoading: query !== debouncedQuery || cachedCustomers === undefined,
+		search: () => {},
 	};
 }

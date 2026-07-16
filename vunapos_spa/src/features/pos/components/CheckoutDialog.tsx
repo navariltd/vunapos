@@ -2,14 +2,13 @@ import { useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
-import type { InvoiceDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
+import { useCartStore } from "../stores/cartStore";
+import type { ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
 	currency?: string;
-	invoice: InvoiceDTO | null;
 	isOpen: boolean;
-	isSubmitting?: boolean;
 	modesOfPayment: ModeOfPaymentDTO[];
 	onClose: () => void;
 	onConfirm: (payments: PaymentInput[], idempotencyKey: string) => void;
@@ -26,15 +25,7 @@ function createIdempotencyKey() {
 	return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function CheckoutDialog({
-	currency,
-	invoice,
-	isOpen,
-	isSubmitting,
-	modesOfPayment,
-	onClose,
-	onConfirm,
-}: CheckoutDialogProps) {
+export function CheckoutDialog({ currency, isOpen, modesOfPayment, onClose, onConfirm }: CheckoutDialogProps) {
 	if (!isOpen) {
 		return null;
 	}
@@ -42,8 +33,6 @@ export function CheckoutDialog({
 	return (
 		<CheckoutDialogContent
 			currency={currency}
-			invoice={invoice}
-			isSubmitting={isSubmitting}
 			modesOfPayment={modesOfPayment}
 			onClose={onClose}
 			onConfirm={onConfirm}
@@ -53,12 +42,12 @@ export function CheckoutDialog({
 
 function CheckoutDialogContent({
 	currency,
-	invoice,
-	isSubmitting,
 	modesOfPayment,
 	onClose,
 	onConfirm,
 }: Omit<CheckoutDialogProps, "isOpen">) {
+	const invoice = useCartStore((s) => s.invoice);
+	const isSubmitting = useCartStore((s) => s.isMutating);
 	const total = getInvoiceTotal(invoice);
 	const defaultMode = useMemo(
 		() => modesOfPayment.find((mode) => mode.default)?.mode_of_payment || modesOfPayment[0]?.mode_of_payment || "",

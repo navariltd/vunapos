@@ -1,0 +1,22 @@
+{
+	"name": "VunaPOS",
+	"short_name": "Vuna",
+	"description": "Point of sale for Vuna",
+	"start_url": "/vunapos",
+	"scope": "/",
+	"display": "standalone",
+	"theme_color": "#171717",
+	"background_color": "#f8f8f8",
+	"icons": [
+		{
+			"src": "vuna-192x192.png",
+			"sizes": "192x192",
+			"type": "image/png"
+		},
+		{
+			"src": "vuna-512x512.png",
+			"sizes": "512x512",
+			"type": "image/png"
+		}
+	]
+}

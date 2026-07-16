@@ -1,24 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ShoppingCart, X } from "lucide-react";
 
-import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
+import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
 import { Button } from "../../components/ui/Button";
+import { useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
+import { QueueInspectorPanel } from "./components/QueueInspectorPanel";
 import { useBootstrapData } from "./hooks/useBootstrapData";
+import { useCartActions } from "./hooks/useCartActions";
+import { useConnectivity } from "./hooks/useConnectivity";
+import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
-import { usePOSInvoice } from "./hooks/usePOSInvoice";
+import { isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
+import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
 };
-
-type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift";
 
 function printInvoiceHtml(printPayload: PrintPayload) {
 	const printFrame = document.createElement("iframe");
@@ -65,59 +69,64 @@ function getCheckoutErrorMessage(error: unknown) {
 
 export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
-	const [selectedCustomer, setSelectedCustomer] = useState<CustomerDTO | null | undefined>(undefined);
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
-	const [activePage, setActivePage] = useState<POSPage>("Home");
-	const [pageError, setPageError] = useState<string | null>(null);
-	const [lastSubmittedInvoice, setLastSubmittedInvoice] = useState<InvoiceDTO | null>(null);
-	const [lastHeldInvoice, setLastHeldInvoice] = useState<InvoiceDTO | null>(null);
+	const activePage = useNavigationStore((s) => s.activePage);
+	const setActivePage = useNavigationStore((s) => s.setActivePage);
+	const pageError = useUiFeedbackStore((s) => s.pageError);
+	const setPageError = useUiFeedbackStore((s) => s.setPageError);
+	const toast = useUiFeedbackStore((s) => s.toast);
+	const showToast = useUiFeedbackStore((s) => s.showToast);
+	const clearToast = useUiFeedbackStore((s) => s.clearToast);
 
 	const ownBootstrap = useBootstrapData();
 	const bootstrap = providedBootstrap || ownBootstrap;
 	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
 	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data), [bootstrap.data]);
 
-	const activeCustomer = selectedCustomer === undefined ? defaultCustomer : selectedCustomer;
+	const items = useItemSearch(itemSearchQuery);
+	const cartInvoice = useCartStore((s) => s.invoice);
+	const heldInvoicesView = useHeldInvoicesView();
+	const cartIsMutating = useCartStore((s) => s.isMutating);
+	const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
+	const cartError = useCartStore((s) => s.error);
+	const setCartPosProfile = useCartStore((s) => s.setPosProfile);
+	const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
+	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+	const cartActions = useCartActions();
+	const { isReachable } = useConnectivity();
 
-	const items = useItemSearch(itemSearchQuery, bootstrap.data?.pos_profile, activeCustomer?.customer);
-	const invoice = usePOSInvoice({
-		posProfile: bootstrap.data?.pos_profile,
-		selectedCustomer: activeCustomer,
-	});
-	const listHeldInvoices = invoice.listHeld;
-	const restoreHeldInvoice = invoice.restoreHeldInvoice;
-
-	const error = pageError || bootstrap.error || items.error || invoice.error;
-
-	useEffect(() => {
-		if (!lastSubmittedInvoice && !lastHeldInvoice) {
-			return undefined;
-		}
-
-		const timeout = window.setTimeout(() => {
-			setLastSubmittedInvoice(null);
-			setLastHeldInvoice(null);
-		}, 5000);
-
-		return () => window.clearTimeout(timeout);
-	}, [lastHeldInvoice, lastSubmittedInvoice]);
+	const error = pageError || bootstrap.error || items.error || cartError;
 
 	useEffect(() => {
-		if (!bootstrap.data?.pos_profile) {
+		setCartPosProfile(bootstrap.data?.pos_profile);
+	}, [bootstrap.data?.pos_profile, setCartPosProfile]);
+
+	useEffect(() => {
+		setCartDefaultCustomer(defaultCustomer);
+	}, [defaultCustomer, setCartDefaultCustomer]);
+
+	useEffect(() => {
+		// Skip the fetch when offline: frappe-react-sdk throws a raw TypeError on a pure
+		// network failure (reads error.response.data unconditionally). isReachable can
+		// lag a disconnect by a beat, so also check navigator.onLine as a last-instant guard.
+		if (!bootstrap.data?.pos_profile || !isReachable || navigator.onLine === false) {
 			return;
 		}
 
-		listHeldInvoices().catch((err) => {
+		cartActions.listHeld().catch((err) => {
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		});
-	}, [bootstrap.data?.pos_profile, listHeldInvoices]);
+		// cartActions is a fresh object each render (see useCartActions) - keying on its
+		// stable inputs instead avoids re-firing every render.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [bootstrap.data?.pos_profile, isReachable, setPageError]);
 
 	const handleAddItem = async (item: ItemDTO) => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
+		clearToast();
 		try {
-			await invoice.addCartItem(item);
+			await cartActions.addCartItem(item);
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to add item");
 		}
@@ -129,14 +138,28 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		setIsCheckoutOpen(true);
 	};
 
+	const handleClearCart = () => {
+		if (cartInvoice?.items?.length && !window.confirm("Clear all items from the current cart?")) {
+			return;
+		}
+		void cartActions.clearCart();
+	};
+
 	const handleHoldCart = async () => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
-		setLastHeldInvoice(null);
+		clearToast();
+		// A brand-new local cart holds itself via the offline queue, no connectivity
+		// needed. Only the two online-only branches (editing/holding an already
+		// server-tracked invoice) need this guard, for the same frappe-react-sdk
+		// raw-TypeError-on-network-failure reason as the fetch guard above.
+		if (!isUnsyncedLocalCart(cartInvoice) && (!isReachable || navigator.onLine === false)) {
+			setPageError("Holding invoices needs a connection - try again once you're back online.");
+			return;
+		}
 		try {
-			const heldInvoice = await invoice.holdCart();
+			const heldInvoice = await cartActions.holdCart();
 			if (heldInvoice) {
-				setLastHeldInvoice(heldInvoice);
+				showToast({ type: "held", invoice: heldInvoice });
 				setSelectedCustomer(undefined);
 				setIsCartOpen(false);
 			}
@@ -145,38 +168,36 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		}
 	};
 
-	const handleRefreshHeld = useCallback(async () => {
+	const handleRefreshHeld = async () => {
 		setPageError(null);
+		if (!isReachable || navigator.onLine === false) {
+			setPageError("Held invoices need a connection - try again once you're back online.");
+			return;
+		}
 		try {
-			await listHeldInvoices();
+			await cartActions.listHeld();
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		}
-	}, [listHeldInvoices]);
+	};
 
 	useEffect(() => {
-		const handleNavigation = (event: Event) => {
-			const page = (event as CustomEvent<{ page?: POSPage }>).detail?.page;
-			if (!page) {
-				return;
-			}
-
-			setActivePage(page);
-			if (page === "Invoices") {
-				handleRefreshHeld();
-			}
-		};
-
-		window.addEventListener("vunapos_nav", handleNavigation);
-		return () => window.removeEventListener("vunapos_nav", handleNavigation);
-	}, [handleRefreshHeld]);
+		if (activePage === "Invoices") {
+			handleRefreshHeld();
+		}
+		// handleRefreshHeld is recreated every render (not memoized) - keying on
+		// activePage alone is correct, it's the only thing this should react to.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activePage]);
 
 	const handleRestoreHeld = async (heldInvoice: HeldInvoiceDTO) => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
-		setLastHeldInvoice(null);
+		clearToast();
 		try {
-			const restoredInvoice = await restoreHeldInvoice(heldInvoice);
+			const restoredInvoice =
+				heldInvoice.is_local && heldInvoice.local_id
+					? await cartActions.restoreLocalHold(heldInvoice.local_id)
+					: await cartActions.restoreHeldInvoice(heldInvoice);
 			setSelectedCustomer(
 				restoredInvoice.customer
 					? {
@@ -186,7 +207,6 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					: null,
 			);
 			setActivePage("Home");
-			window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
 			setIsCartOpen(true);
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to restore held invoice");
@@ -196,10 +216,14 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
 		try {
-			const result = await invoice.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
+			const result = await cartActions.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);
-			setLastSubmittedInvoice(result?.invoice || null);
+			if (result?.invoice) {
+				showToast({ type: "submitted", invoice: result.invoice });
+			} else {
+				clearToast();
+			}
 			if (result?.printPayload) {
 				printInvoiceHtml(result.printPayload);
 			}
@@ -232,24 +256,18 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 								<h2 className="text-lg font-semibold text-on-surface">Invoices</h2>
 								<p className="text-sm text-on-surface-variant">Restore held draft sales when the customer is ready.</p>
 							</div>
-							<Button
-								type="button"
-								variant="ghost"
-								onClick={() => {
-									setActivePage("Home");
-									window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
-								}}
-							>
+							<Button type="button" variant="ghost" onClick={() => setActivePage("Home")}>
 								Back to POS
 							</Button>
 						</div>
 						<HeldInvoicesPanel
 							currency={bootstrap.data?.currency}
-							heldInvoices={invoice.heldInvoices}
-							isLoading={invoice.isHeldLoading}
+							heldInvoices={heldInvoicesView}
+							isLoading={cartIsHeldLoading}
 							onRefresh={handleRefreshHeld}
 							onRestore={handleRestoreHeld}
 						/>
+						<QueueInspectorPanel />
 					</div>
 				</section>
 			) : (
@@ -265,7 +283,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 								currency={bootstrap.data?.currency}
 								isLoading={items.isLoading}
 								items={items.items}
-								mutationDisabled={invoice.isMutating}
+								mutationDisabled={cartIsMutating}
 								onAddItem={handleAddItem}
 							/>
 						</div>
@@ -273,16 +291,13 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					<CartPanel
 						className="hidden xl:flex"
 						currency={bootstrap.data?.currency}
-						invoice={invoice.invoice}
-						isMutating={invoice.isMutating}
-						selectedCustomer={activeCustomer}
 						onCheckout={handleOpenCheckout}
 						onClearCustomer={() => setSelectedCustomer(null)}
-						onClearCart={invoice.clearCart}
+						onClearCart={handleClearCart}
 						onHold={handleHoldCart}
-						onRemoveItem={invoice.removeCartItem}
+						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={setSelectedCustomer}
-						onUpdateQty={invoice.updateCartItemQty}
+						onUpdateQty={cartActions.updateCartItemQty}
 					/>
 				</div>
 			)}
@@ -294,9 +309,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				aria-label="Open cart"
 			>
 				<ShoppingCart className="size-6" />
-				{invoice.invoice?.items?.length ? (
+				{cartInvoice?.items?.length ? (
 					<span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-error px-1 text-xs font-semibold text-on-error">
-						{invoice.invoice.items.length}
+						{cartInvoice.items.length}
 					</span>
 				) : null}
 			</button>
@@ -327,16 +342,13 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<CartPanel
 							className="flex-1 border-0"
 							currency={bootstrap.data?.currency}
-							invoice={invoice.invoice}
-							isMutating={invoice.isMutating}
-							selectedCustomer={activeCustomer}
 							onCheckout={handleOpenCheckout}
 							onClearCustomer={() => setSelectedCustomer(null)}
-							onClearCart={invoice.clearCart}
+							onClearCart={handleClearCart}
 							onHold={handleHoldCart}
-							onRemoveItem={invoice.removeCartItem}
+							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={setSelectedCustomer}
-							onUpdateQty={invoice.updateCartItemQty}
+							onUpdateQty={cartActions.updateCartItemQty}
 						/>
 					</div>
 				</div>
@@ -344,29 +356,27 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 			<CheckoutDialog
 				currency={bootstrap.data?.currency}
-				invoice={invoice.invoice}
 				isOpen={isCheckoutOpen}
-				isSubmitting={invoice.isMutating}
 				modesOfPayment={paymentModes}
 				onClose={() => setIsCheckoutOpen(false)}
 				onConfirm={handleCheckout}
 			/>
 
-			{lastSubmittedInvoice?.docstatus === 1 ? (
+			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
 				<div
 					role="status"
 					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md"
 				>
-					Invoice {lastSubmittedInvoice.name} submitted for {getInvoiceTotal(lastSubmittedInvoice).toFixed(2)}.
+					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}.
 				</div>
 			) : null}
 
-			{lastHeldInvoice?.docstatus === 0 ? (
+			{toast?.type === "held" && toast.invoice.docstatus === 0 ? (
 				<div
 					role="status"
 					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md"
 				>
-					Invoice {lastHeldInvoice.name} held as draft.
+					Invoice {toast.invoice.name} held as draft.
 				</div>
 			) : null}
 		</div>
