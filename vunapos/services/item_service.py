@@ -59,11 +59,15 @@ def _get_rate(item_code, profile):
 def _to_item_payload(item_code, profile, barcode=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
+	item_tax_template = next(
+		(row.item_tax_template for row in item.get("taxes", []) if row.item_tax_template), None
+	)
 	return item_to_dict(
 		item,
 		rate=_get_rate(item.item_code, profile),
 		actual_qty=_get_actual_qty(item.item_code, profile.warehouse),
 		barcode=barcode or _get_barcode(item.item_code),
+		item_tax_template=item_tax_template,
 	)
 
 
@@ -82,6 +86,26 @@ def _get_first_barcode_map(item_codes):
 		if row.parent not in barcode_map:
 			barcode_map[row.parent] = row.barcode
 	return barcode_map
+
+
+def _get_item_tax_template_map(item_codes):
+	# One `Item Tax` row per item in practice (no tax_category-based multi-row
+	# selection in this client's data) - first row wins, matching what
+	# get_item_details() falls back to when there's nothing to disambiguate.
+	if not item_codes:
+		return {}
+
+	rows = frappe.get_all(
+		"Item Tax",
+		filters={"parent": ["in", item_codes]},
+		fields=["parent", "item_tax_template"],
+		order_by="idx asc",
+	)
+	template_map = {}
+	for row in rows:
+		if row.parent not in template_map and row.item_tax_template:
+			template_map[row.parent] = row.item_tax_template
+	return template_map
 
 
 def _get_actual_qty_map(item_codes, warehouse):
@@ -130,7 +154,7 @@ def _get_rate_map(item_codes, price_list):
 	return rate_map
 
 
-def _to_item_payload_from_row(item, rate_map, actual_qty_map, barcode_map):
+def _to_item_payload_from_row(item, rate_map, actual_qty_map, barcode_map, item_tax_template_map=None):
 	rate = rate_map.get(item.name)
 	if rate is None:
 		rate = flt(item.standard_rate)
@@ -141,6 +165,7 @@ def _to_item_payload_from_row(item, rate_map, actual_qty_map, barcode_map):
 		rate=rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
+		item_tax_template=(item_tax_template_map or {}).get(item.name),
 	)
 
 
@@ -170,7 +195,7 @@ def get_priority_price_list(customer=None, pos_profile=None):
 	return frappe.db.get_single_value("Selling Settings", "selling_price_list")
 
 
-def search_items(query=None, pos_profile=None, customer=None, limit=None):
+def search_items(query=None, pos_profile=None, customer=None, limit=None, since=None):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	price_list = get_priority_price_list(customer=customer, pos_profile=profile)
@@ -179,6 +204,20 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None):
 
 	barcode_item_code = _get_item_code_from_barcode(query) if query else None
 	filters = {"disabled": 0, "is_sales_item": 1, "has_variants": 0}
+	query_filters = dict(filters)
+	if since:
+		# Item.modified alone misses rate-only changes: Item Price is a separate doctype
+		# and doesn't bump the parent Item's modified timestamp.
+		changed_item_codes = set(frappe.get_all("Item", filters={"modified": [">", since]}, pluck="name"))
+		if price_list:
+			changed_item_codes.update(
+				frappe.get_all(
+					"Item Price",
+					filters={"price_list": price_list, "modified": [">", since]},
+					pluck="item_code",
+				)
+			)
+		query_filters["name"] = ["in", list(changed_item_codes) or [""]]
 	or_filters = []
 	if query:
 		or_filters = [
@@ -188,7 +227,7 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None):
 
 	get_all_args = {
 		"doctype": "Item",
-		"filters": filters,
+		"filters": query_filters,
 		"or_filters": or_filters,
 		"fields": [
 			"name",
@@ -200,6 +239,7 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None):
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",
+			"modified",
 		],
 		"order_by": "item_name asc",
 	}
@@ -231,11 +271,14 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None):
 	barcode_map = _get_first_barcode_map(item_codes)
 	actual_qty_map = _get_actual_qty_map(item_codes, profile.warehouse)
 	rate_map = _get_rate_map(item_codes, price_list)
+	item_tax_template_map = _get_item_tax_template_map(item_codes)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
 
 	return [
-		_to_item_payload_from_row(item_by_code[item_code], rate_map, actual_qty_map, barcode_map)
+		_to_item_payload_from_row(
+			item_by_code[item_code], rate_map, actual_qty_map, barcode_map, item_tax_template_map
+		)
 		for item_code in item_codes
 	]
 

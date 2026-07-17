@@ -2,7 +2,8 @@ import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
-import type { CustomerDTO, InvoiceDTO } from "../types";
+import { getActiveCustomer, useCartStore } from "../stores/cartStore";
+import type { CustomerDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
@@ -10,8 +11,6 @@ import { CustomerSelector } from "./CustomerSelector";
 type CartPanelProps = {
 	className?: string;
 	currency?: string;
-	invoice?: InvoiceDTO | null;
-	isMutating?: boolean;
 	onCheckout: () => void;
 	onClearCustomer: () => void;
 	onClearCart: () => void;
@@ -19,14 +18,11 @@ type CartPanelProps = {
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
-	selectedCustomer?: CustomerDTO | null;
 };
 
 export function CartPanel({
 	className,
 	currency,
-	invoice,
-	isMutating,
 	onCheckout,
 	onClearCustomer,
 	onClearCart,
@@ -34,8 +30,10 @@ export function CartPanel({
 	onRemoveItem,
 	onSelectCustomer,
 	onUpdateQty,
-	selectedCustomer,
 }: CartPanelProps) {
+	const invoice = useCartStore((s) => s.invoice);
+	const isMutating = useCartStore((s) => s.isMutating);
+	const selectedCustomer = useCartStore(getActiveCustomer);
 	const items = invoice?.items || [];
 	const total = getInvoiceTotal(invoice);
 	const taxes = invoice?.taxes || [];

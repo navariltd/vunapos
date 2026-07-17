@@ -1,28 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { CircleAlert, ShoppingCart, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ShoppingCart, X } from "lucide-react";
 
-import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
+import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
 import { Button } from "../../components/ui/Button";
+import { useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
+import { QueueInspectorPanel } from "./components/QueueInspectorPanel";
 import { useBootstrapData } from "./hooks/useBootstrapData";
+import { useCartActions } from "./hooks/useCartActions";
+import { useConnectivity } from "./hooks/useConnectivity";
+import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
-import { usePOSInvoice } from "./hooks/usePOSInvoice";
-import { useModesOfPaymentStore } from "../../store/modesOfPaymentStore";
-import { usePOSProfileStore } from "../../store/posProfileStore";
-
-import  POSOpeningEntryModal  from "../../components/PosOpenningEntryDialog";
+import { isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
+import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
 };
-
-type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift";
 
 function printInvoiceHtml(printPayload: PrintPayload) {
 	const printFrame = document.createElement("iframe");
@@ -52,8 +52,6 @@ function printInvoiceHtml(printPayload: PrintPayload) {
 	}, 100);
 }
 
-
-
 function getCheckoutErrorMessage(error: unknown) {
 	if (error instanceof VunaApiError) {
 		if (error.code === "PAYMENT_TOTAL_MISMATCH") {
@@ -69,172 +67,66 @@ function getCheckoutErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : "Checkout failed";
 }
 
-function isMissingPOSProfileError(error: unknown) {
-	if (!error) {
-		return false;
-	}
-
-	const message =
-		error instanceof Error
-			? error.message
-			: typeof error === "object" && "message" in error
-				? String(error.message)
-				: String(error);
-
-	return (
-		message.includes("No POS Profile assigned to user") ||
-		message.includes("No POS Profile has been assigned to your account")
-	);
-}
-
-function POSSetupRequiredDialog({ message }: { message: string }) {
-	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-			<div
-				role="alertdialog"
-				aria-modal="true"
-				aria-labelledby="pos-setup-required-title"
-				className="w-full max-w-md rounded-xl border border-error bg-surface p-6 shadow-xl"
-			>
-				<div className="flex items-start gap-3">
-					<CircleAlert className="mt-0.5 size-6 shrink-0 text-error" aria-hidden="true" />
-					<div>
-						<h2 id="pos-setup-required-title" className="text-lg font-semibold text-on-surface">
-							POS setup required
-						</h2>
-						<p className="mt-2 text-sm text-on-surface-variant">{message}</p>
-						<p className="mt-4 text-sm font-medium text-on-surface">
-							Please contact your administrator to assign a POS Profile to your account.
-						</p>
-					</div>
-				</div>
-			</div>
-		</div>
-	);
-}
-
 export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
-	 const getUserFriendlyError = (error: unknown): string => {
-	if (!error) {
-		return "";
-	}
-
-	const message =
-		error instanceof VunaApiError
-			? error.message
-			: error instanceof Error
-				? error.message
-				: typeof error === "object" && "message" in error
-					? String(error.message)
-					: String(error);
-
-	if (
-		message.includes("No POS Profile assigned to user") ||
-		message.includes("No POS Profile")
-	) {
-		return "No POS Profile has been assigned to your account. Please contact your administrator to complete your POS setup.";
-	}
-
-	return message || "An unexpected error occurred. Please contact your administrator.";
-};
-	const [showOpeningModal, setShowOpeningModal] = useState(false);
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
-	const [selectedCustomer, setSelectedCustomer] = useState<CustomerDTO | null | undefined>(undefined);
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
-	const [activePage, setActivePage] = useState<POSPage>("Home");
-	const [pageError, setPageError] = useState<string | null>(null);
-	const [lastSubmittedInvoice, setLastSubmittedInvoice] = useState<InvoiceDTO | null>(null);
-	const [lastHeldInvoice, setLastHeldInvoice] = useState<InvoiceDTO | null>(null);
+	const activePage = useNavigationStore((s) => s.activePage);
+	const setActivePage = useNavigationStore((s) => s.setActivePage);
+	const pageError = useUiFeedbackStore((s) => s.pageError);
+	const setPageError = useUiFeedbackStore((s) => s.setPageError);
+	const toast = useUiFeedbackStore((s) => s.toast);
+	const showToast = useUiFeedbackStore((s) => s.showToast);
+	const clearToast = useUiFeedbackStore((s) => s.clearToast);
 
 	const ownBootstrap = useBootstrapData();
 	const bootstrap = providedBootstrap || ownBootstrap;
-	const storedPosProfile = usePOSProfileStore((state) => state.posDetails?.name);
-	const storedModesOfPayment = useModesOfPaymentStore((state) => state.modesOfPayment);
-	const storedModesPosProfile = useModesOfPaymentStore((state) => state.posProfile);
-	const setStoredModesOfPayment = useModesOfPaymentStore((state) => state.setModesOfPayment);
+	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
+	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data), [bootstrap.data]);
+
+	const items = useItemSearch(itemSearchQuery);
+	const cartInvoice = useCartStore((s) => s.invoice);
+	const heldInvoicesView = useHeldInvoicesView();
+	const cartIsMutating = useCartStore((s) => s.isMutating);
+	const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
+	const cartError = useCartStore((s) => s.error);
+	const setCartPosProfile = useCartStore((s) => s.setPosProfile);
+	const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
+	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+	const cartActions = useCartActions();
+	const { isReachable } = useConnectivity();
+
+	const error = pageError || bootstrap.error || items.error || cartError;
 
 	useEffect(() => {
-		const posProfile = bootstrap.data?.pos_profile;
-		setStoredModesOfPayment(posProfile, getPaymentModes(bootstrap.data));
-	}, [bootstrap.data, setStoredModesOfPayment]);
-	
-	const defaultCustomer = useMemo(
-	() => normalizeDefaultCustomer(bootstrap.data ?? {}),
-	[bootstrap.data]
-);
+		setCartPosProfile(bootstrap.data?.pos_profile);
+	}, [bootstrap.data?.pos_profile, setCartPosProfile]);
 
-	const posProfile = storedPosProfile ?? bootstrap.data?.pos_profile;
-	const paymentModes = useMemo(
-		() =>
-			storedModesPosProfile === posProfile
-				? storedModesOfPayment
-				: getPaymentModes(bootstrap.data ?? {}),
-		[bootstrap.data, posProfile, storedModesOfPayment, storedModesPosProfile],
-	);
-
-	const activeCustomer = selectedCustomer === undefined ? defaultCustomer : selectedCustomer;
-
-const isPOSReady =
-	bootstrap.data?.session?.ready === true &&
-	bootstrap.data?.session?.status === "OPEN";
-
-
-const items = useItemSearch(
-	itemSearchQuery,
-	posProfile ?? undefined,
-	activeCustomer?.customer,
-	isPOSReady,
-);
-
-
-const invoice = usePOSInvoice({
-	posProfile: isPOSReady ? posProfile ?? undefined : undefined,
-	selectedCustomer: isPOSReady ? activeCustomer : null,
-});
-	const listHeldInvoices = invoice.listHeld;
-	const restoreHeldInvoice = invoice.restoreHeldInvoice;
-
-const error = pageError
-	? getUserFriendlyError(pageError)
-	: bootstrap.error
-		? getUserFriendlyError(bootstrap.error)
-		: items.error
-			? getUserFriendlyError(items.error)
-			: invoice.error
-				? getUserFriendlyError(invoice.error)
-				: null;
 	useEffect(() => {
-		if (!lastSubmittedInvoice && !lastHeldInvoice) {
-			return undefined;
-		}
+		setCartDefaultCustomer(defaultCustomer);
+	}, [defaultCustomer, setCartDefaultCustomer]);
 
-		const timeout = window.setTimeout(() => {
-			setLastSubmittedInvoice(null);
-			setLastHeldInvoice(null);
-		}, 5000);
-
-		return () => window.clearTimeout(timeout);
-	}, [lastHeldInvoice, lastSubmittedInvoice]);
-	const requiresPOSSetup = [pageError, bootstrap.error, items.error, invoice.error, error].some(
-		isMissingPOSProfileError,
-	);
-	
 	useEffect(() => {
-		if (!isPOSReady) {
+		// Skip the fetch when offline: frappe-react-sdk throws a raw TypeError on a pure
+		// network failure (reads error.response.data unconditionally). isReachable can
+		// lag a disconnect by a beat, so also check navigator.onLine as a last-instant guard.
+		if (!bootstrap.data?.pos_profile || !isReachable || navigator.onLine === false) {
 			return;
 		}
 
-		listHeldInvoices().catch((err) => {
+		cartActions.listHeld().catch((err) => {
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		});
-	}, [isPOSReady, listHeldInvoices]);
+		// cartActions is a fresh object each render (see useCartActions) - keying on its
+		// stable inputs instead avoids re-firing every render.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [bootstrap.data?.pos_profile, isReachable, setPageError]);
 
 	const handleAddItem = async (item: ItemDTO) => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
+		clearToast();
 		try {
-			await invoice.addCartItem(item);
+			await cartActions.addCartItem(item);
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to add item");
 		}
@@ -246,14 +138,28 @@ const error = pageError
 		setIsCheckoutOpen(true);
 	};
 
+	const handleClearCart = () => {
+		if (cartInvoice?.items?.length && !window.confirm("Clear all items from the current cart?")) {
+			return;
+		}
+		void cartActions.clearCart();
+	};
+
 	const handleHoldCart = async () => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
-		setLastHeldInvoice(null);
+		clearToast();
+		// A brand-new local cart holds itself via the offline queue, no connectivity
+		// needed. Only the two online-only branches (editing/holding an already
+		// server-tracked invoice) need this guard, for the same frappe-react-sdk
+		// raw-TypeError-on-network-failure reason as the fetch guard above.
+		if (!isUnsyncedLocalCart(cartInvoice) && (!isReachable || navigator.onLine === false)) {
+			setPageError("Holding invoices needs a connection - try again once you're back online.");
+			return;
+		}
 		try {
-			const heldInvoice = await invoice.holdCart();
+			const heldInvoice = await cartActions.holdCart();
 			if (heldInvoice) {
-				setLastHeldInvoice(heldInvoice);
+				showToast({ type: "held", invoice: heldInvoice });
 				setSelectedCustomer(undefined);
 				setIsCartOpen(false);
 			}
@@ -262,57 +168,36 @@ const error = pageError
 		}
 	};
 
-	const handleRefreshHeld = useCallback(async () => {
+	const handleRefreshHeld = async () => {
 		setPageError(null);
+		if (!isReachable || navigator.onLine === false) {
+			setPageError("Held invoices need a connection - try again once you're back online.");
+			return;
+		}
 		try {
-			await listHeldInvoices();
+			await cartActions.listHeld();
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
 		}
-	}, [listHeldInvoices]);
+	};
+
 	useEffect(() => {
-	const session = bootstrap.data?.session;
-
-	if (!bootstrap.data?.pos_profile) {
-		setShowOpeningModal(false);
-		return;
-	}
-
-	if (!session?.ready) {
-		// POS profile exists but no opening entry
-		setShowOpeningModal(true);
-		return;
-	}
-
-	setShowOpeningModal(session.status !== "OPEN");
-
-}, [
-	bootstrap.data?.pos_profile,
-	bootstrap.data?.session
-]);
-	useEffect(() => {
-		const handleNavigation = (event: Event) => {
-			const page = (event as CustomEvent<{ page?: POSPage }>).detail?.page;
-			if (!page) {
-				return;
-			}
-
-			setActivePage(page);
-			if (page === "Invoices") {
-				handleRefreshHeld();
-			}
-		};
-
-		window.addEventListener("vunapos_nav", handleNavigation);
-		return () => window.removeEventListener("vunapos_nav", handleNavigation);
-	}, [handleRefreshHeld]);
+		if (activePage === "Invoices") {
+			handleRefreshHeld();
+		}
+		// handleRefreshHeld is recreated every render (not memoized) - keying on
+		// activePage alone is correct, it's the only thing this should react to.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [activePage]);
 
 	const handleRestoreHeld = async (heldInvoice: HeldInvoiceDTO) => {
 		setPageError(null);
-		setLastSubmittedInvoice(null);
-		setLastHeldInvoice(null);
+		clearToast();
 		try {
-			const restoredInvoice = await restoreHeldInvoice(heldInvoice);
+			const restoredInvoice =
+				heldInvoice.is_local && heldInvoice.local_id
+					? await cartActions.restoreLocalHold(heldInvoice.local_id)
+					: await cartActions.restoreHeldInvoice(heldInvoice);
 			setSelectedCustomer(
 				restoredInvoice.customer
 					? {
@@ -322,26 +207,23 @@ const error = pageError
 					: null,
 			);
 			setActivePage("Home");
-			window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
 			setIsCartOpen(true);
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to restore held invoice");
 		}
 	};
-console.log("POS DEBUG", {
-	bootstrap: bootstrap.data,
-	items: items.items,
-	paymentModes,
-	invoice: invoice.invoice,
-	error
-});
+
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
 		try {
-			const result = await invoice.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
+			const result = await cartActions.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);
-			setLastSubmittedInvoice(result?.invoice || null);
+			if (result?.invoice) {
+				showToast({ type: "submitted", invoice: result.invoice });
+			} else {
+				clearToast();
+			}
 			if (result?.printPayload) {
 				printInvoiceHtml(result.printPayload);
 			}
@@ -351,7 +233,6 @@ console.log("POS DEBUG", {
 	};
 
 	if (bootstrap.isLoading) {
-		
 		return (
 			<div className="flex min-h-[60vh] items-center justify-center">
 				<p className="text-sm font-medium text-on-surface-variant">Loading POS workspace...</p>
@@ -359,38 +240,13 @@ console.log("POS DEBUG", {
 		);
 	}
 
-
-
-
-if (requiresPOSSetup) {
-	return <POSSetupRequiredDialog message={getUserFriendlyError(error || bootstrap.error)} />;
-}
-
-
-if (!isPOSReady && bootstrap.data?.pos_profile) {
-	return (
-		<POSOpeningEntryModal
-			isOpen={showOpeningModal}
-			onClose={() => {}}
-			onSuccess={() => {
-				window.location.reload();
-			}}
-		/>
-	);
-}
 	return (
 		<div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
-	{error ? (
-	<div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
-		<p className="font-semibold">
-			POS Setup Required
-		</p>
-
-		<p className="mt-1">
-			{error}
-		</p>
-	</div>
-) : null}
+			{error ? (
+				<div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
+					{error}
+				</div>
+			) : null}
 
 			{activePage === "Invoices" ? (
 				<section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4">
@@ -400,24 +256,18 @@ if (!isPOSReady && bootstrap.data?.pos_profile) {
 								<h2 className="text-lg font-semibold text-on-surface">Invoices</h2>
 								<p className="text-sm text-on-surface-variant">Restore held draft sales when the customer is ready.</p>
 							</div>
-							<Button
-								type="button"
-								variant="ghost"
-								onClick={() => {
-									setActivePage("Home");
-									window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: "Home" } }));
-								}}
-							>
+							<Button type="button" variant="ghost" onClick={() => setActivePage("Home")}>
 								Back to POS
 							</Button>
 						</div>
 						<HeldInvoicesPanel
 							currency={bootstrap.data?.currency}
-							heldInvoices={invoice.heldInvoices ?? []}
-							isLoading={invoice.isHeldLoading}
+							heldInvoices={heldInvoicesView}
+							isLoading={cartIsHeldLoading}
 							onRefresh={handleRefreshHeld}
 							onRestore={handleRestoreHeld}
 						/>
+						<QueueInspectorPanel />
 					</div>
 				</section>
 			) : (
@@ -432,8 +282,8 @@ if (!isPOSReady && bootstrap.data?.pos_profile) {
 							<ItemGrid
 								currency={bootstrap.data?.currency}
 								isLoading={items.isLoading}
-								items={items.items ?? []}
-								mutationDisabled={invoice.isMutating}
+								items={items.items}
+								mutationDisabled={cartIsMutating}
 								onAddItem={handleAddItem}
 							/>
 						</div>
@@ -441,16 +291,13 @@ if (!isPOSReady && bootstrap.data?.pos_profile) {
 					<CartPanel
 						className="hidden xl:flex"
 						currency={bootstrap.data?.currency}
-						invoice={invoice.invoice}
-						isMutating={invoice.isMutating}
-						selectedCustomer={activeCustomer}
 						onCheckout={handleOpenCheckout}
 						onClearCustomer={() => setSelectedCustomer(null)}
-						onClearCart={invoice.clearCart}
+						onClearCart={handleClearCart}
 						onHold={handleHoldCart}
-						onRemoveItem={invoice.removeCartItem}
+						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={setSelectedCustomer}
-						onUpdateQty={invoice.updateCartItemQty}
+						onUpdateQty={cartActions.updateCartItemQty}
 					/>
 				</div>
 			)}
@@ -462,9 +309,9 @@ if (!isPOSReady && bootstrap.data?.pos_profile) {
 				aria-label="Open cart"
 			>
 				<ShoppingCart className="size-6" />
-				{invoice.invoice?.items?.length ? (
+				{cartInvoice?.items?.length ? (
 					<span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-error px-1 text-xs font-semibold text-on-error">
-						{invoice.invoice.items?.length}
+						{cartInvoice.items.length}
 					</span>
 				) : null}
 			</button>
@@ -495,47 +342,41 @@ if (!isPOSReady && bootstrap.data?.pos_profile) {
 						<CartPanel
 							className="flex-1 border-0"
 							currency={bootstrap.data?.currency}
-							invoice={invoice?.invoice}
-							isMutating={invoice.isMutating}
-							selectedCustomer={activeCustomer}
 							onCheckout={handleOpenCheckout}
 							onClearCustomer={() => setSelectedCustomer(null)}
-							onClearCart={invoice.clearCart}
+							onClearCart={handleClearCart}
 							onHold={handleHoldCart}
-							onRemoveItem={invoice.removeCartItem}
+							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={setSelectedCustomer}
-							onUpdateQty={invoice.updateCartItemQty}
+							onUpdateQty={cartActions.updateCartItemQty}
 						/>
 					</div>
 				</div>
 			) : null}
 
-
 			<CheckoutDialog
 				currency={bootstrap.data?.currency}
-				invoice={invoice.invoice}
 				isOpen={isCheckoutOpen}
-				isSubmitting={invoice.isMutating}
 				modesOfPayment={paymentModes}
 				onClose={() => setIsCheckoutOpen(false)}
 				onConfirm={handleCheckout}
 			/>
 
-			{lastSubmittedInvoice?.docstatus === 1 ? (
+			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
 				<div
 					role="status"
 					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md"
 				>
-					Invoice {lastSubmittedInvoice.name} submitted for {getInvoiceTotal(lastSubmittedInvoice).toFixed(2)}.
+					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}.
 				</div>
 			) : null}
 
-			{lastHeldInvoice?.docstatus === 0 ? (
+			{toast?.type === "held" && toast.invoice.docstatus === 0 ? (
 				<div
 					role="status"
 					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md"
 				>
-					Invoice {lastHeldInvoice.name} held as draft.
+					Invoice {toast.invoice.name} held as draft.
 				</div>
 			) : null}
 		</div>

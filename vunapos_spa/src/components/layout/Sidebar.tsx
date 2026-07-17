@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/cn";
+import { useNavigationStore, type POSPage } from "../../lib/stores/navigationStore";
 
-const items = [
+const items: { label: POSPage; icon: typeof Home }[] = [
 	{ label: "Home", icon: Home },
 	{ label: "Invoices", icon: ReceiptText },
 	{ label: "Payments", icon: CreditCard },
@@ -19,32 +20,8 @@ const items = [
 	{ label: "Close Shift", icon: LogOut },
 ];
 
-type NavPage = (typeof items)[number]["label"];
-
-function handleNavAction(label: string) {
-	window.dispatchEvent(new CustomEvent("vunapos_nav", { detail: { page: label } }));
-}
-
-function useActiveNavPage() {
-	const [activePage, setActivePage] = useState<NavPage>("Home");
-
-	useEffect(() => {
-		const handleNav = (event: Event) => {
-			const page = (event as CustomEvent<{ page?: NavPage }>).detail?.page;
-			if (page) {
-				setActivePage(page);
-			}
-		};
-
-		window.addEventListener("vunapos_nav", handleNav);
-		return () => window.removeEventListener("vunapos_nav", handleNav);
-	}, []);
-
-	return activePage;
-}
-
 export function Sidebar() {
-	const activePage = useActiveNavPage();
+	const activePage = useNavigationStore((s) => s.activePage);
 	const [isCollapsed, setIsCollapsed] = useState(() => {
 		return window.localStorage.getItem("vunapos_sidebar_collapsed") === "true";
 	});
@@ -76,7 +53,7 @@ export function Sidebar() {
 									: "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
 								isCollapsed && "justify-center px-0",
 							)}
-							onClick={() => handleNavAction(item.label)}
+							onClick={() => useNavigationStore.getState().setActivePage(item.label)}
 						>
 							<Icon className="size-4" aria-hidden="true" />
 							{isCollapsed ? null : <span>{item.label}</span>}
@@ -103,7 +80,7 @@ export function Sidebar() {
 }
 
 export function BottomNav() {
-	const activePage = useActiveNavPage();
+	const activePage = useNavigationStore((s) => s.activePage);
 
 	return (
 		<nav className="fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface px-2 pb-2 pt-1 lg:hidden">
@@ -121,7 +98,7 @@ export function BottomNav() {
 									? "bg-surface-container-high text-on-surface"
 									: "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
 							)}
-							onClick={() => handleNavAction(item.label)}
+							onClick={() => useNavigationStore.getState().setActivePage(item.label)}
 						>
 							<Icon className="size-4" aria-hidden="true" />
 							<span className="max-w-full truncate">{item.label}</span>

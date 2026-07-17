@@ -3,8 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "postinstall": "npm --prefix vunapos_spa install",
-    "dev": "npm --prefix vunapos_spa run dev",
-    "build": "npm --prefix vunapos_spa run build"
+    "postinstall": "cd vunapos_spa && yarn install --frozen-lockfile",
+    "dev": "yarn --cwd vunapos_spa dev",
+    "build": "yarn --cwd vunapos_spa build"
   }
 }

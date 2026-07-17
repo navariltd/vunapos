@@ -1,96 +1,37 @@
-import { useEffect, useMemo, useState } from "react";
-import { useFrappeGetCall } from "frappe-react-sdk";
+import { useEffect, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
 
 import type { ItemDTO } from "../types";
-import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { itemRepository } from "../../../lib/repositories/itemRepository";
 
-
-export function useItemSearch(
-	query: string,
-	posProfile?: string,
-	customer?: string,
-	enabled = true,
-) {
-	const [debouncedQuery, setDebouncedQuery] = useState("");
-	const canLoadItems = Boolean(enabled && posProfile);
-
+// Read-path cutover (P5, I3): item search never touches the network - it's a Dexie
+// prefix/substring query against the last-synced catalog (useItemSearch's job is
+// speed and offline availability; freshness is the Cache Engine's job, separately).
+// develop's useFrappeGetCall/SWR version (customer/pos_profile-aware server search)
+// was superseded by this cutover rather than merged - the two are incompatible
+// (one requires a network round trip, the other must work with zero connectivity)
+// and offline availability is this branch's whole point.
+//
+// KNOWN GAP: pricing offline is the item's cached bootstrap rate (default-customer
+// pricing) - selecting a different customer with a distinct price list will not
+// re-price offline the way the previous online-only flow did. See invoiceEngine.ts.
+export function useItemSearch(query: string) {
+	const [debouncedQuery, setDebouncedQuery] = useState(query);
 
 	useEffect(() => {
-		const timer = window.setTimeout(() => {
-			setDebouncedQuery(query.trim());
-		}, 500);
+		const timeout = window.setTimeout(() => {
+			setDebouncedQuery(query);
+		}, 300);
 
-		return () => clearTimeout(timer);
+		return () => window.clearTimeout(timeout);
 	}, [query]);
 
-
-	const params = useMemo(() => {
-		if (!canLoadItems || !posProfile) {
-			return undefined;
-		}
-
-		return {
-			query: debouncedQuery,
-			pos_profile: posProfile,
-			customer,
-		};
-
-	}, [
-		canLoadItems,
-		debouncedQuery,
-		posProfile,
-		customer,
-	]);
-
-
-	const {
-		data,
-		error,
-		isLoading,
-		isValidating,
-		mutate,
-	} = useFrappeGetCall(
-		vunaMethods.searchItems,
-		params,
-		undefined,
-		{
-			dedupingInterval: 300000,
-			revalidateOnFocus: false,
-			errorRetryCount: 1,
-		}
-	);
-
-
-	const items = useMemo(() => {
-		if (!canLoadItems || !data) {
-			return [];
-		}
-
-		try {
-			const result = unwrapVunaResponse<ItemDTO[]>(data);
-			return Array.isArray(result) ? result : [];
-		} catch {
-			// The API error is exposed through the hook's error value. Do not throw
-			// during render, otherwise the POS setup dialog cannot be displayed.
-			return [];
-		}
-
-	}, [canLoadItems, data]);
-
+	const items = useLiveQuery(() => itemRepository.search(debouncedQuery, 60), [debouncedQuery]);
 
 	return {
-		items:items ?? [],
-
-		error:
-			canLoadItems && error instanceof Error
-				? error.message
-				: null,
-
-		isLoading:
-			canLoadItems && (query.trim() !== debouncedQuery || isLoading),
-
-		isFetching: isValidating,
-
-		reload: mutate,
+		error: null as string | null,
+		isLoading: query !== debouncedQuery || items === undefined,
+		items: (items ?? []) as ItemDTO[],
+		reload: () => {},
 	};
 }

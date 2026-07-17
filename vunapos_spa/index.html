@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#ffffff" />
     <title>VunaPOS</title>
@@ -11,6 +12,24 @@
     <div id="root"></div>
     <script>
       window.csrf_token = "{{ frappe.session.csrf_token }}";
+    </script>
+    <script>
+      // Runs before main.tsx mounts anything, so the very first paint already has
+      // the right theme (no flash of light-then-dark). Mirrors desk's own
+      // data-theme-mode/data-theme attribute pair (theme_switcher.js) so both
+      // apps share one mental model. Reconciled against the server's real
+      // desk_theme shortly after by useThemeSync - this is just a fast local guess.
+      (function () {
+        try {
+          var mode = window.localStorage.getItem("vunapos_theme_mode") || "light";
+          var resolved =
+            mode === "automatic"
+              ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+              : mode;
+          document.documentElement.setAttribute("data-theme-mode", mode);
+          document.documentElement.setAttribute("data-theme", resolved);
+        } catch (e) {}
+      })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
