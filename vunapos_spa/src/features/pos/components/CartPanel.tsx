@@ -52,8 +52,8 @@ export function CartPanel({
 			</div>
 
 			<div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-				{items.length ? (
-					items.map((item) => (
+				{items?.length ? (
+					items?.map((item) => (
 						<CartItemRow
 							key={item.row_name}
 							currency={currency}
@@ -130,7 +130,7 @@ export function CartPanel({
 						Clear Cart
 					</Button>
 					<div className="col-span-2">
-						<Button className="w-full" disabled={isMutating || !items.length || invoice?.docstatus !== 0} onClick={onCheckout}>
+						<Button className="w-full" disabled={isMutating || !items?.length || invoice?.docstatus !== 0} onClick={onCheckout}>
 							{invoice?.is_local ? "Checkout" : "Continue Checkout"}
 						</Button>
 					</div>
