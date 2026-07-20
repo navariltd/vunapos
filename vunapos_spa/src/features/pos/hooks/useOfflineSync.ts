@@ -7,6 +7,7 @@ import { requestPersistentStorage } from "../../../lib/storagePersistence";
 import { useBootstrapSyncStore } from "../../../lib/stores/bootstrapSyncStore";
 import { checkReachability, onConnectivityChange } from "../../../lib/stores/connectivityStore";
 import { drainQueue } from "../../../lib/syncEngine";
+import { VunaApiError } from "../../../services/vunaApi";
 
 const DRAIN_INTERVAL_MS = 15_000;
 
@@ -16,6 +17,7 @@ const DRAIN_INTERVAL_MS = 15_000;
 export function useOfflineSync() {
 	const phase = useBootstrapSyncStore((s) => s.phase);
 	const error = useBootstrapSyncStore((s) => s.error);
+	const errorCode = useBootstrapSyncStore((s) => s.errorCode);
 	const setPhase = useBootstrapSyncStore((s) => s.setPhase);
 	const setError = useBootstrapSyncStore((s) => s.setError);
 
@@ -38,7 +40,10 @@ export function useOfflineSync() {
 					setPhase("ready");
 					return;
 				}
-				setError(err instanceof Error ? err.message : "Failed to load offline data");
+				setError(
+					err instanceof Error ? err.message : "Failed to load offline data",
+					err instanceof VunaApiError ? err.code : null,
+				);
 				setPhase("blocked");
 			}
 		}
@@ -71,7 +76,7 @@ export function useOfflineSync() {
 		};
 	}, []);
 
-	return { phase, error, retry: () => window.location.reload() };
+	return { phase, error, errorCode, retry: () => window.location.reload() };
 }
 
 // Background refreshes (periodic TTL tick, reconnect) must never throw unhandled -

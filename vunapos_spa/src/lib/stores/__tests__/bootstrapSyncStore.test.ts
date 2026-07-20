@@ -3,12 +3,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useBootstrapSyncStore } from "../bootstrapSyncStore";
 
 beforeEach(() => {
-	useBootstrapSyncStore.setState({ phase: "hydrating", error: null });
+	useBootstrapSyncStore.setState({ phase: "hydrating", error: null, errorCode: null });
 });
 
 describe("bootstrapSyncStore", () => {
 	it("defaults to hydrating with no error", () => {
-		expect(useBootstrapSyncStore.getState()).toMatchObject({ phase: "hydrating", error: null });
+		expect(useBootstrapSyncStore.getState()).toMatchObject({ phase: "hydrating", error: null, errorCode: null });
 	});
 
 	it("setPhase updates phase without touching error", () => {
@@ -36,5 +36,14 @@ describe("bootstrapSyncStore", () => {
 		useBootstrapSyncStore.getState().setError(null);
 
 		expect(useBootstrapSyncStore.getState().error).toBeNull();
+	});
+
+	it("stores a structured bootstrap error code", () => {
+		useBootstrapSyncStore.getState().setError("No profile", "POS_PROFILE_NOT_ASSIGNED");
+
+		expect(useBootstrapSyncStore.getState()).toMatchObject({
+			error: "No profile",
+			errorCode: "POS_PROFILE_NOT_ASSIGNED",
+		});
 	});
 });

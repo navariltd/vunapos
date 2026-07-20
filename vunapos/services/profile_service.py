@@ -3,7 +3,6 @@ from frappe import _
 from frappe.utils import add_to_date, cint, get_datetime
 
 from vunapos.dto.profile import profile_to_dict
-from vunapos.utils.permissions import require_read
 
 SUPPORTED_INVOICE_MODES = ("Sales Invoice", "POS Invoice")
 
@@ -27,6 +26,23 @@ def _session_error(code, message, meta=None):
 	raise exc
 
 
+def _profile_error(code, message, exc_type=frappe.ValidationError):
+	exc = exc_type(message)
+	exc.vuna_error_code = code
+	raise exc
+
+
+def _require_profile_read(pos_profile):
+	if not frappe.has_permission("POS Profile", "read", doc=pos_profile):
+		_profile_error(
+			"POS_PROFILE_READ_DENIED",
+			_("User {0} is assigned to POS Profile {1} but does not have permission to read it").format(
+				frappe.session.user, pos_profile
+			),
+			frappe.PermissionError,
+		)
+
+
 def get_invoice_mode():
 	invoice_type = frappe.db.get_single_value("POS Settings", "invoice_type") or "Sales Invoice"
 	if invoice_type not in SUPPORTED_INVOICE_MODES:
@@ -37,7 +53,7 @@ def get_invoice_mode():
 def resolve_pos_profile(pos_profile=None):
 	if pos_profile:
 		require_pos_profile_assignment(pos_profile)
-		require_read("POS Profile", pos_profile)
+		_require_profile_read(pos_profile)
 
 		profile = frappe.get_cached_doc("POS Profile", pos_profile)
 
@@ -45,14 +61,14 @@ def resolve_pos_profile(pos_profile=None):
 		profiles = frappe.get_all("POS Profile User", filters={"user": frappe.session.user}, pluck="parent")
 
 		if not profiles:
-			frappe.throw(_("No POS Profile assigned to user"))
+			_profile_error("POS_PROFILE_NOT_ASSIGNED", _("No POS Profile is assigned to this user"))
 
 		profile_name = frappe.db.get_value("POS Profile", {"name": ["in", profiles], "disabled": 0}, "name")
 
 		if not profile_name:
-			frappe.throw(_("No enabled POS Profile assigned to user"))
+			_profile_error("POS_PROFILE_NOT_ENABLED", _("No enabled POS Profile is assigned to this user"))
 
-		require_read("POS Profile", profile_name)
+		_require_profile_read(profile_name)
 
 		profile = frappe.get_cached_doc("POS Profile", profile_name)
 
@@ -80,6 +96,22 @@ def get_pos_session(user, pos_profile, verified_at=None):
 		["name", "period_start_date"],
 		as_dict=True,
 	)
+	closing = None
+	if entry:
+		closing = frappe.db.get_value(
+			"POS Closing Entry",
+			{
+				"pos_opening_entry": entry.name,
+				"docstatus": 1,
+				"status": ["in", ["Queued", "Failed"]],
+			},
+			["name", "status"],
+			as_dict=True,
+		)
+	ready = bool(entry) and not closing
+	status = "OPEN" if ready else "OPENING_REQUIRED"
+	if closing:
+		status = "CLOSING" if closing.status == "Queued" else "CLOSING_FAILED"
 	return {
 		"has_opening_entry": bool(entry),
 		"opening_entry": entry.name if entry else None,
@@ -87,22 +119,29 @@ def get_pos_session(user, pos_profile, verified_at=None):
 		"verified_at": verified_at,
 		"cashier": user,
 		"pos_profile": pos_profile,
-		"ready": bool(entry),
-		"status": "OPEN" if entry else "OPENING_REQUIRED",
+		"ready": ready,
+		"status": status,
+		"closing_entry": closing.name if closing else None,
 	}
 
 
 def require_open_pos_session(pos_profile, user=None):
 	user = user or frappe.session.user
 	require_pos_profile_assignment(pos_profile, user)
-	entry_name = get_opening_entry(user, pos_profile)
-	if not entry_name:
+	session = get_pos_session(user, pos_profile)
+	if session["status"] in ("CLOSING", "CLOSING_FAILED"):
+		_session_error(
+			"POS_SESSION_CLOSING",
+			_("POS session {0} is already being closed").format(session["opening_entry"]),
+			{"closing_entry": session["closing_entry"], "status": session["status"]},
+		)
+	if not session["ready"]:
 		_session_error(
 			"POS_OPENING_REQUIRED",
 			_("An open POS session is required for profile {0}").format(pos_profile),
 			{"pos_profile": pos_profile, "cashier": user},
 		)
-	return frappe.get_doc("POS Opening Entry", entry_name)
+	return frappe.get_doc("POS Opening Entry", session["opening_entry"])
 
 
 def validate_historical_pos_session(
