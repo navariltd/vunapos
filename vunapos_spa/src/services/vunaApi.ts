@@ -7,6 +7,7 @@ import type {
 	InvoiceDTO,
 	ItemDTO,
 	PaymentInput,
+	POSClosingPreviewDTO,
 	PrintPayload,
 } from "../features/pos/types";
 
@@ -63,6 +64,8 @@ export const vunaMethods = {
 	updateInvoiceFromCart: "vunapos.api.sales.update_invoice_from_cart",
 	renderInvoice: "vunapos.api.print.render_invoice",
 	getCsrfToken: "vunapos.api.auth.get_csrf_token",
+	getClosingPreview: "vunapos.api.pos_closing.get_preview",
+	closePosSession: "vunapos.api.pos_closing.close_session",
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
@@ -97,6 +100,17 @@ async function callAndUnwrap<T>(call: FrappeCall, params: Record<string, unknown
 
 export function getBootstrapData(call: FrappeCall, posProfile?: string) {
 	return callAndUnwrap<BootstrapData>(call, { pos_profile: posProfile });
+}
+
+export function getClosingPreview(call: FrappeCall, posProfile: string) {
+	return callAndUnwrap<POSClosingPreviewDTO>(call, { pos_profile: posProfile });
+}
+
+export function closePosSession(
+	call: FrappeCall,
+	params: { pos_profile: string; closing_balances: { mode_of_payment: string; closing_amount: number }[] },
+) {
+	return callAndUnwrap<POSClosingPreviewDTO>(call, params);
 }
 
 export function searchItems(

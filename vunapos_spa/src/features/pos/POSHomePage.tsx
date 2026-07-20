@@ -4,10 +4,11 @@ import { ShoppingCart, X } from "lucide-react";
 import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
 import { Button } from "../../components/ui/Button";
-import { useNavigationStore } from "../../lib/stores/navigationStore";
+import { navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CheckoutDialog } from "./components/CheckoutDialog";
+import { CloseShiftPage } from "./components/CloseShiftPage";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
@@ -270,6 +271,18 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<QueueInspectorPanel />
 					</div>
 				</section>
+			) : activePage === "Close Shift" ? (
+				bootstrap.data?.pos_profile ? (
+					<CloseShiftPage
+						currency={bootstrap.data.currency}
+						posProfile={bootstrap.data.pos_profile}
+						onBack={() => navigateToPosPage("Home")}
+					/>
+				) : (
+					<section className="flex h-full items-center justify-center p-6">
+						<p className="text-sm text-on-surface-variant">Loading the POS Profile for shift closing...</p>
+					</section>
+				)
 			) : (
 				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_390px]">
 					<section className="flex min-w-0 min-h-0 flex-col p-4">
@@ -302,7 +315,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				</div>
 			)}
 
-			<button
+			{activePage === "Home" ? <button
 				type="button"
 				className="fixed bottom-20 right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-on-primary shadow-md xl:hidden"
 				onClick={() => setIsCartOpen(true)}
@@ -314,7 +327,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						{cartInvoice.items.length}
 					</span>
 				) : null}
-			</button>
+			</button> : null}
 
 			{isCartOpen ? (
 				<div className="fixed inset-0 z-50 xl:hidden">

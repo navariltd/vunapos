@@ -45,6 +45,19 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 	}
 
 	if (session && !session.ready) {
+		if (session.status === "CLOSING" || session.status === "CLOSING_FAILED") {
+			return (
+				<SessionMessage
+					title={session.status === "CLOSING" ? "POS closing in progress" : "POS closing needs attention"}
+					message={
+						session.status === "CLOSING"
+							? "ERPNext is consolidating this shift. Sales remain blocked until closing completes."
+							: `Closing entry ${session.closing_entry || ""} failed. Ask a supervisor to resolve or retry it before selling.`
+					}
+					retry
+				/>
+			);
+		}
 		return (
 			<PosOpeningEntryDialog
 				posProfile={posProfile}
@@ -55,6 +68,15 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 	}
 
 	if (error) {
+		if (cached?.session?.status === "CLOSING" || cached?.session?.status === "CLOSING_FAILED") {
+			return (
+				<SessionMessage
+					title={cached.session.status === "CLOSING" ? "POS closing in progress" : "POS closing needs attention"}
+					message="Reconnect to confirm the final closing status. Sales remain blocked on this device."
+					retry
+				/>
+			);
+		}
 		if (cachedPolicy.status === "valid") {
 			return (
 			<>

@@ -290,17 +290,16 @@ def set_invoice_mode(invoice_mode):
 
 
 def ensure_open_pos_opening_entry(pos_profile):
+	user = frappe.session.user
 	existing = frappe.db.get_value(
-		"POS Opening Entry", {"pos_profile": pos_profile, "status": "Open"}, "name"
+		"POS Opening Entry",
+		{"user": user, "pos_profile": pos_profile, "status": "Open", "docstatus": 1},
+		"name",
 	)
 	if existing:
 		return existing
 
 	profile = frappe.get_doc("POS Profile", pos_profile)
-	open_users = frappe.get_all("POS Opening Entry", {"status": "Open"}, pluck="user")
-	user = frappe.session.user
-	if user in open_users:
-		user = frappe.db.get_value("User", {"enabled": 1, "name": ["not in", open_users]}, "name") or user
 	entry = frappe.new_doc("POS Opening Entry")
 	entry.pos_profile = profile.name
 	entry.user = user

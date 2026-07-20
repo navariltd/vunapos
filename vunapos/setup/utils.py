@@ -74,6 +74,16 @@ def ensure_vunapos_custom_fields():
 					"allow_on_submit": 1,
 					"no_copy": 1,
 				},
+				{
+					"fieldname": "vunapos_closing_entry",
+					"label": "VunaPOS Closing Entry",
+					"fieldtype": "Link",
+					"options": "POS Closing Entry",
+					"insert_after": "vunapos_session_verified_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
 			],
 			"POS Invoice": [
 				{
@@ -126,6 +136,16 @@ def ensure_vunapos_custom_fields():
 					"label": "VunaPOS Session Verified At",
 					"fieldtype": "Datetime",
 					"insert_after": "vunapos_session_cashier",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_closing_entry",
+					"label": "VunaPOS Closing Entry",
+					"fieldtype": "Link",
+					"options": "POS Closing Entry",
+					"insert_after": "vunapos_session_verified_at",
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,

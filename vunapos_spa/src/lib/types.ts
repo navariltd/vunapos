@@ -95,7 +95,8 @@ export type CachedPosSession = {
 	cashier: string;
 	pos_profile: string;
 	ready: boolean;
-	status: "OPEN" | "OPENING_REQUIRED";
+	status: "OPEN" | "OPENING_REQUIRED" | "CLOSING" | "CLOSING_FAILED";
+	closing_entry?: string | null;
 };
 
 export type MetaRow = {

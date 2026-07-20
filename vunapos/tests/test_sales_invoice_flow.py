@@ -50,6 +50,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["doctype"], "Sales Invoice")
 		self.assertEqual(response["data"]["docstatus"], 0)
+		self.assertEqual(frappe.db.get_value("Sales Invoice", response["data"]["name"], "is_pos"), 1)
 
 	def test_add_update_remove_invoice_item(self):
 		profile = ensure_test_pos_profile()
