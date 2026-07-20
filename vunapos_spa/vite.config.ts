@@ -33,9 +33,8 @@ export default defineConfig({
 			// normal glob-discovery precache, which - unlike includeAssets/manifest injection -
 			// respects manifestTransforms below.
 			globPatterns: ['**/*.{js,css,html,png,webmanifest}'],
-			// /vunapos is the actual page route; it must be precached for
-			// navigateFallback to serve it offline (Workbox requires the fallback
-			// URL itself to be in the precache manifest).
+			// Frappe routes every /vunapos/* path to the same SPA shell. /vunapos is
+			// precached as the common offline fallback for all those clean routes.
 			navigateFallback: '/vunapos',
 			additionalManifestEntries: [{ url: '/vunapos', revision: null }],
 			// SW scope is '/' (site root), so without this, navigateFallback intercepts every

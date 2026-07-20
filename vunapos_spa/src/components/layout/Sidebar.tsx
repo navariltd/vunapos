@@ -10,7 +10,12 @@ import {
 } from "lucide-react";
 
 import { cn } from "../../lib/cn";
-import { useNavigationStore, type POSPage } from "../../lib/stores/navigationStore";
+import {
+	getPosPagePath,
+	navigateToPosPage,
+	useNavigationStore,
+	type POSPage,
+} from "../../lib/stores/navigationStore";
 
 const items: { label: POSPage; icon: typeof Home }[] = [
 	{ label: "Home", icon: Home },
@@ -42,9 +47,9 @@ export function Sidebar() {
 					const Icon = item.icon;
 					const isActive = item.label === activePage;
 					return (
-						<button
+						<a
 							key={item.label}
-							type="button"
+							href={getPosPagePath(item.label)}
 							title={isCollapsed ? item.label : undefined}
 							className={cn(
 								"flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
@@ -53,11 +58,14 @@ export function Sidebar() {
 									: "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
 								isCollapsed && "justify-center px-0",
 							)}
-							onClick={() => useNavigationStore.getState().setActivePage(item.label)}
+							onClick={(event) => {
+								event.preventDefault();
+								navigateToPosPage(item.label);
+							}}
 						>
 							<Icon className="size-4" aria-hidden="true" />
 							{isCollapsed ? null : <span>{item.label}</span>}
-						</button>
+						</a>
 					);
 				})}
 			</nav>
@@ -89,20 +97,23 @@ export function BottomNav() {
 					const Icon = item.icon;
 					const isActive = item.label === activePage;
 					return (
-						<button
+						<a
 							key={item.label}
-							type="button"
+							href={getPosPagePath(item.label)}
 							className={cn(
 								"flex min-h-touch flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium transition-colors",
 								isActive
 									? "bg-surface-container-high text-on-surface"
 									: "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
 							)}
-							onClick={() => useNavigationStore.getState().setActivePage(item.label)}
+							onClick={(event) => {
+								event.preventDefault();
+								navigateToPosPage(item.label);
+							}}
 						>
 							<Icon className="size-4" aria-hidden="true" />
 							<span className="max-w-full truncate">{item.label}</span>
-						</button>
+						</a>
 					);
 				})}
 			</div>
