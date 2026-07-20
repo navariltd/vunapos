@@ -3,7 +3,7 @@ import json
 import frappe
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from frappe import _
-from frappe.utils import flt, get_datetime, nowdate
+from frappe.utils import flt, get_datetime, now_datetime, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
@@ -13,7 +13,12 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 )
 from vunapos.services.item_service import get_priority_price_list
-from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
+from vunapos.services.profile_service import (
+	get_invoice_mode,
+	require_open_pos_session,
+	resolve_pos_profile,
+	validate_historical_pos_session,
+)
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
@@ -45,6 +50,13 @@ def _has_field(doctype, fieldname):
 def _set_if_has_field(doc, fieldname, value):
 	if _has_field(doc.doctype, fieldname):
 		doc.set(fieldname, value)
+
+
+def _stamp_validated_session(doc, opening_entry, verified_at=None):
+	_set_if_has_field(doc, OPENING_ENTRY_FIELD, opening_entry.name)
+	_set_if_has_field(doc, SESSION_CASHIER_FIELD, opening_entry.user)
+	_set_if_has_field(doc, SESSION_VERIFIED_AT_FIELD, verified_at or now_datetime())
+	return doc
 
 
 def _reset_invoice_totals(doc):
@@ -654,6 +666,8 @@ def get_invoice(invoice_doctype, invoice_name):
 
 def hold_invoice(invoice_doctype, invoice_name):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	opening_entry = require_open_pos_session(doc.get("pos_profile"))
+	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 1)
 	doc.save(ignore_permissions=True)
@@ -662,6 +676,7 @@ def hold_invoice(invoice_doctype, invoice_name):
 
 def restore_invoice(invoice_doctype, invoice_name):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	require_open_pos_session(doc.get("pos_profile"))
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
 	return invoice_to_dict(doc)
@@ -828,6 +843,7 @@ def set_payment_rows(doc, payments=None):
 def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
 		profile,
@@ -835,6 +851,7 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
 	set_payment_rows(doc, payments)
+	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
@@ -859,6 +876,7 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 		_throw("EMPTY_INVOICE", _("Add at least one item before checkout"))
 
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
 		profile,
@@ -867,6 +885,7 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 	validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(doc, payments, profile)
 	set_payment_rows(doc, payment_rows)
+	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	if idempotency_key:
@@ -960,6 +979,14 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 	payload = _invoice_payload(payload)
 	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
 	require_create(invoice_doctype)
+	validated_session = validate_historical_pos_session(
+		pos_profile=payload.get("pos_profile"),
+		opening_entry=payload.get("opening_entry"),
+		cashier=payload.get("cashier"),
+		posting_date=payload.get("posting_date"),
+		posting_time=payload.get("posting_time"),
+		verified_at=payload.get("pos_session_verified_at"),
+	)
 
 	savepoint = "vunapos_sync_invoice"
 	frappe.db.savepoint(savepoint)
@@ -995,12 +1022,7 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		_set_if_has_field(doc, HELD_FIELD, 0)
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
 		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
-		_set_if_has_field(doc, OPENING_ENTRY_FIELD, payload.get("opening_entry"))
-		# The payload's cashier is useful offline context, but the authenticated uploader
-		# is the only identity trusted for the audit field. Phase 2 will additionally
-		# validate it against the referenced historical session.
-		_set_if_has_field(doc, SESSION_CASHIER_FIELD, frappe.session.user)
-		_set_if_has_field(doc, SESSION_VERIFIED_AT_FIELD, payload.get("pos_session_verified_at"))
+		_stamp_validated_session(doc, validated_session, payload.get("pos_session_verified_at"))
 		doc.flags.ignore_mandatory = False
 		doc.save()
 		doc.submit()
@@ -1055,6 +1077,7 @@ def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
 	payload = _invoice_payload(payload)
 	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
 	require_create(invoice_doctype)
+	validated_session = require_open_pos_session(payload.get("pos_profile"))
 
 	savepoint = "vunapos_sync_hold"
 	frappe.db.savepoint(savepoint)
@@ -1077,6 +1100,7 @@ def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
 		_set_if_has_field(doc, HELD_FIELD, 1)
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
 		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
+		_stamp_validated_session(doc, validated_session)
 		doc.flags.ignore_mandatory = False
 		doc.save()
 	except frappe.UniqueValidationError:

@@ -11,6 +11,7 @@ from vunapos.api.sales import checkout_invoice, list_held_invoices
 from vunapos.services.invoice_service import preview_invoice as preview_invoice_service
 from vunapos.tests.helpers import (
 	ensure_item_tax_template,
+	ensure_open_pos_opening_entry,
 	ensure_test_item,
 	ensure_test_pos_profile,
 	set_invoice_mode,
@@ -18,6 +19,7 @@ from vunapos.tests.helpers import (
 
 
 def _payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-00001"):
+	opening_entry = ensure_open_pos_opening_entry(profile)
 	preview = preview_invoice_service(
 		pos_profile=profile,
 		customer=customer,
@@ -33,10 +35,16 @@ def _payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-0
 		"payments": [{"mode_of_payment": mode_of_payment, "amount": amount}],
 		"totals": totals,
 		"local_ref": local_ref,
+		"opening_entry": opening_entry,
+		"cashier": frappe.session.user,
+		"pos_session_verified_at": str(now_datetime()),
+		"posting_date": now_datetime().strftime("%Y-%m-%d"),
+		"posting_time": now_datetime().strftime("%H:%M:%S"),
 	}
 
 
 def _hold_payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-00001"):
+	ensure_open_pos_opening_entry(profile)
 	preview = preview_invoice_service(
 		pos_profile=profile,
 		customer=customer,
@@ -188,6 +196,38 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 
 
 class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
+	def test_rejects_queued_sale_without_verified_session_metadata(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		payload.pop("opening_entry")
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="missing-session",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "POS_SESSION_METADATA_REQUIRED")
+
+	def test_rejects_queued_sale_for_another_cashier(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		payload["cashier"] = "Guest"
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="wrong-cashier",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "POS_SESSION_CASHIER_MISMATCH")
+
 	def test_requires_idempotency_key_and_local_id(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -238,6 +278,12 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 		set_invoice_mode("Sales Invoice")
 		payload = _payload_for(profile, item_code)
 		device_date = add_to_date(now_datetime(), days=-2).strftime("%Y-%m-%d")
+		frappe.db.set_value(
+			"POS Opening Entry",
+			payload["opening_entry"],
+			"period_start_date",
+			add_to_date(now_datetime(), days=-3),
+		)
 		payload["posting_date"] = device_date
 		key = frappe.generate_hash(length=20)
 
@@ -264,6 +310,23 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 
 
 class TestVunaPOSCreatePosHold(IntegrationTestCase):
+	def test_upload_requires_current_open_session(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _hold_payload_for(profile, item_code)
+		opening_entry = ensure_open_pos_opening_entry(profile)
+		frappe.db.set_value("POS Opening Entry", opening_entry, "status", "Closed")
+
+		response = create_pos_hold(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="closed-hold",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "POS_OPENING_REQUIRED")
+
 	def test_requires_idempotency_key_and_local_id(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
