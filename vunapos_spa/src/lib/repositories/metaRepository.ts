@@ -7,6 +7,7 @@ export const META_KEYS = {
 	deviceId: "device_id",
 	localCounter: "local_counter",
 	taxSettings: "tax_settings",
+	posSession: "pos_session",
 	storagePersisted: "storage_persisted",
 } as const;
 

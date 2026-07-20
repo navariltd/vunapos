@@ -16,6 +16,7 @@ def get_invoice_mode():
 
 def resolve_pos_profile(pos_profile=None):
 	if pos_profile:
+		require_pos_profile_assignment(pos_profile)
 		require_read("POS Profile", pos_profile)
 
 		profile = frappe.get_cached_doc("POS Profile", pos_profile)
@@ -41,6 +42,36 @@ def resolve_pos_profile(pos_profile=None):
 	return profile
 
 
+def require_pos_profile_assignment(pos_profile, user=None):
+	user = user or frappe.session.user
+	if not user or user == "Guest":
+		frappe.throw(_("A signed-in POS user is required"), frappe.PermissionError)
+	if not frappe.db.exists("POS Profile User", {"parent": pos_profile, "user": user}):
+		frappe.throw(
+			_("POS Profile {0} is not assigned to user {1}").format(pos_profile, user),
+			frappe.PermissionError,
+		)
+
+
+def get_pos_session(user, pos_profile, verified_at=None):
+	entry = frappe.db.get_value(
+		"POS Opening Entry",
+		{"user": user, "pos_profile": pos_profile, "docstatus": 1, "status": "Open"},
+		["name", "period_start_date"],
+		as_dict=True,
+	)
+	return {
+		"has_opening_entry": bool(entry),
+		"opening_entry": entry.name if entry else None,
+		"opened_at": entry.period_start_date if entry else None,
+		"verified_at": verified_at,
+		"cashier": user,
+		"pos_profile": pos_profile,
+		"ready": bool(entry),
+		"status": "OPEN" if entry else "OPENING_REQUIRED",
+	}
+
+
 def get_profile_defaults(pos_profile=None):
 	profile = resolve_pos_profile(pos_profile)
 	return profile_to_dict(profile, get_invoice_mode())
@@ -50,28 +81,18 @@ def get_bootstrap_data(pos_profile=None):
 	profile = resolve_pos_profile(pos_profile)
 	invoice_mode = get_invoice_mode()
 	data = profile_to_dict(profile, invoice_mode)
-	opening_entry = get_opening_entry(frappe.session.user, profile.name)
 	data.update(
 		{
 			"current_user": frappe.session.user,
 			"pos_profile": profile.name,
-			"session": {
-				"has_opening_entry": bool(opening_entry),
-				"opening_entry": opening_entry,
-				"ready": bool(opening_entry),
-				"status": ("OPEN" if opening_entry else "OPENING_REQUIRED"),
-			},
+			"session": get_pos_session(frappe.session.user, profile.name, frappe.utils.now_datetime()),
 		}
 	)
 	return data
 
 
 def get_opening_entry(user, pos_profile):
-	return frappe.db.get_value(
-		"POS Opening Entry",
-		{"user": user, "pos_profile": pos_profile, "docstatus": 1, "status": "Open"},
-		"name",
-	)
+	return get_pos_session(user, pos_profile).get("opening_entry")
 
 
 @frappe.whitelist()

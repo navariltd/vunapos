@@ -79,6 +79,8 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		self.assertIn("add_taxes_from_item_tax_template", data["tax_settings"])
 		self.assertIn("add_taxes_from_taxes_and_charges_template", data["tax_settings"])
 		self.assertTrue(data["payment_modes"])
+		self.assertEqual(data["pos_session"]["cashier"], frappe.session.user)
+		self.assertEqual(data["pos_session"]["pos_profile"], profile)
 		self.assertNotIn("deleted", data)
 
 	def test_bootstrap_reports_each_items_item_level_tax_template(self):

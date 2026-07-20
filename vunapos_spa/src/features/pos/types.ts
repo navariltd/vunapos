@@ -14,6 +14,10 @@ export type CustomerDTO = {
 export type POSSessionDTO = {
 	has_opening_entry: boolean;
 	opening_entry: string | null;
+	opened_at?: string | null;
+	verified_at?: string | null;
+	cashier?: string;
+	pos_profile?: string;
 	ready: boolean;
 	status?: "OPEN" | "OPENING_REQUIRED";
 };

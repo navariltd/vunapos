@@ -86,7 +86,8 @@ required_apps = ["frappe/erpnext"]
 # ------------
 
 # before_install = "vunapos.install.before_install"
-# after_install = "vunapos.install.after_install"
+after_install = "vunapos.setup.utils.ensure_vunapos_custom_fields"
+after_migrate = "vunapos.setup.utils.ensure_vunapos_custom_fields"
 
 # Uninstallation
 # ------------

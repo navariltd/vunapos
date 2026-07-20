@@ -87,6 +87,17 @@ export type CachedProfile = {
 	taxes_and_charges?: string | null;
 };
 
+export type CachedPosSession = {
+	has_opening_entry: boolean;
+	opening_entry: string | null;
+	opened_at?: string | null;
+	verified_at?: string | null;
+	cashier: string;
+	pos_profile: string;
+	ready: boolean;
+	status: "OPEN" | "OPENING_REQUIRED";
+};
+
 export type MetaRow = {
 	key: string;
 	value: unknown;
@@ -102,6 +113,7 @@ export type BootstrapPayload = {
 	bootstrap_version: number;
 	mode: "full" | "delta";
 	pos_profile: CachedProfile;
+	pos_session: CachedPosSession;
 	items: CachedItem[];
 	customers: CachedCustomer[];
 	tax_templates: CachedTaxTemplate[];
@@ -129,6 +141,9 @@ export type InvoicePayload = {
 	payments: { mode_of_payment: string; amount: number }[];
 	posting_date?: string;
 	posting_time?: string;
+	opening_entry?: string;
+	pos_session_verified_at?: string;
+	cashier?: string;
 	totals?: {
 		net_total?: number;
 		total_taxes_and_charges?: number;

@@ -21,6 +21,17 @@ beforeEach(async () => {
 		taxes: [{ account_head: "VAT", charge_type: "On Net Total", rate: 16, included_in_print_rate: false }],
 	});
 	await db.profile.put({ name: "Profile-1", taxes_and_charges: "Kenya Tax - TC" });
+	await db.meta.put({
+		key: META_KEYS.posSession,
+		value: {
+			has_opening_entry: true,
+			opening_entry: "OPEN-1",
+			cashier: "cashier@example.com",
+			pos_profile: "Profile-1",
+			ready: true,
+			status: "OPEN",
+		},
+	});
 });
 
 describe("holdRepository.create", () => {
@@ -54,6 +65,7 @@ describe("holdRepository.create", () => {
 		expect(queued?.payload).not.toHaveProperty("payments");
 		expect(queued?.payload).not.toHaveProperty("posting_date");
 		expect(queued?.payload).not.toHaveProperty("posting_time");
+		expect(queued?.payload).not.toHaveProperty("opening_entry");
 	});
 
 	it("shares the local_ref counter with invoiceRepository - a hold and a sale never collide", async () => {

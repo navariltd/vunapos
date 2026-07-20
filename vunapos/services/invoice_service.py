@@ -21,6 +21,9 @@ HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
 LOCAL_REF_FIELD = "vunapos_invoice_number_offline"
+OPENING_ENTRY_FIELD = "vunapos_opening_entry"
+SESSION_CASHIER_FIELD = "vunapos_session_cashier"
+SESSION_VERIFIED_AT_FIELD = "vunapos_session_verified_at"
 
 
 def _throw(code, message, meta=None):
@@ -992,6 +995,12 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		_set_if_has_field(doc, HELD_FIELD, 0)
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
 		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
+		_set_if_has_field(doc, OPENING_ENTRY_FIELD, payload.get("opening_entry"))
+		# The payload's cashier is useful offline context, but the authenticated uploader
+		# is the only identity trusted for the audit field. Phase 2 will additionally
+		# validate it against the referenced historical session.
+		_set_if_has_field(doc, SESSION_CASHIER_FIELD, frappe.session.user)
+		_set_if_has_field(doc, SESSION_VERIFIED_AT_FIELD, payload.get("pos_session_verified_at"))
 		doc.flags.ignore_mandatory = False
 		doc.save()
 		doc.submit()
