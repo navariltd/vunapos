@@ -4,7 +4,12 @@ from frappe.utils import cint, now_datetime
 from vunapos.dto.profile import profile_to_dict
 from vunapos.services.customer_service import search_customers
 from vunapos.services.item_service import search_items
-from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
+from vunapos.services.profile_service import (
+	get_invoice_mode,
+	get_offline_session_ttl_hours,
+	get_pos_session,
+	resolve_pos_profile,
+)
 
 # Doctypes the device replicates are read-only. Deleted records are reported
 # so the device can remove them from its local copy.
@@ -112,6 +117,8 @@ def get_pos_bootstrap(pos_profile=None, since=None):
 		"bootstrap_version": _bootstrap_version(),
 		"mode": "delta" if since else "full",
 		"pos_profile": profile_to_dict(profile, invoice_mode),
+		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),
+		"offline_session_ttl_hours": get_offline_session_ttl_hours(),
 		"items": search_items(pos_profile=profile.name, limit=0, since=since),
 		"customers": search_customers(limit=100000, since=since),
 		"tax_templates": _sync_tax_templates(since=since),

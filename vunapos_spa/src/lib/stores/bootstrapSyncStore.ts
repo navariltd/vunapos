@@ -5,8 +5,9 @@ export type BootstrapPhase = "hydrating" | "ready" | "blocked";
 type BootstrapSyncStore = {
 	phase: BootstrapPhase;
 	error: string | null;
+	errorCode: string | null;
 	setPhase: (phase: BootstrapPhase) => void;
-	setError: (error: string | null) => void;
+	setError: (error: string | null, errorCode?: string | null) => void;
 };
 
 // §10.1: Install -> Authenticate -> Bootstrap -> Verify -> Ready. Owned by
@@ -15,6 +16,7 @@ type BootstrapSyncStore = {
 export const useBootstrapSyncStore = create<BootstrapSyncStore>((set) => ({
 	phase: "hydrating",
 	error: null,
+	errorCode: null,
 	setPhase: (phase) => set({ phase }),
-	setError: (error) => set({ error }),
+	setError: (error, errorCode = null) => set({ error, errorCode }),
 }));

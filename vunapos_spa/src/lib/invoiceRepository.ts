@@ -1,9 +1,10 @@
 import { assembleCartAgainstCache } from "./cartAssembly";
 import type { AssembledInvoice, CartLine } from "./invoiceEngine";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
+import { evaluateCachedPosSession } from "./posSessionPolicy";
 import { profileRepository } from "./repositories/profileRepository";
 import { queueRepository } from "./repositories/queueRepository";
-import type { InvoicePayload, QueueEntry } from "./types";
+import type { CachedPosSession, InvoicePayload, QueueEntry } from "./types";
 
 export type Cart = {
 	customer?: string;
@@ -82,6 +83,16 @@ export const invoiceRepository = {
 			// is knowable from cached data alone, so there's no reason to let it round-trip.
 			throw new Error("Select a customer, or set a default customer on this POS Profile, before checkout");
 		}
+		const session = await metaRepository.get<CachedPosSession>(META_KEYS.posSession);
+		const ttlHours = await metaRepository.get<number>(META_KEYS.offlineSessionTtlHours);
+		const sessionPolicy = evaluateCachedPosSession(session, profile.name, ttlHours);
+		if (sessionPolicy.status === "expired") {
+			throw new Error("The cached POS session has expired - reconnect before checkout");
+		}
+		if (sessionPolicy.status !== "valid") {
+			throw new Error("No verified open POS session is cached - connect and open the POS before checkout");
+		}
+		const validatedSession = sessionPolicy.session;
 
 		// Assembly happens before any durable write - if pricing/tax data is missing or
 		// the engine hits an unsupported shape, it throws here and nothing is queued (I9).
@@ -106,6 +117,9 @@ export const invoiceRepository = {
 			payments: cart.payments,
 			posting_date: postingDate,
 			posting_time: postingTime,
+			opening_entry: validatedSession.opening_entry || undefined,
+			pos_session_verified_at: validatedSession.verified_at || undefined,
+			cashier: validatedSession.cashier,
 			totals: {
 				net_total: assembled.totals.net_total,
 				total_taxes_and_charges: assembled.totals.total_taxes_and_charges,

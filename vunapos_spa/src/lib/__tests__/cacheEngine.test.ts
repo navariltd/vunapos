@@ -12,6 +12,17 @@ function makeBootstrap(overrides: Partial<BootstrapPayload> = {}): BootstrapPayl
 		bootstrap_version: 1,
 		mode: "full",
 		pos_profile: { name: "Test Profile", company: "Test Co" },
+		pos_session: {
+			has_opening_entry: true,
+			opening_entry: "OPEN-1",
+			cashier: "cashier@example.com",
+			pos_profile: "Test Profile",
+			ready: true,
+			status: "OPEN",
+			opened_at: "2026-07-10 07:00:00",
+			verified_at: "2026-07-10 08:00:00",
+		},
+		offline_session_ttl_hours: 12,
 		items: [{ item_code: "ITEM-1", item_name: "Item One", modified: "2026-07-10 08:00:00" }],
 		customers: [
 			{ customer: "CUST-1", customer_name: "Customer One", modified: "2026-07-10 08:00:00" },

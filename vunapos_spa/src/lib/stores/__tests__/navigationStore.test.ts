@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { useNavigationStore } from "../navigationStore";
+import { getPosPageFromPath, getPosPagePath, useNavigationStore } from "../navigationStore";
 
 beforeEach(() => {
 	useNavigationStore.setState({ activePage: "Home" });
@@ -26,5 +26,19 @@ describe("navigationStore", () => {
 		unsubscribe();
 
 		expect(seen).toEqual(["Payments", "Customers"]);
+	});
+
+	it("maps POS pages to clean application paths", () => {
+		expect(getPosPagePath("Home")).toBe("/vunapos");
+		expect(getPosPagePath("Invoices")).toBe("/vunapos/invoices");
+		expect(getPosPagePath("Payments")).toBe("/vunapos/payments");
+		expect(getPosPagePath("Customers")).toBe("/vunapos/customers");
+		expect(getPosPagePath("Close Shift")).toBe("/vunapos/close-shift");
+	});
+
+	it("resolves application paths and tolerates a trailing slash", () => {
+		expect(getPosPageFromPath("/vunapos/close-shift")).toBe("Close Shift");
+		expect(getPosPageFromPath("/vunapos/invoices/")).toBe("Invoices");
+		expect(getPosPageFromPath("/vunapos/not-built-yet")).toBe("Home");
 	});
 });

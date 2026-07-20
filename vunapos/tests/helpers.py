@@ -79,6 +79,10 @@ def ensure_test_customer():
 
 def ensure_test_pos_profile():
 	if frappe.db.exists("POS Profile", "_Test VunaPOS Profile"):
+		profile = frappe.get_doc("POS Profile", "_Test VunaPOS Profile")
+		if not any(row.user == frappe.session.user for row in profile.get("applicable_for_users", [])):
+			profile.append("applicable_for_users", {"user": frappe.session.user, "default": 0})
+			profile.save(ignore_permissions=True)
 		return "_Test VunaPOS Profile"
 
 	company = _company()
@@ -102,6 +106,7 @@ def ensure_test_pos_profile():
 		}
 	)
 	profile.append("payments", {"mode_of_payment": mode_of_payment, "default": 1})
+	profile.append("applicable_for_users", {"user": frappe.session.user, "default": 0})
 	profile.insert(ignore_permissions=True)
 	return profile.name
 
@@ -284,23 +289,26 @@ def set_invoice_mode(invoice_mode):
 	frappe.db.set_single_value("POS Settings", "invoice_type", invoice_mode)
 
 
-def ensure_open_pos_opening_entry(pos_profile):
+def ensure_open_pos_opening_entry(pos_profile, period_start_date=None):
+	user = frappe.session.user
 	existing = frappe.db.get_value(
-		"POS Opening Entry", {"pos_profile": pos_profile, "status": "Open"}, "name"
+		"POS Opening Entry",
+		{"user": user, "pos_profile": pos_profile, "status": "Open", "docstatus": 1},
+		"name",
 	)
 	if existing:
+		if period_start_date is not None:
+			frappe.db.set_value(
+				"POS Opening Entry", existing, "period_start_date", period_start_date, update_modified=False
+			)
 		return existing
 
 	profile = frappe.get_doc("POS Profile", pos_profile)
-	open_users = frappe.get_all("POS Opening Entry", {"status": "Open"}, pluck="user")
-	user = frappe.session.user
-	if user in open_users:
-		user = frappe.db.get_value("User", {"enabled": 1, "name": ["not in", open_users]}, "name") or user
 	entry = frappe.new_doc("POS Opening Entry")
 	entry.pos_profile = profile.name
 	entry.user = user
 	entry.company = profile.company
-	entry.period_start_date = get_datetime()
+	entry.period_start_date = period_start_date or get_datetime()
 	entry.set(
 		"balance_details",
 		[frappe._dict({"mode_of_payment": row.mode_of_payment}) for row in profile.get("payments", [])],

@@ -49,6 +49,20 @@ beforeEach(async () => {
 		db.meta.clear(),
 	]);
 	await db.profile.put({ name: "Profile-1" });
+	await db.meta.put({
+		key: META_KEYS.posSession,
+		value: {
+			has_opening_entry: true,
+			opening_entry: "OPEN-1",
+			cashier: "cashier@example.com",
+			pos_profile: "Profile-1",
+			ready: true,
+			status: "OPEN",
+			opened_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+			verified_at: new Date().toISOString(),
+		},
+	});
+	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 	useCartStore.setState({
 		invoice: null,
 		heldInvoices: [],

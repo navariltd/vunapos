@@ -21,6 +21,7 @@ from vunapos.api.sales import (
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
 	ensure_item_tax_template,
+	ensure_open_pos_opening_entry,
 	ensure_sales_tax_template,
 	ensure_test_batch_item,
 	ensure_test_item,
@@ -31,6 +32,9 @@ from vunapos.tests.helpers import (
 
 
 class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
+	def setUp(self):
+		ensure_open_pos_opening_entry(ensure_test_pos_profile())
+
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
 		profile = ensure_test_pos_profile()
 		warehouse = frappe.db.get_value("POS Profile", profile, "warehouse")
@@ -46,6 +50,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["doctype"], "Sales Invoice")
 		self.assertEqual(response["data"]["docstatus"], 0)
+		self.assertEqual(frappe.db.get_value("Sales Invoice", response["data"]["name"], "is_pos"), 1)
 
 	def test_add_update_remove_invoice_item(self):
 		profile = ensure_test_pos_profile()
@@ -338,6 +343,29 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
+
+	def test_checkout_requires_current_open_session(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		opening_entry = ensure_open_pos_opening_entry(profile)
+		frappe.db.set_value("POS Opening Entry", opening_entry, "status", "Closed")
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[
+				{
+					"mode_of_payment": "Cash",
+					"amount": invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"],
+				}
+			],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "POS_OPENING_REQUIRED")
 
 	def test_checkout_with_same_idempotency_key_does_not_duplicate(self):
 		profile = ensure_test_pos_profile()

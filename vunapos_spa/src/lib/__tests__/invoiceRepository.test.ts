@@ -19,6 +19,20 @@ beforeEach(async () => {
 		taxes: [{ account_head: "VAT", charge_type: "On Net Total", rate: 16, included_in_print_rate: false }],
 	});
 	await db.profile.put({ name: "Profile-1", taxes_and_charges: "Kenya Tax - TC" });
+	await db.meta.put({
+		key: META_KEYS.posSession,
+		value: {
+			has_opening_entry: true,
+			opening_entry: "OPEN-1",
+			cashier: "cashier@example.com",
+			pos_profile: "Profile-1",
+			ready: true,
+			status: "OPEN",
+			opened_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+			verified_at: new Date().toISOString(),
+		},
+	});
+	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 });
 
 describe("invoiceRepository.create", () => {
@@ -33,6 +47,10 @@ describe("invoiceRepository.create", () => {
 		expect(result.local_ref).toMatch(/^POS-[A-Z0-9]{8}-00001$/);
 
 		const queued = await db.queue.get(result.local_id);
+		expect(queued?.type).toBe("create_invoice");
+		if (!queued || queued.type !== "create_invoice") {
+			throw new Error("Expected a queued invoice");
+		}
 		expect(queued?.status).toBe("pending");
 		expect(queued?.payload.items).toEqual([{ item_code: "ITEM-1", qty: 2 }]);
 		expect(queued?.payload.totals?.grand_total).toBeCloseTo(232, 2);
@@ -40,6 +58,8 @@ describe("invoiceRepository.create", () => {
 		// The device's local_ref rides along in the payload so the server can stamp it onto
 		// vunapos_invoice_number_offline - a synced invoice traces back to its offline sale.
 		expect(queued?.payload.local_ref).toBe(result.local_ref);
+		expect(queued.payload.opening_entry).toBe("OPEN-1");
+		expect(queued.payload.cashier).toBe("cashier@example.com");
 	});
 
 	it("increments the local_ref counter across successive sales", async () => {
@@ -92,6 +112,37 @@ describe("invoiceRepository.create", () => {
 		await expect(
 			invoiceRepository.create({ items: [{ item_code: "ITEM-1", qty: 1 }], payments: [] }),
 		).rejects.toThrow(/bootstrap must run/i);
+	});
+
+	it("throws and queues nothing when no verified open session is cached", async () => {
+		await db.meta.delete(META_KEYS.posSession);
+		await expect(
+			invoiceRepository.create({
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				payments: [{ mode_of_payment: "Cash", amount: 116 }],
+			}),
+		).rejects.toThrow(/verified open POS session/i);
+		expect(await db.queue.count()).toBe(0);
+	});
+
+	it("throws and queues nothing when the cached session has expired", async () => {
+		const session = (await db.meta.get(META_KEYS.posSession))?.value as Record<string, unknown>;
+		await db.meta.put({
+			key: META_KEYS.posSession,
+			value: {
+				...session,
+				opened_at: new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString(),
+			},
+		});
+		await expect(
+			invoiceRepository.create({
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				payments: [{ mode_of_payment: "Cash", amount: 116 }],
+			}),
+		).rejects.toThrow(/session has expired/i);
+		expect(await db.queue.count()).toBe(0);
 	});
 
 	it("taxes an item at its own item-level template rate when that mechanism is active (N9)", async () => {

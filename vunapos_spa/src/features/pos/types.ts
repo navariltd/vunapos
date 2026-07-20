@@ -14,8 +14,47 @@ export type CustomerDTO = {
 export type POSSessionDTO = {
 	has_opening_entry: boolean;
 	opening_entry: string | null;
+	opened_at?: string | null;
+	verified_at?: string | null;
+	cashier?: string;
+	pos_profile?: string;
 	ready: boolean;
-	status?: "OPEN" | "OPENING_REQUIRED";
+	status?: "OPEN" | "OPENING_REQUIRED" | "CLOSING" | "CLOSING_FAILED";
+	closing_entry?: string | null;
+};
+
+export type POSClosingPaymentDTO = {
+	mode_of_payment: string;
+	opening_amount: number;
+	expected_amount: number;
+	closing_amount: number;
+	difference: number;
+};
+
+export type POSClosingPreviewDTO = {
+	name?: string;
+	status?: string;
+	opening_entry: string;
+	pos_profile: string;
+	cashier: string;
+	period_start_date: string;
+	period_end_date: string;
+	invoice_count: number;
+	invoices: {
+		name: string;
+		doctype: string;
+		posting_date: string;
+		posting_time?: string;
+		customer?: string;
+		grand_total: number;
+		is_return: boolean;
+	}[];
+	net_total: number;
+	total_taxes_and_charges: number;
+	grand_total: number;
+	total_quantity: number;
+	payments: POSClosingPaymentDTO[];
+	session?: POSSessionDTO;
 };
 
 

@@ -1,9 +1,13 @@
 import { fetchBootstrap } from "./apiClient";
 import { db, MASTER_DATA_TABLES } from "./db";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
-import type { BootstrapPayload } from "./types";
+import type { BootstrapPayload, CachedPosSession } from "./types";
 
 export class BootstrapVerificationError extends Error {}
+
+export async function cachePosSession(session: CachedPosSession): Promise<void> {
+	await metaRepository.set(META_KEYS.posSession, session);
+}
 
 // Sanity thresholds before Ready is shown (§10.1 Verify step) - catches a bootstrap
 // response that "succeeded" but is missing something a sale can't happen without.
@@ -16,6 +20,12 @@ function verify(payload: BootstrapPayload): void {
 	}
 	if (payload.payment_modes.length < 1) {
 		throw new BootstrapVerificationError("Bootstrap payload has no payment modes");
+	}
+	if (!payload.pos_session || payload.pos_session.pos_profile !== payload.pos_profile.name) {
+		throw new BootstrapVerificationError("Bootstrap payload has no verified POS session status");
+	}
+	if (!Number.isFinite(payload.offline_session_ttl_hours) || payload.offline_session_ttl_hours <= 0) {
+		throw new BootstrapVerificationError("Bootstrap payload has an invalid offline session lifetime");
 	}
 }
 
@@ -41,6 +51,8 @@ async function writeFullSnapshot(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.lastDeltaSync, value: payload.server_time });
 		await db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version });
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
+		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
+		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
 	});
 }
 
@@ -77,6 +89,8 @@ async function writeDelta(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.lastDeltaSync, value: payload.server_time });
 		await db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version });
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
+		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
+		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
 	});
 }
 

@@ -8,6 +8,7 @@ import "@fontsource/inter/700.css";
 import "./styles/globals.css";
 import { App } from "./app/App";
 import { registerServiceWorker } from "./registerServiceWorker";
+import { initPosNavigation } from "./lib/stores/navigationStore";
 import { initSystemThemeListener } from "./lib/stores/themeStore";
 
 createRoot(document.getElementById("root")!).render(
@@ -17,4 +18,5 @@ createRoot(document.getElementById("root")!).render(
 );
 
 registerServiceWorker();
+initPosNavigation();
 initSystemThemeListener();
