@@ -13,7 +13,7 @@ def _failure_from_exception(exc):
 
 
 @frappe.whitelist(methods=["GET"])
-def get_preview(pos_profile=None):
+def get_preview(pos_profile: str | None = None):
 	try:
 		return success(get_closing_preview(pos_profile))
 	except Exception as exc:
