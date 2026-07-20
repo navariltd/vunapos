@@ -28,9 +28,11 @@ beforeEach(async () => {
 			pos_profile: "Profile-1",
 			ready: true,
 			status: "OPEN",
-			verified_at: "2026-07-10 08:00:00",
+			opened_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+			verified_at: new Date().toISOString(),
 		},
 	});
+	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 });
 
 describe("invoiceRepository.create", () => {
@@ -121,6 +123,25 @@ describe("invoiceRepository.create", () => {
 				payments: [{ mode_of_payment: "Cash", amount: 116 }],
 			}),
 		).rejects.toThrow(/verified open POS session/i);
+		expect(await db.queue.count()).toBe(0);
+	});
+
+	it("throws and queues nothing when the cached session has expired", async () => {
+		const session = (await db.meta.get(META_KEYS.posSession))?.value as Record<string, unknown>;
+		await db.meta.put({
+			key: META_KEYS.posSession,
+			value: {
+				...session,
+				opened_at: new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString(),
+			},
+		});
+		await expect(
+			invoiceRepository.create({
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				payments: [{ mode_of_payment: "Cash", amount: 116 }],
+			}),
+		).rejects.toThrow(/session has expired/i);
 		expect(await db.queue.count()).toBe(0);
 	});
 

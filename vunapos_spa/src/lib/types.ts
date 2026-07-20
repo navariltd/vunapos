@@ -114,6 +114,7 @@ export type BootstrapPayload = {
 	mode: "full" | "delta";
 	pos_profile: CachedProfile;
 	pos_session: CachedPosSession;
+	offline_session_ttl_hours: number;
 	items: CachedItem[];
 	customers: CachedCustomer[];
 	tax_templates: CachedTaxTemplate[];

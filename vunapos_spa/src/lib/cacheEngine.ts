@@ -24,6 +24,9 @@ function verify(payload: BootstrapPayload): void {
 	if (!payload.pos_session || payload.pos_session.pos_profile !== payload.pos_profile.name) {
 		throw new BootstrapVerificationError("Bootstrap payload has no verified POS session status");
 	}
+	if (!Number.isFinite(payload.offline_session_ttl_hours) || payload.offline_session_ttl_hours <= 0) {
+		throw new BootstrapVerificationError("Bootstrap payload has an invalid offline session lifetime");
+	}
 }
 
 const ALL_TABLES = [...MASTER_DATA_TABLES, db.meta];
@@ -49,6 +52,7 @@ async function writeFullSnapshot(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version });
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
 		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
+		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
 	});
 }
 
@@ -86,6 +90,7 @@ async function writeDelta(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version });
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
 		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
+		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
 	});
 }
 

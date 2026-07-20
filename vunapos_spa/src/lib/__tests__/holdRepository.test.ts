@@ -30,8 +30,11 @@ beforeEach(async () => {
 			pos_profile: "Profile-1",
 			ready: true,
 			status: "OPEN",
+			opened_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+			verified_at: new Date().toISOString(),
 		},
 	});
+	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 });
 
 describe("holdRepository.create", () => {
