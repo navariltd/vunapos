@@ -19,7 +19,8 @@ from vunapos.tests.helpers import (
 
 
 def _payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-00001"):
-	opening_entry = ensure_open_pos_opening_entry(profile)
+	sale_at = now_datetime()
+	opening_entry = ensure_open_pos_opening_entry(profile, period_start_date=add_to_date(sale_at, seconds=-1))
 	preview = preview_invoice_service(
 		pos_profile=profile,
 		customer=customer,
@@ -37,9 +38,9 @@ def _payload_for(profile, item_code, qty=1, customer=None, local_ref="POS-TEST-0
 		"local_ref": local_ref,
 		"opening_entry": opening_entry,
 		"cashier": frappe.session.user,
-		"pos_session_verified_at": str(now_datetime()),
-		"posting_date": now_datetime().strftime("%Y-%m-%d"),
-		"posting_time": now_datetime().strftime("%H:%M:%S"),
+		"pos_session_verified_at": str(sale_at),
+		"posting_date": sale_at.strftime("%Y-%m-%d"),
+		"posting_time": sale_at.strftime("%H:%M:%S"),
 	}
 
 
@@ -311,6 +312,7 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 		item_code = ensure_test_item()
 		set_invoice_mode("Sales Invoice")
 		payload = _payload_for(profile, item_code)
+		frappe.db.set_single_value("POS Settings", "vunapos_offline_session_ttl_hours", 72)
 		device_date = add_to_date(now_datetime(), days=-2).strftime("%Y-%m-%d")
 		frappe.db.set_value(
 			"POS Opening Entry",

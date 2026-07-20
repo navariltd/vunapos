@@ -289,7 +289,7 @@ def set_invoice_mode(invoice_mode):
 	frappe.db.set_single_value("POS Settings", "invoice_type", invoice_mode)
 
 
-def ensure_open_pos_opening_entry(pos_profile):
+def ensure_open_pos_opening_entry(pos_profile, period_start_date=None):
 	user = frappe.session.user
 	existing = frappe.db.get_value(
 		"POS Opening Entry",
@@ -297,6 +297,10 @@ def ensure_open_pos_opening_entry(pos_profile):
 		"name",
 	)
 	if existing:
+		if period_start_date is not None:
+			frappe.db.set_value(
+				"POS Opening Entry", existing, "period_start_date", period_start_date, update_modified=False
+			)
 		return existing
 
 	profile = frappe.get_doc("POS Profile", pos_profile)
@@ -304,7 +308,7 @@ def ensure_open_pos_opening_entry(pos_profile):
 	entry.pos_profile = profile.name
 	entry.user = user
 	entry.company = profile.company
-	entry.period_start_date = get_datetime()
+	entry.period_start_date = period_start_date or get_datetime()
 	entry.set(
 		"balance_details",
 		[frappe._dict({"mode_of_payment": row.mode_of_payment}) for row in profile.get("payments", [])],
