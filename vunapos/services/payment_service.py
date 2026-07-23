@@ -134,6 +134,10 @@ def receive_customer_payment(
 				"allocated_amount": allocation,
 			},
 		)
+	# Payment Entry keeps these as transient controller attributes rather than
+	# DocType fields. ERPNext's own get_payment_entry() initializes them before
+	# set_missing_values()/validation, and manual construction must do the same.
+	doc.setup_party_account_field()
 	doc.set_missing_values()
 	doc.set_amounts()
 	doc.insert()
