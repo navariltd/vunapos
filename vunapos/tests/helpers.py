@@ -1,5 +1,6 @@
 import frappe
-from frappe.utils import get_datetime, now_datetime
+from erpnext.stock.doctype.batch.batch import get_batch_qty
+from frappe.utils import flt, get_datetime, now_datetime
 
 
 def _first_value(doctype, filters, fieldname="name"):
@@ -280,6 +281,43 @@ def ensure_batch_stock(item_code, warehouse, batches):
 			"name",
 		)
 		if existing:
+			other_qty = frappe.db.sql(
+				"""
+				select coalesce(sum(actual_qty), 0)
+				from `tabStock Ledger Entry`
+				where item_code = %s and warehouse = %s and batch_no = %s
+					and name != %s and docstatus < 2 and ifnull(is_cancelled, 0) = 0
+				""",
+				(item_code, warehouse, batch_name, existing),
+			)[0][0]
+			fixture_qty = flt(qty) - flt(other_qty)
+			frappe.db.set_value(
+				"Stock Ledger Entry",
+				existing,
+				{
+					"actual_qty": fixture_qty,
+					"qty_after_transaction": qty,
+					"stock_value": flt(qty) * 100,
+					"stock_value_difference": fixture_qty * 100,
+				},
+				update_modified=False,
+			)
+			available_rows = get_batch_qty(item_code=item_code, warehouse=warehouse) or []
+			available_qty = next(
+				(flt(row.get("qty")) for row in available_rows if row.get("batch_no") == batch_name),
+				0,
+			)
+			if available_qty != flt(qty):
+				fixture_qty += flt(qty) - available_qty
+				frappe.db.set_value(
+					"Stock Ledger Entry",
+					existing,
+					{
+						"actual_qty": fixture_qty,
+						"stock_value_difference": fixture_qty * 100,
+					},
+					update_modified=False,
+				)
 			continue
 		frappe.get_doc(
 			{
@@ -301,6 +339,33 @@ def ensure_batch_stock(item_code, warehouse, batches):
 				"stock_value_difference": qty * 100,
 			}
 		).insert(ignore_permissions=True, ignore_links=True)
+
+	total_qty = frappe.db.sql(
+		"""
+		select coalesce(sum(actual_qty), 0)
+		from `tabStock Ledger Entry`
+		where item_code = %s and warehouse = %s
+			and docstatus < 2 and ifnull(is_cancelled, 0) = 0
+		""",
+		(item_code, warehouse),
+	)[0][0]
+	latest_sle = frappe.db.get_value(
+		"Stock Ledger Entry",
+		{"item_code": item_code, "warehouse": warehouse, "docstatus": ["<", 2], "is_cancelled": 0},
+		"name",
+		order_by="posting_datetime desc, creation desc",
+	)
+	if latest_sle:
+		frappe.db.set_value(
+			"Stock Ledger Entry", latest_sle, "qty_after_transaction", flt(total_qty), update_modified=False
+		)
+	bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "name")
+	if bin_name:
+		frappe.db.set_value("Bin", bin_name, "actual_qty", flt(total_qty), update_modified=False)
+	else:
+		frappe.get_doc(
+			{"doctype": "Bin", "item_code": item_code, "warehouse": warehouse, "actual_qty": flt(total_qty)}
+		).insert(ignore_permissions=True)
 
 
 def set_invoice_mode(invoice_mode):

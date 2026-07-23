@@ -206,7 +206,11 @@ def allocate_batches(item_code, qty, warehouse=None, pos_profile=None, strategy=
 		_throw(
 			"INSUFFICIENT_BATCH_STOCK",
 			_("Only {0} units are available across valid batches for {1}.").format(allocated_qty, item_code),
-			meta={"requested_qty": qty, "available_qty": allocated_qty},
+			meta={
+				"requested_qty": qty,
+				"available_qty": allocated_qty,
+				"available_batches": batch_payload["batches"],
+			},
 		)
 
 	return {
@@ -232,6 +236,18 @@ def validate_batch_allocation(item_code, qty, allocations, warehouse=None):
 		if not batch_no or allocation_qty <= 0:
 			_throw("INVALID_BATCH_ALLOCATION", _("Invalid batch allocation for item {0}.").format(item_code))
 		if batch_no not in available:
+			batch = frappe.db.get_value("Batch", batch_no, ["item", "disabled", "expiry_date"], as_dict=True)
+			if (
+				batch
+				and batch.item == item_code
+				and not batch.disabled
+				and (not batch.expiry_date or getdate(batch.expiry_date) >= getdate(nowdate()))
+			):
+				_throw(
+					"INSUFFICIENT_BATCH_STOCK",
+					_("Batch {0} has no available stock for item {1}.").format(batch_no, item_code),
+					meta={"requested_qty": allocation_qty, "available_qty": 0},
+				)
 			_throw(
 				"INVALID_BATCH_ALLOCATION",
 				_("Batch {0} is not available for item {1}.").format(batch_no, item_code),
