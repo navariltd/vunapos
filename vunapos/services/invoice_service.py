@@ -211,6 +211,10 @@ def _valid_payment_modes(profile):
 	return {row.mode_of_payment for row in profile.get("payments", []) if row.get("mode_of_payment")}
 
 
+def _payment_mode_type(mode_of_payment):
+	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
+
+
 def validate_payment_rows(doc, payments=None, profile=None):
 	rows = _payment_rows(payments)
 	if not isinstance(rows, list) or not rows:
@@ -219,6 +223,7 @@ def validate_payment_rows(doc, payments=None, profile=None):
 	valid_modes = _valid_payment_modes(profile) if profile else set()
 	seen_modes = set()
 	total_paid = Decimal("0")
+	non_cash_paid = Decimal("0")
 	validated_rows = []
 	for row in rows:
 		if not isinstance(row, dict):
@@ -254,6 +259,8 @@ def validate_payment_rows(doc, payments=None, profile=None):
 
 		seen_modes.add(mode_of_payment)
 		total_paid += amount
+		if _payment_mode_type(mode_of_payment) != "Cash":
+			non_cash_paid += amount
 		validated_rows.append(
 			{
 				"mode_of_payment": mode_of_payment,
@@ -265,10 +272,18 @@ def validate_payment_rows(doc, payments=None, profile=None):
 	precision = _currency_precision(doc)
 	expected_total = flt(_invoice_total_for_payment(doc), precision)
 	paid_total = flt(total_paid, precision)
-	if paid_total != expected_total:
+	non_cash_total = flt(non_cash_paid, precision)
+	allow_partial_payment = bool(profile and profile.get("allow_partial_payment"))
+	if non_cash_total > expected_total:
+		_throw(
+			"NON_CASH_OVERPAYMENT",
+			_("Electronic payments cannot exceed the invoice total"),
+			{"expected_total": expected_total, "non_cash_total": non_cash_total, "precision": precision},
+		)
+	if paid_total < expected_total and not allow_partial_payment:
 		_throw(
 			"PAYMENT_TOTAL_MISMATCH",
-			_("Payment total must match the invoice total"),
+			_("Payment total must cover the invoice total"),
 			{"expected_total": expected_total, "paid_total": paid_total, "precision": precision},
 		)
 

@@ -1,3 +1,4 @@
+import frappe
 from erpnext.accounts.utils import get_currency_precision
 
 
@@ -9,12 +10,14 @@ def profile_to_dict(profile, invoice_mode):
 		"price_list": profile.selling_price_list,
 		"currency": profile.currency,
 		"currency_precision": get_currency_precision(),
+		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
 		"default_customer": profile.customer,
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [
 			{
 				"mode_of_payment": row.mode_of_payment,
 				"default": row.get("default"),
+				"type": frappe.get_cached_value("Mode of Payment", row.mode_of_payment, "type"),
 			}
 			for row in profile.get("payments", [])
 		],

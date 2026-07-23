@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/Button";
 import {
 	allocateAllToMode,
 	buildPaymentInputs,
+	canCompletePaymentAllocation,
 	calculatePaymentAllocation,
 	createInitialPaymentAmounts,
 	currencyScale,
@@ -18,6 +19,7 @@ import type { ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
+	allowPartialPayment?: boolean;
 	currency?: string;
 	currencyPrecision?: number;
 	error?: string | null;
@@ -35,6 +37,7 @@ function createIdempotencyKey() {
 }
 
 export function CheckoutDialog({
+	allowPartialPayment,
 	currency,
 	currencyPrecision,
 	error,
@@ -49,6 +52,7 @@ export function CheckoutDialog({
 
 	return (
 		<CheckoutDialogContent
+			allowPartialPayment={allowPartialPayment}
 			currency={currency}
 			currencyPrecision={currencyPrecision}
 			error={error}
@@ -60,6 +64,7 @@ export function CheckoutDialog({
 }
 
 function CheckoutDialogContent({
+	allowPartialPayment,
 	currency,
 	currencyPrecision,
 	error,
@@ -81,14 +86,13 @@ function CheckoutDialogContent({
 	);
 	const idempotencyKey = useRef(createIdempotencyKey());
 	const allocation = calculatePaymentAllocation(availableModes, amounts, totalMinor, precision);
-	const isBalanced =
+	const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
+	const isPayable =
 		availableModes.length > 0 &&
-		!allocation.hasInvalidAmount &&
-		allocation.allocatedMinor > 0 &&
-		allocation.remainingMinor === 0;
+		canCompletePaymentAllocation(allocation, totalMinor, Boolean(allowPartialPayment));
 	const scale = currencyScale(precision);
 	const isOverpaid = allocation.remainingMinor < 0;
-	const balanceLabel = isOverpaid ? "Overpaid" : "Remaining";
+	const balanceLabel = isOverpaid ? "Change" : allocation.remainingMinor > 0 && allowPartialPayment ? "Outstanding" : "Remaining";
 	const balanceMinor = Math.abs(allocation.remainingMinor);
 
 	return (
@@ -113,7 +117,7 @@ function CheckoutDialogContent({
 						<PaymentSummary
 							label={balanceLabel}
 							value={formatCurrency(balanceMinor / scale, currency, precision)}
-							invalid={allocation.remainingMinor !== 0 || allocation.hasInvalidAmount}
+							invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment)}
 						/>
 					</div>
 					<div className="space-y-2">
@@ -173,6 +177,16 @@ function CheckoutDialogContent({
 							<AlertCircle className="size-4 shrink-0" /> Enter valid amounts with no more than {precision} decimal places.
 						</div>
 					) : null}
+					{hasNonCashOverpayment ? (
+						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+							<AlertCircle className="size-4 shrink-0" /> Electronic payments cannot exceed the amount due.
+						</div>
+					) : null}
+					{allocation.remainingMinor > 0 && allowPartialPayment ? (
+						<p className="text-sm text-on-surface-variant">
+							Partial payment is enabled.
+						</p>
+					) : null}
 					{error ? (
 						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
 							<AlertCircle className="size-4 shrink-0" /> {error}
@@ -184,7 +198,7 @@ function CheckoutDialogContent({
 						Cancel
 					</Button>
 					<Button
-						disabled={!isBalanced || isSubmitting}
+						disabled={!isPayable || isSubmitting}
 						onClick={() =>
 							onConfirm(buildPaymentInputs(availableModes, amounts, precision), idempotencyKey.current)
 						}

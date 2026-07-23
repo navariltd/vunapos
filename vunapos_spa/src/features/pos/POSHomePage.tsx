@@ -373,6 +373,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			<CheckoutDialog
+				allowPartialPayment={bootstrap.data?.allow_partial_payment}
 				currency={bootstrap.data?.currency}
 				currencyPrecision={bootstrap.data?.currency_precision}
 				error={pageError}

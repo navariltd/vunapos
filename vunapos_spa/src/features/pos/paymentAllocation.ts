@@ -4,6 +4,8 @@ export type PaymentAmounts = Record<string, string>;
 
 export type PaymentAllocation = {
 	allocatedMinor: number;
+	cashMinor: number;
+	nonCashMinor: number;
 	remainingMinor: number;
 	hasInvalidAmount: boolean;
 };
@@ -78,6 +80,8 @@ export function calculatePaymentAllocation(
 	precision: number,
 ): PaymentAllocation {
 	let allocatedMinor = 0;
+	let cashMinor = 0;
+	let nonCashMinor = 0;
 	let hasInvalidAmount = false;
 	for (const mode of modes) {
 		const parsed = parsePaymentAmount(amounts[mode.mode_of_payment] || "", precision);
@@ -86,8 +90,23 @@ export function calculatePaymentAllocation(
 			continue;
 		}
 		allocatedMinor += parsed;
+		if (mode.type === "Cash") cashMinor += parsed;
+		else nonCashMinor += parsed;
 	}
-	return { allocatedMinor, remainingMinor: totalMinor - allocatedMinor, hasInvalidAmount };
+	return { allocatedMinor, cashMinor, nonCashMinor, remainingMinor: totalMinor - allocatedMinor, hasInvalidAmount };
+}
+
+export function canCompletePaymentAllocation(
+	allocation: PaymentAllocation,
+	totalMinor: number,
+	allowPartialPayment: boolean,
+): boolean {
+	return (
+		!allocation.hasInvalidAmount &&
+		allocation.allocatedMinor > 0 &&
+		allocation.nonCashMinor <= totalMinor &&
+		(allocation.remainingMinor <= 0 || allowPartialPayment)
+	);
 }
 
 export function buildPaymentInputs(

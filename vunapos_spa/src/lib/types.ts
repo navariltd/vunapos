@@ -72,6 +72,7 @@ export type TaxSettings = {
 export type CachedPaymentMode = {
 	mode_of_payment: string;
 	default?: boolean;
+	type?: "Cash" | "Bank" | "General" | "Phone" | string;
 };
 
 export type CachedProfile = {
@@ -81,6 +82,7 @@ export type CachedProfile = {
 	price_list?: string;
 	currency?: string;
 	currency_precision?: number;
+	allow_partial_payment?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

@@ -87,7 +87,11 @@ def _get_tax_settings():
 
 def _sync_payment_modes(profile):
 	return [
-		{"mode_of_payment": row.mode_of_payment, "default": bool(row.get("default"))}
+		{
+			"mode_of_payment": row.mode_of_payment,
+			"default": bool(row.get("default")),
+			"type": frappe.get_cached_value("Mode of Payment", row.mode_of_payment, "type"),
+		}
 		for row in profile.get("payments", [])
 	]
 

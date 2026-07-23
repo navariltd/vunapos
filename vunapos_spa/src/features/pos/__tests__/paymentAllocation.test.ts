@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	allocateAllToMode,
 	buildPaymentInputs,
+	canCompletePaymentAllocation,
 	calculatePaymentAllocation,
 	createInitialPaymentAmounts,
 	minorUnitsToInput,
@@ -12,9 +13,9 @@ import {
 import type { ModeOfPaymentDTO } from "../types";
 
 const modes: ModeOfPaymentDTO[] = [
-	{ mode_of_payment: "Cash", default: 1 },
-	{ mode_of_payment: "M-Pesa" },
-	{ mode_of_payment: "Card" },
+	{ mode_of_payment: "Cash", default: 1, type: "Cash" },
+	{ mode_of_payment: "M-Pesa", type: "Phone" },
+	{ mode_of_payment: "Card", type: "Bank" },
 ];
 
 describe("payment allocation", () => {
@@ -42,11 +43,37 @@ describe("payment allocation", () => {
 	it("calculates exact split, underpayment, and overpayment in minor units", () => {
 		expect(
 			calculatePaymentAllocation(modes, { Cash: "500", "M-Pesa": "1000.00", Card: "" }, 150000, 2),
-		).toEqual({ allocatedMinor: 150000, remainingMinor: 0, hasInvalidAmount: false });
+		).toEqual({
+			allocatedMinor: 150000,
+			cashMinor: 50000,
+			nonCashMinor: 100000,
+			remainingMinor: 0,
+			hasInvalidAmount: false,
+		});
 		expect(calculatePaymentAllocation(modes, { Cash: "500", "M-Pesa": "900", Card: "" }, 150000, 2))
 			.toMatchObject({ remainingMinor: 10000 });
 		expect(calculatePaymentAllocation(modes, { Cash: "500", "M-Pesa": "1100", Card: "" }, 150000, 2))
 			.toMatchObject({ remainingMinor: -10000 });
+	});
+
+	it("allows cash change but prevents electronic overpayment", () => {
+		const cashChange = calculatePaymentAllocation(modes, { Cash: "700", "M-Pesa": "0", Card: "0" }, 65400, 2);
+		expect(cashChange.remainingMinor).toBe(-4600);
+		expect(canCompletePaymentAllocation(cashChange, 65400, false)).toBe(true);
+
+		const electronicOverpayment = calculatePaymentAllocation(
+			modes,
+			{ Cash: "0", "M-Pesa": "700", Card: "0" },
+			65400,
+			2,
+		);
+		expect(canCompletePaymentAllocation(electronicOverpayment, 65400, false)).toBe(false);
+	});
+
+	it("allows underpayment only when partial payment is enabled", () => {
+		const partial = calculatePaymentAllocation(modes, { Cash: "500", "M-Pesa": "0", Card: "0" }, 65400, 2);
+		expect(canCompletePaymentAllocation(partial, 65400, false)).toBe(false);
+		expect(canCompletePaymentAllocation(partial, 65400, true)).toBe(true);
 	});
 
 	it("rejects negative, exponent, excessive precision, and unsafe values", () => {

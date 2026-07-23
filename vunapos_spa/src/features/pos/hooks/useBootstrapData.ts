@@ -24,6 +24,7 @@ export function useBootstrapData() {
 			price_list: profile.price_list,
 			currency: profile.currency,
 			currency_precision: profile.currency_precision,
+			allow_partial_payment: profile.allow_partial_payment,
 			default_customer: profile.default_customer as BootstrapData["default_customer"],
 			modes_of_payment: profile.modes_of_payment,
 			print_format: profile.print_format,
