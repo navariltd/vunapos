@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 
 import type { ItemDTO } from "../types";
 import { itemRepository } from "../../../lib/repositories/itemRepository";
+import { useQueueStore } from "../../../lib/stores/queueStore";
+import { applyPendingStock } from "../../../lib/pendingStock";
 
 // Read-path cutover (P5, I3): item search never touches the network - it's a Dexie
 // prefix/substring query against the last-synced catalog (useItemSearch's job is
@@ -27,11 +29,16 @@ export function useItemSearch(query: string) {
 	}, [query]);
 
 	const items = useLiveQuery(() => itemRepository.search(debouncedQuery, 60), [debouncedQuery]);
+	const queueEntries = useQueueStore((state) => state.entries);
+	const availableItems = useMemo(
+		() => applyPendingStock((items ?? []) as ItemDTO[], queueEntries),
+		[items, queueEntries],
+	);
 
 	return {
 		error: null as string | null,
 		isLoading: query !== debouncedQuery || items === undefined,
-		items: (items ?? []) as ItemDTO[],
+		items: availableItems,
 		reload: () => {},
 	};
 }

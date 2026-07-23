@@ -1,7 +1,13 @@
 import json
+import math
+from decimal import Decimal, InvalidOperation
 
 import frappe
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+	get_sre_reserved_qty_for_item_and_warehouse,
+)
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
+from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import flt, get_datetime, now_datetime, nowdate
 
@@ -209,34 +215,83 @@ def _valid_payment_modes(profile):
 	return {row.mode_of_payment for row in profile.get("payments", []) if row.get("mode_of_payment")}
 
 
+def _payment_mode_type(mode_of_payment):
+	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
+
+
 def validate_payment_rows(doc, payments=None, profile=None):
 	rows = _payment_rows(payments)
-	if not rows:
+	if not isinstance(rows, list) or not rows:
 		_throw("NO_PAYMENT_ROWS", _("At least one payment row is required"))
 
 	valid_modes = _valid_payment_modes(profile) if profile else set()
-	total_paid = 0
+	seen_modes = set()
+	total_paid = Decimal("0")
+	non_cash_paid = Decimal("0")
+	validated_rows = []
 	for row in rows:
+		if not isinstance(row, dict):
+			_throw("INVALID_PAYMENT_MODE", _("Each payment row must be an object"))
+
 		mode_of_payment = row.get("mode_of_payment")
-		amount = flt(row.get("amount"))
-		if not mode_of_payment:
+		if not isinstance(mode_of_payment, str) or not mode_of_payment.strip():
 			_throw("INVALID_PAYMENT_MODE", _("Payment mode is required"))
-		if valid_modes and mode_of_payment not in valid_modes:
+		mode_of_payment = mode_of_payment.strip()
+		if profile is not None and mode_of_payment not in valid_modes:
 			_throw(
 				"INVALID_PAYMENT_MODE",
 				_("Payment mode {0} is not allowed for this POS Profile").format(mode_of_payment),
 			)
-		if amount <= 0:
+		if mode_of_payment in seen_modes:
+			_throw(
+				"DUPLICATE_PAYMENT_MODE",
+				_("Payment mode {0} can only be used once").format(mode_of_payment),
+			)
+
+		try:
+			raw_amount = row.get("amount")
+			if isinstance(raw_amount, bool):
+				raise InvalidOperation
+			amount = Decimal(str(raw_amount))
+		except (InvalidOperation, TypeError, ValueError):
+			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
+		if not amount.is_finite() or amount <= 0:
 			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
+		storage_amount = float(amount)
+		if not math.isfinite(storage_amount):
+			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+
+		seen_modes.add(mode_of_payment)
 		total_paid += amount
+		if _payment_mode_type(mode_of_payment) != "Cash":
+			non_cash_paid += amount
+		validated_rows.append(
+			{
+				"mode_of_payment": mode_of_payment,
+				"amount": storage_amount,
+				"default": row.get("default"),
+			}
+		)
 
 	precision = _currency_precision(doc)
 	expected_total = flt(_invoice_total_for_payment(doc), precision)
 	paid_total = flt(total_paid, precision)
-	if paid_total != expected_total:
-		_throw("PAYMENT_TOTAL_MISMATCH", _("Payment total must match the invoice total"))
+	non_cash_total = flt(non_cash_paid, precision)
+	allow_partial_payment = bool(profile and profile.get("allow_partial_payment"))
+	if non_cash_total > expected_total:
+		_throw(
+			"NON_CASH_OVERPAYMENT",
+			_("Electronic payments cannot exceed the invoice total"),
+			{"expected_total": expected_total, "non_cash_total": non_cash_total, "precision": precision},
+		)
+	if paid_total < expected_total and not allow_partial_payment:
+		_throw(
+			"PAYMENT_TOTAL_MISMATCH",
+			_("Payment total must cover the invoice total"),
+			{"expected_total": expected_total, "paid_total": paid_total, "precision": precision},
+		)
 
-	return rows
+	return validated_rows
 
 
 def _cart_item_rows(items):
@@ -285,20 +340,9 @@ def _validate_stock_qtys(item_qtys, profile):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return 0
-	return flt(
-		frappe.db.sql(
-			"""
-			select sum(actual_qty)
-			from `tabStock Ledger Entry`
-			where item_code = %s
-				and warehouse = %s
-				and docstatus < 2
-				and is_cancelled = 0
-			""",
-			(item_code, warehouse),
-		)[0][0]
-		or 0
-	)
+	stock_balance = flt(get_stock_balance(item_code, warehouse))
+	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
+	return max(stock_balance - reserved_stock, 0)
 
 
 def validate_cart_items(items, profile):
@@ -850,7 +894,8 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
-	set_payment_rows(doc, payments)
+	payment_rows = validate_payment_rows(doc, payments, profile)
+	set_payment_rows(doc, payment_rows)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()

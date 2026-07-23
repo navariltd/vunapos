@@ -18,7 +18,7 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
-import { isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
+import { getActiveCustomer, isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 
 type POSHomePageProps = {
@@ -87,6 +87,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const items = useItemSearch(itemSearchQuery);
 	const cartInvoice = useCartStore((s) => s.invoice);
+	const activeCustomer = useCartStore(getActiveCustomer);
 	const heldInvoicesView = useHeldInvoicesView();
 	const cartIsMutating = useCartStore((s) => s.isMutating);
 	const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
@@ -135,6 +136,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleOpenCheckout = async () => {
 		setPageError(null);
+		if (!activeCustomer?.customer) {
+			setPageError("Select a customer, or set a default customer on this POS Profile, before checkout");
+			return;
+		}
 		setIsCartOpen(false);
 		setIsCheckoutOpen(true);
 	};
@@ -217,7 +222,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
 		try {
-			const result = await cartActions.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
+			const result = await cartActions.submitCart(
+				payments,
+				bootstrap.data?.print_format,
+				idempotencyKey,
+				isReachable && navigator.onLine !== false,
+			);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);
 			if (result?.invoice) {
@@ -368,7 +378,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			<CheckoutDialog
+				allowPartialPayment={bootstrap.data?.allow_partial_payment}
 				currency={bootstrap.data?.currency}
+				currencyPrecision={bootstrap.data?.currency_precision}
+				error={pageError}
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
 				onClose={() => setIsCheckoutOpen(false)}

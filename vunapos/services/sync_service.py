@@ -14,10 +14,15 @@ from vunapos.services.profile_service import (
 # Doctypes the device replicates are read-only. Deleted records are reported
 # so the device can remove them from its local copy.
 SYNCED_DOCTYPES = ("Item", "Customer")
+STOCK_DELTA_SCHEMA_REVISION = 1
 
 
 def _bootstrap_version():
-	return cint(frappe.db.get_single_value("POS Settings", "vunapos_bootstrap_version")) or 1
+	configured = cint(frappe.db.get_single_value("POS Settings", "vunapos_bootstrap_version")) or 1
+	# Keep the administrator-controlled version meaningful while adding an application
+	# schema revision. This changes every pre-fix terminal's observed version exactly
+	# once, forcing a full snapshot that repairs quantities missed by the old delta.
+	return configured + STOCK_DELTA_SCHEMA_REVISION
 
 
 def _tax_template_to_dict(template_name):
@@ -87,7 +92,11 @@ def _get_tax_settings():
 
 def _sync_payment_modes(profile):
 	return [
-		{"mode_of_payment": row.mode_of_payment, "default": bool(row.get("default"))}
+		{
+			"mode_of_payment": row.mode_of_payment,
+			"default": bool(row.get("default")),
+			"type": frappe.get_cached_value("Mode of Payment", row.mode_of_payment, "type"),
+		}
 		for row in profile.get("payments", [])
 	]
 

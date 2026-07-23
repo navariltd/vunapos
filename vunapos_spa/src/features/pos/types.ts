@@ -2,6 +2,7 @@ export type ModeOfPaymentDTO = {
 	mode_of_payment: string;
 	default?: number | boolean ;
 	account?: string;
+	type?: "Cash" | "Bank" | "General" | "Phone" | string;
 };
 
 export type CustomerDTO = {
@@ -66,6 +67,8 @@ export type BootstrapData = {
 	warehouse?: string;
 	price_list?: string;
 	currency?: string;
+	currency_precision?: number;
+	allow_partial_payment?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -163,7 +166,7 @@ export type InvoiceDTO = {
 	modified?: string;
 	items: InvoiceItemDTO[];
 	taxes?: TaxDTO[];
-	payments?: unknown[];
+	payments?: PaymentInput[];
 	totals: {
 		net_total?: number;
 		total_taxes_and_charges?: number;

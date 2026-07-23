@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt, nowdate
@@ -18,6 +20,7 @@ from vunapos.api.sales import (
 	update_invoice_from_cart,
 	update_item,
 )
+from vunapos.services.invoice_service import validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
 	ensure_item_tax_template,
@@ -33,7 +36,9 @@ from vunapos.tests.helpers import (
 
 class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def setUp(self):
-		ensure_open_pos_opening_entry(ensure_test_pos_profile())
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 0, update_modified=False)
+		ensure_open_pos_opening_entry(profile)
 
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
 		profile = ensure_test_pos_profile()
@@ -260,6 +265,18 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
 
+	def test_submit_invoice_rejects_missing_payment_rows(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = submit_invoice(invoice["doctype"], invoice["name"], payments=[])
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "NO_PAYMENT_ROWS")
+
 	def test_checkout_blocks_empty_invoice(self):
 		profile = ensure_test_pos_profile()
 		set_invoice_mode("Sales Invoice")
@@ -325,6 +342,119 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "PAYMENT_TOTAL_MISMATCH")
 
+	def test_checkout_blocks_duplicate_payment_modes(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[
+				{"mode_of_payment": "Cash", "amount": amount / 2},
+				{"mode_of_payment": "Cash", "amount": amount / 2},
+			],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "DUPLICATE_PAYMENT_MODE")
+
+	def test_checkout_blocks_non_finite_and_invalid_payment_amounts(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		for invalid_amount in (
+			None,
+			True,
+			"not-a-number",
+			"NaN",
+			"Infinity",
+			"-Infinity",
+			"1e10000",
+			0,
+			-1,
+		):
+			with self.subTest(amount=invalid_amount):
+				response = checkout_invoice(
+					invoice["doctype"],
+					invoice["name"],
+					payments=[{"mode_of_payment": "Cash", "amount": invalid_amount}],
+				)
+				self.assertFalse(response["ok"], response)
+				self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_AMOUNT")
+
+	def test_payment_validation_accepts_split_at_currency_precision(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{
+				"payments": [
+					frappe._dict({"mode_of_payment": "Cash"}),
+					frappe._dict({"mode_of_payment": "M-Pesa"}),
+				]
+			}
+		)
+
+		rows = validate_payment_rows(
+			doc,
+			[
+				{"mode_of_payment": "Cash", "amount": "25.25"},
+				{"mode_of_payment": "M-Pesa", "amount": "74.75"},
+			],
+			profile,
+		)
+
+		self.assertEqual(
+			rows,
+			[
+				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
+				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
+			],
+		)
+
+	def test_payment_validation_allows_cash_overpayment_for_change(self):
+		doc = frappe._dict({"rounded_total": 654, "grand_total": 654})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
+		)
+
+		with patch("vunapos.services.invoice_service._payment_mode_type", return_value="Cash"):
+			rows = validate_payment_rows(doc, [{"mode_of_payment": "Cash", "amount": 700}], profile)
+
+		self.assertEqual(rows[0]["amount"], 700)
+
+	def test_payment_validation_rejects_non_cash_overpayment(self):
+		doc = frappe._dict({"rounded_total": 654, "grand_total": 654})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "M-Pesa"})]}
+		)
+
+		with patch("vunapos.services.invoice_service._payment_mode_type", return_value="Phone"):
+			with self.assertRaises(frappe.ValidationError) as context:
+				validate_payment_rows(doc, [{"mode_of_payment": "M-Pesa", "amount": 700}], profile)
+
+		self.assertEqual(context.exception.vuna_error_code, "NON_CASH_OVERPAYMENT")
+
+	def test_payment_validation_allows_underpayment_only_for_partial_payment_profile(self):
+		doc = frappe._dict({"rounded_total": 654, "grand_total": 654})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 1, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
+		)
+
+		with patch("vunapos.services.invoice_service._payment_mode_type", return_value="Cash"):
+			rows = validate_payment_rows(doc, [{"mode_of_payment": "Cash", "amount": 500}], profile)
+
+		self.assertEqual(rows[0]["amount"], 500)
+
 	def test_checkout_submits_valid_invoice(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -343,6 +473,47 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
+
+	def test_checkout_cash_overpayment_calculates_change(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount + 46}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["totals"]["paid_amount"], amount + 46)
+		self.assertEqual(response["data"]["totals"]["change_amount"], 46)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], 0)
+
+	def test_checkout_accepts_underpayment_when_profile_allows_partial_payment(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 1, update_modified=False)
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		try:
+			response = checkout_invoice(
+				invoice["doctype"],
+				invoice["name"],
+				payments=[{"mode_of_payment": "Cash", "amount": amount - 10}],
+			)
+		finally:
+			frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 0, update_modified=False)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["totals"]["paid_amount"], amount - 10)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], 10)
 
 	def test_checkout_requires_current_open_session(self):
 		profile = ensure_test_pos_profile()

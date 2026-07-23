@@ -1,16 +1,16 @@
 import type { BootstrapData, CustomerDTO, InvoiceDTO } from "./types";
 
-export function formatCurrency(value?: number | null, currency?: string) {
+export function formatCurrency(value?: number | null, currency?: string, precision = 2) {
 	const amount = Number(value || 0);
 	try {
 		return new Intl.NumberFormat(undefined, {
 			style: currency ? "currency" : "decimal",
 			currency: currency || undefined,
-			minimumFractionDigits: 2,
-			maximumFractionDigits: 2,
+			minimumFractionDigits: precision,
+			maximumFractionDigits: precision,
 		}).format(amount);
 	} catch {
-		return amount.toFixed(2);
+		return amount.toFixed(precision);
 	}
 }
 

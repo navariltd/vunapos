@@ -120,6 +120,13 @@ export function searchItems(
 	return callAndUnwrap<ItemDTO[]>(call, params);
 }
 
+export function getItemDetails(
+	call: FrappeCall,
+	params: { item_code: string; pos_profile?: string; customer?: string },
+) {
+	return callAndUnwrap<ItemDTO>(call, params);
+}
+
 export function getItemBatches(
 	call: FrappeCall,
 	params: { item_code: string; warehouse?: string; pos_profile?: string },

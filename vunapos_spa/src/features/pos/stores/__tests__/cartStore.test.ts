@@ -12,6 +12,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	const reject = vi.fn().mockRejectedValue(new Error("unexpected API call in this test"));
 	return {
 		addItem: reject,
+		getItemDetails: reject,
 		updateItem: reject,
 		removeItem: reject,
 		clearInvoice: reject,
@@ -72,6 +73,20 @@ beforeEach(async () => {
 		posProfile: "Profile-1",
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
+	});
+});
+
+describe("restoreFailedSale", () => {
+	it("restores a delayed rejected sale to the cart and removes its queue entry", async () => {
+		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, modified: "2026-07-10" });
+		await queueRepository.append(makeInvoiceEntry({ local_id: "failed-sale", status: "error" }));
+
+		const restored = await useCartStore.getState().restoreFailedSale("failed-sale");
+
+		expect(restored.items).toHaveLength(1);
+		expect(restored.items[0].item_code).toBe("ITEM-1");
+		expect(useCartStore.getState().invoice?.is_local).toBe(true);
+		expect(await queueRepository.getByLocalId("failed-sale")).toBeUndefined();
 	});
 });
 
@@ -280,9 +295,42 @@ describe("submitCart", () => {
 		).rejects.toThrow(/Totals do not match/);
 
 		// The just-hardened branch: a permanently rejected sale must not silently
-		// complete as if queued - the cart stays so the cashier can see/fix it.
+		// complete as if queued - the cart stays so the cashier can see/fix it, while
+		// the immediately rejected attempt is removed instead of becoming a blocked invoice.
 		expect(useCartStore.getState().invoice).not.toBeNull();
 		expect(useCartStore.getState().error).toMatch(/Totals do not match/);
+		expect(await db.queue.count()).toBe(0);
+	});
+
+	it("refreshes stock before online checkout and does not queue a rejected sale", async () => {
+		const getItemDetails = vi.fn().mockResolvedValue(
+			makeItem({ is_stock_item: 1, actual_qty: 0, allow_negative_stock: 0 }),
+		);
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(
+			makeItem({ is_stock_item: 1, actual_qty: 5, allow_negative_stock: 0 }),
+			makeApi(),
+		);
+
+		await expect(
+			useCartStore
+				.getState()
+				.submitCart(
+					[{ mode_of_payment: "Cash", amount: 100 }],
+					null,
+					"idem-stock",
+					makeApi({ getItemDetails }),
+					true,
+				),
+		).rejects.toThrow(/Available quantity is 0/);
+
+		expect(getItemDetails).toHaveBeenCalledWith({
+			item_code: "ITEM-1",
+			pos_profile: "Profile-1",
+			customer: "CUST-1",
+		});
+		expect(await db.queue.count()).toBe(0);
+		expect(useCartStore.getState().invoice).not.toBeNull();
 	});
 
 	it("falls back to a local receipt when the race times out still pending (offline/slow)", async () => {

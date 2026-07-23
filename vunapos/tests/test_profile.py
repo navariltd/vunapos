@@ -20,6 +20,10 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertTrue(response["data"]["warehouse"])
 		self.assertTrue(response["data"]["price_list"])
 		self.assertTrue(response["data"]["modes_of_payment"])
+		self.assertIsInstance(response["data"]["currency_precision"], int)
+		self.assertGreaterEqual(response["data"]["currency_precision"], 0)
+		self.assertIsInstance(response["data"]["allow_partial_payment"], bool)
+		self.assertIn(response["data"]["modes_of_payment"][0]["type"], {"Cash", "Bank", "General", "Phone"})
 		self.assertEqual(response["data"]["session"]["cashier"], frappe.session.user)
 		self.assertEqual(response["data"]["session"]["pos_profile"], profile)
 

@@ -61,6 +61,24 @@ def _mode_of_payment_account(company):
 	return mode_of_payment
 
 
+def ensure_test_payment_mode(mode_of_payment="_Test Vuna M-Pesa", payment_type="Phone"):
+	company = _company()
+	if frappe.db.exists("Mode of Payment", mode_of_payment):
+		doc = frappe.get_doc("Mode of Payment", mode_of_payment)
+	else:
+		doc = frappe.get_doc(
+			{"doctype": "Mode of Payment", "mode_of_payment": mode_of_payment, "type": payment_type}
+		)
+	account = _account(company, account_type="Bank") or _account(company, root_type="Asset")
+	if not any(row.company == company for row in doc.get("accounts", [])):
+		doc.append("accounts", {"company": company, "default_account": account})
+	if doc.is_new():
+		doc.insert(ignore_permissions=True)
+	else:
+		doc.save(ignore_permissions=True)
+	return doc.name
+
+
 def ensure_test_customer():
 	if frappe.db.exists("Customer", "_Test Customer"):
 		return "_Test Customer"

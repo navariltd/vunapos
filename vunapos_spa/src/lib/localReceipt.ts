@@ -41,6 +41,10 @@ function money(value: number, currency?: string): string {
 
 export function renderLocalReceipt(input: LocalReceiptInput): string {
 	const { assembled, currency } = input;
+	const invoiceTotal = assembled.totals.rounded_total || assembled.totals.grand_total;
+	const allocatedTotal = input.payments.reduce((sum, payment) => sum + payment.amount, 0);
+	const changeAmount = Math.max(allocatedTotal - invoiceTotal, 0);
+	const outstandingAmount = Math.max(invoiceTotal - allocatedTotal, 0);
 
 	const itemRows = assembled.items
 		.map(
@@ -104,6 +108,9 @@ export function renderLocalReceipt(input: LocalReceiptInput): string {
 	<div class="row bold"><span>Total</span><span>${money(assembled.totals.grand_total, currency)}</span></div>
 	<hr />
 	${paymentRows}
+	<div class="row bold"><span>Paid</span><span>${money(allocatedTotal, currency)}</span></div>
+	${changeAmount > 0 ? `<div class="row bold"><span>Change</span><span>${money(changeAmount, currency)}</span></div>` : ""}
+	${outstandingAmount > 0 ? `<div class="row bold"><span>Outstanding</span><span>${money(outstandingAmount, currency)}</span></div>` : ""}
 	<div class="notice">
 		QUEUED &mdash; PENDING SYNC<br />
 		This receipt will be confirmed under a permanent invoice number once this device reconnects.

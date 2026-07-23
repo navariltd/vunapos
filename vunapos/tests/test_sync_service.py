@@ -13,6 +13,7 @@ from vunapos.tests.helpers import (
 	ensure_item_tax_template,
 	ensure_open_pos_opening_entry,
 	ensure_test_item,
+	ensure_test_payment_mode,
 	ensure_test_pos_profile,
 	set_invoice_mode,
 )
@@ -180,6 +181,36 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		self.assertTrue(changed_response["ok"], changed_response)
 		self.assertIn(item_code, [row["item_code"] for row in changed_response["data"]["items"]])
 
+	def test_delta_bootstrap_reports_warehouse_stock_changes(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		warehouse = frappe.get_cached_value("POS Profile", profile, "warehouse")
+		bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "name")
+		if not bin_name:
+			bin_name = (
+				frappe.get_doc(
+					{"doctype": "Bin", "item_code": item_code, "warehouse": warehouse, "actual_qty": 0}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
+
+		since = str(now_datetime())
+		time.sleep(1)
+		new_actual_qty = flt(frappe.db.get_value("Bin", bin_name, "actual_qty")) + 2
+		frappe.db.set_value(
+			"Bin",
+			bin_name,
+			{"actual_qty": new_actual_qty, "reserved_stock": 1},
+		)
+
+		response = get_pos_bootstrap(pos_profile=profile, since=since)
+
+		self.assertTrue(response["ok"], response)
+		item_row = next(row for row in response["data"]["items"] if row["item_code"] == item_code)
+		self.assertEqual(item_row["actual_qty"], max(new_actual_qty - 1, 0))
+
 	def test_delta_bootstrap_reports_deleted_items_as_tombstones(self):
 		profile = ensure_test_pos_profile()
 		set_invoice_mode("Sales Invoice")
@@ -208,6 +239,54 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 
 
 class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
+	def test_queued_split_payment_is_persisted_on_the_submitted_invoice(self):
+		profile = ensure_test_pos_profile()
+		second_mode = ensure_test_payment_mode()
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		if not any(row.mode_of_payment == second_mode for row in profile_doc.get("payments", [])):
+			profile_doc.append("payments", {"mode_of_payment": second_mode, "default": 0})
+			profile_doc.save(ignore_permissions=True)
+
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		amount = payload["payments"][0]["amount"]
+		cash_mode = payload["payments"][0]["mode_of_payment"]
+		payload["payments"] = [
+			{"mode_of_payment": cash_mode, "amount": amount / 2},
+			{"mode_of_payment": second_mode, "amount": amount - (amount / 2)},
+		]
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="split-payment-sale",
+		)
+
+		self.assertTrue(response["ok"], response)
+		invoice = frappe.get_doc("Sales Invoice", response["data"]["invoice"])
+		self.assertEqual(
+			{row.mode_of_payment: flt(row.amount) for row in invoice.payments},
+			{row["mode_of_payment"]: flt(row["amount"]) for row in payload["payments"]},
+		)
+		self.assertEqual(flt(invoice.paid_amount), flt(amount))
+
+	def test_rejects_unsupported_payment_mode_for_queued_sale(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		payload["payments"] = [{"mode_of_payment": "Not Configured", "amount": 100}]
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="unsupported-payment-mode",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_MODE")
+
 	def test_rejects_queued_sale_without_verified_session_metadata(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()

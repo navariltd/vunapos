@@ -2,7 +2,9 @@ import { assembleCartAgainstCache } from "./cartAssembly";
 import type { AssembledInvoice, CartLine } from "./invoiceEngine";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
 import { evaluateCachedPosSession } from "./posSessionPolicy";
+import { pendingSaleQuantities } from "./pendingStock";
 import { profileRepository } from "./repositories/profileRepository";
+import { itemRepository } from "./repositories/itemRepository";
 import { queueRepository } from "./repositories/queueRepository";
 import type { CachedPosSession, InvoicePayload, QueueEntry } from "./types";
 
@@ -68,7 +70,7 @@ export async function nextLocalRef(): Promise<string> {
 // The only entry point to invoice creation (I6) - the UI never talks to the queue
 // or the Invoice Engine directly. write to the queue, return a local_id (spec §2.7).
 export const invoiceRepository = {
-	async create(cart: Cart): Promise<LocalInvoice> {
+	async create(cart: Cart, idempotencyKey?: string): Promise<LocalInvoice> {
 		if (!cart.items.length) {
 			throw new Error("Cannot submit an empty cart");
 		}
@@ -93,6 +95,26 @@ export const invoiceRepository = {
 			throw new Error("No verified open POS session is cached - connect and open the POS before checkout");
 		}
 		const validatedSession = sessionPolicy.session;
+		const pendingQty = pendingSaleQuantities(await queueRepository.getAll());
+		const requestedQty = new Map<string, number>();
+		for (const line of cart.items) {
+			requestedQty.set(line.item_code, (requestedQty.get(line.item_code) || 0) + Number(line.qty || 0));
+		}
+		for (const [itemCode, qty] of requestedQty) {
+			const cached = await itemRepository.getByCode(itemCode);
+			if (
+				cached?.is_stock_item !== 0 &&
+				cached?.is_stock_item !== false &&
+				!cached?.allow_negative_stock &&
+				cached?.actual_qty !== undefined &&
+				cached?.actual_qty !== null
+			) {
+				const available = Math.max(Number(cached.actual_qty) - (pendingQty.get(itemCode) || 0), 0);
+				if (qty > available) {
+					throw new Error(`Insufficient stock for ${cached.item_name}. Available quantity is ${available}.`);
+				}
+			}
+		}
 
 		// Assembly happens before any durable write - if pricing/tax data is missing or
 		// the engine hits an unsupported shape, it throws here and nothing is queued (I9).
@@ -100,7 +122,7 @@ export const invoiceRepository = {
 
 		const now = new Date();
 		const localId = crypto.randomUUID();
-		const idempotencyKey = crypto.randomUUID();
+		const queueIdempotencyKey = idempotencyKey || crypto.randomUUID();
 		const localRef = await nextLocalRef();
 		const postingDate = localDateString(now);
 		const postingTime = localTimeString(now);
@@ -132,7 +154,7 @@ export const invoiceRepository = {
 		const entry: QueueEntry = {
 			local_id: localId,
 			local_ref: localRef,
-			idempotency_key: idempotencyKey,
+			idempotency_key: queueIdempotencyKey,
 			type: "create_invoice",
 			schema_version: 1,
 			group: null,
