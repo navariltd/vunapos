@@ -52,6 +52,22 @@ def _get_vunapos_invoices(opening_entry, period_end_date):
 	return query.run(as_dict=True)
 
 
+def _get_vunapos_customer_payments(opening_entry, period_end_date):
+	return frappe.get_list(
+		"Payment Entry",
+		filters={
+			"docstatus": 1,
+			"payment_type": "Receive",
+			"vunapos_payment": 1,
+			"vunapos_opening_entry": opening_entry.name,
+			"vunapos_closing_entry": ["is", "not set"],
+			"posting_date": ["<=", period_end_date.date()],
+		},
+		fields=["name", "mode_of_payment", "received_amount"],
+		limit_page_length=100000,
+	)
+
+
 def _populate_vunapos_invoices(closing_entry, opening_entry):
 	invoices = _get_vunapos_invoices(opening_entry, closing_entry.period_end_date)
 	closing_entry.set("sales_invoices", [])
@@ -109,10 +125,22 @@ def _populate_vunapos_invoices(closing_entry, opening_entry):
 				"expected_amount": payment.amount,
 			},
 		)
+	customer_payments = _get_vunapos_customer_payments(opening_entry, closing_entry.period_end_date)
+	reconciliation = {row.mode_of_payment: row for row in closing_entry.get("payment_reconciliation", [])}
+	for payment in customer_payments:
+		row = reconciliation.get(payment.mode_of_payment)
+		if not row:
+			row = closing_entry.append(
+				"payment_reconciliation",
+				{"mode_of_payment": payment.mode_of_payment, "opening_amount": 0, "expected_amount": 0},
+			)
+			reconciliation[payment.mode_of_payment] = row
+		row.expected_amount = flt(row.expected_amount) + flt(payment.received_amount)
 	for tax in get_taxes(invoices):
 		closing_entry.append("taxes", {"account_head": tax.account_head, "amount": tax.tax_amount})
 
 	closing_entry.flags.vunapos_invoices = invoices
+	closing_entry.flags.vunapos_customer_payments = customer_payments
 
 
 def _prepare_closing_entry(pos_profile):
@@ -236,6 +264,10 @@ def close_pos_session(pos_profile, closing_balances):
 			"vunapos_closing_entry",
 			closing_entry.name,
 			update_modified=False,
+		)
+	for payment in closing_entry.flags.get("vunapos_customer_payments") or []:
+		frappe.db.set_value(
+			"Payment Entry", payment.name, "vunapos_closing_entry", closing_entry.name, update_modified=False
 		)
 
 	result = _closing_summary(closing_entry)

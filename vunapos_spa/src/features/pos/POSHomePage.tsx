@@ -9,6 +9,7 @@ import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CustomersPage } from "../customers/CustomersPage";
 import { CustomerDetailsPage } from "../customers/CustomerDetailsPage";
+import { PaymentsPage } from "../payments/PaymentsPage";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
@@ -284,6 +285,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<QueueInspectorPanel />
 					</div>
 				</section>
+			) : activePage === "Payments" ? (
+				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (
 				getCustomerFromPath(currentPath) ? <CustomerDetailsPage
 					customer={getCustomerFromPath(currentPath) || ""}

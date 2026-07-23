@@ -63,6 +63,13 @@ export function getCustomerFromPath(pathname = window.location.pathname): string
 	return match ? decodeURIComponent(match[1]) : null;
 }
 
+export function navigateToCustomerPayment(customer: string, invoice?: string) {
+	const params = new URLSearchParams({ customer });
+	if (invoice) params.set("invoice", invoice);
+	window.history.pushState({ vunaposPage: "Payments", customer, invoice }, "", `/vunapos/payments?${params}`);
+	useNavigationStore.getState().setActivePage("Payments");
+}
+
 export function initPosNavigation() {
 	const syncFromLocation = () => {
 		useNavigationStore.getState().setActivePage(getPosPageFromPath(window.location.pathname));

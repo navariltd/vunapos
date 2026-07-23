@@ -50,6 +50,7 @@ export const vunaMethods = {
 	searchCustomers: "vunapos.api.customer.search_customers",
 	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
 	getCustomerDetails: "vunapos.api.customer.get_customer_details",
+	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",

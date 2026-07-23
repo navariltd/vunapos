@@ -2,7 +2,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { ArrowLeft, CreditCard, MapPin, ReceiptText, ShoppingCart, UserRound } from "lucide-react";
 
 import { Button } from "../../components/ui/Button";
-import { navigateToPosPage } from "../../lib/stores/navigationStore";
+import { navigateToCustomerPayment, navigateToPosPage } from "../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../services/vunaApi";
 import type { CustomerDetailsDTO } from "../pos/types";
 
@@ -43,7 +43,7 @@ export function CustomerDetailsPage({ customer, posProfile, onStartSale }: Props
 		<div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="flex gap-3"><button className="mt-1 text-on-surface-variant" onClick={() => navigateToPosPage("Customers")} aria-label="Back to customers"><ArrowLeft className="size-5"/></button><div><h2 className="text-xl font-semibold text-on-surface">{row.customer_name}</h2><p className="text-sm text-on-surface-variant">{row.customer} · {row.customer_group || "Uncategorized"}</p></div></div>
-				<div className="flex flex-wrap gap-2"><Button onClick={() => onStartSale(row)}><ShoppingCart className="mr-2 size-4"/>Start new sale</Button><Button variant="ghost" disabled title="Available in customer payments phase"><CreditCard className="mr-2 size-4"/>Receive payment</Button></div>
+				<div className="flex flex-wrap gap-2"><Button onClick={() => onStartSale(row)}><ShoppingCart className="mr-2 size-4"/>Start new sale</Button><Button variant="ghost" onClick={() => navigateToCustomerPayment(row.customer)}><CreditCard className="mr-2 size-4"/>Receive payment</Button></div>
 			</div>
 
 			<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
