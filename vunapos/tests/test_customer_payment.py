@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -8,6 +10,9 @@ from vunapos.services.payment_service import (
 	get_payment_history,
 	reconcile_customer_payment,
 	render_payment_receipt,
+)
+from vunapos.services.payment_service import (
+	receive_customer_payment as receive_customer_payment_service,
 )
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
@@ -79,6 +84,23 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "POS_OPENING_REQUIRED")
+
+	def test_bank_payment_requires_reference_number_and_date(self):
+		company = frappe.db.get_value("POS Profile", self.profile, "company")
+		bank_account = frappe.db.get_value(
+			"Account", {"company": company, "account_type": "Bank", "is_group": 0}, "name"
+		)
+		if not bank_account:
+			self.skipTest("Test company has no Bank account")
+		with patch("vunapos.services.payment_service._mode_account", return_value=bank_account):
+			with self.assertRaises(frappe.ValidationError):
+				receive_customer_payment_service(
+					pos_profile=self.profile,
+					customer=self.customer,
+					amount=10,
+					mode_of_payment=self.mode,
+					idempotency_key=frappe.generate_hash(length=20),
+				)
 
 	def test_reconciles_one_advance_across_an_outstanding_invoice(self):
 		invoice = create_invoice_with_item("Sales Invoice")

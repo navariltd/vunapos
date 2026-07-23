@@ -88,6 +88,9 @@ def receive_customer_payment(
 			frappe.throw(_("Allocated amount cannot exceed the invoice outstanding balance"))
 
 	paid_to = _mode_account(profile, mode_of_payment)
+	if frappe.get_cached_value("Account", paid_to, "account_type") == "Bank":
+		if not reference_no or not reference_date:
+			frappe.throw(_("Reference No and Reference Date are required for bank payments"))
 	paid_from = get_party_account("Customer", customer, profile.company)
 	if not paid_from:
 		frappe.throw(_("No receivable account is configured for this customer"))

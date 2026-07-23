@@ -3,6 +3,7 @@ export type ModeOfPaymentDTO = {
 	default?: number | boolean ;
 	account?: string;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	requires_reference?: boolean;
 };
 
 export type CustomerDTO = {

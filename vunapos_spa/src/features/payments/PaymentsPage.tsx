@@ -26,6 +26,7 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 	const [amount, setAmount] = useState("");
 	const [mode, setMode] = useState(paymentModes.find((row) => row.default)?.mode_of_payment || paymentModes[0]?.mode_of_payment || "");
 	const [referenceNo, setReferenceNo] = useState("");
+	const [referenceDate, setReferenceDate] = useState(new Date().toISOString().slice(0, 10));
 	const [remarks, setRemarks] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
@@ -54,12 +55,14 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 	const outstanding = details?.invoices.filter((row) => !row.is_return && row.outstanding_amount > 0) || [];
 	const selectedOutstanding = outstanding.find((row) => row.name === invoice)?.outstanding_amount;
 	const displayedAmount = amount || (invoice && selectedOutstanding !== undefined ? String(selectedOutstanding) : "");
+	const requiresReference = Boolean(paymentModes.find((row) => row.mode_of_payment === mode)?.requires_reference);
 
 	async function receive() {
 		setError(null); setMessage(null);
 		if (!isOnline || !receiveCustomer || !mode || !(Number(displayedAmount) > 0)) { setError("Select a customer, payment mode, and valid amount while online."); return; }
+		if (requiresReference && (!referenceNo.trim() || !referenceDate)) { setError("Reference No and Reference Date are required for bank payments."); return; }
 		try {
-			const response = await receiveCall.call({ pos_profile: posProfile, customer: receiveCustomer, amount: Number(displayedAmount), mode_of_payment: mode, sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined, reference_no: referenceNo || undefined, reference_date: referenceNo ? new Date().toISOString().slice(0, 10) : undefined, remarks: remarks || undefined, idempotency_key: idempotencyKey.current });
+			const response = await receiveCall.call({ pos_profile: posProfile, customer: receiveCustomer, amount: Number(displayedAmount), mode_of_payment: mode, sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined, reference_no: referenceNo || undefined, reference_date: referenceNo ? referenceDate : undefined, remarks: remarks || undefined, idempotency_key: idempotencyKey.current });
 			const created = unwrapVunaResponse<{ name: string }>(response);
 			setMessage(`Payment Entry ${created.name} was submitted successfully.`);
 			idempotencyKey.current = crypto.randomUUID(); setAmount(""); setInvoice(""); setReferenceNo(""); setRemarks("");
@@ -110,9 +113,10 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 			<label className="text-sm font-medium">Apply to invoice<select className={fieldClass} value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstanding.find((row) => row.name === next)?.outstanding_amount || "") : ""); }} disabled={!receiveCustomer}><option value="">Customer advance / unallocated</option>{outstanding.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
 			<label className="text-sm font-medium">Mode of Payment<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
 			<label className="text-sm font-medium">Amount<input className={fieldClass} type="number" min="0" step="0.01" value={displayedAmount} onChange={(event) => setAmount(event.target.value)}/></label>
-			<label className="text-sm font-medium">External reference<input className={fieldClass} value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)}/></label>
+			<label className="text-sm font-medium">Reference No{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder={requiresReference ? "Required for bank payment" : "Optional"}/></label>
+			{requiresReference || referenceNo ? <label className="text-sm font-medium">Reference Date{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.target.value)}/></label> : null}
 			<label className="text-sm font-medium md:col-span-2">Remarks<textarea className={fieldClass} value={remarks} onChange={(event) => setRemarks(event.target.value)}/></label>
-			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
+			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer || (requiresReference && (!referenceNo.trim() || !referenceDate))} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
 		</div> : tab === "reconcile" ? <div className="space-y-4">
 			<div className="rounded-lg border border-outline-variant p-4"><CustomerPicker selected={reconcileCustomer ? reconcileCustomer : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={(value) => { setReconcileCustomer(value); setSelectedPayments([]); setSelectedInvoices([]); setAllocationPreview([]); }} onClear={() => setReconcileCustomer("")}/></div>
 			<div className="grid gap-4 lg:grid-cols-2"><SelectionList title="Unallocated payments" empty="No unallocated payments for this customer." rows={candidates.payments} selected={selectedPayments} onToggle={(name) => { toggle(name, selectedPayments, setSelectedPayments); setAllocationPreview([]); }}/><SelectionList title="Outstanding invoices" empty="No outstanding invoices for this customer." rows={candidates.invoices} selected={selectedInvoices} onToggle={(name) => { toggle(name, selectedInvoices, setSelectedInvoices); setAllocationPreview([]); }} invoices/></div>
