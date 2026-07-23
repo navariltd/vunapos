@@ -165,3 +165,144 @@ def payment_entry_to_dict(doc, duplicate=False):
 			for row in doc.get("references", [])
 		],
 	}
+
+
+def _reconciliation_doc(profile, customer, limit=100):
+	require_read("Customer", customer)
+	account = get_party_account("Customer", customer, profile.company)
+	if not account:
+		frappe.throw(_("No receivable account is configured for this customer"))
+	require_read("Account", account)
+	doc = frappe.new_doc("Payment Reconciliation")
+	doc.update(
+		{
+			"company": profile.company,
+			"party_type": "Customer",
+			"party": customer,
+			"receivable_payable_account": account,
+			"payment_limit": limit,
+			"invoice_limit": limit,
+		}
+	)
+	return doc
+
+
+def _native_candidates(profile, customer, limit=100):
+	doc = _reconciliation_doc(profile, customer, min(max(int(limit or 100), 1), 500))
+	doc.get_nonreconciled_payment_entries()
+	doc.get_invoice_entries()
+	invoice_doctype = get_invoice_mode()
+	payments = [
+		row
+		for row in doc.get("payments")
+		if row.reference_type == "Payment Entry"
+		and frappe.has_permission("Payment Entry", "read", doc=row.reference_name)
+	]
+	invoices = [
+		row
+		for row in doc.get("invoices")
+		if row.invoice_type == invoice_doctype
+		and frappe.has_permission(invoice_doctype, "read", doc=row.invoice_number)
+	]
+	return doc, payments, invoices
+
+
+def get_reconciliation_candidates(pos_profile=None, customer=None, limit=100):
+	profile = resolve_pos_profile(pos_profile)
+	if not customer:
+		return {"payments": [], "invoices": []}
+	_, payments, invoices = _native_candidates(profile, customer, limit)
+	return {
+		"payments": [
+			{
+				"name": row.reference_name,
+				"posting_date": row.posting_date,
+				"amount": flt(row.amount),
+				"currency": row.currency,
+				"remarks": row.remarks,
+			}
+			for row in payments
+		],
+		"invoices": [
+			{
+				"name": row.invoice_number,
+				"posting_date": row.invoice_date,
+				"amount": flt(row.amount),
+				"outstanding_amount": flt(row.outstanding_amount),
+				"currency": row.currency,
+			}
+			for row in invoices
+		],
+	}
+
+
+def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=None, invoices=None):
+	profile = resolve_pos_profile(pos_profile)
+	if not payment_entries or not invoices:
+		frappe.throw(_("Select at least one payment and one invoice"))
+	doc, payments, invoice_rows = _native_candidates(profile, customer)
+	selected_payments = [row for row in payments if row.reference_name in set(payment_entries)]
+	selected_invoices = [row for row in invoice_rows if row.invoice_number in set(invoices)]
+	if len(selected_payments) != len(set(payment_entries)) or len(selected_invoices) != len(set(invoices)):
+		frappe.throw(_("One or more selected entries are no longer available for reconciliation"))
+	doc.set("payments", selected_payments)
+	doc.set("invoices", selected_invoices)
+	doc.allocate_entries(
+		frappe._dict(
+			{
+				"payments": [row.as_dict() for row in selected_payments],
+				"invoices": [row.as_dict() for row in selected_invoices],
+			}
+		)
+	)
+	return {
+		"allocations": [
+			{
+				"payment_entry": row.reference_name,
+				"invoice": row.invoice_number,
+				"allocated_amount": flt(row.allocated_amount),
+				"currency": row.currency,
+			}
+			for row in doc.get("allocation")
+		]
+	}
+
+
+def reconcile_customer_payment(pos_profile=None, customer=None, payment_entries=None, invoices=None):
+	profile = resolve_pos_profile(pos_profile)
+	require_open_pos_session(profile.name)
+	for name in payment_entries or []:
+		require_read("Payment Entry", name)
+		if not frappe.has_permission("Payment Entry", "write", doc=name):
+			frappe.throw(
+				_("Not permitted to reconcile Payment Entry {0}").format(name), frappe.PermissionError
+			)
+		frappe.get_doc("Payment Entry", name, for_update=True)
+	for name in invoices or []:
+		require_read(get_invoice_mode(), name)
+		frappe.get_doc(get_invoice_mode(), name, for_update=True)
+	preview = allocate_customer_payments(profile.name, customer, payment_entries, invoices)
+	doc, payments, invoice_rows = _native_candidates(profile, customer)
+	doc.set("payments", [row for row in payments if row.reference_name in set(payment_entries)])
+	doc.set("invoices", [row for row in invoice_rows if row.invoice_number in set(invoices)])
+	doc.allocate_entries(
+		frappe._dict(
+			{
+				"payments": [row.as_dict() for row in doc.payments],
+				"invoices": [row.as_dict() for row in doc.invoices],
+			}
+		)
+	)
+	doc.reconcile()
+	audit = ", ".join(
+		f"{row['payment_entry']} -> {row['invoice']}: {row['allocated_amount']}"
+		for row in preview["allocations"]
+	)
+	for name in payment_entries:
+		frappe.get_doc("Payment Entry", name).add_comment(
+			"Info", _("Reconciled in VunaPOS by {0}: {1}").format(frappe.session.user, audit)
+		)
+	return {
+		"allocations": preview["allocations"],
+		"allocated_amount": sum(row["allocated_amount"] for row in preview["allocations"]),
+	}

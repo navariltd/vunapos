@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { CreditCard, Search } from "lucide-react";
 
@@ -9,67 +9,112 @@ import { useCustomerSearch } from "../pos/hooks/useCustomerSearch";
 import type { CustomerDetailsDTO, ModeOfPaymentDTO } from "../pos/types";
 
 type Props = { posProfile?: string; currency?: string; paymentModes: ModeOfPaymentDTO[]; isOnline: boolean };
-type PaymentResult = { name: string; duplicate: boolean; unallocated_amount: number };
+type Candidate = { name: string; posting_date: string; amount: number; currency?: string; outstanding_amount?: number; remarks?: string };
+type Candidates = { payments: Candidate[]; invoices: Candidate[] };
+type Allocation = { payment_entry: string; invoice: string; allocated_amount: number; currency?: string };
+const fieldClass = "mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary";
 
 export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: Props) {
 	const initial = useMemo(() => new URLSearchParams(window.location.search), []);
-	const [customer, setCustomer] = useState(initial.get("customer") || "");
+	const [tab, setTab] = useState<"receive" | "reconcile">("receive");
+	const [receiveCustomer, setReceiveCustomer] = useState(initial.get("customer") || "");
 	const [invoice, setInvoice] = useState(initial.get("invoice") || "");
 	const [query, setQuery] = useState("");
+	const search = useCustomerSearch(query);
 	const [amount, setAmount] = useState("");
 	const [mode, setMode] = useState(paymentModes.find((row) => row.default)?.mode_of_payment || paymentModes[0]?.mode_of_payment || "");
 	const [referenceNo, setReferenceNo] = useState("");
 	const [remarks, setRemarks] = useState("");
 	const [error, setError] = useState<string | null>(null);
-	const [result, setResult] = useState<PaymentResult | null>(null);
+	const [message, setMessage] = useState<string | null>(null);
 	const idempotencyKey = useRef(crypto.randomUUID());
-	const customerSearch = useCustomerSearch(query);
-	const createCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
-	const detailsCall = useFrappeGetCall<unknown>(vunaMethods.getCustomerDetails, { pos_profile: posProfile, customer }, posProfile && customer && isOnline ? ["vunapos_payment_customer", posProfile, customer, result?.name] : null);
+
+	const [reconcileCustomer, setReconcileCustomer] = useState("");
+	const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
+	const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
+	const [allocationPreview, setAllocationPreview] = useState<Allocation[]>([]);
+
+	const receiveCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
+	const allocateCall = useFrappePostCall(vunaMethods.allocateCustomerPayments);
+	const reconcileCall = useFrappePostCall(vunaMethods.reconcileCustomerPayment);
+	const detailsCall = useFrappeGetCall<unknown>(vunaMethods.getCustomerDetails, { pos_profile: posProfile, customer: receiveCustomer }, posProfile && receiveCustomer && isOnline ? ["vunapos_payment_customer", posProfile, receiveCustomer, message] : null);
+	const candidatesCall = useFrappeGetCall<unknown>(vunaMethods.getReconciliationCandidates, { pos_profile: posProfile, customer: reconcileCustomer }, posProfile && reconcileCustomer && isOnline ? ["vunapos_native_reconciliation", posProfile, reconcileCustomer, message] : null);
 	let details: CustomerDetailsDTO | null = null;
-	let detailsError: string | null = null;
-	if (detailsCall.data) {
-		try { details = unwrapVunaResponse<CustomerDetailsDTO>(detailsCall.data); }
-		catch (err) { detailsError = err instanceof Error ? err.message : "Unable to load customer"; }
-	}
-	const outstandingInvoices = details?.invoices.filter((row) => !row.is_return && row.outstanding_amount > 0) || [];
-	const selectedOutstanding = outstandingInvoices.find((row) => row.name === invoice)?.outstanding_amount;
+	let candidates: Candidates = { payments: [], invoices: [] };
+	let loadError: string | null = null;
+	try { if (detailsCall.data) details = unwrapVunaResponse<CustomerDetailsDTO>(detailsCall.data); } catch (err) { loadError = errorText(err); }
+	try { if (candidatesCall.data) candidates = unwrapVunaResponse<Candidates>(candidatesCall.data); } catch (err) { loadError = errorText(err); }
+	const outstanding = details?.invoices.filter((row) => !row.is_return && row.outstanding_amount > 0) || [];
+	const selectedOutstanding = outstanding.find((row) => row.name === invoice)?.outstanding_amount;
 	const displayedAmount = amount || (invoice && selectedOutstanding !== undefined ? String(selectedOutstanding) : "");
 
-	async function submit() {
-		setError(null); setResult(null);
-		if (!isOnline) { setError("Customer payments require an active server connection."); return; }
-		if (!customer || !mode || !(Number(displayedAmount) > 0)) { setError("Select a customer, payment mode, and valid amount."); return; }
+	async function receive() {
+		setError(null); setMessage(null);
+		if (!isOnline || !receiveCustomer || !mode || !(Number(displayedAmount) > 0)) { setError("Select a customer, payment mode, and valid amount while online."); return; }
 		try {
-			const response = await createCall.call({
-				pos_profile: posProfile, customer, amount: Number(displayedAmount), mode_of_payment: mode,
-				sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined,
-				reference_no: referenceNo || undefined, reference_date: referenceNo ? new Date().toISOString().slice(0, 10) : undefined,
-				remarks: remarks || undefined, idempotency_key: idempotencyKey.current,
-			});
-			const created = unwrapVunaResponse<PaymentResult>(response);
-			setResult(created);
-			idempotencyKey.current = crypto.randomUUID();
-			setAmount(""); setInvoice(""); setReferenceNo(""); setRemarks("");
+			const response = await receiveCall.call({ pos_profile: posProfile, customer: receiveCustomer, amount: Number(displayedAmount), mode_of_payment: mode, sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined, reference_no: referenceNo || undefined, reference_date: referenceNo ? new Date().toISOString().slice(0, 10) : undefined, remarks: remarks || undefined, idempotency_key: idempotencyKey.current });
+			const created = unwrapVunaResponse<{ name: string }>(response);
+			setMessage(`Payment Entry ${created.name} was submitted successfully.`);
+			idempotencyKey.current = crypto.randomUUID(); setAmount(""); setInvoice(""); setReferenceNo(""); setRemarks("");
 			await detailsCall.mutate();
-		} catch (err) { setError(err instanceof Error ? err.message : "Failed to receive payment"); }
+		} catch (err) { setError(errorText(err)); }
 	}
 
-	return <section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4"><div className="mx-auto flex max-w-4xl flex-col gap-4">
-		<div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Receive customer payment</h2><p className="text-sm text-on-surface-variant">Allocate a receipt to an invoice or leave it as a customer advance.</p></div><Button variant="ghost" onClick={() => navigateToPosPage("Home")}>Back to POS</Button></div>
-		{!isOnline ? <div className="rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">Payments are online-only. Reconnect before receiving money.</div> : null}
-		{result ? <div className="rounded-md border border-secondary bg-secondary-container p-3 text-sm text-on-secondary-container">Payment Entry {result.name} was submitted successfully.</div> : null}
-		{error || detailsError ? <div className="rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">{error || detailsError}</div> : null}
-		<div className="grid gap-4 rounded-lg border border-outline-variant p-4 md:grid-cols-2">
-			<div className="md:col-span-2"><label className="text-sm font-medium">Customer</label>{customer && details ? <div className="mt-2 flex items-center justify-between rounded-md bg-surface-container-low p-3"><div><p className="font-medium">{details.customer.customer_name}</p><p className="text-xs text-on-surface-variant">Balance {money(details.balance, details.customer.currency || currency)}</p></div><Button variant="ghost" onClick={() => { setCustomer(""); setInvoice(""); }}>Change</Button></div> : <><label className="mt-2 flex items-center gap-2 rounded-md border border-outline-variant px-3"><Search className="size-4"/><input className="flex-1 bg-transparent py-2 outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer"/></label><div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-outline-variant">{customerSearch.customers.map((row) => <button key={row.customer} className="block w-full border-t border-outline-variant px-3 py-2 text-left text-sm first:border-t-0 hover:bg-surface-container-low" onClick={() => { setCustomer(row.customer); setQuery(""); }}>{row.customer_name}<span className="ml-2 text-xs text-on-surface-variant">{row.mobile_no || row.customer}</span></button>)}</div></>}</div>
-			<label className="text-sm font-medium">Apply to invoice<select className="mt-2 w-full rounded-md border border-outline-variant bg-surface px-3 py-2" value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstandingInvoices.find((row) => row.name === next)?.outstanding_amount || "") : ""); }} disabled={!customer}><option value="">Customer advance / unallocated</option>{outstandingInvoices.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
-			<label className="text-sm font-medium">Mode of Payment<select className="mt-2 w-full rounded-md border border-outline-variant bg-surface px-3 py-2" value={mode} onChange={(event) => setMode(event.target.value)}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
-			<label className="text-sm font-medium">Amount<input type="number" min="0" step="0.01" className="mt-2 w-full rounded-md border border-outline-variant bg-surface px-3 py-2" value={displayedAmount} onChange={(event) => setAmount(event.target.value)}/></label>
-			<label className="text-sm font-medium">External reference (optional)<input className="mt-2 w-full rounded-md border border-outline-variant bg-surface px-3 py-2" value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)}/></label>
-			<label className="text-sm font-medium md:col-span-2">Remarks (optional)<textarea className="mt-2 w-full rounded-md border border-outline-variant bg-surface px-3 py-2" value={remarks} onChange={(event) => setRemarks(event.target.value)}/></label>
-			<Button className="md:col-span-2" disabled={!isOnline || createCall.loading || !customer} onClick={submit}><CreditCard className="mr-2 size-4"/>{createCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
-		</div>
+	async function allocate() {
+		setError(null); setMessage(null); setAllocationPreview([]);
+		if (!reconcileCustomer || !selectedPayments.length || !selectedInvoices.length) { setError("Select a customer, at least one payment, and at least one invoice."); return; }
+		try {
+			const response = await allocateCall.call({ pos_profile: posProfile, customer: reconcileCustomer, payment_entries: JSON.stringify(selectedPayments), invoices: JSON.stringify(selectedInvoices) });
+			const preview = unwrapVunaResponse<{ allocations: Allocation[] }>(response);
+			setAllocationPreview(preview.allocations);
+		} catch (err) { setError(errorText(err)); }
+	}
+
+	async function reconcile() {
+		setError(null); setMessage(null);
+		if (!allocationPreview.length) { setError("Click Allocate and review the allocation first."); return; }
+		try {
+			const response = await reconcileCall.call({ pos_profile: posProfile, customer: reconcileCustomer, payment_entries: JSON.stringify(selectedPayments), invoices: JSON.stringify(selectedInvoices) });
+			const result = unwrapVunaResponse<{ allocated_amount: number }>(response);
+			setMessage(`Reconciled ${money(result.allocated_amount, currency)} successfully.`);
+			setSelectedPayments([]); setSelectedInvoices([]); setAllocationPreview([]);
+			await candidatesCall.mutate();
+		} catch (err) { setError(errorText(err)); }
+	}
+
+	return <section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4"><div className="mx-auto flex max-w-5xl flex-col gap-4">
+		<div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Payments</h2><p className="text-sm text-on-surface-variant">Receive and reconcile customer payments.</p></div><Button variant="ghost" onClick={() => navigateToPosPage("Home")}>Back to POS</Button></div>
+		<div className="flex border-b border-outline-variant"><Tab active={tab === "receive"} onClick={() => setTab("receive")}>Receive</Tab><Tab active={tab === "reconcile"} onClick={() => setTab("reconcile")}>Reconcile</Tab></div>
+		{!isOnline ? <Notice error>Payments are online-only. Reconnect before continuing.</Notice> : null}
+		{error || loadError ? <Notice error>{error || loadError}</Notice> : null}{message ? <Notice>{message}</Notice> : null}
+		{tab === "receive" ? <div className="grid gap-4 rounded-lg border border-outline-variant p-4 md:grid-cols-2">
+			<div className="md:col-span-2"><CustomerPicker selected={receiveCustomer && details ? details.customer.customer_name : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={setReceiveCustomer} onClear={() => { setReceiveCustomer(""); setInvoice(""); }}/></div>
+			<label className="text-sm font-medium">Apply to invoice<select className={fieldClass} value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstanding.find((row) => row.name === next)?.outstanding_amount || "") : ""); }} disabled={!receiveCustomer}><option value="">Customer advance / unallocated</option>{outstanding.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
+			<label className="text-sm font-medium">Mode of Payment<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
+			<label className="text-sm font-medium">Amount<input className={fieldClass} type="number" min="0" step="0.01" value={displayedAmount} onChange={(event) => setAmount(event.target.value)}/></label>
+			<label className="text-sm font-medium">External reference<input className={fieldClass} value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)}/></label>
+			<label className="text-sm font-medium md:col-span-2">Remarks<textarea className={fieldClass} value={remarks} onChange={(event) => setRemarks(event.target.value)}/></label>
+			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
+		</div> : <div className="space-y-4">
+			<div className="rounded-lg border border-outline-variant p-4"><CustomerPicker selected={reconcileCustomer ? reconcileCustomer : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={(value) => { setReconcileCustomer(value); setSelectedPayments([]); setSelectedInvoices([]); setAllocationPreview([]); }} onClear={() => setReconcileCustomer("")}/></div>
+			<div className="grid gap-4 lg:grid-cols-2"><SelectionList title="Unallocated payments" empty="No unallocated payments for this customer." rows={candidates.payments} selected={selectedPayments} onToggle={(name) => { toggle(name, selectedPayments, setSelectedPayments); setAllocationPreview([]); }}/><SelectionList title="Outstanding invoices" empty="No outstanding invoices for this customer." rows={candidates.invoices} selected={selectedInvoices} onToggle={(name) => { toggle(name, selectedInvoices, setSelectedInvoices); setAllocationPreview([]); }} invoices/></div>
+			<div className="flex justify-end"><Button disabled={!isOnline || allocateCall.loading || !selectedPayments.length || !selectedInvoices.length} onClick={allocate}>{allocateCall.loading ? "Allocating..." : "Allocate"}</Button></div>
+			{allocationPreview.length ? <div className="rounded-lg border border-outline-variant"><div className="bg-surface-container-low px-4 py-3 font-semibold">Allocation preview</div>{allocationPreview.map((row, index) => <div key={`${row.payment_entry}-${row.invoice}-${index}`} className="grid gap-1 border-t border-outline-variant px-4 py-3 text-sm sm:grid-cols-[1fr_auto_1fr]"><span>{row.payment_entry}</span><strong>{money(row.allocated_amount, row.currency || currency)} →</strong><span>{row.invoice}</span></div>)}<div className="flex justify-end border-t border-outline-variant p-4"><Button disabled={reconcileCall.loading} onClick={reconcile}>{reconcileCall.loading ? "Reconciling..." : "Reconcile"}</Button></div></div> : null}
+		</div>}
 	</div></section>;
 }
 
+function CustomerPicker({ selected, query, setQuery, customers, onSelect, onClear }: { selected: string; query: string; setQuery: (value: string) => void; customers: Array<{ customer: string; customer_name: string; mobile_no?: string | null }>; onSelect: (value: string) => void; onClear: () => void }) {
+	if (selected) return <div className="flex items-center justify-between rounded-md bg-surface-container-low p-3"><strong>{selected}</strong><Button variant="ghost" onClick={onClear}>Change</Button></div>;
+	return <><label className="flex items-center gap-2 rounded-md border border-outline-variant px-3"><Search className="size-4"/><input className="flex-1 bg-transparent py-2 outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer"/></label><div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-outline-variant">{customers.map((row) => <button key={row.customer} className="block w-full border-t border-outline-variant px-3 py-2 text-left text-sm first:border-t-0 hover:bg-surface-container-low" onClick={() => { onSelect(row.customer); setQuery(""); }}>{row.customer_name}<span className="ml-2 text-xs text-on-surface-variant">{row.mobile_no || row.customer}</span></button>)}</div></>;
+}
+
+function SelectionList({ title, empty, rows, selected, onToggle, invoices = false }: { title: string; empty: string; rows: Candidate[]; selected: string[]; onToggle: (name: string) => void; invoices?: boolean }) {
+	return <div><h3 className="mb-2 font-semibold">{title}</h3><div className="max-h-80 overflow-y-auto rounded-lg border border-outline-variant">{rows.length ? rows.map((row) => <label key={row.name} className="flex cursor-pointer gap-3 border-t border-outline-variant p-3 first:border-t-0 hover:bg-surface-container-low"><input type="checkbox" checked={selected.includes(row.name)} onChange={() => onToggle(row.name)}/><span className="text-sm"><strong>{row.name}</strong><span className="block text-xs text-on-surface-variant">{row.posting_date} · {invoices ? "Outstanding" : "Available"} {money(invoices ? row.outstanding_amount || 0 : row.amount, row.currency)}</span></span></label>) : <p className="p-4 text-sm text-on-surface-variant">{empty}</p>}</div></div>;
+}
+
+function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: string }) { return <button className={`px-5 py-3 text-sm font-medium ${active ? "border-b-2 border-primary text-primary" : "text-on-surface-variant"}`} onClick={onClick}>{children}</button>; }
+function Notice({ error = false, children }: { error?: boolean; children: ReactNode }) { return <div className={`rounded-md border p-3 text-sm ${error ? "border-error bg-error-container text-on-error-container" : "border-secondary bg-secondary-container text-on-secondary-container"}`}>{children}</div>; }
+function toggle(value: string, selected: string[], setSelected: (values: string[]) => void) { setSelected(selected.includes(value) ? selected.filter((row) => row !== value) : [...selected, value]); }
 function money(value: number, currency?: string | null) { return new Intl.NumberFormat(undefined, { style: currency ? "currency" : "decimal", currency: currency || undefined }).format(value); }
+function errorText(error: unknown) { return error instanceof Error ? error.message : "Payment operation failed"; }
