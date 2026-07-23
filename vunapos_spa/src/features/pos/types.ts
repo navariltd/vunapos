@@ -36,6 +36,25 @@ export type CustomerDirectoryDTO = {
 	territories: string[];
 };
 
+export type CustomerDetailsDTO = {
+	customer: CustomerDirectoryRowDTO & { tax_id?: string | null };
+	balance: number;
+	loyalty: null | { program?: string | null; points: number; tier?: string | null; conversion_factor?: number };
+	invoices: Array<{
+		name: string; doctype: string; posting_date: string; due_date?: string | null; currency?: string;
+		grand_total: number; paid_amount: number; outstanding_amount: number;
+		status: "Paid" | "Partly Paid" | "Unpaid" | "Overdue" | "Credit Note";
+		is_return: boolean; return_against?: string | null;
+	}>;
+	payments: Array<{
+		name: string; posting_date: string; mode_of_payment?: string | null; paid_amount: number;
+		received_amount: number; unallocated_amount: number; reference_no?: string | null; remarks?: string | null;
+	}>;
+	contact?: Record<string, string | null> | null;
+	address?: Record<string, string | null> | null;
+	as_of: string;
+};
+
 export type POSSessionDTO = {
 	has_opening_entry: boolean;
 	opening_entry: string | null;

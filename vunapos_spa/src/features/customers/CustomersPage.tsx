@@ -3,7 +3,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { Search, Users } from "lucide-react";
 
 import { Button } from "../../components/ui/Button";
-import { navigateToPosPage } from "../../lib/stores/navigationStore";
+import { navigateToCustomer, navigateToPosPage } from "../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../services/vunaApi";
 import type { CustomerDirectoryDTO } from "../pos/types";
 
@@ -45,7 +45,7 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
 			{error ? <div className="rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">{error}</div> : null}
 			<div className="overflow-hidden rounded-lg border border-outline-variant">
 				<div className="hidden grid-cols-[minmax(12rem,2fr)_1fr_1fr_1fr_1fr] gap-3 bg-surface-container-high px-4 py-3 text-xs font-semibold uppercase text-on-surface-variant md:grid"><span>Customer</span><span>Category</span><span>Outstanding</span><span>Loyalty</span><span>Last purchase</span></div>
-				{response.isLoading ? <p className="p-6 text-center text-sm text-on-surface-variant">Loading customers...</p> : directory?.customers.length ? directory.customers.map((customer) => <article key={customer.customer} className="grid gap-2 border-t border-outline-variant px-4 py-3 first:border-t-0 md:grid-cols-[minmax(12rem,2fr)_1fr_1fr_1fr_1fr] md:items-center">
+				{response.isLoading ? <p className="p-6 text-center text-sm text-on-surface-variant">Loading customers...</p> : directory?.customers.length ? directory.customers.map((customer) => <article key={customer.customer} role="button" tabIndex={0} onClick={() => navigateToCustomer(customer.customer)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigateToCustomer(customer.customer); }} className="grid cursor-pointer gap-2 border-t border-outline-variant px-4 py-3 first:border-t-0 hover:bg-surface-container-low md:grid-cols-[minmax(12rem,2fr)_1fr_1fr_1fr_1fr] md:items-center">
 					<div><p className="font-medium text-on-surface">{customer.customer_name}</p><p className="text-xs text-on-surface-variant">{customer.mobile_no || customer.email_id || customer.customer}</p></div>
 					<div className="text-sm"><p>{customer.customer_group || "Uncategorized"}</p><p className="text-xs text-on-surface-variant">{customer.customer_type || "-"} · {customer.territory || "No territory"}</p></div>
 					<div className="text-sm"><span className="md:hidden text-on-surface-variant">Outstanding: </span>{customer.outstanding_balance == null ? "Restricted" : money(customer.outstanding_balance, customer.currency || defaultCurrency)}</div>

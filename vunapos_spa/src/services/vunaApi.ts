@@ -3,6 +3,7 @@ import type {
 	BootstrapData,
 	CustomerDTO,
 	CustomerDirectoryDTO,
+	CustomerDetailsDTO,
 	HeldInvoiceDTO,
 	ItemBatchesDTO,
 	InvoiceDTO,
@@ -48,6 +49,7 @@ export const vunaMethods = {
 	allocateBatches: "vunapos.api.batch.allocate_batches",
 	searchCustomers: "vunapos.api.customer.search_customers",
 	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
+	getCustomerDetails: "vunapos.api.customer.get_customer_details",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
@@ -163,6 +165,10 @@ export function getCustomerDirectory(call: FrappeCall, params: {
 	limit?: number;
 }) {
 	return callAndUnwrap<CustomerDirectoryDTO>(call, params);
+}
+
+export function getCustomerDetails(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
+	return callAndUnwrap<CustomerDetailsDTO>(call, params);
 }
 
 export function createCustomer(

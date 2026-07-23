@@ -4,10 +4,10 @@ from erpnext.accounts.doctype.loyalty_program.loyalty_program import (
 )
 from erpnext.accounts.utils import get_balance_on
 from frappe import _
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import cint, flt, getdate, now_datetime, today
 
 from vunapos.dto.customer import customer_to_dict
-from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
 
 
@@ -203,4 +203,140 @@ def get_customer_directory(
 		"loyalty_visible": loyalty_visible,
 		"customer_groups": sorted({row.customer_group for row in filter_rows if row.customer_group}),
 		"territories": sorted({row.territory for row in filter_rows if row.territory}),
+	}
+
+
+def _permitted_linked_doc(doctype, name, fields):
+	if not name or not frappe.has_permission(doctype, "read", doc=name):
+		return None
+	return frappe.db.get_value(doctype, name, fields, as_dict=True)
+
+
+def _customer_invoice_status(row):
+	if row.is_return:
+		return "Credit Note"
+	if flt(row.outstanding_amount) <= 0:
+		return "Paid"
+	if row.due_date and getdate(row.due_date) < getdate(today()):
+		return "Overdue"
+	if flt(row.outstanding_amount) < flt(row.grand_total):
+		return "Partly Paid"
+	return "Unpaid"
+
+
+def get_customer_details(pos_profile=None, customer=None, invoice_limit=20, payment_limit=20):
+	profile = resolve_pos_profile(pos_profile)
+	if not customer:
+		frappe.throw(_("Customer is required"))
+	require_read("Customer", customer)
+	customer_doc = frappe.get_doc("Customer", customer)
+	invoice_limit = min(max(cint(invoice_limit) or 20, 1), 100)
+	payment_limit = min(max(cint(payment_limit) or 20, 1), 100)
+
+	balance = get_balance_on(party_type="Customer", party=customer_doc.name, company=profile.company)
+	loyalty = None
+	if customer_doc.get("loyalty_program"):
+		loyalty_details = get_loyalty_program_details_with_points(
+			customer=customer_doc.name,
+			loyalty_program=customer_doc.loyalty_program,
+			company=profile.company,
+		)
+		loyalty = {
+			"program": loyalty_details.get("loyalty_program"),
+			"points": flt(loyalty_details.get("loyalty_points")),
+			"tier": loyalty_details.get("tier_name"),
+			"conversion_factor": flt(loyalty_details.get("conversion_factor")),
+		}
+
+	invoices = []
+	invoice_doctype = get_invoice_mode()
+	if frappe.has_permission(invoice_doctype, "read"):
+		invoice_rows = frappe.get_list(
+			invoice_doctype,
+			filters={"docstatus": 1, "company": profile.company, "customer": customer_doc.name},
+			fields=[
+				"name",
+				"posting_date",
+				"due_date",
+				"currency",
+				"grand_total",
+				"outstanding_amount",
+				"is_return",
+				"return_against",
+			],
+			order_by="posting_date desc, modified desc",
+			limit_page_length=invoice_limit,
+		)
+		for row in invoice_rows:
+			invoices.append(
+				{
+					"name": row.name,
+					"doctype": invoice_doctype,
+					"posting_date": row.posting_date,
+					"due_date": row.due_date,
+					"currency": row.currency or profile.currency,
+					"grand_total": flt(row.grand_total),
+					"paid_amount": max(flt(row.grand_total) - flt(row.outstanding_amount), 0),
+					"outstanding_amount": flt(row.outstanding_amount),
+					"status": _customer_invoice_status(row),
+					"is_return": bool(row.is_return),
+					"return_against": row.return_against,
+				}
+			)
+
+	payments = []
+	if frappe.has_permission("Payment Entry", "read"):
+		payment_rows = frappe.get_list(
+			"Payment Entry",
+			filters={
+				"docstatus": 1,
+				"company": profile.company,
+				"payment_type": "Receive",
+				"party_type": "Customer",
+				"party": customer_doc.name,
+			},
+			fields=[
+				"name",
+				"posting_date",
+				"mode_of_payment",
+				"paid_amount",
+				"received_amount",
+				"unallocated_amount",
+				"reference_no",
+				"remarks",
+			],
+			order_by="posting_date desc, modified desc",
+			limit_page_length=payment_limit,
+		)
+		payments = [dict(row) for row in payment_rows]
+
+	contact = _permitted_linked_doc(
+		"Contact",
+		customer_doc.get("customer_primary_contact"),
+		["name", "first_name", "last_name", "email_id", "mobile_no", "phone"],
+	)
+	address = _permitted_linked_doc(
+		"Address",
+		customer_doc.get("customer_primary_address"),
+		["name", "address_title", "address_line1", "address_line2", "city", "state", "country", "pincode"],
+	)
+	return {
+		"customer": {
+			"customer": customer_doc.name,
+			"customer_name": customer_doc.customer_name,
+			"customer_type": customer_doc.customer_type,
+			"customer_group": customer_doc.customer_group,
+			"territory": customer_doc.territory,
+			"mobile_no": customer_doc.mobile_no,
+			"email_id": customer_doc.email_id,
+			"tax_id": customer_doc.get("tax_id"),
+			"currency": customer_doc.get("default_currency") or profile.currency,
+		},
+		"balance": flt(balance),
+		"loyalty": loyalty,
+		"invoices": invoices,
+		"payments": payments,
+		"contact": contact,
+		"address": address,
+		"as_of": str(now_datetime()),
 	}
