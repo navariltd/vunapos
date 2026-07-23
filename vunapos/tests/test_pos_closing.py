@@ -1,5 +1,6 @@
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import flt
 
 from vunapos.api.sales import checkout_invoice
 from vunapos.services.pos_closing import close_pos_session, get_closing_preview
@@ -7,6 +8,7 @@ from vunapos.services.profile_service import get_pos_session
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
 	ensure_open_pos_opening_entry,
+	ensure_test_payment_mode,
 	ensure_test_pos_profile,
 )
 
@@ -40,6 +42,32 @@ class TestVunaPOSClosing(IntegrationTestCase):
 		self.assertGreaterEqual(preview["invoice_count"], 1)
 		self.assertGreater(preview["grand_total"], 0)
 		self.assertIn(invoice["name"], [row["name"] for row in preview["invoices"]])
+
+	def test_preview_reconciles_each_split_payment_mode(self):
+		second_mode = ensure_test_payment_mode()
+		profile_doc = frappe.get_doc("POS Profile", self.profile)
+		if not any(row.mode_of_payment == second_mode for row in profile_doc.get("payments", [])):
+			profile_doc.append("payments", {"mode_of_payment": second_mode, "default": 0})
+			profile_doc.save(ignore_permissions=True)
+
+		invoice = create_invoice_with_item("Sales Invoice")
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		cash_mode = profile_doc.get("payments")[0].mode_of_payment
+		cash_amount = flt(amount / 2)
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[
+				{"mode_of_payment": cash_mode, "amount": cash_amount},
+				{"mode_of_payment": second_mode, "amount": flt(amount - cash_amount)},
+			],
+		)
+		self.assertTrue(response["ok"], response)
+
+		preview = get_closing_preview(self.profile)
+		expected_by_mode = {row["mode_of_payment"]: row["expected_amount"] for row in preview["payments"]}
+		self.assertGreaterEqual(flt(expected_by_mode[cash_mode]), cash_amount)
+		self.assertGreaterEqual(flt(expected_by_mode[second_mode]), flt(amount - cash_amount))
 
 	def test_close_submits_native_closing_entry_and_ends_session(self):
 		invoice = create_invoice_with_item("Sales Invoice")

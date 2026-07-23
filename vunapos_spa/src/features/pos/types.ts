@@ -166,7 +166,7 @@ export type InvoiceDTO = {
 	modified?: string;
 	items: InvoiceItemDTO[];
 	taxes?: TaxDTO[];
-	payments?: unknown[];
+	payments?: PaymentInput[];
 	totals: {
 		net_total?: number;
 		total_taxes_and_charges?: number;

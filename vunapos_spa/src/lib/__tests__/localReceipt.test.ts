@@ -47,6 +47,38 @@ describe("renderLocalReceipt", () => {
 		expect(html).toContain("Walk-in");
 	});
 
+	it("prints every split allocation and cash change", () => {
+		const html = renderLocalReceipt({
+			localRef: "POS-SPLIT-1",
+			assembled: makeAssembled(),
+			payments: [
+				{ mode_of_payment: "M-Pesa", amount: 50 },
+				{ mode_of_payment: "Cash", amount: 100 },
+			],
+			currency: "KES",
+			postingDate: "2026-07-10",
+			postingTime: "14:30:00",
+		});
+
+		expect(html).toContain("M-Pesa");
+		expect(html).toContain("Cash");
+		expect(html).toContain("Paid");
+		expect(html).toContain("Change");
+	});
+
+	it("prints the outstanding balance for an allowed partial payment", () => {
+		const html = renderLocalReceipt({
+			localRef: "POS-PARTIAL-1",
+			assembled: makeAssembled(),
+			payments: [{ mode_of_payment: "Cash", amount: 100 }],
+			currency: "KES",
+			postingDate: "2026-07-10",
+			postingTime: "14:30:00",
+		});
+
+		expect(html).toContain("Outstanding");
+	});
+
 	it("escapes HTML in user-controlled fields to prevent injection into the printed receipt", () => {
 		const html = renderLocalReceipt({
 			localRef: "POS-1",

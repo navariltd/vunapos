@@ -168,8 +168,27 @@ function assembledToInvoiceDTO(
 	};
 }
 
-function toSubmittedInvoiceDTO(assembled: AssembledInvoice, sourceItems: InvoiceItemDTO[], name: string): InvoiceDTO {
-	return { ...assembledToInvoiceDTO(assembled, sourceItems), name, docstatus: 1 };
+function toSubmittedInvoiceDTO(
+	assembled: AssembledInvoice,
+	sourceItems: InvoiceItemDTO[],
+	name: string,
+	payments: PaymentInput[],
+): InvoiceDTO {
+	const invoice = assembledToInvoiceDTO(assembled, sourceItems);
+	const invoiceTotal = assembled.totals.rounded_total || assembled.totals.grand_total;
+	const paidAmount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+	return {
+		...invoice,
+		name,
+		docstatus: 1,
+		payments,
+		totals: {
+			...invoice.totals,
+			paid_amount: paidAmount,
+			change_amount: Math.max(paidAmount - invoiceTotal, 0),
+			outstanding_amount: Math.max(invoiceTotal - paidAmount, 0),
+		},
+	};
 }
 
 function toHeldInvoiceDTO(assembled: AssembledInvoice, sourceItems: InvoiceItemDTO[], name: string): InvoiceDTO {
@@ -623,7 +642,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 									invoice_name: serverName,
 									print_format: printFormat || undefined,
 								});
-								const submitted = toSubmittedInvoiceDTO(local.assembled, invoice.items, serverName);
+								const submitted = toSubmittedInvoiceDTO(local.assembled, invoice.items, serverName, payments);
 								set({ invoice: null });
 								return { invoice: submitted, printPayload: receipt };
 							} catch (err) {
@@ -635,7 +654,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					// Not synced within the race window (offline, or just slow) - the sale is
 					// no less real (I1), so it gets no less of a receipt. Rendered locally
 					// (ADR-012/N8) since there's no server print format to ask for one.
-					const provisional = toSubmittedInvoiceDTO(local.assembled, invoice.items, local.local_ref);
+					const provisional = toSubmittedInvoiceDTO(local.assembled, invoice.items, local.local_ref, payments);
 					const profile = await profileRepository.getActive();
 					const html = renderLocalReceipt({
 						localRef: local.local_ref,

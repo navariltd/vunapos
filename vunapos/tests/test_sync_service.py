@@ -13,6 +13,7 @@ from vunapos.tests.helpers import (
 	ensure_item_tax_template,
 	ensure_open_pos_opening_entry,
 	ensure_test_item,
+	ensure_test_payment_mode,
 	ensure_test_pos_profile,
 	set_invoice_mode,
 )
@@ -238,6 +239,38 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 
 
 class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
+	def test_queued_split_payment_is_persisted_on_the_submitted_invoice(self):
+		profile = ensure_test_pos_profile()
+		second_mode = ensure_test_payment_mode()
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		if not any(row.mode_of_payment == second_mode for row in profile_doc.get("payments", [])):
+			profile_doc.append("payments", {"mode_of_payment": second_mode, "default": 0})
+			profile_doc.save(ignore_permissions=True)
+
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		amount = payload["payments"][0]["amount"]
+		cash_mode = payload["payments"][0]["mode_of_payment"]
+		payload["payments"] = [
+			{"mode_of_payment": cash_mode, "amount": amount / 2},
+			{"mode_of_payment": second_mode, "amount": amount - (amount / 2)},
+		]
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="split-payment-sale",
+		)
+
+		self.assertTrue(response["ok"], response)
+		invoice = frappe.get_doc("Sales Invoice", response["data"]["invoice"])
+		self.assertEqual(
+			{row.mode_of_payment: flt(row.amount) for row in invoice.payments},
+			{row["mode_of_payment"]: flt(row["amount"]) for row in payload["payments"]},
+		)
+		self.assertEqual(flt(invoice.paid_amount), flt(amount))
+
 	def test_rejects_unsupported_payment_mode_for_queued_sale(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
