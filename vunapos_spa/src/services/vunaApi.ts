@@ -52,6 +52,8 @@ export const vunaMethods = {
 	getCustomerDetails: "vunapos.api.customer.get_customer_details",
 	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
 	getReconciliationCandidates: "vunapos.api.payment.get_reconciliation_candidates",
+	getPaymentHistory: "vunapos.api.payment.get_payment_history",
+	renderPaymentReceipt: "vunapos.api.payment.render_payment_receipt",
 	allocateCustomerPayments: "vunapos.api.payment.allocate_customer_payments",
 	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
 	createCustomer: "vunapos.api.customer.create_customer",

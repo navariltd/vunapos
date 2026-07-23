@@ -120,6 +120,7 @@ def receive_customer_payment(
 			"vunapos_idempotency_key": idempotency_key,
 			"vunapos_opening_entry": opening_entry.name,
 			"vunapos_session_cashier": frappe.session.user,
+			"vunapos_receipt_type": "Outstanding Invoice Payment" if invoice else "Customer Advance",
 		}
 	)
 	if invoice:
@@ -165,6 +166,87 @@ def payment_entry_to_dict(doc, duplicate=False):
 			for row in doc.get("references", [])
 		],
 	}
+
+
+def get_payment_history(
+	pos_profile=None,
+	customer=None,
+	from_date=None,
+	to_date=None,
+	mode_of_payment=None,
+	reference=None,
+	status=None,
+	cashier=None,
+	limit=100,
+):
+	profile = resolve_pos_profile(pos_profile)
+	filters = {"company": profile.company, "vunapos_payment": 1}
+	if customer:
+		filters["party"] = customer
+	if from_date and to_date:
+		filters["posting_date"] = ["between", [from_date, to_date]]
+	elif from_date:
+		filters["posting_date"] = [">=", from_date]
+	elif to_date:
+		filters["posting_date"] = ["<=", to_date]
+	if mode_of_payment:
+		filters["mode_of_payment"] = mode_of_payment
+	if cashier:
+		filters["vunapos_session_cashier"] = cashier
+	filters["docstatus"] = 1 if status == "Submitted" else 2 if status == "Cancelled" else ["in", [1, 2]]
+	if reference:
+		filters["reference_no"] = ["like", f"%{reference}%"]
+	rows = frappe.get_list(
+		"Payment Entry",
+		filters=filters,
+		fields=[
+			"name",
+			"posting_date",
+			"party as customer",
+			"party_name as customer_name",
+			"mode_of_payment",
+			"received_amount",
+			"unallocated_amount",
+			"reference_no",
+			"remarks",
+			"docstatus",
+			"vunapos_session_cashier as cashier",
+			"vunapos_opening_entry as opening_entry",
+			"vunapos_closing_entry as closing_entry",
+			"vunapos_receipt_type as receipt_type",
+		],
+		order_by="posting_date desc, creation desc",
+		limit_page_length=min(max(int(limit or 100), 1), 500),
+	)
+	if not rows:
+		return {"payments": []}
+	references = frappe.get_all(
+		"Payment Entry Reference",
+		filters={"parent": ["in", [row.name for row in rows]], "allocated_amount": [">", 0]},
+		fields=["parent", "reference_doctype", "reference_name", "allocated_amount"],
+		order_by="idx",
+	)
+	by_payment = {}
+	for row in references:
+		by_payment.setdefault(row.parent, []).append(row)
+	return {
+		"payments": [
+			{
+				**row,
+				"status": "Cancelled" if row.docstatus == 2 else "Submitted",
+				"allocated_amount": flt(row.received_amount) - flt(row.unallocated_amount),
+				"references": by_payment.get(row.name, []),
+			}
+			for row in rows
+		]
+	}
+
+
+def render_payment_receipt(payment_entry):
+	require_read("Payment Entry", payment_entry)
+	if not frappe.db.get_value("Payment Entry", payment_entry, "vunapos_payment"):
+		frappe.throw(_("Payment Entry {0} is not a VunaPOS customer receipt").format(payment_entry))
+	return {"name": payment_entry, "html": frappe.get_print("Payment Entry", payment_entry)}
 
 
 def _reconciliation_doc(profile, customer, limit=100):
@@ -270,7 +352,7 @@ def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=
 
 def reconcile_customer_payment(pos_profile=None, customer=None, payment_entries=None, invoices=None):
 	profile = resolve_pos_profile(pos_profile)
-	require_open_pos_session(profile.name)
+	opening_entry = require_open_pos_session(profile.name)
 	for name in payment_entries or []:
 		require_read("Payment Entry", name)
 		if not frappe.has_permission("Payment Entry", "write", doc=name):
@@ -299,6 +381,25 @@ def reconcile_customer_payment(pos_profile=None, customer=None, payment_entries=
 		for row in preview["allocations"]
 	)
 	for name in payment_entries:
+		amount = sum(
+			row["allocated_amount"] for row in preview["allocations"] if row["payment_entry"] == name
+		)
+		previous_opening, previous_amount = frappe.db.get_value(
+			"Payment Entry",
+			name,
+			["vunapos_reconciled_opening_entry", "vunapos_reconciled_amount"],
+		)
+		frappe.db.set_value(
+			"Payment Entry",
+			name,
+			{
+				"vunapos_reconciled_opening_entry": opening_entry.name,
+				"vunapos_reconciled_amount": flt(previous_amount) + amount
+				if previous_opening == opening_entry.name
+				else amount,
+			},
+			update_modified=False,
+		)
 		frappe.get_doc("Payment Entry", name).add_comment(
 			"Info", _("Reconciled in VunaPOS by {0}: {1}").format(frappe.session.user, audit)
 		)

@@ -63,7 +63,28 @@ def _get_vunapos_customer_payments(opening_entry, period_end_date):
 			"vunapos_closing_entry": ["is", "not set"],
 			"posting_date": ["<=", period_end_date.date()],
 		},
-		fields=["name", "mode_of_payment", "received_amount"],
+		fields=[
+			"name",
+			"mode_of_payment",
+			"received_amount",
+			"vunapos_receipt_type",
+			"vunapos_reconciled_opening_entry",
+			"vunapos_reconciled_amount",
+		],
+		limit_page_length=100000,
+	)
+
+
+def _get_reconciled_customer_credits(opening_entry):
+	return frappe.get_list(
+		"Payment Entry",
+		filters={
+			"docstatus": 1,
+			"vunapos_payment": 1,
+			"vunapos_reconciled_opening_entry": opening_entry.name,
+			"vunapos_reconciled_amount": [">", 0],
+		},
+		fields=["name", "vunapos_reconciled_amount"],
 		limit_page_length=100000,
 	)
 
@@ -141,6 +162,7 @@ def _populate_vunapos_invoices(closing_entry, opening_entry):
 
 	closing_entry.flags.vunapos_invoices = invoices
 	closing_entry.flags.vunapos_customer_payments = customer_payments
+	closing_entry.flags.vunapos_reconciled_customer_credits = _get_reconciled_customer_credits(opening_entry)
 
 
 def _prepare_closing_entry(pos_profile):
@@ -174,6 +196,22 @@ def _prepare_closing_entry(pos_profile):
 
 def _closing_summary(closing_entry):
 	vunapos_invoices = closing_entry.flags.get("vunapos_invoices") or []
+	customer_payments = closing_entry.flags.get("vunapos_customer_payments") or []
+	sale_collections = sum(flt(row.amount) for row in get_payments(vunapos_invoices))
+	invoice_receipts = sum(
+		flt(row.received_amount)
+		for row in customer_payments
+		if row.vunapos_receipt_type == "Outstanding Invoice Payment"
+	)
+	advances = sum(
+		flt(row.received_amount)
+		for row in customer_payments
+		if row.vunapos_receipt_type != "Outstanding Invoice Payment"
+	)
+	reconciled_credits = sum(
+		flt(row.vunapos_reconciled_amount)
+		for row in (closing_entry.flags.get("vunapos_reconciled_customer_credits") or [])
+	)
 	return {
 		"opening_entry": closing_entry.pos_opening_entry,
 		"pos_profile": closing_entry.pos_profile,
@@ -197,6 +235,13 @@ def _closing_summary(closing_entry):
 		"total_taxes_and_charges": flt(closing_entry.total_taxes_and_charges),
 		"grand_total": flt(closing_entry.grand_total),
 		"total_quantity": flt(closing_entry.total_quantity),
+		"payment_activity": {
+			"sales_collected": sale_collections,
+			"outstanding_invoice_payments": invoice_receipts,
+			"customer_advances": advances,
+			"reconciled_existing_credits": reconciled_credits,
+			"cash_received": sale_collections + invoice_receipts + advances,
+		},
 		"payments": [
 			{
 				"mode_of_payment": row.mode_of_payment,

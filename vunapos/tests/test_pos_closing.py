@@ -3,11 +3,13 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import flt
 
 from vunapos.api.sales import checkout_invoice
+from vunapos.services.payment_service import receive_customer_payment
 from vunapos.services.pos_closing import close_pos_session, get_closing_preview
 from vunapos.services.profile_service import get_pos_session
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
 	ensure_open_pos_opening_entry,
+	ensure_test_customer,
 	ensure_test_payment_mode,
 	ensure_test_pos_profile,
 )
@@ -68,6 +70,28 @@ class TestVunaPOSClosing(IntegrationTestCase):
 		expected_by_mode = {row["mode_of_payment"]: row["expected_amount"] for row in preview["payments"]}
 		self.assertGreaterEqual(flt(expected_by_mode[cash_mode]), cash_amount)
 		self.assertGreaterEqual(flt(expected_by_mode[second_mode]), flt(amount - cash_amount))
+
+	def test_preview_separates_customer_receipts_from_shift_sales(self):
+		profile = frappe.get_doc("POS Profile", self.profile)
+		mode = profile.get("payments")[0].mode_of_payment
+		customer = ensure_test_customer()
+		payment = receive_customer_payment(
+			pos_profile=self.profile,
+			customer=customer,
+			amount=25,
+			mode_of_payment=mode,
+			idempotency_key=frappe.generate_hash(length=20),
+		)
+		self.assertEqual(payment["unallocated_amount"], 25)
+
+		preview = get_closing_preview(self.profile)
+		self.assertGreaterEqual(preview["payment_activity"]["customer_advances"], 25)
+		self.assertEqual(
+			preview["payment_activity"]["cash_received"],
+			preview["payment_activity"]["sales_collected"]
+			+ preview["payment_activity"]["outstanding_invoice_payments"]
+			+ preview["payment_activity"]["customer_advances"],
+		)
 
 	def test_close_submits_native_closing_entry_and_ends_session(self):
 		invoice = create_invoice_with_item("Sales Invoice")

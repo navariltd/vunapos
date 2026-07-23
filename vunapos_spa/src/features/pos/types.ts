@@ -97,6 +97,13 @@ export type POSClosingPreviewDTO = {
 	total_taxes_and_charges: number;
 	grand_total: number;
 	total_quantity: number;
+	payment_activity?: {
+		sales_collected: number;
+		outstanding_invoice_payments: number;
+		customer_advances: number;
+		reconciled_existing_credits: number;
+		cash_received: number;
+	};
 	payments: POSClosingPaymentDTO[];
 	session?: POSSessionDTO;
 };

@@ -3,7 +3,12 @@ from frappe.tests import IntegrationTestCase
 
 from vunapos.api.payment import receive_customer_payment
 from vunapos.api.sales import checkout_invoice
-from vunapos.services.payment_service import allocate_customer_payments, reconcile_customer_payment
+from vunapos.services.payment_service import (
+	allocate_customer_payments,
+	get_payment_history,
+	reconcile_customer_payment,
+	render_payment_receipt,
+)
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
 	ensure_open_pos_opening_entry,
@@ -38,6 +43,10 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 		self.assertEqual(payment.vunapos_session_cashier, frappe.session.user)
 		self.assertEqual(payment.vunapos_idempotency_key, key)
 		self.assertEqual(payment.unallocated_amount, 100)
+		self.assertEqual(payment.vunapos_receipt_type, "Customer Advance")
+		history = get_payment_history(pos_profile=self.profile, customer=self.customer)
+		self.assertIn(payment.name, [row["name"] for row in history["payments"]])
+		self.assertIn("<html", render_payment_receipt(payment.name)["html"].lower())
 
 	def test_repeated_idempotency_key_returns_the_same_payment(self):
 		key = frappe.generate_hash(length=20)
@@ -110,6 +119,10 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 		)
 
 		self.assertEqual(result["allocated_amount"], 10)
+		self.assertEqual(
+			frappe.db.get_value("Payment Entry", advance["data"]["name"], "vunapos_reconciled_opening_entry"),
+			self.opening_entry,
+		)
 		self.assertEqual(
 			frappe.db.get_value("Payment Entry", advance["data"]["name"], "unallocated_amount"), 0
 		)
