@@ -3,6 +3,8 @@ from frappe.tests import IntegrationTestCase
 
 from vunapos.api.sales import checkout_invoice
 from vunapos.services.invoice_history_service import get_invoice_details, get_invoice_history
+from vunapos.services.invoice_return_service import create_invoice_return, get_return_preview
+from vunapos.services.invoice_service import update_item
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
 	ensure_open_pos_opening_entry,
@@ -49,3 +51,51 @@ class TestVunaPOSInvoiceHistory(IntegrationTestCase):
 		)
 		self.assertEqual(history["invoices"], [])
 		self.assertEqual(history["summary"]["invoice_count"], 0)
+
+	def test_creates_partial_credit_note_and_prevents_over_return(self):
+		invoice = create_invoice_with_item("Sales Invoice")
+		invoice = update_item(invoice["doctype"], invoice["name"], invoice["items"][0]["row_name"], 3)
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		mode = frappe.get_doc("POS Profile", self.profile).get("payments")[0].mode_of_payment
+		response = checkout_invoice(
+			invoice["doctype"], invoice["name"], payments=[{"mode_of_payment": mode, "amount": amount}]
+		)
+		self.assertTrue(response["ok"], response)
+
+		preview = get_return_preview(self.profile, invoice["name"])
+		self.assertEqual(preview["items"][0]["returnable_qty"], 3)
+		key = frappe.generate_hash(length=20)
+		result = create_invoice_return(
+			self.profile,
+			invoice["name"],
+			[{"row_name": invoice["items"][0]["row_name"], "qty": 1}],
+			"Customer returned the item",
+			key,
+		)
+		credit_note = frappe.get_doc("Sales Invoice", result["invoice"]["name"])
+		self.assertEqual(credit_note.return_against, invoice["name"])
+		self.assertEqual(credit_note.items[0].qty, -1)
+		self.assertEqual(credit_note.vunapos_opening_entry, self.opening_entry)
+		self.assertIn("Customer returned the item", credit_note.remarks)
+
+		preview = get_return_preview(self.profile, invoice["name"])
+		self.assertEqual(preview["items"][0]["returnable_qty"], 2)
+		duplicate = create_invoice_return(
+			self.profile,
+			invoice["name"],
+			[{"row_name": invoice["items"][0]["row_name"], "qty": 1}],
+			"Retry",
+			key,
+		)
+		self.assertTrue(duplicate["duplicate"])
+		self.assertEqual(duplicate["invoice"]["name"], credit_note.name)
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			create_invoice_return(
+				self.profile,
+				invoice["name"],
+				[{"row_name": invoice["items"][0]["row_name"], "qty": 3}],
+				"Too many",
+				frappe.generate_hash(length=20),
+			)
+		self.assertEqual(context.exception.vuna_error_code, "RETURN_QUANTITY_EXCEEDED")

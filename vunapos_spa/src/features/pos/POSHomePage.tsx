@@ -263,7 +263,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			{activePage === "Invoices" ? (
-				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
+				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
 				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (

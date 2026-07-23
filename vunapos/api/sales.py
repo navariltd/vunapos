@@ -2,6 +2,8 @@ import frappe
 
 from vunapos.services.invoice_history_service import get_invoice_details as get_invoice_details_service
 from vunapos.services.invoice_history_service import get_invoice_history as get_invoice_history_service
+from vunapos.services.invoice_return_service import create_invoice_return as create_invoice_return_service
+from vunapos.services.invoice_return_service import get_return_preview as get_return_preview_service
 from vunapos.services.invoice_service import add_item as add_item_service
 from vunapos.services.invoice_service import checkout_invoice as checkout_invoice_service
 from vunapos.services.invoice_service import clear_invoice as clear_invoice_service
@@ -110,6 +112,30 @@ def get_invoice_history(
 def get_invoice_details(pos_profile=None, invoice_name=None):
 	try:
 		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_return_preview(pos_profile=None, invoice_name=None):
+	try:
+		return success(get_return_preview_service(pos_profile=pos_profile, invoice_name=invoice_name))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_invoice_return(pos_profile=None, invoice_name=None, items=None, reason=None, idempotency_key=None):
+	try:
+		return success(
+			create_invoice_return_service(
+				pos_profile=pos_profile,
+				invoice_name=invoice_name,
+				items=items,
+				reason=reason,
+				idempotency_key=idempotency_key,
+			)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
