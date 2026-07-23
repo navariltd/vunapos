@@ -78,16 +78,16 @@ def get_invoice(invoice_doctype, invoice_name):
 
 @frappe.whitelist()
 def get_invoice_history(
-	pos_profile=None,
-	invoice=None,
-	customer=None,
-	from_date=None,
-	to_date=None,
-	status=None,
-	payment_mode=None,
-	current_shift=1,
-	start=0,
-	page_length=50,
+	pos_profile: str | None = None,
+	invoice: str | None = None,
+	customer: str | None = None,
+	from_date: str | None = None,
+	to_date: str | None = None,
+	status: str | None = None,
+	payment_mode: str | None = None,
+	current_shift: int | str = 1,
+	start: int | str = 0,
+	page_length: int | str = 50,
 ):
 	try:
 		return success(
@@ -109,7 +109,7 @@ def get_invoice_history(
 
 
 @frappe.whitelist()
-def get_invoice_details(pos_profile=None, invoice_name=None):
+def get_invoice_details(pos_profile: str | None = None, invoice_name: str | None = None):
 	try:
 		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
 	except Exception as exc:
@@ -117,7 +117,7 @@ def get_invoice_details(pos_profile=None, invoice_name=None):
 
 
 @frappe.whitelist()
-def get_return_preview(pos_profile=None, invoice_name=None):
+def get_return_preview(pos_profile: str | None = None, invoice_name: str | None = None):
 	try:
 		return success(get_return_preview_service(pos_profile=pos_profile, invoice_name=invoice_name))
 	except Exception as exc:
@@ -125,7 +125,13 @@ def get_return_preview(pos_profile=None, invoice_name=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def create_invoice_return(pos_profile=None, invoice_name=None, items=None, reason=None, idempotency_key=None):
+def create_invoice_return(
+	pos_profile: str | None = None,
+	invoice_name: str | None = None,
+	items: list | str | None = None,
+	reason: str | None = None,
+	idempotency_key: str | None = None,
+):
 	try:
 		return success(
 			create_invoice_return_service(

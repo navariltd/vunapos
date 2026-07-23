@@ -1,4 +1,5 @@
 import frappe
+from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
@@ -143,7 +144,7 @@ def get_invoice_details(pos_profile=None, invoice_name=None):
 	require_read(doctype, invoice_name)
 	doc = frappe.get_doc(doctype, invoice_name)
 	if not doc.get("vunapos_invoice") or doc.company != profile.company or doc.pos_profile != profile.name:
-		frappe.throw("Invoice is not available for this POS Profile", frappe.PermissionError)
+		frappe.throw(_("Invoice is not available for this POS Profile"), frappe.PermissionError)
 
 	returns = frappe.get_list(
 		doctype,
