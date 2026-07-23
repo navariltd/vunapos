@@ -25,6 +25,7 @@ export function getPosPagePath(page: POSPage): string {
 export function getPosPageFromPath(pathname: string): POSPage {
 	const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
 	if (normalized.startsWith("/vunapos/customers/")) return "Customers";
+	if (normalized.startsWith("/vunapos/invoices/")) return "Invoices";
 	return PATH_PAGES.get(normalized) || "Home";
 }
 
@@ -56,6 +57,17 @@ export function navigateToCustomer(customer: string) {
 	const path = `/vunapos/customers/${encodeURIComponent(customer)}`;
 	window.history.pushState({ vunaposPage: "Customers", customer }, "", path);
 	useNavigationStore.getState().setActivePage("Customers");
+}
+
+export function navigateToInvoice(invoice: string) {
+	const path = `/vunapos/invoices/${encodeURIComponent(invoice)}`;
+	window.history.pushState({ vunaposPage: "Invoices", invoice }, "", path);
+	useNavigationStore.getState().setActivePage("Invoices");
+}
+
+export function getInvoiceFromPath(pathname = window.location.pathname): string | null {
+	const match = pathname.match(/^\/vunapos\/invoices\/([^/]+)\/?$/);
+	return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function getCustomerFromPath(pathname = window.location.pathname): string | null {

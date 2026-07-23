@@ -3,8 +3,7 @@ import { ShoppingCart, X } from "lucide-react";
 
 import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
-import { Button } from "../../components/ui/Button";
-import { getCustomerFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
+import { getCustomerFromPath, getInvoiceFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CustomersPage } from "../customers/CustomersPage";
@@ -12,10 +11,10 @@ import { CustomerDetailsPage } from "../customers/CustomerDetailsPage";
 import { PaymentsPage } from "../payments/PaymentsPage";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
-import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
+import { InvoicesPage } from "./components/InvoicesPage";
+import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
-import { QueueInspectorPanel } from "./components/QueueInspectorPanel";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -264,27 +263,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			{activePage === "Invoices" ? (
-				<section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4">
-					<div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-						<div className="flex flex-wrap items-center justify-between gap-3">
-							<div>
-								<h2 className="text-lg font-semibold text-on-surface">Invoices</h2>
-								<p className="text-sm text-on-surface-variant">Restore held draft sales when the customer is ready.</p>
-							</div>
-							<Button type="button" variant="ghost" onClick={() => setActivePage("Home")}>
-								Back to POS
-							</Button>
-						</div>
-						<HeldInvoicesPanel
-							currency={bootstrap.data?.currency}
-							heldInvoices={heldInvoicesView}
-							isLoading={cartIsHeldLoading}
-							onRefresh={handleRefreshHeld}
-							onRestore={handleRestoreHeld}
-						/>
-						<QueueInspectorPanel />
-					</div>
-				</section>
+				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
 				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (

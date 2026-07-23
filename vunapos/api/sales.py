@@ -1,5 +1,9 @@
 import frappe
 
+from vunapos.services.invoice_history_service import get_invoice_details as get_invoice_details_service
+from vunapos.services.invoice_history_service import get_invoice_history as get_invoice_history_service
+from vunapos.services.invoice_return_service import create_invoice_return as create_invoice_return_service
+from vunapos.services.invoice_return_service import get_return_preview as get_return_preview_service
 from vunapos.services.invoice_service import add_item as add_item_service
 from vunapos.services.invoice_service import checkout_invoice as checkout_invoice_service
 from vunapos.services.invoice_service import clear_invoice as clear_invoice_service
@@ -68,6 +72,76 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 def get_invoice(invoice_doctype, invoice_name):
 	try:
 		return success(get_invoice_service(invoice_doctype=invoice_doctype, invoice_name=invoice_name))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_invoice_history(
+	pos_profile: str | None = None,
+	invoice: str | None = None,
+	customer: str | None = None,
+	from_date: str | None = None,
+	to_date: str | None = None,
+	status: str | None = None,
+	payment_mode: str | None = None,
+	current_shift: int | str = 1,
+	start: int | str = 0,
+	page_length: int | str = 50,
+):
+	try:
+		return success(
+			get_invoice_history_service(
+				pos_profile=pos_profile,
+				invoice=invoice,
+				customer=customer,
+				from_date=from_date,
+				to_date=to_date,
+				status=status,
+				payment_mode=payment_mode,
+				current_shift=current_shift,
+				start=start,
+				page_length=page_length,
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_invoice_details(pos_profile: str | None = None, invoice_name: str | None = None):
+	try:
+		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_return_preview(pos_profile: str | None = None, invoice_name: str | None = None):
+	try:
+		return success(get_return_preview_service(pos_profile=pos_profile, invoice_name=invoice_name))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_invoice_return(
+	pos_profile: str | None = None,
+	invoice_name: str | None = None,
+	items: list | str | None = None,
+	reason: str | None = None,
+	idempotency_key: str | None = None,
+):
+	try:
+		return success(
+			create_invoice_return_service(
+				pos_profile=pos_profile,
+				invoice_name=invoice_name,
+				items=items,
+				reason=reason,
+				idempotency_key=idempotency_key,
+			)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
