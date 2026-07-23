@@ -12,6 +12,30 @@ export type CustomerDTO = {
 	email_id?: string | null;
 };
 
+export type CustomerDirectoryRowDTO = CustomerDTO & {
+	customer_type?: string | null;
+	customer_group?: string | null;
+	territory?: string | null;
+	currency?: string | null;
+	outstanding_balance?: number | null;
+	invoice_count?: number | null;
+	last_purchase_date?: string | null;
+	loyalty_points?: number | null;
+	modified?: string;
+};
+
+export type CustomerDirectoryDTO = {
+	customers: CustomerDirectoryRowDTO[];
+	total_count: number;
+	start: number;
+	limit: number;
+	as_of: string;
+	financials_visible: boolean;
+	loyalty_visible: boolean;
+	customer_groups: string[];
+	territories: string[];
+};
+
 export type POSSessionDTO = {
 	has_opening_entry: boolean;
 	opening_entry: string | null;

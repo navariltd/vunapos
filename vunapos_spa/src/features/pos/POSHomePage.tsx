@@ -7,6 +7,7 @@ import { Button } from "../../components/ui/Button";
 import { navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
+import { CustomersPage } from "../customers/CustomersPage";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
@@ -281,6 +282,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<QueueInspectorPanel />
 					</div>
 				</section>
+			) : activePage === "Customers" ? (
+				<CustomersPage posProfile={bootstrap.data?.pos_profile} defaultCurrency={bootstrap.data?.currency} />
 			) : activePage === "Close Shift" ? (
 				bootstrap.data?.pos_profile ? (
 					<CloseShiftPage
