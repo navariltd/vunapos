@@ -54,6 +54,35 @@ def _find_existing_return(doctype, profile, invoice_name, idempotency_key):
 	)
 
 
+def _apply_erpnext_desk_return_payments(return_doc, original):
+	"""Mirror ERPNext's Desk return payment recalculation.
+
+	Desk assigns a partial return's complete negative total to the original mode when
+	the sale used one mode. For multiple modes it uses the POS Profile default unless
+	the mapped payment rows already equal the return total.
+	"""
+	if not return_doc.get("is_pos") or not return_doc.get("payments"):
+		return
+	total = flt(return_doc.rounded_total or return_doc.grand_total)
+	if abs(sum(flt(row.amount) for row in return_doc.payments) - total) <= 1e-9:
+		return
+	original_modes = {row.mode_of_payment for row in original.get("payments") if row.mode_of_payment}
+	selected_mode = next(iter(original_modes)) if len(original_modes) == 1 else None
+	if not selected_mode:
+		selected_mode = next((row.mode_of_payment for row in return_doc.payments if row.get("default")), None)
+	if not selected_mode:
+		selected_mode = frappe.db.get_value(
+			"POS Payment Method", {"parent": return_doc.pos_profile, "default": 1}, "mode_of_payment"
+		)
+	if not selected_mode:
+		return
+	for payment in return_doc.payments:
+		payment.amount = total if payment.mode_of_payment == selected_mode else 0
+		payment.base_amount = payment.amount * flt(return_doc.conversion_rate or 1)
+	return_doc.paid_amount = sum(flt(row.amount) for row in return_doc.payments)
+	return_doc.base_paid_amount = sum(flt(row.base_amount) for row in return_doc.payments)
+
+
 def get_return_preview(pos_profile=None, invoice_name=None):
 	profile = resolve_pos_profile(pos_profile)
 	doctype = get_invoice_mode()
@@ -150,15 +179,7 @@ def create_invoice_return(pos_profile=None, invoice_name=None, items=None, reaso
 	return_doc.vunapos_closing_entry = None
 	return_doc.remarks = _("VunaPOS return: {0}").format(reason)
 	return_doc.run_method("calculate_taxes_and_totals")
-	if return_doc.get("payments"):
-		original_paid = sum(abs(flt(row.amount)) for row in original.get("payments"))
-		credit_total = abs(flt(return_doc.rounded_total or return_doc.grand_total))
-		ratio = credit_total / original_paid if original_paid else 0
-		for payment in return_doc.payments:
-			payment.amount = -abs(flt(payment.amount)) * ratio
-			payment.base_amount = payment.amount * flt(return_doc.conversion_rate or 1)
-		return_doc.paid_amount = sum(flt(row.amount) for row in return_doc.payments)
-		return_doc.base_paid_amount = sum(flt(row.base_amount) for row in return_doc.payments)
+	_apply_erpnext_desk_return_payments(return_doc, original)
 	return_doc.insert()
 	return_doc.add_comment("Comment", _("VunaPOS return reason: {0}").format(reason))
 	return_doc.submit()

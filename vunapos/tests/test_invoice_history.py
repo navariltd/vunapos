@@ -99,3 +99,33 @@ class TestVunaPOSInvoiceHistory(IntegrationTestCase):
 				frappe.generate_hash(length=20),
 			)
 		self.assertEqual(context.exception.vuna_error_code, "RETURN_QUANTITY_EXCEEDED")
+
+	def test_partial_payment_return_matches_erpnext_desk_refund(self):
+		frappe.db.set_value("POS Profile", self.profile, "allow_partial_payment", 1, update_modified=False)
+		try:
+			invoice = create_invoice_with_item("Sales Invoice")
+			invoice = update_item(invoice["doctype"], invoice["name"], invoice["items"][0]["row_name"], 3)
+			mode = frappe.get_doc("POS Profile", self.profile).get("payments")[0].mode_of_payment
+			response = checkout_invoice(
+				invoice["doctype"], invoice["name"], payments=[{"mode_of_payment": mode, "amount": 150}]
+			)
+			self.assertTrue(response["ok"], response)
+			self.assertEqual(frappe.db.get_value("Sales Invoice", invoice["name"], "outstanding_amount"), 150)
+
+			result = create_invoice_return(
+				self.profile,
+				invoice["name"],
+				[{"row_name": invoice["items"][0]["row_name"], "qty": 1}],
+				"Partial sale return",
+				frappe.generate_hash(length=20),
+			)
+			credit_note = frappe.get_doc("Sales Invoice", result["invoice"]["name"])
+			self.assertEqual(credit_note.grand_total, -100)
+			self.assertEqual(credit_note.paid_amount, -100)
+			self.assertEqual(credit_note.payments[0].amount, -100)
+			self.assertEqual(credit_note.outstanding_amount, 0)
+			self.assertEqual(frappe.db.get_value("Sales Invoice", invoice["name"], "outstanding_amount"), 150)
+		finally:
+			frappe.db.set_value(
+				"POS Profile", self.profile, "allow_partial_payment", 0, update_modified=False
+			)
