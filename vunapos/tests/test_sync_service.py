@@ -208,6 +208,22 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 
 
 class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
+	def test_rejects_unsupported_payment_mode_for_queued_sale(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		payload = _payload_for(profile, item_code)
+		payload["payments"] = [{"mode_of_payment": "Not Configured", "amount": 100}]
+
+		response = create_pos_invoice(
+			payload=json.dumps(payload),
+			idempotency_key=frappe.generate_hash(length=20),
+			local_id="unsupported-payment-mode",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_MODE")
+
 	def test_rejects_queued_sale_without_verified_session_metadata(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()

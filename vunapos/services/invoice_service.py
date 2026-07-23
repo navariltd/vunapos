@@ -1,4 +1,6 @@
 import json
+import math
+from decimal import Decimal, InvalidOperation
 
 import frappe
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
@@ -211,32 +213,66 @@ def _valid_payment_modes(profile):
 
 def validate_payment_rows(doc, payments=None, profile=None):
 	rows = _payment_rows(payments)
-	if not rows:
+	if not isinstance(rows, list) or not rows:
 		_throw("NO_PAYMENT_ROWS", _("At least one payment row is required"))
 
 	valid_modes = _valid_payment_modes(profile) if profile else set()
-	total_paid = 0
+	seen_modes = set()
+	total_paid = Decimal("0")
+	validated_rows = []
 	for row in rows:
+		if not isinstance(row, dict):
+			_throw("INVALID_PAYMENT_MODE", _("Each payment row must be an object"))
+
 		mode_of_payment = row.get("mode_of_payment")
-		amount = flt(row.get("amount"))
-		if not mode_of_payment:
+		if not isinstance(mode_of_payment, str) or not mode_of_payment.strip():
 			_throw("INVALID_PAYMENT_MODE", _("Payment mode is required"))
-		if valid_modes and mode_of_payment not in valid_modes:
+		mode_of_payment = mode_of_payment.strip()
+		if profile is not None and mode_of_payment not in valid_modes:
 			_throw(
 				"INVALID_PAYMENT_MODE",
 				_("Payment mode {0} is not allowed for this POS Profile").format(mode_of_payment),
 			)
-		if amount <= 0:
+		if mode_of_payment in seen_modes:
+			_throw(
+				"DUPLICATE_PAYMENT_MODE",
+				_("Payment mode {0} can only be used once").format(mode_of_payment),
+			)
+
+		try:
+			raw_amount = row.get("amount")
+			if isinstance(raw_amount, bool):
+				raise InvalidOperation
+			amount = Decimal(str(raw_amount))
+		except (InvalidOperation, TypeError, ValueError):
+			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
+		if not amount.is_finite() or amount <= 0:
 			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
+		storage_amount = float(amount)
+		if not math.isfinite(storage_amount):
+			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+
+		seen_modes.add(mode_of_payment)
 		total_paid += amount
+		validated_rows.append(
+			{
+				"mode_of_payment": mode_of_payment,
+				"amount": storage_amount,
+				"default": row.get("default"),
+			}
+		)
 
 	precision = _currency_precision(doc)
 	expected_total = flt(_invoice_total_for_payment(doc), precision)
 	paid_total = flt(total_paid, precision)
 	if paid_total != expected_total:
-		_throw("PAYMENT_TOTAL_MISMATCH", _("Payment total must match the invoice total"))
+		_throw(
+			"PAYMENT_TOTAL_MISMATCH",
+			_("Payment total must match the invoice total"),
+			{"expected_total": expected_total, "paid_total": paid_total, "precision": precision},
+		)
 
-	return rows
+	return validated_rows
 
 
 def _cart_item_rows(items):
@@ -850,7 +886,8 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
-	set_payment_rows(doc, payments)
+	payment_rows = validate_payment_rows(doc, payments, profile)
+	set_payment_rows(doc, payment_rows)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()

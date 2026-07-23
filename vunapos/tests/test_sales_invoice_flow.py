@@ -18,6 +18,7 @@ from vunapos.api.sales import (
 	update_invoice_from_cart,
 	update_item,
 )
+from vunapos.services.invoice_service import validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
 	ensure_item_tax_template,
@@ -260,6 +261,18 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
 
+	def test_submit_invoice_rejects_missing_payment_rows(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = submit_invoice(invoice["doctype"], invoice["name"], payments=[])
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "NO_PAYMENT_ROWS")
+
 	def test_checkout_blocks_empty_invoice(self):
 		profile = ensure_test_pos_profile()
 		set_invoice_mode("Sales Invoice")
@@ -324,6 +337,82 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "PAYMENT_TOTAL_MISMATCH")
+
+	def test_checkout_blocks_duplicate_payment_modes(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[
+				{"mode_of_payment": "Cash", "amount": amount / 2},
+				{"mode_of_payment": "Cash", "amount": amount / 2},
+			],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "DUPLICATE_PAYMENT_MODE")
+
+	def test_checkout_blocks_non_finite_and_invalid_payment_amounts(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		for invalid_amount in (
+			None,
+			True,
+			"not-a-number",
+			"NaN",
+			"Infinity",
+			"-Infinity",
+			"1e10000",
+			0,
+			-1,
+		):
+			with self.subTest(amount=invalid_amount):
+				response = checkout_invoice(
+					invoice["doctype"],
+					invoice["name"],
+					payments=[{"mode_of_payment": "Cash", "amount": invalid_amount}],
+				)
+				self.assertFalse(response["ok"], response)
+				self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_AMOUNT")
+
+	def test_payment_validation_accepts_split_at_currency_precision(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{
+				"payments": [
+					frappe._dict({"mode_of_payment": "Cash"}),
+					frappe._dict({"mode_of_payment": "M-Pesa"}),
+				]
+			}
+		)
+
+		rows = validate_payment_rows(
+			doc,
+			[
+				{"mode_of_payment": "Cash", "amount": "25.25"},
+				{"mode_of_payment": "M-Pesa", "amount": "74.75"},
+			],
+			profile,
+		)
+
+		self.assertEqual(
+			rows,
+			[
+				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
+				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
+			],
+		)
 
 	def test_checkout_submits_valid_invoice(self):
 		profile = ensure_test_pos_profile()
