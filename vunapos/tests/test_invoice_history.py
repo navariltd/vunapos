@@ -3,7 +3,10 @@ from frappe.tests import IntegrationTestCase
 
 from vunapos.api.sales import checkout_invoice
 from vunapos.services.invoice_history_service import get_invoice_details, get_invoice_history
-from vunapos.services.invoice_return_service import create_invoice_return, get_return_preview
+from vunapos.services.invoice_return_service import (
+	create_invoice_return,
+	get_return_preview,
+)
 from vunapos.services.invoice_service import update_item
 from vunapos.tests.helpers import (
 	create_invoice_with_item,

@@ -108,7 +108,13 @@ def get_return_preview(pos_profile=None, invoice_name=None):
 	return {"invoice": original.name, "currency": original.currency, "items": items}
 
 
-def create_invoice_return(pos_profile=None, invoice_name=None, items=None, reason=None, idempotency_key=None):
+def create_invoice_return(
+	pos_profile=None,
+	invoice_name=None,
+	items=None,
+	reason=None,
+	idempotency_key=None,
+):
 	profile = resolve_pos_profile(pos_profile)
 	doctype = get_invoice_mode()
 	opening = require_open_pos_session(profile.name)
