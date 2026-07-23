@@ -60,6 +60,7 @@ export const vunaMethods = {
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
 	getInvoice: "vunapos.api.sales.get_invoice",
+	getInvoiceHistory: "vunapos.api.sales.get_invoice_history",
 	addItem: "vunapos.api.sales.add_item",
 	updateItem: "vunapos.api.sales.update_item",
 	removeItem: "vunapos.api.sales.remove_item",
