@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { AlertTriangle, RotateCw } from "lucide-react";
+import { AlertTriangle, RotateCw, ShoppingCart, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { queueRepository } from "../../../lib/repositories/queueRepository";
 import { drainQueue } from "../../../lib/syncEngine";
+import { navigateToPosPage } from "../../../lib/stores/navigationStore";
 import { useQueueEntries } from "../hooks/useQueueEntries";
+import { useCartStore } from "../stores/cartStore";
 import { formatCurrency } from "../utils";
 
 function formatCreatedAt(value: string) {
@@ -21,6 +23,8 @@ function formatCreatedAt(value: string) {
 export function QueueInspectorPanel() {
 	const entries = useQueueEntries();
 	const [retryingId, setRetryingId] = useState<string | null>(null);
+	const currentInvoice = useCartStore((state) => state.invoice);
+	const restoreFailedSale = useCartStore((state) => state.restoreFailedSale);
 
 	const parked = entries.filter((entry) => entry.status === "error");
 	const pending = entries.filter((entry) => entry.status === "pending" || entry.status === "syncing");
@@ -39,11 +43,26 @@ export function QueueInspectorPanel() {
 		}
 	};
 
+	const handleRestore = async (localId: string) => {
+		if (currentInvoice?.items?.length && !window.confirm("Replace the current cart with this failed offline sale?")) return;
+		try {
+			await restoreFailedSale(localId);
+			navigateToPosPage("Home");
+		} catch {
+			// cartStore publishes the actionable error through the shared POS error banner.
+		}
+	};
+
+	const handleDiscard = async (localId: string) => {
+		if (!window.confirm("Discard this failed offline sale from this device? This cannot be undone.")) return;
+		await queueRepository.remove(localId);
+	};
+
 	return (
 		<div className="mt-3 rounded-md border border-outline-variant bg-surface-container-low p-3">
 			<div className="flex items-center justify-between gap-3">
 				<div>
-					<p className="text-sm font-semibold text-on-surface">Sync Queue</p>
+					<p className="text-sm font-semibold text-on-surface">Offline Sales Queue</p>
 					<p className="text-xs text-on-surface-variant">
 						{pending.length ? `${pending.length} syncing/pending` : "Nothing pending"}
 						{parked.length ? ` · ${parked.length} need attention` : ""}
@@ -65,7 +84,7 @@ export function QueueInspectorPanel() {
 									<div className="min-w-0">
 										<div className="flex items-center gap-1.5">
 											<AlertTriangle className="size-3.5 shrink-0" />
-											<p className="truncate text-sm font-semibold">{entry.local_ref}</p>
+										<p className="truncate text-sm font-semibold">Failed offline sale · {entry.local_ref}</p>
 										</div>
 										<p className="mt-1 text-xs opacity-90">{lastAttempt?.detail || "Sync failed"}</p>
 										<p className="mt-1 text-xs opacity-75">
@@ -77,6 +96,7 @@ export function QueueInspectorPanel() {
 										{total !== undefined ? (
 											<p className="text-sm font-semibold">{formatCurrency(total)}</p>
 										) : null}
+										<div className="mt-1 flex justify-end gap-1">
 										<Button
 											type="button"
 											variant="ghost"
@@ -88,6 +108,13 @@ export function QueueInspectorPanel() {
 											<RotateCw className={`size-3.5 ${retryingId === entry.local_id ? "animate-spin" : ""}`} />
 											Retry
 										</Button>
+										<Button type="button" variant="ghost" size="sm" className="h-8 gap-1 px-2 text-on-error-container" onClick={() => handleRestore(entry.local_id)}>
+											<ShoppingCart className="size-3.5" /> Edit
+										</Button>
+										<Button type="button" variant="ghost" size="sm" className="h-8 gap-1 px-2 text-on-error-container" onClick={() => handleDiscard(entry.local_id)}>
+											<Trash2 className="size-3.5" /> Discard
+										</Button>
+										</div>
 									</div>
 								</div>
 							</div>

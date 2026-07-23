@@ -222,7 +222,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
 		try {
-			const result = await cartActions.submitCart(payments, bootstrap.data?.print_format, idempotencyKey);
+			const result = await cartActions.submitCart(
+				payments,
+				bootstrap.data?.print_format,
+				idempotencyKey,
+				isReachable && navigator.onLine !== false,
+			);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);
 			if (result?.invoice) {

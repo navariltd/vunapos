@@ -26,6 +26,7 @@ import {
 	checkoutInvoice,
 	clearInvoice,
 	createInvoiceFromCart,
+	getItemDetails,
 	holdInvoice,
 	listHeldInvoices,
 	removeItem,
@@ -41,6 +42,7 @@ import {
 // this store's business logic testable with zero React/SDK involvement.
 export type CartApi = {
 	addItem: FrappeCall;
+	getItemDetails: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
 	clearInvoice: FrappeCall;
@@ -255,6 +257,46 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
 	}
 }
 
+async function refreshAndValidateStock(
+	invoice: InvoiceDTO,
+	posProfile: string | undefined,
+	customer: string | undefined,
+	api: CartApi,
+): Promise<InvoiceDTO> {
+	const requestedByCode = new Map<string, number>();
+	for (const item of invoice.items) {
+		requestedByCode.set(item.item_code, (requestedByCode.get(item.item_code) || 0) + item.qty);
+	}
+
+	const freshByCode = new Map<string, ItemDTO>();
+	await Promise.all(
+		Array.from(requestedByCode).map(async ([itemCode, qty]) => {
+			const fresh = await getItemDetails(api.getItemDetails, {
+				item_code: itemCode,
+				pos_profile: posProfile,
+				customer,
+			});
+			validateAvailableQty(fresh, qty);
+			freshByCode.set(itemCode, fresh);
+		}),
+	);
+
+	return {
+		...invoice,
+		items: invoice.items.map((item) => {
+			const fresh = freshByCode.get(item.item_code);
+			return fresh
+				? {
+						...item,
+						actual_qty: fresh.actual_qty,
+						allow_negative_stock: fresh.allow_negative_stock,
+						is_stock_item: fresh.is_stock_item,
+					}
+				: item;
+		}),
+	};
+}
+
 // ---- store ----
 
 export type CartState = {
@@ -294,6 +336,7 @@ type CartActions = {
 		printFormat: string | null | undefined,
 		idempotencyKey: string | undefined,
 		api: CartApi,
+		isOnline?: boolean,
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -301,6 +344,7 @@ type CartActions = {
 	 * any queue status (pending/syncing/error) since it's still just local data
 	 * regardless of sync status. */
 	restoreLocalHold: (localId: string, api: CartApi) => Promise<InvoiceDTO>;
+	restoreFailedSale: (localId: string) => Promise<InvoiceDTO>;
 };
 
 export type CartStore = CartState & CartActions;
@@ -517,17 +561,28 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: updatedInvoice.items.length ? updatedInvoice : null });
 		},
 
-		submitCart: async (payments, printFormat, idempotencyKey, api) => {
-			const invoice = get().invoice;
+		submitCart: async (payments, printFormat, idempotencyKey, api, isOnline = false) => {
+			let invoice = get().invoice;
 			if (!invoice) {
 				return null;
+			}
+
+			const selectedCustomer = getActiveCustomer(get());
+			if (isOnline && isUnsyncedLocalCart(invoice)) {
+				invoice = await runMutation(() =>
+					refreshAndValidateStock(
+						invoice as InvoiceDTO,
+						get().posProfile,
+						selectedCustomer?.customer,
+						api,
+					),
+				);
+				set({ invoice });
 			}
 
 			for (const item of invoice.items) {
 				validateAvailableQty(item, item.qty);
 			}
-
-			const selectedCustomer = getActiveCustomer(get());
 
 			// The common "new sale" path: a local cart with no server draft behind it yet.
 			// This is the one the problem statement is actually about (I3/I6) - it always
@@ -541,7 +596,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 							mode_of_payment: payment.mode_of_payment,
 							amount: payment.amount,
 						})),
-					});
+					}, idempotencyKey);
 
 					// Race a real sync against a short timeout: online, swap in the server-verified
 					// receipt; offline/slow, fall back to the local estimate - already "sold" from
@@ -553,6 +608,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						// Rejected within the race window (e.g. totals-variance/stock check) is
 						// dead, not "pending" (will sync later) - surface it now, cashier-present.
 						const lastAttempt = settled.attempts.at(-1);
+						await queueRepository.remove(local.local_id);
 						throw new Error(
 							lastAttempt?.detail ||
 								"This sale was rejected by the server and could not be completed. Please review the cart and try again.",
@@ -778,6 +834,36 @@ export const useCartStore = create<CartStore>((set, get) => {
 				// the local hold must still exist afterward rather than being silently lost.
 				await queueRepository.remove(localId);
 
+				set({ invoice: preview });
+				return preview;
+			});
+		},
+
+		restoreFailedSale: async (localId) => {
+			return runMutation(async () => {
+				const entry = await queueRepository.getByLocalId(localId);
+				if (!entry || entry.type !== "create_invoice" || entry.status !== "error") {
+					throw new Error("This failed offline sale is no longer available on this device.");
+				}
+
+				const itemRows = await Promise.all(
+					entry.payload.items.map(async (line) => {
+						const cached = await itemRepository.getByCode(line.item_code);
+						if (!cached) {
+							throw new Error(`Item ${line.item_code} is no longer available locally - sync and try again.`);
+						}
+						return itemToCartRow(cached as ItemDTO, line.qty);
+					}),
+				);
+
+				let customer: CustomerDTO | null = null;
+				if (entry.payload.customer) {
+					const cached = await customerRepository.getByName(entry.payload.customer);
+					customer = cached ?? { customer: entry.payload.customer, customer_name: entry.payload.customer };
+				}
+				set({ selectedCustomerOverride: customer });
+				const preview = await previewLocalCart(itemRows, null);
+				await queueRepository.remove(localId);
 				set({ invoice: preview });
 				return preview;
 			});

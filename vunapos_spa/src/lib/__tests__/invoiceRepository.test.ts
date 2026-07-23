@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "./../db";
 import { invoiceRepository } from "../invoiceRepository";
 import { META_KEYS } from "../repositories/metaRepository";
+import { queueRepository } from "../repositories/queueRepository";
 
 beforeEach(async () => {
 	await Promise.all([
@@ -77,6 +78,38 @@ describe("invoiceRepository.create", () => {
 		expect(first.local_ref.endsWith("00001")).toBe(true);
 		expect(second.local_ref.endsWith("00002")).toBe(true);
 		expect(await db.queue.count()).toBe(2);
+	});
+
+	it("uses the checkout attempt idempotency key when one is provided", async () => {
+		const result = await invoiceRepository.create(
+			{
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				payments: [{ mode_of_payment: "Cash", amount: 116 }],
+			},
+			"checkout-attempt-1",
+		);
+
+		const queued = await queueRepository.getByLocalId(result.local_id);
+		expect(queued?.idempotency_key).toBe("checkout-attempt-1");
+	});
+
+	it("prevents pending offline sales from overselling cached stock", async () => {
+		await db.items.update("ITEM-1", { is_stock_item: 1, allow_negative_stock: 0, actual_qty: 2 });
+		await invoiceRepository.create({
+			customer: "CUST-1",
+			items: [{ item_code: "ITEM-1", qty: 2 }],
+			payments: [{ mode_of_payment: "Cash", amount: 232 }],
+		});
+
+		await expect(
+			invoiceRepository.create({
+				customer: "CUST-1",
+				items: [{ item_code: "ITEM-1", qty: 1 }],
+				payments: [{ mode_of_payment: "Cash", amount: 116 }],
+			}),
+		).rejects.toThrow(/Available quantity is 0/);
+		expect(await db.queue.count()).toBe(1);
 	});
 
 	it("throws and queues nothing when an item has no cached price", async () => {

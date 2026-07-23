@@ -7,6 +7,7 @@ import type { CartApi } from "../stores/cartStore";
 // CartApi of plain functions instead, so it stays testable with plain vi.fn()s.
 export function useCartApi(): CartApi {
 	const addItemCall = useFrappePostCall(vunaMethods.addItem);
+	const getItemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
 	const updateItemCall = useFrappePostCall(vunaMethods.updateItem);
 	const removeItemCall = useFrappePostCall(vunaMethods.removeItem);
 	const clearInvoiceCall = useFrappePostCall(vunaMethods.clearInvoice);
@@ -20,6 +21,7 @@ export function useCartApi(): CartApi {
 
 	return {
 		addItem: addItemCall.call,
+		getItemDetails: getItemDetailsCall.call,
 		updateItem: updateItemCall.call,
 		removeItem: removeItemCall.call,
 		clearInvoice: clearInvoiceCall.call,

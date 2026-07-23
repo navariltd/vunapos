@@ -26,8 +26,12 @@ export function useCartActions() {
 			removeCartItem: (rowName: string) => removeCartItemAction(rowName, api),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
-			submitCart: (payments: PaymentInput[], printFormat: string | null | undefined, idempotencyKey?: string) =>
-				submitCartAction(payments, printFormat, idempotencyKey, api),
+			submitCart: (
+				payments: PaymentInput[],
+				printFormat: string | null | undefined,
+				idempotencyKey?: string,
+				isOnline = false,
+			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
 			restoreLocalHold: (localId: string) => restoreLocalHoldAction(localId, api),
