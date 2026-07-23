@@ -2,7 +2,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from vunapos.api.sales import checkout_invoice
-from vunapos.services.invoice_history_service import get_invoice_history
+from vunapos.services.invoice_history_service import get_invoice_details, get_invoice_history
 from vunapos.tests.helpers import (
 	create_invoice_with_item,
 	ensure_open_pos_opening_entry,
@@ -34,6 +34,11 @@ class TestVunaPOSInvoiceHistory(IntegrationTestCase):
 		self.assertEqual(row["vunapos_opening_entry"], self.opening_entry)
 		self.assertEqual(row["payments"][0]["mode_of_payment"], mode)
 		self.assertGreaterEqual(history["summary"]["gross_sales"], amount)
+		details = get_invoice_details(pos_profile=self.profile, invoice_name=invoice["name"])
+		self.assertEqual(details["name"], invoice["name"])
+		self.assertEqual(details["cashier"], frappe.session.user)
+		self.assertTrue(details["items"])
+		self.assertEqual(details["payments"][0]["mode_of_payment"], mode)
 
 	def test_filters_history_by_customer_and_invoice_number(self):
 		history = get_invoice_history(

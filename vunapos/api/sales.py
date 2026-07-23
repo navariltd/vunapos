@@ -1,5 +1,6 @@
 import frappe
 
+from vunapos.services.invoice_history_service import get_invoice_details as get_invoice_details_service
 from vunapos.services.invoice_history_service import get_invoice_history as get_invoice_history_service
 from vunapos.services.invoice_service import add_item as add_item_service
 from vunapos.services.invoice_service import checkout_invoice as checkout_invoice_service
@@ -101,6 +102,14 @@ def get_invoice_history(
 				page_length=page_length,
 			)
 		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_invoice_details(pos_profile=None, invoice_name=None):
+	try:
+		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

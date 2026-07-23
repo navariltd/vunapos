@@ -1,7 +1,8 @@
-import { useState, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
 import { Button } from "../../../components/ui/Button";
+import { navigateToInvoice } from "../../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { HeldInvoiceDTO, ModeOfPaymentDTO } from "../types";
 import { HeldInvoicesPanel } from "./HeldInvoicesPanel";
@@ -21,8 +22,14 @@ export function InvoicesPage({ posProfile, currency, paymentModes, heldInvoices,
 	let history: History | null = null; let error = call.error?.message || "";
 	try { if (call.data) history = unwrapVunaResponse<History>(call.data); } catch (err) { error = err instanceof Error ? err.message : "Unable to load invoice history"; }
 	const update = (field: keyof Filters, value: string) => { setFilters((current) => ({ ...current, [field]: value })); setStart(0); };
+	const openDetails = (event: MouseEvent<HTMLElement>) => {
+		const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[href^="/app/"]');
+		if (!link) return;
+		event.preventDefault();
+		navigateToInvoice(decodeURIComponent(link.pathname.split("/").pop() || ""));
+	};
 
-	return <section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4"><div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+	return <section onClick={openDetails} className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4"><div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
 		<div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Invoices</h2><p className="text-sm text-on-surface-variant">Review completed sales and resolve held or failed transactions.</p></div><Button variant="ghost" onClick={onBack}>Back to POS</Button></div>
 		<div className="flex border-b border-outline-variant"><Tab active={tab === "history"} onClick={() => setTab("history")}>Sales History</Tab><Tab active={tab === "issues"} onClick={() => setTab("issues")}>Held &amp; Sync Issues</Tab></div>
 		{tab === "issues" ? <><HeldInvoicesPanel currency={currency} heldInvoices={heldInvoices} isLoading={heldLoading} onRefresh={onRefreshHeld} onRestore={onRestoreHeld}/><QueueInspectorPanel/></> : <>

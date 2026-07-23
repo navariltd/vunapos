@@ -1,7 +1,9 @@
 import frappe
 from frappe.utils import flt, getdate, nowdate
 
+from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
+from vunapos.utils.permissions import require_read
 
 
 def _status(row):
@@ -38,6 +40,7 @@ def get_invoice_history(
 		"vunapos_invoice": 1,
 		"docstatus": ["in", [1, 2]],
 	}
+
 	if invoice:
 		filters["name"] = ["like", f"%{invoice}%"]
 	if customer:
@@ -132,3 +135,67 @@ def get_invoice_history(
 			"outstanding": sum(max(flt(row["outstanding_amount"]), 0) for row in active_rows),
 		},
 	}
+
+
+def get_invoice_details(pos_profile=None, invoice_name=None):
+	profile = resolve_pos_profile(pos_profile)
+	doctype = get_invoice_mode()
+	require_read(doctype, invoice_name)
+	doc = frappe.get_doc(doctype, invoice_name)
+	if not doc.get("vunapos_invoice") or doc.company != profile.company or doc.pos_profile != profile.name:
+		frappe.throw("Invoice is not available for this POS Profile", frappe.PermissionError)
+
+	returns = frappe.get_list(
+		doctype,
+		filters={"return_against": doc.name, "docstatus": ["in", [1, 2]]},
+		fields=["name", "posting_date", "grand_total", "docstatus"],
+		order_by="posting_date desc, creation desc",
+		limit=100,
+	)
+	reference_rows = frappe.get_all(
+		"Payment Entry Reference",
+		filters={"reference_doctype": doctype, "reference_name": doc.name, "allocated_amount": [">", 0]},
+		fields=["parent", "allocated_amount"],
+	)
+	payment_names = list({row.parent for row in reference_rows})
+	payment_entries = []
+	if payment_names:
+		visible_payments = frappe.get_list(
+			"Payment Entry",
+			filters={"name": ["in", payment_names], "docstatus": ["in", [1, 2]]},
+			fields=[
+				"name",
+				"posting_date",
+				"mode_of_payment",
+				"received_amount",
+				"unallocated_amount",
+				"docstatus",
+			],
+			limit=100,
+		)
+		allocated = {row.parent: flt(row.allocated_amount) for row in reference_rows}
+		payment_entries = [
+			{**row, "allocated_amount": allocated.get(row.name, 0)} for row in visible_payments
+		]
+
+	result = invoice_to_dict(doc)
+	result.update(
+		{
+			"currency": doc.currency,
+			"posting_time": doc.get("posting_time"),
+			"due_date": doc.get("due_date"),
+			"status": _status(doc),
+			"is_return": bool(doc.is_return),
+			"return_against": doc.return_against,
+			"pos_profile": doc.pos_profile,
+			"warehouse": doc.get("set_warehouse")
+			or next((row.warehouse for row in doc.items if row.warehouse), None),
+			"opening_entry": doc.get("vunapos_opening_entry"),
+			"cashier": doc.get("vunapos_session_cashier"),
+			"closing_entry": doc.get("vunapos_closing_entry"),
+			"local_ref": doc.get("vunapos_invoice_number_offline"),
+			"returns": returns,
+			"payment_entries": payment_entries,
+		}
+	)
+	return result

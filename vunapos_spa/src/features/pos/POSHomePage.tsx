@@ -3,7 +3,7 @@ import { ShoppingCart, X } from "lucide-react";
 
 import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
-import { getCustomerFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
+import { getCustomerFromPath, getInvoiceFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { CustomersPage } from "../customers/CustomersPage";
@@ -12,6 +12,7 @@ import { PaymentsPage } from "../payments/PaymentsPage";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
 import { InvoicesPage } from "./components/InvoicesPage";
+import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
 import { useBootstrapData } from "./hooks/useBootstrapData";
@@ -262,7 +263,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			{activePage === "Invoices" ? (
-				<InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
+				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
 				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (
