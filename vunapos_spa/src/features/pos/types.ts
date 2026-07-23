@@ -3,6 +3,7 @@ export type ModeOfPaymentDTO = {
 	default?: number | boolean ;
 	account?: string;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	requires_reference?: boolean;
 };
 
 export type CustomerDTO = {
@@ -10,6 +11,49 @@ export type CustomerDTO = {
 	customer_name: string;
 	mobile_no?: string | null;
 	email_id?: string | null;
+};
+
+export type CustomerDirectoryRowDTO = CustomerDTO & {
+	customer_type?: string | null;
+	customer_group?: string | null;
+	territory?: string | null;
+	currency?: string | null;
+	outstanding_balance?: number | null;
+	invoice_count?: number | null;
+	last_purchase_date?: string | null;
+	loyalty_points?: number | null;
+	modified?: string;
+};
+
+export type CustomerDirectoryDTO = {
+	customers: CustomerDirectoryRowDTO[];
+	total_count: number;
+	start: number;
+	limit: number;
+	as_of: string;
+	financials_visible: boolean;
+	loyalty_visible: boolean;
+	customer_groups: string[];
+	territories: string[];
+};
+
+export type CustomerDetailsDTO = {
+	customer: CustomerDirectoryRowDTO & { tax_id?: string | null };
+	balance: number;
+	loyalty: null | { program?: string | null; points: number; tier?: string | null; conversion_factor?: number };
+	invoices: Array<{
+		name: string; doctype: string; posting_date: string; due_date?: string | null; currency?: string;
+		grand_total: number; paid_amount: number; outstanding_amount: number;
+		status: "Paid" | "Partly Paid" | "Unpaid" | "Overdue" | "Credit Note";
+		is_return: boolean; return_against?: string | null;
+	}>;
+	payments: Array<{
+		name: string; posting_date: string; mode_of_payment?: string | null; paid_amount: number;
+		received_amount: number; unallocated_amount: number; reference_no?: string | null; remarks?: string | null;
+	}>;
+	contact?: Record<string, string | null> | null;
+	address?: Record<string, string | null> | null;
+	as_of: string;
 };
 
 export type POSSessionDTO = {
@@ -54,6 +98,13 @@ export type POSClosingPreviewDTO = {
 	total_taxes_and_charges: number;
 	grand_total: number;
 	total_quantity: number;
+	payment_activity?: {
+		sales_collected: number;
+		outstanding_invoice_payments: number;
+		customer_advances: number;
+		reconciled_existing_credits: number;
+		cash_received: number;
+	};
 	payments: POSClosingPaymentDTO[];
 	session?: POSSessionDTO;
 };

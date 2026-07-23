@@ -4,9 +4,12 @@ import { ShoppingCart, X } from "lucide-react";
 import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
 import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./utils";
 import { Button } from "../../components/ui/Button";
-import { navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
+import { getCustomerFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
+import { CustomersPage } from "../customers/CustomersPage";
+import { CustomerDetailsPage } from "../customers/CustomerDetailsPage";
+import { PaymentsPage } from "../payments/PaymentsPage";
 import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
 import { HeldInvoicesPanel } from "./components/HeldInvoicesPanel";
@@ -73,6 +76,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
 	const activePage = useNavigationStore((s) => s.activePage);
+	const currentPath = useNavigationStore((s) => s.currentPath);
 	const setActivePage = useNavigationStore((s) => s.setActivePage);
 	const pageError = useUiFeedbackStore((s) => s.pageError);
 	const setPageError = useUiFeedbackStore((s) => s.setPageError);
@@ -281,6 +285,17 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<QueueInspectorPanel />
 					</div>
 				</section>
+			) : activePage === "Payments" ? (
+				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
+			) : activePage === "Customers" ? (
+				getCustomerFromPath(currentPath) ? <CustomerDetailsPage
+					customer={getCustomerFromPath(currentPath) || ""}
+					posProfile={bootstrap.data?.pos_profile}
+					onStartSale={(customer) => {
+						setSelectedCustomer(customer);
+						navigateToPosPage("Home");
+					}}
+				/> : <CustomersPage posProfile={bootstrap.data?.pos_profile} defaultCurrency={bootstrap.data?.currency} />
 			) : activePage === "Close Shift" ? (
 				bootstrap.data?.pos_profile ? (
 					<CloseShiftPage

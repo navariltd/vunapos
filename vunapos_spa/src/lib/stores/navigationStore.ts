@@ -14,6 +14,7 @@ const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [pat
 
 type NavigationStore = {
 	activePage: POSPage;
+	currentPath: string;
 	setActivePage: (page: POSPage) => void;
 };
 
@@ -23,6 +24,7 @@ export function getPosPagePath(page: POSPage): string {
 
 export function getPosPageFromPath(pathname: string): POSPage {
 	const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
+	if (normalized.startsWith("/vunapos/customers/")) return "Customers";
 	return PATH_PAGES.get(normalized) || "Home";
 }
 
@@ -35,7 +37,11 @@ function initialPage(): POSPage {
 // state) purely through an untyped global event - one shared store instead.
 export const useNavigationStore = create<NavigationStore>((set) => ({
 	activePage: initialPage(),
-	setActivePage: (page) => set({ activePage: page }),
+	currentPath: typeof window === "undefined" ? "/vunapos" : window.location.pathname,
+	setActivePage: (page) => set({
+		activePage: page,
+		currentPath: typeof window === "undefined" ? getPosPagePath(page) : window.location.pathname,
+	}),
 }));
 
 export function navigateToPosPage(page: POSPage) {
@@ -44,6 +50,24 @@ export function navigateToPosPage(page: POSPage) {
 		window.history.pushState({ vunaposPage: page }, "", path);
 	}
 	useNavigationStore.getState().setActivePage(page);
+}
+
+export function navigateToCustomer(customer: string) {
+	const path = `/vunapos/customers/${encodeURIComponent(customer)}`;
+	window.history.pushState({ vunaposPage: "Customers", customer }, "", path);
+	useNavigationStore.getState().setActivePage("Customers");
+}
+
+export function getCustomerFromPath(pathname = window.location.pathname): string | null {
+	const match = pathname.match(/^\/vunapos\/customers\/([^/]+)\/?$/);
+	return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function navigateToCustomerPayment(customer: string, invoice?: string) {
+	const params = new URLSearchParams({ customer });
+	if (invoice) params.set("invoice", invoice);
+	window.history.pushState({ vunaposPage: "Payments", customer, invoice }, "", `/vunapos/payments?${params}`);
+	useNavigationStore.getState().setActivePage("Payments");
 }
 
 export function initPosNavigation() {

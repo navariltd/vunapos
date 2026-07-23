@@ -2,6 +2,8 @@ import type {
 	BatchAllocationResultDTO,
 	BootstrapData,
 	CustomerDTO,
+	CustomerDirectoryDTO,
+	CustomerDetailsDTO,
 	HeldInvoiceDTO,
 	ItemBatchesDTO,
 	InvoiceDTO,
@@ -46,6 +48,14 @@ export const vunaMethods = {
 	getItemBatches: "vunapos.api.batch.get_item_batches",
 	allocateBatches: "vunapos.api.batch.allocate_batches",
 	searchCustomers: "vunapos.api.customer.search_customers",
+	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
+	getCustomerDetails: "vunapos.api.customer.get_customer_details",
+	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
+	getReconciliationCandidates: "vunapos.api.payment.get_reconciliation_candidates",
+	getPaymentHistory: "vunapos.api.payment.get_payment_history",
+	renderPaymentReceipt: "vunapos.api.payment.render_payment_receipt",
+	allocateCustomerPayments: "vunapos.api.payment.allocate_customer_payments",
+	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
@@ -149,6 +159,22 @@ export function allocateBatches(
 
 export function searchCustomers(call: FrappeCall, params: { query?: string; limit?: number }) {
 	return callAndUnwrap<CustomerDTO[]>(call, params);
+}
+
+export function getCustomerDirectory(call: FrappeCall, params: {
+	pos_profile?: string;
+	query?: string;
+	customer_group?: string;
+	customer_type?: string;
+	territory?: string;
+	start?: number;
+	limit?: number;
+}) {
+	return callAndUnwrap<CustomerDirectoryDTO>(call, params);
+}
+
+export function getCustomerDetails(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
+	return callAndUnwrap<CustomerDetailsDTO>(call, params);
 }
 
 export function createCustomer(
