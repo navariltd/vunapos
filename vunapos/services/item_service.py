@@ -1,5 +1,9 @@
 import frappe
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+	get_sre_reserved_qty_for_item_and_warehouse,
+)
 from erpnext.stock.get_item_details import get_item_details
+from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import cint, flt, today
 
@@ -19,20 +23,9 @@ def _get_item_code_from_barcode(barcode):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return None
-	return flt(
-		frappe.db.sql(
-			"""
-			select sum(actual_qty)
-			from `tabStock Ledger Entry`
-			where item_code = %s
-				and warehouse = %s
-				and docstatus < 2
-				and is_cancelled = 0
-			""",
-			(item_code, warehouse),
-		)[0][0]
-		or 0
-	)
+	stock_balance = flt(get_stock_balance(item_code, warehouse))
+	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
+	return max(stock_balance - reserved_stock, 0)
 
 
 def _get_rate(item_code, profile):
@@ -115,7 +108,7 @@ def _get_actual_qty_map(item_codes, warehouse):
 	placeholders = ", ".join(["%s"] * len(item_codes))
 	rows = frappe.db.sql(
 		f"""
-		select item_code, sum(actual_qty) as actual_qty
+		select item_code, sum(actual_qty - reserved_stock) as available_qty
 		from `tabBin`
 		where warehouse = %s
 			and item_code in ({placeholders})
@@ -124,7 +117,7 @@ def _get_actual_qty_map(item_codes, warehouse):
 		[warehouse, *item_codes],
 		as_dict=True,
 	)
-	return {row.item_code: flt(row.actual_qty) for row in rows}
+	return {row.item_code: max(flt(row.available_qty), 0) for row in rows}
 
 
 def _get_rate_map(item_codes, price_list):
@@ -206,14 +199,22 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 	filters = {"disabled": 0, "is_sales_item": 1, "has_variants": 0}
 	query_filters = dict(filters)
 	if since:
-		# Item.modified alone misses rate-only changes: Item Price is a separate doctype
-		# and doesn't bump the parent Item's modified timestamp.
+		# Item.modified alone misses rate and stock changes: Item Price and Bin are
+		# separate doctypes and neither bumps the parent Item's modified timestamp.
 		changed_item_codes = set(frappe.get_all("Item", filters={"modified": [">", since]}, pluck="name"))
 		if price_list:
 			changed_item_codes.update(
 				frappe.get_all(
 					"Item Price",
 					filters={"price_list": price_list, "modified": [">", since]},
+					pluck="item_code",
+				)
+			)
+		if profile.warehouse:
+			changed_item_codes.update(
+				frappe.get_all(
+					"Bin",
+					filters={"warehouse": profile.warehouse, "modified": [">", since]},
 					pluck="item_code",
 				)
 			)

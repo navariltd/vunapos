@@ -180,6 +180,36 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		self.assertTrue(changed_response["ok"], changed_response)
 		self.assertIn(item_code, [row["item_code"] for row in changed_response["data"]["items"]])
 
+	def test_delta_bootstrap_reports_warehouse_stock_changes(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		warehouse = frappe.get_cached_value("POS Profile", profile, "warehouse")
+		bin_name = frappe.db.get_value("Bin", {"item_code": item_code, "warehouse": warehouse}, "name")
+		if not bin_name:
+			bin_name = (
+				frappe.get_doc(
+					{"doctype": "Bin", "item_code": item_code, "warehouse": warehouse, "actual_qty": 0}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
+
+		since = str(now_datetime())
+		time.sleep(1)
+		new_actual_qty = flt(frappe.db.get_value("Bin", bin_name, "actual_qty")) + 2
+		frappe.db.set_value(
+			"Bin",
+			bin_name,
+			{"actual_qty": new_actual_qty, "reserved_stock": 1},
+		)
+
+		response = get_pos_bootstrap(pos_profile=profile, since=since)
+
+		self.assertTrue(response["ok"], response)
+		item_row = next(row for row in response["data"]["items"] if row["item_code"] == item_code)
+		self.assertEqual(item_row["actual_qty"], max(new_actual_qty - 1, 0))
+
 	def test_delta_bootstrap_reports_deleted_items_as_tombstones(self):
 		profile = ensure_test_pos_profile()
 		set_invoice_mode("Sales Invoice")

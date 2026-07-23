@@ -3,7 +3,11 @@ import math
 from decimal import Decimal, InvalidOperation
 
 import frappe
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+	get_sre_reserved_qty_for_item_and_warehouse,
+)
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
+from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import flt, get_datetime, now_datetime, nowdate
 
@@ -336,20 +340,9 @@ def _validate_stock_qtys(item_qtys, profile):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return 0
-	return flt(
-		frappe.db.sql(
-			"""
-			select sum(actual_qty)
-			from `tabStock Ledger Entry`
-			where item_code = %s
-				and warehouse = %s
-				and docstatus < 2
-				and is_cancelled = 0
-			""",
-			(item_code, warehouse),
-		)[0][0]
-		or 0
-	)
+	stock_balance = flt(get_stock_balance(item_code, warehouse))
+	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
+	return max(stock_balance - reserved_stock, 0)
 
 
 def validate_cart_items(items, profile):
