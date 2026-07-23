@@ -1,22 +1,31 @@
 import { useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { AlertCircle, Check, X } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
+import {
+	allocateAllToMode,
+	buildPaymentInputs,
+	calculatePaymentAllocation,
+	createInitialPaymentAmounts,
+	currencyScale,
+	minorUnitsToInput,
+	normalizeCurrencyPrecision,
+	parsePaymentAmount,
+	totalToMinorUnits,
+} from "../paymentAllocation";
 import { useCartStore } from "../stores/cartStore";
 import type { ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
 	currency?: string;
+	currencyPrecision?: number;
+	error?: string | null;
 	isOpen: boolean;
 	modesOfPayment: ModeOfPaymentDTO[];
 	onClose: () => void;
 	onConfirm: (payments: PaymentInput[], idempotencyKey: string) => void;
 };
-
-function formatAmountInput(value: number) {
-	return Number.isInteger(value) ? String(value) : value.toFixed(2);
-}
 
 function createIdempotencyKey() {
 	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -25,7 +34,15 @@ function createIdempotencyKey() {
 	return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function CheckoutDialog({ currency, isOpen, modesOfPayment, onClose, onConfirm }: CheckoutDialogProps) {
+export function CheckoutDialog({
+	currency,
+	currencyPrecision,
+	error,
+	isOpen,
+	modesOfPayment,
+	onClose,
+	onConfirm,
+}: CheckoutDialogProps) {
 	if (!isOpen) {
 		return null;
 	}
@@ -33,6 +50,8 @@ export function CheckoutDialog({ currency, isOpen, modesOfPayment, onClose, onCo
 	return (
 		<CheckoutDialogContent
 			currency={currency}
+			currencyPrecision={currencyPrecision}
+			error={error}
 			modesOfPayment={modesOfPayment}
 			onClose={onClose}
 			onConfirm={onConfirm}
@@ -42,6 +61,8 @@ export function CheckoutDialog({ currency, isOpen, modesOfPayment, onClose, onCo
 
 function CheckoutDialogContent({
 	currency,
+	currencyPrecision,
+	error,
 	modesOfPayment,
 	onClose,
 	onConfirm,
@@ -49,74 +70,146 @@ function CheckoutDialogContent({
 	const invoice = useCartStore((s) => s.invoice);
 	const isSubmitting = useCartStore((s) => s.isMutating);
 	const total = getInvoiceTotal(invoice);
-	const defaultMode = useMemo(
-		() => modesOfPayment.find((mode) => mode.default)?.mode_of_payment || modesOfPayment[0]?.mode_of_payment || "",
+	const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
+	const availableModes = useMemo(
+		() => Array.from(new Map(modesOfPayment.map((mode) => [mode.mode_of_payment, mode])).values()),
 		[modesOfPayment],
 	);
-	const [modeOfPayment, setModeOfPayment] = useState(defaultMode);
-	const [amount, setAmount] = useState(() => formatAmountInput(total || 0));
+	const totalMinor = totalToMinorUnits(total, precision);
+	const [amounts, setAmounts] = useState(() =>
+		createInitialPaymentAmounts(availableModes, totalMinor, precision),
+	);
 	const idempotencyKey = useRef(createIdempotencyKey());
-	const selectedModeOfPayment = modeOfPayment || defaultMode;
-	const paymentAmount = Number(amount || total || 0);
+	const allocation = calculatePaymentAllocation(availableModes, amounts, totalMinor, precision);
+	const isBalanced =
+		availableModes.length > 0 &&
+		!allocation.hasInvalidAmount &&
+		allocation.allocatedMinor > 0 &&
+		allocation.remainingMinor === 0;
+	const scale = currencyScale(precision);
+	const isOverpaid = allocation.remainingMinor < 0;
+	const balanceLabel = isOverpaid ? "Overpaid" : "Remaining";
+	const balanceMinor = Math.abs(allocation.remainingMinor);
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-			<div className="w-full max-w-md rounded-lg border border-outline-variant bg-surface p-5 shadow-lg">
+			<div className="max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-lg border border-outline-variant bg-surface p-5 shadow-lg">
 				<div className="flex items-start justify-between gap-4">
 					<div>
 						<h2 className="text-lg font-semibold text-on-surface">Checkout</h2>
-						<p className="text-sm text-on-surface-variant">Select payment mode and submit the invoice.</p>
+						<p className="text-sm text-on-surface-variant">Allocate the amount across the available payment modes.</p>
 					</div>
 					<button type="button" className="rounded-md p-2 hover:bg-surface-container" onClick={onClose}>
 						<X className="size-5" />
 					</button>
 				</div>
 				<div className="mt-5 space-y-4">
-					<div className="rounded-md bg-surface-container-low p-4">
-						<p className="text-sm text-on-surface-variant">Amount due</p>
-						<p className="text-2xl font-semibold text-on-surface">{formatCurrency(total, currency)}</p>
-					</div>
-					<label className="block text-sm font-medium text-on-surface">
-						Payment mode
-						<select
-							className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-							value={selectedModeOfPayment}
-							onChange={(event) => setModeOfPayment(event.target.value)}
-						>
-							{modesOfPayment.map((mode) => (
-								<option key={mode.mode_of_payment} value={mode.mode_of_payment}>
-									{mode.mode_of_payment}
-								</option>
-							))}
-						</select>
-					</label>
-					<label className="block text-sm font-medium text-on-surface">
-						Amount
-						<input
-							className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-							inputMode="decimal"
-							value={amount}
-							onChange={(event) => setAmount(event.target.value)}
+					<div className="grid gap-3 sm:grid-cols-3">
+						<PaymentSummary label="Amount due" value={formatCurrency(total, currency, precision)} />
+						<PaymentSummary
+							label="Allocated"
+							value={formatCurrency(allocation.allocatedMinor / scale, currency, precision)}
 						/>
-					</label>
+						<PaymentSummary
+							label={balanceLabel}
+							value={formatCurrency(balanceMinor / scale, currency, precision)}
+							invalid={allocation.remainingMinor !== 0 || allocation.hasInvalidAmount}
+						/>
+					</div>
+					<div className="space-y-2">
+						{availableModes.map((mode) => {
+							const amount = amounts[mode.mode_of_payment] ?? "";
+							const isAll =
+								parsePaymentAmount(amount, precision) === totalMinor &&
+								availableModes.every(
+									(other) =>
+										other.mode_of_payment === mode.mode_of_payment ||
+										parsePaymentAmount(amounts[other.mode_of_payment] || "", precision) === 0,
+								);
+							return (
+								<label
+									key={mode.mode_of_payment}
+									className="grid items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-3 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto]"
+								>
+									<span className="text-sm font-medium text-on-surface">
+										{mode.mode_of_payment}
+										{mode.default ? <span className="ml-2 text-xs text-on-surface-variant">Default</span> : null}
+									</span>
+									<input
+										aria-label={`${mode.mode_of_payment} amount`}
+										className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+										inputMode="decimal"
+										placeholder={minorUnitsToInput(0, precision)}
+										value={amount}
+										onChange={(event) =>
+											setAmounts((current) => ({
+												...current,
+												[mode.mode_of_payment]: event.target.value,
+											}))
+										}
+									/>
+									<button
+										type="button"
+										aria-label={`Allocate all to ${mode.mode_of_payment}`}
+										aria-pressed={isAll}
+										title={`Allocate the full amount to ${mode.mode_of_payment}`}
+										className={`inline-flex h-touch items-center justify-center gap-1 rounded-md px-3 text-xs font-medium ${
+											isAll
+												? "bg-secondary text-on-secondary"
+												: "bg-surface-container text-on-surface hover:bg-surface-container-high"
+										}`}
+										onClick={() =>
+											setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, totalMinor, precision))
+										}
+									>
+										<Check className="size-4" /> All
+									</button>
+								</label>
+							);
+						})}
+					</div>
+					{allocation.hasInvalidAmount ? (
+						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+							<AlertCircle className="size-4 shrink-0" /> Enter valid amounts with no more than {precision} decimal places.
+						</div>
+					) : null}
+					{error ? (
+						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+							<AlertCircle className="size-4 shrink-0" /> {error}
+						</div>
+					) : null}
 				</div>
 				<div className="mt-6 flex justify-end gap-3">
 					<Button variant="ghost" onClick={onClose} disabled={isSubmitting}>
 						Cancel
 					</Button>
 					<Button
-						disabled={!selectedModeOfPayment || !paymentAmount || isSubmitting}
+						disabled={!isBalanced || isSubmitting}
 						onClick={() =>
-							onConfirm(
-								[{ mode_of_payment: selectedModeOfPayment, amount: paymentAmount }],
-								idempotencyKey.current,
-							)
+							onConfirm(buildPaymentInputs(availableModes, amounts, precision), idempotencyKey.current)
 						}
 					>
-						{isSubmitting ? "Submitting..." : "Submit invoice"}
+						{isSubmitting ? "Submitting..." : "Complete sale"}
 					</Button>
 				</div>
 			</div>
+		</div>
+	);
+}
+
+function PaymentSummary({
+	label,
+	value,
+	invalid = false,
+}: {
+	label: string;
+	value: string;
+	invalid?: boolean;
+}) {
+	return (
+		<div className={`rounded-md p-3 ${invalid ? "bg-error-container" : "bg-surface-container-low"}`}>
+			<p className={`text-xs ${invalid ? "text-on-error-container" : "text-on-surface-variant"}`}>{label}</p>
+			<p className={`mt-1 font-semibold ${invalid ? "text-on-error-container" : "text-on-surface"}`}>{value}</p>
 		</div>
 	);
 }

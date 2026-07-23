@@ -80,6 +80,7 @@ export type CachedProfile = {
 	warehouse?: string;
 	price_list?: string;
 	currency?: string;
+	currency_precision?: number;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

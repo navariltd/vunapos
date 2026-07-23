@@ -1,3 +1,6 @@
+from erpnext.accounts.utils import get_currency_precision
+
+
 def profile_to_dict(profile, invoice_mode):
 	return {
 		"name": profile.name,
@@ -5,6 +8,7 @@ def profile_to_dict(profile, invoice_mode):
 		"warehouse": profile.warehouse,
 		"price_list": profile.selling_price_list,
 		"currency": profile.currency,
+		"currency_precision": get_currency_precision(),
 		"default_customer": profile.customer,
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [

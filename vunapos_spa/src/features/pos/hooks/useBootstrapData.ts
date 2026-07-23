@@ -23,6 +23,7 @@ export function useBootstrapData() {
 			warehouse: profile.warehouse,
 			price_list: profile.price_list,
 			currency: profile.currency,
+			currency_precision: profile.currency_precision,
 			default_customer: profile.default_customer as BootstrapData["default_customer"],
 			modes_of_payment: profile.modes_of_payment,
 			print_format: profile.print_format,

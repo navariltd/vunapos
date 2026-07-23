@@ -66,6 +66,7 @@ export type BootstrapData = {
 	warehouse?: string;
 	price_list?: string;
 	currency?: string;
+	currency_precision?: number;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
