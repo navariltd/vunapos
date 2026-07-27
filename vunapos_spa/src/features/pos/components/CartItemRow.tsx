@@ -76,58 +76,62 @@ export function CartItemRow({
 
 	return (
 		<article className="overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
-			<button
-				type="button"
-				className="flex w-full items-start justify-between gap-3 p-3 text-left hover:bg-surface-container"
-				onClick={() => onToggle(item.row_name)}
-				aria-expanded={expanded}
-				aria-controls={`cart-item-details-${item.row_name}`}
-			>
-				<div className="min-w-0">
-					<p className="truncate text-sm font-semibold text-on-surface">{item.item_name}</p>
-					<p className="text-xs text-on-surface-variant">{item.item_code}</p>
+			<div className="p-3">
+				<div className="flex items-start justify-between gap-3">
+					<button
+						type="button"
+						className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
+						onClick={() => onToggle(item.row_name)}
+						aria-expanded={expanded}
+						aria-controls={`cart-item-details-${item.row_name}`}
+					>
+						<span className="min-w-0">
+							<span className="block truncate text-sm font-semibold text-on-surface">{item.item_name}</span>
+							<span className="block text-xs text-on-surface-variant">{item.item_code}</span>
+						</span>
+						<ChevronDown className={`mt-1 size-4 shrink-0 text-on-surface-variant transition-transform ${expanded ? "rotate-180" : ""}`} />
+					</button>
+					<button type="button" className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50" disabled={disabled} onClick={() => onRemove(item.row_name)} aria-label={`Remove ${item.item_name}`}>
+						<Trash2 className="size-4" />
+					</button>
 				</div>
-				<div className="flex shrink-0 items-center gap-3">
+				<div className="mt-3 flex items-center justify-between gap-3">
+					<div className="flex items-center overflow-hidden rounded-md border border-outline-variant bg-surface">
+						<button type="button" disabled={disabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
+							<Minus className="size-4" />
+						</button>
+						<input
+							aria-label={`${item.item_name} quantity`}
+							className="h-10 w-14 border-x border-outline-variant bg-surface px-1 text-center text-sm font-semibold outline-none focus:border-primary"
+							disabled={disabled}
+							inputMode="decimal"
+							min="0.000001"
+							step="any"
+							type="number"
+							value={quantity}
+							onChange={(event) => setQuantity(event.target.value)}
+							onBlur={commitQuantity}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") event.currentTarget.blur();
+								if (event.key === "Escape") setQuantity(String(item.qty));
+							}}
+						/>
+						<button type="button" disabled={disabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
+							<Plus className="size-4" />
+						</button>
+					</div>
 					<div className="text-right">
 						<p className="text-xs text-on-surface-variant">{item.qty} × {formatCurrency(item.rate, currency)}</p>
 						<p className="text-sm font-semibold text-on-surface">{formatCurrency(item.amount, currency)}</p>
 					</div>
-					<ChevronDown className={`size-4 text-on-surface-variant transition-transform ${expanded ? "rotate-180" : ""}`} />
 				</div>
-			</button>
+			</div>
 
 			{expanded ? (
 				<div id={`cart-item-details-${item.row_name}`} className="border-t border-outline-variant bg-surface p-3">
 					{description ? <p className="mb-4 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
 
 					<div className="grid gap-4 sm:grid-cols-2">
-						<div>
-							<p className="text-xs font-medium text-on-surface-variant">Quantity</p>
-							<div className="mt-1 flex items-center rounded-md border border-outline-variant bg-surface">
-								<button type="button" disabled={disabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
-									<Minus className="size-4" />
-								</button>
-								<input
-									aria-label={`${item.item_name} quantity`}
-									className="h-10 min-w-0 flex-1 border-x border-outline-variant bg-surface px-2 text-center text-sm font-semibold outline-none focus:border-primary"
-									disabled={disabled}
-									inputMode="decimal"
-									min="0.000001"
-									step="any"
-									type="number"
-									value={quantity}
-									onChange={(event) => setQuantity(event.target.value)}
-									onBlur={commitQuantity}
-									onKeyDown={(event) => {
-										if (event.key === "Enter") event.currentTarget.blur();
-										if (event.key === "Escape") setQuantity(String(item.qty));
-									}}
-								/>
-								<button type="button" disabled={disabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
-									<Plus className="size-4" />
-								</button>
-							</div>
-						</div>
 						<Detail label="UOM" value={item.uom || item.stock_uom || "-"} />
 						<Detail label="Selling rate" value={formatCurrency(item.rate, currency)} />
 						<Detail label="Price-list rate" value={formatCurrency(priceListRate, currency)} />
@@ -172,12 +176,6 @@ export function CartItemRow({
 							/> : null}
 						</div>
 					) : null}
-
-					<div className="mt-4 flex justify-end border-t border-outline-variant pt-3">
-						<Button variant="danger" size="sm" className="gap-2" disabled={disabled} onClick={() => onRemove(item.row_name)}>
-							<Trash2 className="size-4" /> Remove item
-						</Button>
-					</div>
 				</div>
 			) : null}
 		</article>
