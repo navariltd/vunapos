@@ -203,6 +203,51 @@ describe("updateCartItemQty", () => {
 	});
 });
 
+describe("updateCartItemPricing", () => {
+	it("replaces the previous discount using the original price-list rate", async () => {
+		await db.profile.put({
+			name: "Profile-1",
+			allow_discount_change: true,
+			allow_rate_change: true,
+		});
+		await db.items.put({
+			item_code: "ITEM-1",
+			item_name: "Widget",
+			rate: 100,
+			price_list_rate: 100,
+			modified: "2026-07-10",
+		});
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100, price_list_rate: 100 }), makeApi());
+		const rowName = useCartStore.getState().invoice!.items[0].row_name;
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_percentage", value: 20 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0].rate).toBe(80);
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_amount", value: 8 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0].rate).toBe(92);
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_percentage", value: 10 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			price_list_rate: 100,
+			rate: 90,
+			discount_percentage: 10,
+			discount_amount: 10,
+		});
+	});
+});
+
 describe("clearCart", () => {
 	it("empties a brand-new local cart directly, no API call needed", async () => {
 		await useCartStore.getState().addCartItem(makeItem(), makeApi());

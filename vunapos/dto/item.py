@@ -6,6 +6,7 @@ def item_to_dict(item, rate=None, actual_qty=None, barcode=None, item_tax_templa
 		"image": item.image,
 		"stock_uom": item.stock_uom,
 		"rate": rate,
+		"price_list_rate": rate,
 		"actual_qty": actual_qty,
 		"is_stock_item": item.is_stock_item,
 		"allow_negative_stock": item.allow_negative_stock,

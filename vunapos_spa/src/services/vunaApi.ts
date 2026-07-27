@@ -197,7 +197,7 @@ export function previewInvoice(
 	params: {
 		pos_profile?: string;
 		customer?: string;
-		items: { item_code: string; qty: number; item_tax_template?: string; batch_allocations?: Array<{ batch_no: string; qty: number }> }[];
+		items: { item_code: string; qty: number; item_tax_template?: string; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		invoice_doctype?: string;
 	},
 ) {
@@ -262,7 +262,7 @@ export function createAndSubmitInvoice(
 	params: {
 		pos_profile?: string;
 		customer?: string;
-		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }> }[];
+		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		payments?: PaymentInput[];
 	},
 ) {
@@ -278,7 +278,7 @@ export function createInvoiceFromCart(
 	params: {
 		pos_profile?: string;
 		customer?: string;
-		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }> }[];
+		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -321,7 +321,7 @@ export function updateInvoiceFromCart(
 		invoice_doctype: string;
 		invoice_name: string;
 		customer?: string;
-		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }> }[];
+		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {

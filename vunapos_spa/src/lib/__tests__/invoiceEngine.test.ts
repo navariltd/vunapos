@@ -18,6 +18,41 @@ const ITEM_ONLY = {
 };
 
 describe("assembleInvoice - profile-level tax template", () => {
+	it("applies explicit rate and discount overrides before calculating totals", () => {
+		const rateResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "rate", value: 80 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+		const percentageResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "discount_percentage", value: 10 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+		const amountResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "discount_amount", value: 15 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+
+		expect(rateResult.totals.grand_total).toBe(160);
+		expect(percentageResult.items[0]).toMatchObject({ rate: 90, discount_percentage: 10, discount_amount: 10 });
+		expect(percentageResult.totals.grand_total).toBe(180);
+		expect(amountResult.items[0]).toMatchObject({ rate: 85, discount_percentage: 15, discount_amount: 15 });
+		expect(amountResult.totals.grand_total).toBe(170);
+	});
+
+	it("rejects invalid local price overrides", () => {
+		expect(() => assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1, pricing_override: { type: "discount_percentage", value: 101 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		})).toThrow(InvoiceEngineError);
+	});
 	it("computes net/tax/grand totals for a single exclusive tax row (mirrors backend fixture)", () => {
 		const result = assembleInvoice({
 			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],

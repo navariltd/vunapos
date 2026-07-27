@@ -19,6 +19,10 @@ export type CartLine = {
 	item_code: string;
 	qty: number;
 	batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	pricing_override?: {
+		type: "rate" | "discount_percentage" | "discount_amount";
+		value: number;
+	};
 };
 
 export type TaxTemplateRow = {
@@ -54,6 +58,10 @@ export type AssembledInvoiceItem = {
 	qty: number;
 	rate: number;
 	amount: number;
+	price_list_rate?: number;
+	discount_percentage?: number;
+	discount_amount?: number;
+	pricing_override?: CartLine["pricing_override"];
 };
 
 export type AssembledTaxRow = {
@@ -180,7 +188,38 @@ export function assembleInvoice(input: {
 		if (rate === undefined) {
 			throw new InvoiceEngineError(`No cached price for item ${line.item_code}`);
 		}
-		return { item_code: line.item_code, qty: line.qty, rate, amount: round(rate * line.qty) };
+		const priceListRate = rate;
+		let sellingRate = priceListRate;
+		let discountPercentage = 0;
+		let discountAmount = 0;
+		const override = line.pricing_override;
+		if (override) {
+			if (!Number.isFinite(override.value) || override.value < 0) {
+				throw new InvoiceEngineError(`Invalid price override for ${line.item_code}`);
+			}
+			if (override.type === "rate") sellingRate = override.value;
+			else if (override.type === "discount_percentage") {
+				if (override.value > 100) throw new InvoiceEngineError(`Discount for ${line.item_code} cannot exceed 100%`);
+				discountPercentage = override.value;
+				discountAmount = round(priceListRate * discountPercentage / 100);
+				sellingRate = round(priceListRate - discountAmount);
+			} else if (override.type === "discount_amount") {
+				if (override.value > priceListRate) throw new InvoiceEngineError(`Discount for ${line.item_code} cannot exceed its price-list rate`);
+				discountAmount = override.value;
+				discountPercentage = priceListRate ? round(discountAmount / priceListRate * 100) : 0;
+				sellingRate = round(priceListRate - discountAmount);
+			}
+		}
+		return {
+			item_code: line.item_code,
+			qty: line.qty,
+			rate: sellingRate,
+			amount: round(sellingRate * line.qty),
+			price_list_rate: priceListRate,
+			discount_percentage: discountPercentage,
+			discount_amount: discountAmount,
+			pricing_override: override,
+		};
 	});
 
 	const grossTotal = round(items.reduce((sum, item) => sum + item.amount, 0));

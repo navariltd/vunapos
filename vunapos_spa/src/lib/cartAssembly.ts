@@ -17,7 +17,7 @@ export async function assembleCartAgainstCache(
 	itemRows.forEach((row, index) => {
 		const itemCode = items[index].item_code;
 		if (row?.rate != null) {
-			rateByCode.set(itemCode, row.rate);
+			rateByCode.set(itemCode, Number(row.price_list_rate ?? row.rate));
 		}
 		if (row?.item_tax_template) {
 			itemTaxTemplateByCode.set(itemCode, row.item_tax_template);

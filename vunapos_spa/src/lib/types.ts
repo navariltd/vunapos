@@ -8,6 +8,7 @@ export type CachedItem = {
 	image?: string | null;
 	stock_uom?: string;
 	rate?: number | null;
+	price_list_rate?: number | null;
 	actual_qty?: number | null;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
@@ -103,6 +104,8 @@ export type CachedProfile = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_rate_change?: boolean;
+	allow_discount_change?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;
@@ -166,6 +169,7 @@ export type InvoicePayload = {
 		item_code: string;
 		qty: number;
 		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		pricing_override?: PricingOverride;
 	}>;
 	payments: { mode_of_payment: string; amount: number }[];
 	posting_date?: string;
@@ -196,6 +200,7 @@ export type HoldPayload = {
 		item_code: string;
 		qty: number;
 		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		pricing_override?: PricingOverride;
 	}>;
 	totals?: {
 		net_total?: number;
@@ -204,6 +209,11 @@ export type HoldPayload = {
 		rounded_total?: number;
 	};
 	local_ref: string;
+};
+
+export type PricingOverride = {
+	type: "rate" | "discount_percentage" | "discount_amount";
+	value: number;
 };
 
 type QueueEntryCommon = {

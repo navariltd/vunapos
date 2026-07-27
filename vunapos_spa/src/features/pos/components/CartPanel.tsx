@@ -4,12 +4,14 @@ import { Pause, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
 
 type CartPanelProps = {
+	allowDiscountChange?: boolean;
+	allowRateChange?: boolean;
 	className?: string;
 	currency?: string;
 	onCheckout: () => void;
@@ -20,12 +22,15 @@ type CartPanelProps = {
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
 };
 
 export function CartPanel({
+	allowDiscountChange,
+	allowRateChange,
 	className,
 	currency,
 	onCheckout,
@@ -36,6 +41,7 @@ export function CartPanel({
 	onRemoveItem,
 	onSelectCustomer,
 	onUpdateQty,
+	onUpdatePricing,
 	onUpdateBatchAllocations,
 	isOnline,
 	warehouse,
@@ -67,6 +73,8 @@ export function CartPanel({
 						<CartItemRow
 							key={`${item.row_name}-${item.qty}`}
 							currency={currency}
+							allowDiscountChange={allowDiscountChange}
+							allowRateChange={allowRateChange}
 							disabled={isMutating}
 							expanded={expandedRow === item.row_name}
 							isOnline={isOnline}
@@ -77,6 +85,7 @@ export function CartPanel({
 								setExpandedRow((current) => (current === rowName ? null : rowName))
 							}
 							onUpdateQty={onUpdateQty}
+							onUpdatePricing={onUpdatePricing}
 							onUpdateBatchAllocations={onUpdateBatchAllocations}
 							warehouse={warehouse}
 						/>

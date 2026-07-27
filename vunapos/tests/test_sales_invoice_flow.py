@@ -38,6 +38,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def setUp(self):
 		profile = ensure_test_pos_profile()
 		frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 0, update_modified=False)
+		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
+		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 0, update_modified=False)
 		ensure_open_pos_opening_entry(profile)
 
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
@@ -75,6 +77,77 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		response = remove_item(invoice["doctype"], invoice["name"], row_name)
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
+
+	def test_manual_rate_change_requires_profile_permission(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
+
+		response = preview_invoice(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 2, "pricing_override": {"type": "rate", "value": 80}}],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "RATE_CHANGE_NOT_ALLOWED")
+
+		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 1, update_modified=False)
+		response = preview_invoice(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 2, "pricing_override": {"type": "rate", "value": 80}}],
+		)
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["rate"], 80)
+
+	def test_manual_discount_change_requires_profile_permission(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 0, update_modified=False)
+
+		response = preview_invoice(
+			pos_profile=profile,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 1,
+					"pricing_override": {"type": "discount_percentage", "value": 10},
+				}
+			],
+		)
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "DISCOUNT_CHANGE_NOT_ALLOWED")
+
+		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 1, update_modified=False)
+		response = preview_invoice(
+			pos_profile=profile,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 1,
+					"pricing_override": {"type": "discount_percentage", "value": 10},
+				}
+			],
+		)
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["discount_percentage"], 10)
+
+	def test_checkout_rejects_a_draft_rate_changed_outside_vunapos(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		row_name = invoice["items"][0]["row_name"]
+		frappe.db.set_value("Sales Invoice Item", row_name, "rate", 80, update_modified=False)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "RATE_CHANGE_NOT_ALLOWED")
 
 	def test_batch_allocation_api_returns_expected_rows(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch API Item")

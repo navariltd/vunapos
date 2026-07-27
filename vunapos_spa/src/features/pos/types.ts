@@ -123,6 +123,8 @@ export type BootstrapData = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_rate_change?: boolean;
+	allow_discount_change?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -139,6 +141,7 @@ export type ItemDTO = {
 	stock_uom?: string;
 	uom?: string;
 	rate?: number;
+	price_list_rate?: number;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
@@ -153,6 +156,11 @@ export type BatchAllocationDTO = {
 	qty: number;
 	expiry_date?: string | null;
 	available_qty?: number | null;
+};
+
+export type PricingOverrideDTO = {
+	type: "rate" | "discount_percentage" | "discount_amount";
+	value: number;
 };
 
 export type ItemBatchDTO = {
@@ -206,6 +214,7 @@ export type InvoiceItemDTO = {
 	serial_and_batch_bundle?: string | null;
 	batch_allocations?: BatchAllocationDTO[];
 	item_tax_template?: string | null;
+	pricing_override?: PricingOverrideDTO;
 };
 
 export type TaxDTO = {

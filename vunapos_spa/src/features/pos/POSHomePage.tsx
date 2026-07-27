@@ -310,6 +310,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					</section>
 					<CartPanel
 						className="hidden xl:flex"
+						allowDiscountChange={bootstrap.data?.allow_discount_change}
+						allowRateChange={bootstrap.data?.allow_rate_change}
 						currency={bootstrap.data?.currency}
 						warehouse={bootstrap.data?.warehouse}
 						isOnline={isReachable && navigator.onLine !== false}
@@ -321,6 +323,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={setSelectedCustomer}
 						onUpdateQty={cartActions.updateCartItemQty}
+						onUpdatePricing={cartActions.updateCartItemPricing}
 						onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
 					/>
 				</div>
@@ -365,6 +368,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 						<CartPanel
 							className="flex-1 border-0"
+							allowDiscountChange={bootstrap.data?.allow_discount_change}
+							allowRateChange={bootstrap.data?.allow_rate_change}
 							currency={bootstrap.data?.currency}
 							warehouse={bootstrap.data?.warehouse}
 							isOnline={isReachable && navigator.onLine !== false}
@@ -376,6 +381,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={setSelectedCustomer}
 							onUpdateQty={cartActions.updateCartItemQty}
+							onUpdatePricing={cartActions.updateCartItemPricing}
 							onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
 						/>
 					</div>

@@ -28,6 +28,8 @@ export function useBootstrapData() {
 			smallest_currency_fraction_value: profile.smallest_currency_fraction_value,
 			rounding_method: profile.rounding_method,
 			allow_partial_payment: profile.allow_partial_payment,
+			allow_rate_change: profile.allow_rate_change,
+			allow_discount_change: profile.allow_discount_change,
 			default_customer: profile.default_customer as BootstrapData["default_customer"],
 			modes_of_payment: profile.modes_of_payment,
 			print_format: profile.print_format,

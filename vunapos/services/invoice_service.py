@@ -351,7 +351,54 @@ def validate_cart_items(items, profile):
 	return item_qtys
 
 
-def _get_item_row(item_code, qty, doc, profile, item_tax_template=None):
+def _pricing_override(item):
+	override = item.get("pricing_override")
+	if isinstance(override, str):
+		override = json.loads(override or "{}")
+	return override or None
+
+
+def _apply_pricing_override(row, item, profile):
+	override = _pricing_override(item)
+	if not override:
+		return row
+	kind = override.get("type")
+	try:
+		value = Decimal(str(override.get("value")))
+	except (InvalidOperation, TypeError, ValueError):
+		_throw("INVALID_PRICE_OVERRIDE", _("The price override must be a valid number"))
+	if not value.is_finite() or value < 0:
+		_throw("INVALID_PRICE_OVERRIDE", _("The price override cannot be negative"))
+	value = float(value)
+	price_list_rate = flt(row.get("price_list_rate") or row.get("rate"))
+	if kind == "rate":
+		if not profile.get("allow_rate_change"):
+			_throw("RATE_CHANGE_NOT_ALLOWED", _("Rate changes are not allowed for this POS Profile"))
+		row["rate"] = value
+		row["discount_percentage"] = 0
+		row["discount_amount"] = 0
+	elif kind == "discount_percentage":
+		if not profile.get("allow_discount_change"):
+			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
+		if value > 100:
+			_throw("INVALID_PRICE_OVERRIDE", _("Discount percentage cannot exceed 100"))
+		row["discount_percentage"] = value
+		row["discount_amount"] = flt(price_list_rate * value / 100)
+		row["rate"] = flt(price_list_rate - row["discount_amount"])
+	elif kind == "discount_amount":
+		if not profile.get("allow_discount_change"):
+			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
+		if value > price_list_rate:
+			_throw("INVALID_PRICE_OVERRIDE", _("Discount amount cannot exceed the price-list rate"))
+		row["discount_amount"] = value
+		row["discount_percentage"] = flt(value / price_list_rate * 100) if price_list_rate else 0
+		row["rate"] = flt(price_list_rate - value)
+	else:
+		_throw("INVALID_PRICE_OVERRIDE", _("Unsupported price override type"))
+	return row
+
+
+def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_item=None):
 	ctx = frappe._dict(
 		{
 			"doctype": doc.doctype,
@@ -399,7 +446,7 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None):
 		row["item_tax_template"] = item_tax_template
 		if not row.get("item_tax_rate"):
 			row["item_tax_rate"] = get_item_tax_map(doc=doc, tax_template=item_tax_template, as_json=True)
-	return row
+	return _apply_pricing_override(row, pricing_item or {}, profile)
 
 
 def _set_row_batch_allocations(row, allocations):
@@ -669,6 +716,7 @@ def _append_cart_items(doc, profile, items):
 					doc,
 					profile,
 					item_tax_template=item.get("item_tax_template"),
+					pricing_item=item,
 				),
 			)
 			if len(allocations) == 1:
@@ -690,9 +738,34 @@ def _append_cart_items(doc, profile, items):
 				doc,
 				profile,
 				item_tax_template=item.get("item_tax_template"),
+				pricing_item=item,
 			),
 		)
 	return doc
+
+
+def _validate_existing_pricing_permissions(doc, profile):
+	precision = _currency_precision(doc)
+	for item in doc.get("items", []):
+		baseline = _get_item_row(
+			item.item_code,
+			item.qty,
+			doc,
+			profile,
+			item_tax_template=item.get("item_tax_template"),
+		)
+		rate_changed = flt(item.rate, precision) != flt(baseline.get("rate"), precision)
+		discount_changed = flt(item.get("discount_percentage"), precision) != flt(
+			baseline.get("discount_percentage"), precision
+		) or flt(item.get("discount_amount"), precision) != flt(baseline.get("discount_amount"), precision)
+		if rate_changed:
+			if discount_changed and profile.get("allow_discount_change"):
+				continue
+			if profile.get("allow_rate_change"):
+				continue
+			_throw("RATE_CHANGE_NOT_ALLOWED", _("Rate changes are not allowed for this POS Profile"))
+		if discount_changed and not profile.get("allow_discount_change"):
+			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
 
 
 def create_draft_invoice(pos_profile=None, customer=None):
@@ -910,6 +983,7 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
 		profile,
 	)
+	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(doc, payments, profile)
@@ -944,6 +1018,7 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
 		profile,
 	)
+	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(doc, payments, profile)

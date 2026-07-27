@@ -91,6 +91,7 @@ function cartItemPayload(item: InvoiceItemDTO) {
 			batch_no: allocation.batch_no,
 			qty: allocation.qty,
 		})),
+		pricing_override: item.pricing_override,
 	};
 }
 
@@ -159,6 +160,34 @@ function invoiceToLocalCart(invoice: InvoiceDTO): InvoiceDTO {
 		is_local: true,
 		source_invoice_doctype: invoice.doctype,
 		source_invoice_name: invoice.name,
+		items: invoice.items.map((item) => ({
+			...item,
+			pricing_override: item.pricing_override ?? pricingOverrideFromSavedItem(item),
+		})),
+	};
+}
+
+function pricingOverrideFromSavedItem(item: InvoiceItemDTO): InvoiceItemDTO["pricing_override"] {
+	if (Number(item.discount_percentage || 0) > 0) {
+		return { type: "discount_percentage", value: Number(item.discount_percentage) };
+	}
+	if (Number(item.discount_amount || 0) > 0) {
+		return { type: "discount_amount", value: Number(item.discount_amount) };
+	}
+	if (item.price_list_rate != null && Number(item.rate) !== Number(item.price_list_rate)) {
+		return { type: "rate", value: Number(item.rate) };
+	}
+	return undefined;
+}
+
+function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemDTO[]): InvoiceDTO {
+	const overrides = new Map(sourceItems.map((item) => [item.item_code, item.pricing_override]));
+	return {
+		...invoice,
+		items: invoice.items.map((item) => ({
+			...item,
+			pricing_override: overrides.get(item.item_code) ?? pricingOverrideFromSavedItem(item),
+		})),
 	};
 }
 
@@ -218,8 +247,8 @@ function assembledToInvoiceDTO(
 				conversion_factor: meta?.conversion_factor,
 				rate: item.rate,
 				price_list_rate: meta?.price_list_rate ?? meta?.rate ?? item.rate,
-				discount_percentage: meta?.discount_percentage,
-				discount_amount: meta?.discount_amount,
+				discount_percentage: item.discount_percentage,
+				discount_amount: item.discount_amount,
 				amount: item.amount,
 				actual_qty: meta?.actual_qty,
 				is_stock_item: meta?.is_stock_item,
@@ -230,6 +259,7 @@ function assembledToInvoiceDTO(
 				batch_no: meta?.batch_no,
 				serial_and_batch_bundle: meta?.serial_and_batch_bundle,
 				batch_allocations: meta?.batch_allocations,
+				pricing_override: item.pricing_override ?? meta?.pricing_override,
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
 				item_tax_template: meta?.item_tax_template,
@@ -300,9 +330,17 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	}
 
 	const taxSettings = await resolveTaxSettings();
-	const rateByCode = new Map(items.map((row) => [row.item_code, Number(row.rate || 0)]));
+	// Every override replaces the previous one. Never use the already-discounted
+	// selling rate as the base or sequential edits will compound discounts.
+	const rateByCode = new Map(
+		items.map((row) => [row.item_code, Number(row.price_list_rate ?? row.rate ?? 0)]),
+	);
 	return assembleInvoice({
-		cart: items.map((row) => ({ item_code: row.item_code, qty: row.qty })),
+		cart: items.map((row) => ({
+			item_code: row.item_code,
+			qty: row.qty,
+			pricing_override: row.pricing_override,
+		})),
 		priceResolver: (code) => rateByCode.get(code),
 		taxRows: taxTemplate?.taxes ?? [],
 		itemTaxResolver: (code) => {
@@ -330,7 +368,7 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		uom: item.uom || item.stock_uom,
 		stock_uom: item.stock_uom,
 		rate,
-		price_list_rate: rate,
+		price_list_rate: Number(item.price_list_rate ?? rate),
 		amount: rate * qty,
 		actual_qty: item.actual_qty,
 		is_stock_item: item.is_stock_item,
@@ -440,6 +478,7 @@ type CartActions = {
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
+	updateCartItemPricing: (rowName: string, pricingOverride: InvoiceItemDTO["pricing_override"], api: CartApi) => Promise<void>;
 	updateCartItemBatchAllocations: (
 		rowName: string,
 		allocations: InvoiceItemDTO["batch_allocations"],
@@ -608,6 +647,35 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: updatedInvoice });
 		},
 
+		updateCartItemPricing: async (rowName, pricingOverride, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const nextItems = invoice.items.map((item) =>
+				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
+			);
+			const profile = await profileRepository.getActive();
+			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change) {
+				throw new Error("Rate changes are not allowed for this POS Profile.");
+			}
+			if (pricingOverride?.type.startsWith("discount") && !profile?.allow_discount_change) {
+				throw new Error("Discount changes are not allowed for this POS Profile.");
+			}
+			if (isLocalCart(invoice)) {
+				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				set({ invoice: preview });
+				return;
+			}
+			const updatedInvoice = await runMutation(() =>
+				updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype,
+					invoice_name: invoice.name,
+					customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}),
+			);
+			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
+		},
+
 		updateCartItemBatchAllocations: async (rowName, allocations, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
@@ -628,7 +696,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					items: nextItems.map(cartItemPayload),
 				}),
 			);
-			set({ invoice: updatedInvoice });
+			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
 		},
 
 		loadItemBatches: async (itemCode, warehouse, isOnline, api) => {
@@ -991,6 +1059,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						return {
 							...itemToCartRow(cached as ItemDTO, line.qty),
 							batch_allocations: line.batch_allocations,
+							pricing_override: line.pricing_override,
 						};
 					}),
 				);
@@ -1034,6 +1103,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						return {
 							...itemToCartRow(cached as ItemDTO, line.qty),
 							batch_allocations: line.batch_allocations,
+							pricing_override: line.pricing_override,
 						};
 					}),
 				);

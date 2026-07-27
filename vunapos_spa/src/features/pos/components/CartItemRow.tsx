@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, ChevronDown, Minus, Plus, RefreshCw, Trash2, WandSparkles } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
-import type { BatchAllocationDTO, InvoiceItemDTO, ItemBatchesDTO } from "../types";
+import type { BatchAllocationDTO, InvoiceItemDTO, ItemBatchesDTO, PricingOverrideDTO } from "../types";
 import { formatCurrency } from "../utils";
 
 type CartItemRowProps = {
+	allowDiscountChange?: boolean;
+	allowRateChange?: boolean;
 	currency?: string;
 	disabled?: boolean;
 	expanded: boolean;
@@ -15,6 +17,7 @@ type CartItemRowProps = {
 	onToggle: (rowName: string) => void;
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
 };
@@ -24,6 +27,8 @@ function plainDescription(description?: string) {
 }
 
 export function CartItemRow({
+	allowDiscountChange,
+	allowRateChange,
 	currency,
 	disabled,
 	expanded,
@@ -33,6 +38,7 @@ export function CartItemRow({
 	onToggle,
 	onUpdateBatchAllocations,
 	onUpdateQty,
+	onUpdatePricing,
 	isOnline,
 	warehouse,
 }: CartItemRowProps) {
@@ -52,9 +58,6 @@ export function CartItemRow({
 	};
 
 	const description = plainDescription(item.description);
-	const priceListRate = Number(item.price_list_rate ?? item.rate);
-	const discountPercentage = Number(item.discount_percentage || 0);
-	const discountAmount = Number(item.discount_amount || Math.max(priceListRate - Number(item.rate), 0));
 	const isStockItem = item.is_stock_item === undefined ? true : Boolean(item.is_stock_item);
 	const isBatchTracked = Boolean(item.has_batch_no || item.batch_no || item.batch_allocations?.length);
 	const isSerialTracked = Boolean(item.has_serial_no || item.serial_and_batch_bundle);
@@ -131,13 +134,17 @@ export function CartItemRow({
 				<div id={`cart-item-details-${item.row_name}`} className="border-t border-outline-variant bg-surface p-3">
 					{description ? <p className="mb-4 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
 
-					<div className="grid gap-4 sm:grid-cols-2">
+					<PricingEditor
+						allowDiscountChange={Boolean(allowDiscountChange)}
+						allowRateChange={Boolean(allowRateChange)}
+						currency={currency}
+						disabled={Boolean(disabled)}
+						item={item}
+						onUpdate={(override) => onUpdatePricing(item.row_name, override)}
+					/>
+
+					<div className="mt-4 grid gap-4 sm:grid-cols-2">
 						<Detail label="UOM" value={item.uom || item.stock_uom || "-"} />
-						<Detail label="Selling rate" value={formatCurrency(item.rate, currency)} />
-						<Detail label="Price-list rate" value={formatCurrency(priceListRate, currency)} />
-						{discountPercentage > 0 || discountAmount > 0 ? (
-							<Detail label="Discount" value={`${discountPercentage ? `${discountPercentage}%` : ""}${discountPercentage && discountAmount ? " · " : ""}${discountAmount ? formatCurrency(discountAmount, currency) : ""}`} />
-						) : null}
 						<Detail label="Line amount" value={formatCurrency(item.amount, currency)} strong />
 						<Detail label="Warehouse" value={itemWarehouse || "-"} />
 						<Detail label="Available quantity" value={item.actual_qty == null ? "Not available" : `${item.actual_qty} ${item.stock_uom || item.uom || ""}`} />
@@ -180,6 +187,88 @@ export function CartItemRow({
 			) : null}
 		</article>
 	);
+}
+
+function PricingEditor({ allowDiscountChange, allowRateChange, currency, disabled, item, onUpdate }: {
+	allowDiscountChange: boolean;
+	allowRateChange: boolean;
+	currency?: string;
+	disabled: boolean;
+	item: InvoiceItemDTO;
+	onUpdate: (override?: PricingOverrideDTO) => Promise<void>;
+}) {
+	const priceListRate = Number(item.price_list_rate ?? item.rate);
+	const [rate, setRate] = useState(String(item.rate));
+	const [discountPercentage, setDiscountPercentage] = useState(String(item.discount_percentage || 0));
+	const [discountAmount, setDiscountAmount] = useState(String(item.discount_amount || 0));
+	const [error, setError] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
+
+	const apply = async (type: PricingOverrideDTO["type"], rawValue: string) => {
+		const value = Number(rawValue);
+		if (!Number.isFinite(value) || value < 0) {
+			setError("Enter a valid non-negative amount.");
+			return;
+		}
+		setSaving(true);
+		setError(null);
+		try {
+			await onUpdate({ type, value });
+		} catch (updateError) {
+			setError(updateError instanceof Error ? updateError.message : "Failed to update pricing");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const reset = async () => {
+		setSaving(true);
+		setError(null);
+		try {
+			await onUpdate(undefined);
+			setRate(String(priceListRate));
+			setDiscountPercentage("0");
+			setDiscountAmount("0");
+		} catch (updateError) {
+			setError(updateError instanceof Error ? updateError.message : "Failed to reset pricing");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const changeDiscountPercentage = (rawValue: string) => {
+		setDiscountPercentage(rawValue);
+		const value = Number(rawValue);
+		setDiscountAmount(rawValue !== "" && Number.isFinite(value) ? String(Math.round(priceListRate * value) / 100) : "");
+	};
+
+	const changeDiscountAmount = (rawValue: string) => {
+		setDiscountAmount(rawValue);
+		const value = Number(rawValue);
+		setDiscountPercentage(rawValue !== "" && Number.isFinite(value) && priceListRate > 0 ? String(Math.round(value / priceListRate * 10000) / 100) : "");
+	};
+
+	return (
+		<div className="-mx-3 border-y border-outline-variant bg-surface-container-low p-3">
+			<div className="flex items-center justify-between gap-3">
+				<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Rate and discount</p>
+				<Button variant="ghost" size="sm" className={item.pricing_override ? "" : "invisible"} disabled={disabled || saving || !item.pricing_override} onClick={() => void reset()}>Reset</Button>
+			</div>
+			<div className="mt-3 grid gap-3 sm:grid-cols-2">
+				<PriceInput label="Selling rate" value={rate} readOnly={!allowRateChange || disabled} onChange={setRate} onApply={() => apply("rate", rate)} />
+				<div><p className="text-xs text-on-surface-variant">Price-list rate</p><div className="mt-1 flex h-9 items-center justify-end rounded-md border border-outline-variant bg-surface-container px-2 text-sm text-on-surface-variant">{formatCurrency(priceListRate, currency)}</div></div>
+			</div>
+			<div className="mt-3 grid gap-3 sm:grid-cols-2">
+				<PriceInput label="Discount %" value={discountPercentage} readOnly={!allowDiscountChange || disabled} max={100} onChange={changeDiscountPercentage} onApply={() => apply("discount_percentage", discountPercentage)} />
+				<PriceInput label="Discount amount" value={discountAmount} readOnly={!allowDiscountChange || disabled} onChange={changeDiscountAmount} onApply={() => apply("discount_amount", discountAmount)} />
+			</div>
+			{error ? <p className="mt-2 text-xs text-error">{error}</p> : null}
+		</div>
+	);
+}
+
+function PriceInput({ label, max, onApply, onChange, readOnly, value }: { label: string; max?: number; onApply: () => void; onChange: (value: string) => void; readOnly?: boolean; value: string }) {
+	return <label className="block"><span className="text-xs text-on-surface-variant">{label}</span><input className={`mt-1 h-9 w-full rounded-md border border-outline-variant px-2 text-right text-sm outline-none ${readOnly ? "bg-surface-container text-on-surface-variant" : "bg-surface focus:border-primary"}`} readOnly={readOnly} inputMode="decimal" min="0" max={max} step="any" type="number" value={value} onChange={(event) => onChange(event.target.value)} onBlur={() => { if (!readOnly && value !== "") onApply(); }} onKeyDown={(event) => { if (event.key === "Enter" && !readOnly) event.currentTarget.blur(); }} /></label>;
 }
 
 function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onReload, onSave }: {

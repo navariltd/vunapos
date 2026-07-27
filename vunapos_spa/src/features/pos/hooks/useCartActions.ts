@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { useCartApi } from "./useCartApi";
 import { useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, HeldInvoiceDTO, ItemDTO, PaymentInput } from "../types";
+import type { BatchAllocationDTO, HeldInvoiceDTO, ItemDTO, PaymentInput, PricingOverrideDTO } from "../types";
 
 // Binds useCartApi() (the frappe-react-sdk call functions, must be created inside a
 // component) to cartStore's stable action references, exposing today's call surface
@@ -11,6 +11,7 @@ export function useCartActions() {
 	const api = useCartApi();
 	const addCartItemAction = useCartStore((s) => s.addCartItem);
 	const updateCartItemQtyAction = useCartStore((s) => s.updateCartItemQty);
+	const updateCartItemPricingAction = useCartStore((s) => s.updateCartItemPricing);
 	const updateCartItemBatchAllocationsAction = useCartStore((s) => s.updateCartItemBatchAllocations);
 	const loadItemBatchesAction = useCartStore((s) => s.loadItemBatches);
 	const removeCartItemAction = useCartStore((s) => s.removeCartItem);
@@ -25,6 +26,8 @@ export function useCartActions() {
 		() => ({
 			addCartItem: (item: ItemDTO) => addCartItemAction(item, api),
 			updateCartItemQty: (rowName: string, qty: number) => updateCartItemQtyAction(rowName, qty, api),
+			updateCartItemPricing: (rowName: string, pricingOverride?: PricingOverrideDTO) =>
+				updateCartItemPricingAction(rowName, pricingOverride, api),
 			updateCartItemBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) =>
 				updateCartItemBatchAllocationsAction(rowName, allocations, api),
 			loadItemBatches: (itemCode: string, warehouse: string, isOnline: boolean) =>
@@ -46,6 +49,7 @@ export function useCartActions() {
 			api,
 			addCartItemAction,
 			updateCartItemQtyAction,
+			updateCartItemPricingAction,
 			updateCartItemBatchAllocationsAction,
 			loadItemBatchesAction,
 			removeCartItemAction,
