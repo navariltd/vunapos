@@ -139,6 +139,8 @@ export type ItemDTO = {
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	item_tax_template?: string | null;
 };
@@ -182,11 +184,19 @@ export type InvoiceItemDTO = {
 	description?: string;
 	qty: number;
 	uom?: string;
+	stock_uom?: string;
+	conversion_factor?: number;
 	rate: number;
+	price_list_rate?: number;
+	discount_percentage?: number;
+	discount_amount?: number;
 	amount: number;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
+	warehouse?: string;
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
 	batch_allocations?: BatchAllocationDTO[];

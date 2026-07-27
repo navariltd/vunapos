@@ -311,6 +311,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					<CartPanel
 						className="hidden xl:flex"
 						currency={bootstrap.data?.currency}
+						warehouse={bootstrap.data?.warehouse}
 						onCheckout={handleOpenCheckout}
 						onClearCustomer={() => setSelectedCustomer(null)}
 						onClearCart={handleClearCart}
@@ -362,6 +363,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<CartPanel
 							className="flex-1 border-0"
 							currency={bootstrap.data?.currency}
+							warehouse={bootstrap.data?.warehouse}
 							onCheckout={handleOpenCheckout}
 							onClearCustomer={() => setSelectedCustomer(null)}
 							onClearCart={handleClearCart}

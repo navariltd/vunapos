@@ -36,6 +36,15 @@ def _batch_allocations(row):
 
 
 def invoice_to_dict(doc):
+	item_tracking = {
+		row.item_code: frappe.get_cached_value(
+			"Item",
+			row.item_code,
+			["is_stock_item", "allow_negative_stock", "has_batch_no", "has_serial_no"],
+			as_dict=True,
+		)
+		for row in doc.get("items", [])
+	}
 	return {
 		"doctype": doc.doctype,
 		"name": doc.name,
@@ -53,8 +62,19 @@ def invoice_to_dict(doc):
 				"description": row.description,
 				"qty": row.qty,
 				"uom": row.uom,
+				"stock_uom": row.get("stock_uom"),
+				"conversion_factor": row.get("conversion_factor"),
 				"rate": row.rate,
+				"price_list_rate": row.get("price_list_rate"),
+				"discount_percentage": row.get("discount_percentage"),
+				"discount_amount": row.get("discount_amount"),
 				"amount": row.amount,
+				"warehouse": row.get("warehouse"),
+				"actual_qty": row.get("actual_qty"),
+				"is_stock_item": (item_tracking.get(row.item_code) or {}).get("is_stock_item"),
+				"allow_negative_stock": (item_tracking.get(row.item_code) or {}).get("allow_negative_stock"),
+				"has_batch_no": (item_tracking.get(row.item_code) or {}).get("has_batch_no"),
+				"has_serial_no": (item_tracking.get(row.item_code) or {}).get("has_serial_no"),
 				"batch_no": row.get("batch_no"),
 				"serial_and_batch_bundle": row.get("serial_and_batch_bundle"),
 				"batch_allocations": _batch_allocations(row),

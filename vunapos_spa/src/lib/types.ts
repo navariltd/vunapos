@@ -11,6 +11,8 @@ export type CachedItem = {
 	actual_qty?: number | null;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	modified: string;
 	/** N9: this item's assigned Item Tax Template, if any (vunapos/dto/item.py). */

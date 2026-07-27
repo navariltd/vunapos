@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -18,6 +19,7 @@ type CartPanelProps = {
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	warehouse?: string;
 };
 
 export function CartPanel({
@@ -30,6 +32,7 @@ export function CartPanel({
 	onRemoveItem,
 	onSelectCustomer,
 	onUpdateQty,
+	warehouse,
 }: CartPanelProps) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isMutating = useCartStore((s) => s.isMutating);
@@ -40,6 +43,7 @@ export function CartPanel({
 	const grandTotal = Number(invoice?.totals?.grand_total || 0);
 	const roundedTotal = Number(invoice?.totals?.rounded_total || 0);
 	const showRoundedTotal = Boolean(roundedTotal && Math.abs(roundedTotal - grandTotal) > 0.0001);
+	const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
 	return (
 		<aside className={cn("flex min-h-0 flex-col border-t border-outline-variant bg-surface p-4 xl:border-l xl:border-t-0", className)}>
@@ -55,12 +59,17 @@ export function CartPanel({
 				{items?.length ? (
 					items?.map((item) => (
 						<CartItemRow
-							key={item.row_name}
+							key={`${item.row_name}-${item.qty}`}
 							currency={currency}
 							disabled={isMutating}
+							expanded={expandedRow === item.row_name}
 							item={item}
 							onRemove={onRemoveItem}
+							onToggle={(rowName) =>
+								setExpandedRow((current) => (current === rowName ? null : rowName))
+							}
 							onUpdateQty={onUpdateQty}
+							warehouse={warehouse}
 						/>
 					))
 				) : (

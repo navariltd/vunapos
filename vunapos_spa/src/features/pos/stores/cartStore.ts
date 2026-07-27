@@ -117,6 +117,9 @@ function localizePreviewInvoice(
 				actual_qty: metadata?.actual_qty,
 				is_stock_item: metadata?.is_stock_item,
 				allow_negative_stock: metadata?.allow_negative_stock,
+				has_batch_no: metadata?.has_batch_no,
+				has_serial_no: metadata?.has_serial_no,
+				warehouse: metadata?.warehouse,
 			};
 		}),
 	};
@@ -143,8 +146,22 @@ function assembledToInvoiceDTO(
 				description: meta?.description,
 				qty: item.qty,
 				uom: meta?.uom,
+				stock_uom: meta?.stock_uom,
+				conversion_factor: meta?.conversion_factor,
 				rate: item.rate,
+				price_list_rate: meta?.price_list_rate ?? meta?.rate ?? item.rate,
+				discount_percentage: meta?.discount_percentage,
+				discount_amount: meta?.discount_amount,
 				amount: item.amount,
+				actual_qty: meta?.actual_qty,
+				is_stock_item: meta?.is_stock_item,
+				allow_negative_stock: meta?.allow_negative_stock,
+				has_batch_no: meta?.has_batch_no,
+				has_serial_no: meta?.has_serial_no,
+				warehouse: meta?.warehouse,
+				batch_no: meta?.batch_no,
+				serial_and_batch_bundle: meta?.serial_and_batch_bundle,
+				batch_allocations: meta?.batch_allocations,
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
 				item_tax_template: meta?.item_tax_template,
@@ -237,11 +254,15 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		description: item.description,
 		qty,
 		uom: item.uom || item.stock_uom,
+		stock_uom: item.stock_uom,
 		rate,
+		price_list_rate: rate,
 		amount: rate * qty,
 		actual_qty: item.actual_qty,
 		is_stock_item: item.is_stock_item,
 		allow_negative_stock: item.allow_negative_stock,
+		has_batch_no: item.has_batch_no,
+		has_serial_no: item.has_serial_no,
 		item_tax_template: item.item_tax_template,
 	};
 }
