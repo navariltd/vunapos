@@ -84,6 +84,9 @@ export type CachedProfile = {
 	price_list?: string;
 	currency?: string;
 	currency_precision?: number;
+	disable_rounded_total?: boolean;
+	smallest_currency_fraction_value?: number | null;
+	rounding_method?: string;
 	allow_partial_payment?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];

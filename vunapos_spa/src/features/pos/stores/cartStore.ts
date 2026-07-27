@@ -242,6 +242,12 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 			return templateName ? itemTaxRowsByTemplate.get(templateName) : undefined;
 		},
 		taxSettings,
+		roundingSettings: profile ? {
+			currencyPrecision: profile.currency_precision,
+			disableRoundedTotal: profile.disable_rounded_total,
+			smallestCurrencyFractionValue: profile.smallest_currency_fraction_value,
+			roundingMethod: profile.rounding_method,
+		} : undefined,
 	});
 }
 

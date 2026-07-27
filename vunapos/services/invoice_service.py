@@ -619,6 +619,7 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None):
 	_set_if_has_field(doc, "is_pos", 1)
 	_set_if_has_field(doc, "update_stock", 1)
 	_set_if_has_field(doc, "pos_profile", profile.name)
+	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_sync_profile_pricing_fields(doc, profile)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)

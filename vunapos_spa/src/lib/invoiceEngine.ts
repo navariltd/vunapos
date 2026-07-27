@@ -41,6 +41,13 @@ export type EngineTaxSettings = {
 	addTaxesFromTaxesAndChargesTemplate: boolean;
 };
 
+export type EngineRoundingSettings = {
+	currencyPrecision?: number;
+	disableRoundedTotal?: boolean;
+	smallestCurrencyFractionValue?: number | null;
+	roundingMethod?: string;
+};
+
 export type AssembledInvoiceItem = {
 	item_code: string;
 	qty: number;
@@ -85,6 +92,43 @@ function round(value: number, precision = CURRENCY_PRECISION): number {
 	return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
+function roundBasedOnSmallestCurrencyFraction(
+	value: number,
+	settings?: EngineRoundingSettings,
+): number {
+	const precision = settings?.currencyPrecision ?? CURRENCY_PRECISION;
+	if (!settings) return round(value, precision);
+	const fraction = Number(settings?.smallestCurrencyFractionValue || 0);
+	if (!(fraction > 0)) {
+		const absolute = Math.abs(value);
+		const floor = Math.floor(absolute);
+		const decimal = Number((absolute - floor).toFixed(8));
+		let roundedAbsolute: number;
+		if (decimal === 0.5) {
+			if (settings?.roundingMethod === "Commercial Rounding") {
+				roundedAbsolute = floor + 1;
+			} else {
+				roundedAbsolute = floor % 2 === 0 ? floor : floor + 1;
+			}
+		} else {
+			roundedAbsolute = Math.round(absolute);
+		}
+		return round(Math.sign(value) * roundedAbsolute, precision);
+	}
+
+	// Mirrors frappe.utils.data.round_based_on_smallest_currency_fraction:
+	// an exact half fraction rounds down; values above half round up.
+	const factor = 10 ** precision;
+	const integerValue = Math.round(value * factor);
+	const integerFraction = Math.round(fraction * factor);
+	if (!(integerFraction > 0)) return round(value, precision);
+	const remainder = integerValue % integerFraction;
+	const roundedInteger = remainder > integerFraction / 2
+		? integerValue + integerFraction - remainder
+		: integerValue - remainder;
+	return roundedInteger / factor;
+}
+
 type AccountTotal = {
 	account_head: string;
 	rate: number;
@@ -121,6 +165,7 @@ export function assembleInvoice(input: {
 	taxSettings: EngineTaxSettings;
 	taxRows?: TaxTemplateRow[] | null;
 	itemTaxResolver?: ItemTaxResolver;
+	roundingSettings?: EngineRoundingSettings;
 }): AssembledInvoice {
 	if (!input.cart.length) {
 		throw new InvoiceEngineError("Cannot assemble an invoice from an empty cart");
@@ -206,8 +251,12 @@ export function assembleInvoice(input: {
 
 	const totalTaxesAndCharges = round(taxes.reduce((sum, row) => sum + row.tax_amount, 0));
 	const grandTotal = round(netTotal + totalTaxesAndCharges);
-	const roundedTotal = round(grandTotal);
-	const roundingAdjustment = round(roundedTotal - grandTotal);
+	const roundedTotal = input.roundingSettings?.disableRoundedTotal
+		? 0
+		: roundBasedOnSmallestCurrencyFraction(grandTotal, input.roundingSettings);
+	const roundingAdjustment = input.roundingSettings?.disableRoundedTotal
+		? 0
+		: round(roundedTotal - grandTotal);
 
 	return {
 		items,

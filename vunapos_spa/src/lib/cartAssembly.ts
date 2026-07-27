@@ -49,5 +49,11 @@ export async function assembleCartAgainstCache(
 			return templateName ? itemTaxTemplateRows.get(templateName) : undefined;
 		},
 		taxSettings,
+		roundingSettings: {
+			currencyPrecision: profile.currency_precision,
+			disableRoundedTotal: profile.disable_rounded_total,
+			smallestCurrencyFractionValue: profile.smallest_currency_fraction_value,
+			roundingMethod: profile.rounding_method,
+		},
 	});
 }
