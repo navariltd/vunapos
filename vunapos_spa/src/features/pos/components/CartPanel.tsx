@@ -113,7 +113,7 @@ export function CartPanel({
 				<div className="mt-5 grid grid-cols-2 gap-2">
 					<Button
 						variant="ghost"
-						className="gap-2"
+						className="gap-2 bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container"
 						disabled={isMutating || !items.length}
 						onClick={onHold}
 					>
@@ -121,8 +121,8 @@ export function CartPanel({
 						Hold
 					</Button>
 					<Button
-						variant="ghost"
-						className="gap-2 text-error hover:bg-error-container"
+						variant="danger"
+						className="gap-2"
 						disabled={isMutating || !items.length}
 						onClick={onClearCart}
 					>
