@@ -312,13 +312,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						className="hidden xl:flex"
 						currency={bootstrap.data?.currency}
 						warehouse={bootstrap.data?.warehouse}
+						isOnline={isReachable && navigator.onLine !== false}
 						onCheckout={handleOpenCheckout}
 						onClearCustomer={() => setSelectedCustomer(null)}
 						onClearCart={handleClearCart}
 						onHold={handleHoldCart}
+						onLoadBatches={cartActions.loadItemBatches}
 						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={setSelectedCustomer}
 						onUpdateQty={cartActions.updateCartItemQty}
+						onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
 					/>
 				</div>
 			)}
@@ -364,13 +367,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							className="flex-1 border-0"
 							currency={bootstrap.data?.currency}
 							warehouse={bootstrap.data?.warehouse}
+							isOnline={isReachable && navigator.onLine !== false}
 							onCheckout={handleOpenCheckout}
 							onClearCustomer={() => setSelectedCustomer(null)}
 							onClearCart={handleClearCart}
 							onHold={handleHoldCart}
+							onLoadBatches={cartActions.loadItemBatches}
 							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={setSelectedCustomer}
 							onUpdateQty={cartActions.updateCartItemQty}
+							onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
 						/>
 					</div>
 				</div>

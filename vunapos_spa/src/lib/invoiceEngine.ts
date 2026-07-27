@@ -18,6 +18,7 @@
 export type CartLine = {
 	item_code: string;
 	qty: number;
+	batch_allocations?: Array<{ batch_no: string; qty: number }>;
 };
 
 export type TaxTemplateRow = {

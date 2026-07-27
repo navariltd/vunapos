@@ -8,6 +8,7 @@ import type { CartApi } from "../stores/cartStore";
 export function useCartApi(): CartApi {
 	const addItemCall = useFrappePostCall(vunaMethods.addItem);
 	const getItemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
+	const getItemBatchesCall = useFrappePostCall(vunaMethods.getItemBatches);
 	const updateItemCall = useFrappePostCall(vunaMethods.updateItem);
 	const removeItemCall = useFrappePostCall(vunaMethods.removeItem);
 	const clearInvoiceCall = useFrappePostCall(vunaMethods.clearInvoice);
@@ -22,6 +23,7 @@ export function useCartApi(): CartApi {
 	return {
 		addItem: addItemCall.call,
 		getItemDetails: getItemDetailsCall.call,
+		getItemBatches: getItemBatchesCall.call,
 		updateItem: updateItemCall.call,
 		removeItem: removeItemCall.call,
 		clearInvoice: clearInvoiceCall.call,

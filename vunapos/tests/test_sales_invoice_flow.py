@@ -134,6 +134,63 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			["VUNA-BATCH-SPLIT-A", "VUNA-BATCH-SPLIT-B"],
 		)
 
+	def test_manual_multi_batch_allocation_creates_native_bundle(self):
+		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Manual Batch Item")
+		ensure_batch_stock(
+			item_code,
+			warehouse,
+			[
+				("VUNA-MANUAL-BATCH-A", 4, add_days(nowdate(), 30)),
+				("VUNA-MANUAL-BATCH-B", 6, add_days(nowdate(), 60)),
+			],
+		)
+		set_invoice_mode("Sales Invoice")
+
+		response = create_invoice_from_cart(
+			pos_profile=profile,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 5,
+					"batch_allocations": [
+						{"batch_no": "VUNA-MANUAL-BATCH-A", "qty": 2},
+						{"batch_no": "VUNA-MANUAL-BATCH-B", "qty": 3},
+					],
+				}
+			],
+		)
+
+		self.assertTrue(response["ok"], response)
+		item = response["data"]["items"][0]
+		self.assertIsNone(item["batch_no"])
+		self.assertTrue(item["serial_and_batch_bundle"])
+		bundle = frappe.get_doc("Serial and Batch Bundle", item["serial_and_batch_bundle"])
+		self.assertEqual(
+			[(row.batch_no, abs(flt(row.qty))) for row in bundle.entries],
+			[("VUNA-MANUAL-BATCH-A", 2), ("VUNA-MANUAL-BATCH-B", 3)],
+		)
+
+	def test_manual_batch_allocation_rejects_duplicate_batch_rows(self):
+		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Duplicate Batch Item")
+		ensure_batch_stock(item_code, warehouse, [("VUNA-DUP-BATCH-A", 5, add_days(nowdate(), 30))])
+
+		response = create_invoice_from_cart(
+			pos_profile=profile,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 2,
+					"batch_allocations": [
+						{"batch_no": "VUNA-DUP-BATCH-A", "qty": 1},
+						{"batch_no": "VUNA-DUP-BATCH-A", "qty": 1},
+					],
+				}
+			],
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "DUPLICATE_BATCH_ALLOCATION")
+
 	def test_batch_allocation_skips_expired_batch(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch Expiry Item")
 		ensure_batch_stock(

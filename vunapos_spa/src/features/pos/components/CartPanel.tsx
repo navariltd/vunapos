@@ -4,7 +4,7 @@ import { Pause, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { CustomerDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
@@ -16,9 +16,12 @@ type CartPanelProps = {
 	onClearCustomer: () => void;
 	onClearCart: () => void;
 	onHold: () => void;
+	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
+	isOnline: boolean;
 	warehouse?: string;
 };
 
@@ -29,9 +32,12 @@ export function CartPanel({
 	onClearCustomer,
 	onClearCart,
 	onHold,
+	onLoadBatches,
 	onRemoveItem,
 	onSelectCustomer,
 	onUpdateQty,
+	onUpdateBatchAllocations,
+	isOnline,
 	warehouse,
 }: CartPanelProps) {
 	const invoice = useCartStore((s) => s.invoice);
@@ -63,12 +69,15 @@ export function CartPanel({
 							currency={currency}
 							disabled={isMutating}
 							expanded={expandedRow === item.row_name}
+							isOnline={isOnline}
 							item={item}
+							onLoadBatches={onLoadBatches}
 							onRemove={onRemoveItem}
 							onToggle={(rowName) =>
 								setExpandedRow((current) => (current === rowName ? null : rowName))
 							}
 							onUpdateQty={onUpdateQty}
+							onUpdateBatchAllocations={onUpdateBatchAllocations}
 							warehouse={warehouse}
 						/>
 					))

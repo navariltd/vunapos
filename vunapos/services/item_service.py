@@ -240,6 +240,8 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",
+			"has_batch_no",
+			"has_serial_no",
 			"modified",
 		],
 		"order_by": "item_name asc",

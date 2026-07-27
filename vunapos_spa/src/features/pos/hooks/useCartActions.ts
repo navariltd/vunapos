@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { useCartApi } from "./useCartApi";
 import { useCartStore } from "../stores/cartStore";
-import type { HeldInvoiceDTO, ItemDTO, PaymentInput } from "../types";
+import type { BatchAllocationDTO, HeldInvoiceDTO, ItemDTO, PaymentInput } from "../types";
 
 // Binds useCartApi() (the frappe-react-sdk call functions, must be created inside a
 // component) to cartStore's stable action references, exposing today's call surface
@@ -11,6 +11,8 @@ export function useCartActions() {
 	const api = useCartApi();
 	const addCartItemAction = useCartStore((s) => s.addCartItem);
 	const updateCartItemQtyAction = useCartStore((s) => s.updateCartItemQty);
+	const updateCartItemBatchAllocationsAction = useCartStore((s) => s.updateCartItemBatchAllocations);
+	const loadItemBatchesAction = useCartStore((s) => s.loadItemBatches);
 	const removeCartItemAction = useCartStore((s) => s.removeCartItem);
 	const listHeldAction = useCartStore((s) => s.listHeld);
 	const clearCartAction = useCartStore((s) => s.clearCart);
@@ -23,6 +25,10 @@ export function useCartActions() {
 		() => ({
 			addCartItem: (item: ItemDTO) => addCartItemAction(item, api),
 			updateCartItemQty: (rowName: string, qty: number) => updateCartItemQtyAction(rowName, qty, api),
+			updateCartItemBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) =>
+				updateCartItemBatchAllocationsAction(rowName, allocations, api),
+			loadItemBatches: (itemCode: string, warehouse: string, isOnline: boolean) =>
+				loadItemBatchesAction(itemCode, warehouse, isOnline, api),
 			removeCartItem: (rowName: string) => removeCartItemAction(rowName, api),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
@@ -40,6 +46,8 @@ export function useCartActions() {
 			api,
 			addCartItemAction,
 			updateCartItemQtyAction,
+			updateCartItemBatchAllocationsAction,
+			loadItemBatchesAction,
 			removeCartItemAction,
 			listHeldAction,
 			clearCartAction,

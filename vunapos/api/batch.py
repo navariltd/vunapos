@@ -25,7 +25,13 @@ def get_item_batches(item_code: str, warehouse: str | None = None, pos_profile: 
 
 
 @frappe.whitelist()
-def allocate_batches(item_code, qty, warehouse=None, pos_profile=None, strategy="FEFO"):
+def allocate_batches(
+	item_code: str,
+	qty: float | int | str,
+	warehouse: str | None = None,
+	pos_profile: str | None = None,
+	strategy: str = "FEFO",
+):
 	try:
 		return success(
 			allocate_batches_service(
@@ -41,7 +47,12 @@ def allocate_batches(item_code, qty, warehouse=None, pos_profile=None, strategy=
 
 
 @frappe.whitelist()
-def validate_batch_allocation(item_code, qty, allocations, warehouse=None):
+def validate_batch_allocation(
+	item_code: str,
+	qty: float | int | str,
+	allocations: list | str | None,
+	warehouse: str | None = None,
+):
 	try:
 		return success(
 			validate_batch_allocation_service(

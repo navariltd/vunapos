@@ -19,6 +19,21 @@ export type CachedItem = {
 	item_tax_template?: string | null;
 };
 
+export type CachedBatchInventory = {
+	key: string;
+	pos_profile: string;
+	warehouse: string;
+	item_code: string;
+	verified_at: string;
+	requires_batch: boolean;
+	requires_serial: boolean;
+	batches: Array<{
+		batch_no: string;
+		expiry_date?: string | null;
+		available_qty?: number | null;
+	}>;
+};
+
 export type CachedCustomer = {
 	customer: string;
 	customer_name: string;
@@ -147,7 +162,11 @@ export type InvoicePayload = {
 	invoice_doctype?: string;
 	pos_profile?: string;
 	customer?: string;
-	items: { item_code: string; qty: number }[];
+	items: Array<{
+		item_code: string;
+		qty: number;
+		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	}>;
 	payments: { mode_of_payment: string; amount: number }[];
 	posting_date?: string;
 	posting_time?: string;
@@ -173,7 +192,11 @@ export type HoldPayload = {
 	invoice_doctype?: string;
 	pos_profile?: string;
 	customer?: string;
-	items: { item_code: string; qty: number }[];
+	items: Array<{
+		item_code: string;
+		qty: number;
+		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	}>;
 	totals?: {
 		net_total?: number;
 		total_taxes_and_charges?: number;

@@ -1,3 +1,5 @@
+import math
+
 import frappe
 from erpnext.stock.doctype.batch.batch import get_batch_qty
 from frappe import _
@@ -14,6 +16,13 @@ def _throw(code, message, meta=None):
 
 
 def _resolve_warehouse(warehouse=None, pos_profile=None):
+	if pos_profile:
+		profile = resolve_pos_profile(pos_profile)
+		if warehouse and warehouse != profile.warehouse:
+			frappe.throw(_("Warehouse {0} is not available for this POS Profile").format(warehouse))
+		if not profile.warehouse:
+			frappe.throw(_("Warehouse is required because the POS Profile has no warehouse"))
+		return profile.warehouse
 	if warehouse:
 		return warehouse
 	profile = resolve_pos_profile(pos_profile)
@@ -230,11 +239,18 @@ def validate_batch_allocation(item_code, qty, allocations, warehouse=None):
 		_throw("BATCH_ALLOCATION_REQUIRED", _("Batch allocation is required for item {0}.").format(item_code))
 	available = {row["batch_no"]: row for row in get_item_batches(item_code, warehouse=warehouse)["batches"]}
 	total_qty = 0
+	seen_batches = set()
 	for allocation in allocations:
 		batch_no = allocation.get("batch_no")
 		allocation_qty = flt(allocation.get("qty"))
-		if not batch_no or allocation_qty <= 0:
+		if not batch_no or not math.isfinite(allocation_qty) or allocation_qty <= 0:
 			_throw("INVALID_BATCH_ALLOCATION", _("Invalid batch allocation for item {0}.").format(item_code))
+		if batch_no in seen_batches:
+			_throw(
+				"DUPLICATE_BATCH_ALLOCATION",
+				_("Batch {0} is allocated more than once for item {1}.").format(batch_no, item_code),
+			)
+		seen_batches.add(batch_no)
 		if batch_no not in available:
 			batch = frappe.db.get_value("Batch", batch_no, ["item", "disabled", "expiry_date"], as_dict=True)
 			if (

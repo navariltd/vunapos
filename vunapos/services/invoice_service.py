@@ -482,6 +482,23 @@ def _allocate_batches_for_doc(item_code, qty, warehouse, reserved):
 	return allocations
 
 
+def _manual_batch_allocations(item_code, qty, warehouse, allocations):
+	allocations = allocations or []
+	validate_batch_allocation(item_code, qty, allocations, warehouse=warehouse)
+	available = {
+		row["batch_no"]: row for row in get_item_batches(item_code, warehouse=warehouse).get("batches", [])
+	}
+	return [
+		{
+			"batch_no": allocation.get("batch_no"),
+			"qty": flt(allocation.get("qty")),
+			"expiry_date": available[allocation.get("batch_no")].get("expiry_date"),
+			"available_qty": flt(available[allocation.get("batch_no")].get("available_qty")),
+		}
+		for allocation in allocations
+	]
+
+
 def _apply_batch_allocation(row, doc, profile, qty=None):
 	flags = get_item_tracking_flags(row.item_code)
 	if flags["requires_serial"]:
@@ -508,24 +525,10 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 	if not allocations or len(allocations) <= 1 or not row.meta.has_field("serial_and_batch_bundle"):
 		return None
 	if row.get("serial_and_batch_bundle"):
-		frappe.db.set_value(
-			"Serial and Batch Bundle",
-			row.serial_and_batch_bundle,
-			{
-				"item_code": row.item_code,
-				"warehouse": row.get("warehouse"),
-				"company": doc.company,
-				"has_batch_no": 1,
-				"has_serial_no": 0,
-				"voucher_type": doc.doctype,
-				"voucher_no": doc.name,
-				"voucher_detail_no": row.name,
-				"type_of_transaction": "Outward",
-			},
-		)
-		return row.serial_and_batch_bundle
-	frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
-	bundle = frappe.new_doc("Serial and Batch Bundle")
+		bundle = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+	else:
+		frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
+		bundle = frappe.new_doc("Serial and Batch Bundle")
 	bundle.item_code = row.item_code
 	bundle.warehouse = row.get("warehouse")
 	bundle.company = doc.company
@@ -536,6 +539,7 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 	bundle.voucher_detail_no = row.name
 	bundle.type_of_transaction = "Outward"
 	bundle.posting_datetime = get_datetime(f"{doc.posting_date} {doc.get('posting_time') or '00:00:00'}")
+	bundle.set("entries", [])
 	for allocation in allocations:
 		bundle.append(
 			"entries",
@@ -545,7 +549,10 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 				"warehouse": row.get("warehouse"),
 			},
 		)
-	bundle.insert(ignore_permissions=True)
+	if bundle.is_new():
+		bundle.insert(ignore_permissions=True)
+	else:
+		bundle.save(ignore_permissions=True)
 	frappe.db.set_value(row.doctype, row.name, "serial_and_batch_bundle", bundle.name)
 	row.serial_and_batch_bundle = bundle.name
 	row.batch_no = None
@@ -643,12 +650,17 @@ def _append_cart_items(doc, profile, items):
 		if flags["requires_serial"]:
 			_throw("SERIAL_SELECTION_REQUIRED", _("Serial-numbered items require manual serial selection."))
 		if flags["requires_batch"]:
-			allocations = _allocate_batches_for_doc(
-				item.get("item_code"),
-				item.get("qty"),
-				profile.warehouse,
-				reserved,
-			)
+			if item.get("batch_allocations"):
+				allocations = _manual_batch_allocations(
+					item.get("item_code"), item.get("qty"), profile.warehouse, item.get("batch_allocations")
+				)
+			else:
+				allocations = _allocate_batches_for_doc(
+					item.get("item_code"),
+					item.get("qty"),
+					profile.warehouse,
+					reserved,
+				)
 			row = doc.append(
 				"items",
 				_get_item_row(
@@ -665,6 +677,11 @@ def _append_cart_items(doc, profile, items):
 					row.actual_batch_qty = allocations[0].get("qty")
 			_set_row_batch_allocations(row, allocations)
 			continue
+		if item.get("batch_allocations"):
+			_throw(
+				"INVALID_BATCH_ALLOCATION",
+				_("Item {0} is not configured for batch tracking.").format(item.get("item_code")),
+			)
 		doc.append(
 			"items",
 			_get_item_row(
@@ -1071,6 +1088,7 @@ def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
 		_stamp_validated_session(doc, validated_session, payload.get("pos_session_verified_at"))
 		doc.flags.ignore_mandatory = False
 		doc.save()
+		_materialize_batch_bundles(doc)
 		doc.submit()
 	except frappe.UniqueValidationError:
 		# Two retries of the same queued sale raced each other; the unique index is the
@@ -1137,6 +1155,7 @@ def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
 		validate_cart_items(cart_items, profile)
 		_append_cart_items(doc, profile, cart_items)
 		_recalculate(doc)
+		validate_invoice_batch_allocations(doc)
 
 		# Same reasoning as create_pos_invoice: verify totals before anything else that
 		# could mask a real price variance behind a more confusing error.
@@ -1149,6 +1168,7 @@ def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
 		_stamp_validated_session(doc, validated_session)
 		doc.flags.ignore_mandatory = False
 		doc.save()
+		_materialize_batch_bundles(doc)
 	except frappe.UniqueValidationError:
 		frappe.db.rollback(save_point=savepoint)
 		existing = _find_held_invoice_by_idempotency_key(idempotency_key)

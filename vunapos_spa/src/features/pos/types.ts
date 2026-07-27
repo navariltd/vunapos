@@ -167,6 +167,8 @@ export type ItemBatchesDTO = {
 	requires_batch?: boolean;
 	requires_serial?: boolean;
 	batches: ItemBatchDTO[];
+	verified_at?: string;
+	from_cache?: boolean;
 };
 
 export type BatchAllocationResultDTO = {

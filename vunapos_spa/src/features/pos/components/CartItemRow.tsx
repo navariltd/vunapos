@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { ChevronDown, Minus, Plus, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { AlertCircle, ChevronDown, Minus, Plus, RefreshCw, Trash2, WandSparkles } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
-import type { InvoiceItemDTO } from "../types";
+import type { BatchAllocationDTO, InvoiceItemDTO, ItemBatchesDTO } from "../types";
 import { formatCurrency } from "../utils";
 
 type CartItemRowProps = {
@@ -11,8 +11,11 @@ type CartItemRowProps = {
 	expanded: boolean;
 	item: InvoiceItemDTO;
 	onRemove: (rowName: string) => void;
+	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onToggle: (rowName: string) => void;
+	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	isOnline: boolean;
 	warehouse?: string;
 };
 
@@ -26,11 +29,18 @@ export function CartItemRow({
 	expanded,
 	item,
 	onRemove,
+	onLoadBatches,
 	onToggle,
+	onUpdateBatchAllocations,
 	onUpdateQty,
+	isOnline,
 	warehouse,
 }: CartItemRowProps) {
 	const [quantity, setQuantity] = useState(String(item.qty));
+	const [batchData, setBatchData] = useState<ItemBatchesDTO | null>(null);
+	const [batchError, setBatchError] = useState<string | null>(null);
+	const [batchExpanded, setBatchExpanded] = useState(false);
+	const requestedBatches = useRef<string | null>(null);
 
 	const commitQuantity = () => {
 		const nextQuantity = Number(quantity);
@@ -48,6 +58,21 @@ export function CartItemRow({
 	const isStockItem = item.is_stock_item === undefined ? true : Boolean(item.is_stock_item);
 	const isBatchTracked = Boolean(item.has_batch_no || item.batch_no || item.batch_allocations?.length);
 	const isSerialTracked = Boolean(item.has_serial_no || item.serial_and_batch_bundle);
+	const itemWarehouse = item.warehouse || warehouse || "";
+
+	useEffect(() => {
+		if (!expanded || !batchExpanded || !isBatchTracked || isSerialTracked || !itemWarehouse || batchData) return;
+		const requestKey = `${item.item_code}:${itemWarehouse}:${isOnline}`;
+		if (requestedBatches.current === requestKey) return;
+		requestedBatches.current = requestKey;
+		onLoadBatches(item.item_code, itemWarehouse, isOnline).then(
+			(data) => {
+				setBatchData(data);
+				setBatchError(null);
+			},
+			(error: unknown) => setBatchError(error instanceof Error ? error.message : "Failed to load batches"),
+		);
+	}, [batchData, batchExpanded, expanded, isBatchTracked, isOnline, isSerialTracked, item.item_code, itemWarehouse, onLoadBatches]);
 
 	return (
 		<article className="overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
@@ -110,7 +135,7 @@ export function CartItemRow({
 							<Detail label="Discount" value={`${discountPercentage ? `${discountPercentage}%` : ""}${discountPercentage && discountAmount ? " · " : ""}${discountAmount ? formatCurrency(discountAmount, currency) : ""}`} />
 						) : null}
 						<Detail label="Line amount" value={formatCurrency(item.amount, currency)} strong />
-						<Detail label="Warehouse" value={item.warehouse || warehouse || "-"} />
+						<Detail label="Warehouse" value={itemWarehouse || "-"} />
 						<Detail label="Available quantity" value={item.actual_qty == null ? "Not available" : `${item.actual_qty} ${item.stock_uom || item.uom || ""}`} />
 					</div>
 
@@ -121,23 +146,30 @@ export function CartItemRow({
 						{item.allow_negative_stock ? <Indicator active label="Negative stock allowed" /> : null}
 					</div>
 
-					{isBatchTracked ? (
-						<div className="mt-4 rounded-md border border-outline-variant bg-surface-container-low p-3">
-							<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Batch allocation</p>
-							{item.batch_allocations?.length ? (
-								<div className="mt-2 space-y-2">
-									{item.batch_allocations.map((allocation) => (
-										<div key={allocation.batch_no} className="flex justify-between gap-3 text-sm">
-											<span className="font-medium text-on-surface">{allocation.batch_no}</span>
-											<span className="text-on-surface-variant">{allocation.qty} {item.uom || ""}{allocation.expiry_date ? ` · Expires ${allocation.expiry_date}` : ""}</span>
-										</div>
-									))}
-								</div>
-							) : item.batch_no ? (
-								<p className="mt-2 text-sm font-medium text-on-surface">{item.batch_no}</p>
-							) : (
-								<p className="mt-2 text-sm text-on-surface-variant">Batch will be allocated automatically.</p>
-							)}
+					{isBatchTracked && isSerialTracked ? (
+						<div className="mt-4 flex gap-2 rounded-md border border-tertiary bg-tertiary-container p-3 text-sm text-on-tertiary-container">
+							<AlertCircle className="size-4 shrink-0" /> This item also requires serial numbers. Manual bundle selection will be added with serial-number support.
+						</div>
+					) : null}
+					{isBatchTracked && !isSerialTracked ? (
+						<div className="mt-4 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
+							<button type="button" className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-surface-container" onClick={() => setBatchExpanded((value) => !value)} aria-expanded={batchExpanded}>
+								<span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Batch allocation</span><span className="mt-1 block text-xs text-on-surface-variant">{item.batch_allocations?.length ? `${item.batch_allocations.length} batch${item.batch_allocations.length === 1 ? "" : "es"} selected` : "Automatic allocation"}</span></span>
+								<ChevronDown className={`size-4 text-on-surface-variant transition-transform ${batchExpanded ? "rotate-180" : ""}`} />
+							</button>
+							{batchExpanded ? <BatchAllocationEditor
+								batchData={batchData}
+								disabled={Boolean(disabled)}
+								error={batchError}
+								isOnline={isOnline}
+								item={item}
+								onReload={() => {
+									requestedBatches.current = null;
+									setBatchData(null);
+									setBatchError(null);
+								}}
+								onSave={(allocations) => onUpdateBatchAllocations(item.row_name, allocations)}
+							/> : null}
 						</div>
 					) : null}
 
@@ -149,6 +181,112 @@ export function CartItemRow({
 				</div>
 			) : null}
 		</article>
+	);
+}
+
+function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onReload, onSave }: {
+	batchData: ItemBatchesDTO | null;
+	disabled: boolean;
+	error: string | null;
+	isOnline: boolean;
+	item: InvoiceItemDTO;
+	onReload: () => void;
+	onSave: (allocations: BatchAllocationDTO[]) => Promise<void>;
+}) {
+	const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+		Object.fromEntries((item.batch_allocations || []).map((row) => [row.batch_no, String(row.qty)])),
+	);
+	const [saving, setSaving] = useState(false);
+	const [actionError, setActionError] = useState<string | null>(null);
+	const batches = batchData?.batches || [];
+	const parsed = batches.map((batch) => ({
+		...batch,
+		qty: Number(amounts[batch.batch_no] || 0),
+	}));
+	const allocated = parsed.reduce((sum, batch) => sum + (Number.isFinite(batch.qty) ? batch.qty : 0), 0);
+	const remaining = item.qty - allocated;
+	const invalid = parsed.some((batch) => batch.qty < 0 || batch.qty > Number(batch.available_qty || 0));
+	const complete = !invalid && Math.abs(remaining) < 0.000001 && allocated > 0;
+
+	const save = async (rows = parsed) => {
+		setSaving(true);
+		setActionError(null);
+		try {
+			await onSave(rows.filter((row) => row.qty > 0).map((row) => ({
+				batch_no: row.batch_no,
+				qty: row.qty,
+				expiry_date: row.expiry_date,
+				available_qty: row.available_qty,
+			})));
+		} catch (saveError) {
+			setActionError(saveError instanceof Error ? saveError.message : "Failed to save the batch allocation");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const selectAutomatic = async () => {
+		setSaving(true);
+		setActionError(null);
+		try {
+			await onSave([]);
+			setAmounts({});
+		} catch (saveError) {
+			setActionError(saveError instanceof Error ? saveError.message : "Failed to clear the batch allocation");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const autoAllocate = () => {
+		let required = item.qty;
+		const next: Record<string, string> = {};
+		for (const batch of batches) {
+			const qty = Math.min(required, Number(batch.available_qty || 0));
+			if (qty > 0) next[batch.batch_no] = String(qty);
+			required -= qty;
+		}
+		setAmounts(next);
+	};
+
+	return (
+		<div className="border-t border-outline-variant p-3">
+			<div className="flex items-start justify-between gap-3">
+				<div>
+					{batchData?.verified_at ? <p className="mt-1 text-xs text-on-surface-variant">{batchData.from_cache ? "Cached" : "Verified"} {new Date(batchData.verified_at).toLocaleString()}</p> : null}
+				</div>
+				<Button variant="ghost" size="sm" className="gap-1" disabled={disabled || !isOnline} onClick={onReload} title={isOnline ? "Refresh batch availability" : "Reconnect to refresh batches"}>
+					<RefreshCw className="size-3.5" /> Refresh
+				</Button>
+			</div>
+			{error ? <div className="mt-3 flex gap-2 text-sm text-error"><AlertCircle className="size-4 shrink-0" />{error}</div> : null}
+			{actionError ? <div className="mt-3 flex gap-2 text-sm text-error"><AlertCircle className="size-4 shrink-0" />{actionError}</div> : null}
+			{!batchData && !error ? <p className="mt-3 text-sm text-on-surface-variant">Loading batch availability…</p> : null}
+			{batchData ? (
+				<>
+					<div className="mt-3 grid grid-cols-3 gap-2 rounded-md bg-surface p-2 text-center text-xs">
+						<div><span className="text-on-surface-variant">Required</span><p className="font-semibold">{item.qty}</p></div>
+						<div><span className="text-on-surface-variant">Allocated</span><p className="font-semibold">{allocated}</p></div>
+						<div><span className="text-on-surface-variant">Remaining</span><p className={remaining < 0 ? "font-semibold text-error" : "font-semibold"}>{remaining}</p></div>
+					</div>
+					<div className="mt-3 max-h-60 space-y-2 overflow-y-auto pr-1">
+						{batches.map((batch) => (
+							<label key={batch.batch_no} className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-3 rounded-md border border-outline-variant bg-surface p-2">
+								<span className="min-w-0"><span className="block truncate text-sm font-medium">{batch.batch_no}</span><span className="text-xs text-on-surface-variant">Available {batch.available_qty || 0} · {batch.expiry_date ? `Expires ${batch.expiry_date}` : "No expiry"}</span></span>
+								<input aria-label={`${batch.batch_no} allocation`} className="h-9 w-full rounded-md border border-outline-variant bg-surface px-2 text-right text-sm" disabled={disabled || saving} inputMode="decimal" min="0" max={Number(batch.available_qty || 0)} step="any" type="number" value={amounts[batch.batch_no] || ""} onChange={(event) => setAmounts((current) => ({ ...current, [batch.batch_no]: event.target.value }))} />
+							</label>
+						))}
+						{!batches.length ? <p className="text-sm text-on-surface-variant">No valid batches currently have stock.</p> : null}
+					</div>
+					{invalid ? <p className="mt-2 text-xs text-error">An allocation cannot exceed the batch availability.</p> : null}
+					<div className="mt-3 flex flex-wrap gap-2">
+						<Button variant="ghost" size="sm" className="gap-1" disabled={disabled || saving || !batches.length} onClick={autoAllocate}><WandSparkles className="size-3.5" /> Auto allocate FEFO</Button>
+						<Button variant="ghost" size="sm" disabled={disabled || saving || !item.batch_allocations?.length} onClick={() => void selectAutomatic()}>Use automatic</Button>
+						<Button size="sm" className="ml-auto" disabled={disabled || saving || !complete} onClick={() => void save()}>{saving ? "Saving…" : "Save allocation"}</Button>
+					</div>
+				</>
+			) : null}
+		</div>
 	);
 }
 

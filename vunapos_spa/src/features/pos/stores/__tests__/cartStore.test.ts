@@ -13,6 +13,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	return {
 		addItem: reject,
 		getItemDetails: reject,
+		getItemBatches: reject,
 		updateItem: reject,
 		removeItem: reject,
 		clearInvoice: reject,
@@ -42,6 +43,7 @@ const CUSTOMER: CustomerDTO = { customer: "CUST-1", customer_name: "Test Custome
 beforeEach(async () => {
 	await Promise.all([
 		db.items.clear(),
+		db.batchInventory.clear(),
 		db.taxTemplates.clear(),
 		db.itemTaxTemplates.clear(),
 		db.profile.clear(),
@@ -254,6 +256,41 @@ describe("submitCart", () => {
 		const result = await useCartStore.getState().submitCart([], null, "idem-1", makeApi());
 
 		expect(result).toBeNull();
+	});
+
+	it("persists a manual multi-batch allocation in the offline queue payload", async () => {
+		vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
+		const row = useCartStore.getState().invoice?.items[0];
+		expect(row).toBeDefined();
+		await useCartStore.getState().updateCartItemBatchAllocations(
+			row!.row_name,
+			[
+				{ batch_no: "BATCH-A", qty: 0.4 },
+				{ batch_no: "BATCH-B", qty: 0.6 },
+			],
+			makeApi(),
+		);
+
+		await useCartStore
+			.getState()
+			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-batches", makeApi());
+
+		const [queued] = await db.queue.toArray();
+		expect(queued.payload.items[0].batch_allocations).toEqual([
+			{ batch_no: "BATCH-A", qty: 0.4 },
+			{ batch_no: "BATCH-B", qty: 0.6 },
+		]);
+	});
+
+	it("rejects an incomplete saved manual allocation", async () => {
+		const row = useCartStore.getState().invoice?.items[0];
+		await expect(
+			useCartStore.getState().updateCartItemBatchAllocations(
+				row!.row_name,
+				[{ batch_no: "BATCH-A", qty: 0.5 }],
+				makeApi(),
+			),
+		).rejects.toThrow(/must equal the quantity/);
 	});
 
 	it("settles succeeded within the race window: renders the server receipt and clears the cart", async () => {
