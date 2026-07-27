@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 import { cn } from "../../lib/cn";
 
-type ButtonVariant = "primary" | "secondary" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 type ButtonSize = "sm" | "md" | "lg";
 
 type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -13,6 +13,7 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 const variants: Record<ButtonVariant, string> = {
 	primary: "bg-primary text-on-primary hover:bg-primary-container focus-visible:outline-outline",
 	secondary: "bg-secondary text-on-secondary hover:bg-secondary-container hover:text-on-secondary-container focus-visible:outline-outline",
+	danger: "bg-error text-on-error hover:bg-error-container hover:text-on-error-container focus-visible:outline-error",
 	ghost: "bg-surface-container text-on-surface hover:bg-surface-container-high focus-visible:outline-outline",
 };
 

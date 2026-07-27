@@ -149,9 +149,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleClearCart = () => {
 		if (cartInvoice?.items?.length && !window.confirm("Clear all items from the current cart?")) {
-			return;
+			return false;
 		}
 		void cartActions.clearCart();
+		return true;
 	};
 
 	const handleHoldCart = async () => {
@@ -171,10 +172,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				showToast({ type: "held", invoice: heldInvoice });
 				setSelectedCustomer(undefined);
 				setIsCartOpen(false);
+				return true;
 			}
 		} catch (err) {
 			setPageError(err instanceof Error ? err.message : "Failed to hold invoice");
 		}
+		return false;
 	};
 
 	const handleRefreshHeld = async () => {
@@ -378,8 +381,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				error={pageError}
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
+				onClear={() => {
+					if (handleClearCart()) setIsCheckoutOpen(false);
+				}}
 				onClose={() => setIsCheckoutOpen(false)}
 				onConfirm={handleCheckout}
+				onHold={() => {
+					void handleHoldCart().then((held) => {
+						if (held) setIsCheckoutOpen(false);
+					});
+				}}
 			/>
 
 			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
