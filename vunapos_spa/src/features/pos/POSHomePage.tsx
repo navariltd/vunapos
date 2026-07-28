@@ -21,7 +21,7 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
-import { getActiveCustomer, isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
+import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 
 type POSHomePageProps = {
@@ -127,12 +127,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		}
 
 		cartActions.listHeld().catch((err) => {
-			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to load held invoices" });
 		});
 		// cartActions is a fresh object each render (see useCartActions) - keying on its
 		// stable inputs instead avoids re-firing every render.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [bootstrap.data?.pos_profile, isReachable, setPageError]);
+	}, [bootstrap.data?.pos_profile, isReachable, showToast]);
 
 	const handleAddItem = async (item: ItemDTO) => {
 		setPageError(null);
@@ -146,12 +146,25 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleOpenCheckout = async () => {
 		setPageError(null);
-		if (!activeCustomer?.customer) {
-			setPageError("Select a customer, or set a default customer on this POS Profile, before checkout");
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before checkout." });
 			return;
 		}
-		setIsCartOpen(false);
-		setIsCheckoutOpen(true);
+		if (!activeCustomer?.customer) {
+			showToast({ type: "error", message: "Select a customer, or set a default customer on this POS Profile, before checkout" });
+			return;
+		}
+		try {
+			const validated = await cartActions.validateCart();
+			if (!validated) {
+				showToast({ type: "error", message: "Add at least one item before checkout." });
+				return;
+			}
+			setIsCartOpen(false);
+			setIsCheckoutOpen(true);
+		} catch (error) {
+			showToast({ type: "error", message: error instanceof Error ? error.message : "Unable to validate this cart with the server." });
+		}
 	};
 
 	const handleClearCart = (closeCheckout = false) => {
@@ -173,12 +186,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleHoldCart = async () => {
 		setPageError(null);
 		clearToast();
-		// A brand-new local cart holds itself via the offline queue, no connectivity
-		// needed. Only the two online-only branches (editing/holding an already
-		// server-tracked invoice) need this guard, for the same frappe-react-sdk
-		// raw-TypeError-on-network-failure reason as the fetch guard above.
-		if (!isUnsyncedLocalCart(cartInvoice) && (!isReachable || navigator.onLine === false)) {
-			setPageError("Holding invoices needs a connection - try again once you're back online.");
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "Holding invoices needs a connection - try again once you're back online." });
 			return;
 		}
 		try {
@@ -190,7 +199,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				return true;
 			}
 		} catch (err) {
-			setPageError(err instanceof Error ? err.message : "Failed to hold invoice");
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to hold invoice" });
 		}
 		return false;
 	};
@@ -198,13 +207,13 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleRefreshHeld = async () => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
-			setPageError("Held invoices need a connection - try again once you're back online.");
+			showToast({ type: "error", message: "Held invoices need a connection - try again once you're back online." });
 			return;
 		}
 		try {
 			await cartActions.listHeld();
 		} catch (err) {
-			setPageError(err instanceof Error ? err.message : "Failed to load held invoices");
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to load held invoices" });
 		}
 	};
 
@@ -221,10 +230,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		setPageError(null);
 		clearToast();
 		try {
-			const restoredInvoice =
-				heldInvoice.is_local && heldInvoice.local_id
-					? await cartActions.restoreLocalHold(heldInvoice.local_id)
-					: await cartActions.restoreHeldInvoice(heldInvoice);
+			const restoredInvoice = await cartActions.restoreHeldInvoice(heldInvoice);
 			setSelectedCustomer(
 				restoredInvoice.customer
 					? {
@@ -236,18 +242,22 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			setActivePage("Home");
 			setIsCartOpen(true);
 		} catch (err) {
-			setPageError(err instanceof Error ? err.message : "Failed to restore held invoice");
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to restore held invoice" });
 		}
 	};
 
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before completing this sale." });
+			return;
+		}
 		try {
 			const result = await cartActions.submitCart(
 				payments,
 				bootstrap.data?.print_format,
 				idempotencyKey,
-				isReachable && navigator.onLine !== false,
+				true,
 			);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);
@@ -260,7 +270,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				printInvoiceHtml(result.printPayload);
 			}
 		} catch (err) {
-			setPageError(getCheckoutErrorMessage(err));
+			showToast({ type: "error", message: getCheckoutErrorMessage(err) });
 		}
 	};
 

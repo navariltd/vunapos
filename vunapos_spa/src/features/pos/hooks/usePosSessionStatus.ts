@@ -1,15 +1,10 @@
-import { useEffect } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
-import { cachePosSession } from "../../../lib/cacheEngine";
-import type { CachedPosSession } from "../../../lib/types";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { BootstrapData, POSSessionDTO } from "../types";
 
-// Whether today's POS Opening Entry exists can't be trusted from the offline cache
-// (it changes the moment a cashier opens/closes their till, unlike items/customers/
-// tax templates) - this is its own small, always-live fetch, same shape as
-// useThemeSync.ts's read path, kept separate from useBootstrapData.ts on purpose.
+// Opening-entry state changes independently of catalogue data, so it always uses a
+// dedicated live server request.
 export function usePosSessionStatus(posProfile: string | undefined) {
 	const response = useFrappeGetCall<unknown>(
 		vunaMethods.getBootstrapData,
@@ -26,17 +21,6 @@ export function usePosSessionStatus(posProfile: string | undefined) {
 			error = err instanceof Error ? err.message : "Failed to load POS session status";
 		}
 	}
-
-	useEffect(() => {
-		if (
-			session?.cashier &&
-			session.pos_profile &&
-			session.status &&
-			typeof session.ready === "boolean"
-		) {
-			void cachePosSession(session as CachedPosSession);
-		}
-	}, [session]);
 
 	return {
 		session,

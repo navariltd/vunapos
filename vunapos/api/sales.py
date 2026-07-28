@@ -204,8 +204,14 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 		return _failure_from_exception(exc)
 
 
-@frappe.whitelist()
-def create_and_submit_invoice(pos_profile=None, customer=None, items=None, payments=None):
+@frappe.whitelist(methods=["POST"])
+def create_and_submit_invoice(
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	items: list | str | None = None,
+	payments: list | str | None = None,
+	idempotency_key: str | None = None,
+):
 	try:
 		return success(
 			create_and_submit_invoice_service(
@@ -213,6 +219,7 @@ def create_and_submit_invoice(pos_profile=None, customer=None, items=None, payme
 				customer=customer,
 				items=items,
 				payments=payments,
+				idempotency_key=idempotency_key,
 			)
 		)
 	except Exception as exc:

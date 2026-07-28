@@ -20,10 +20,10 @@ export function useCartActions() {
 	const removeCartItemAction = useCartStore((s) => s.removeCartItem);
 	const listHeldAction = useCartStore((s) => s.listHeld);
 	const clearCartAction = useCartStore((s) => s.clearCart);
+	const validateCartAction = useCartStore((s) => s.validateCart);
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
-	const restoreLocalHoldAction = useCartStore((s) => s.restoreLocalHold);
 
 	return useMemo(
 		() => ({
@@ -43,6 +43,7 @@ export function useCartActions() {
 			removeCartItem: (rowName: string) => removeCartItemAction(rowName, api),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
+			validateCart: () => validateCartAction(api),
 			submitCart: (
 				payments: PaymentInput[],
 				printFormat: string | null | undefined,
@@ -51,7 +52,6 @@ export function useCartActions() {
 			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
-			restoreLocalHold: (localId: string) => restoreLocalHoldAction(localId, api),
 		}),
 		[
 			api,
@@ -66,10 +66,10 @@ export function useCartActions() {
 			removeCartItemAction,
 			listHeldAction,
 			clearCartAction,
+			validateCartAction,
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,
-			restoreLocalHoldAction,
 		],
 	);
 }

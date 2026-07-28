@@ -3,17 +3,17 @@ import { AlertCircle, RefreshCw } from "lucide-react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 
 import type { POSClosingPreviewDTO } from "../types";
+import { formatCurrency } from "../utils";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { cachePosSession } from "../../../lib/cacheEngine";
-import { queueRepository } from "../../../lib/repositories/queueRepository";
 import type { CachedPosSession } from "../../../lib/types";
 import {
 	closePosSession,
 	unwrapVunaResponse,
 	vunaMethods,
 } from "../../../services/vunaApi";
-import { useQueueStatus } from "../hooks/useQueueStatus";
+import { useConnectivity } from "../hooks/useConnectivity";
 
 type CloseShiftPageProps = {
 	posProfile: string;
@@ -22,7 +22,7 @@ type CloseShiftPageProps = {
 };
 
 export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageProps) {
-	const queue = useQueueStatus();
+	const { isReachable } = useConnectivity();
 	const previewCall = useFrappeGetCall<unknown>(
 		vunaMethods.getClosingPreview,
 		{ pos_profile: posProfile },
@@ -56,25 +56,10 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 		}
 	}, [previewCall.data]);
 
-	const blocker = !queue.isReachable
-		? "Reconnect to the server before closing this shift."
-		: queue.pending > 0
-			? `Wait for ${queue.pending} pending transaction${queue.pending === 1 ? "" : "s"} to sync.`
-			: queue.parked > 0
-				? `Resolve ${queue.parked} rejected transaction${queue.parked === 1 ? "" : "s"} before closing.`
-				: null;
+	const blocker = !isReachable ? "Reconnect to the server before closing this shift." : null;
 
 	async function handleClose() {
 		if (!preview || blocker) return;
-		const queueEntries = await queueRepository.getAll();
-		if (queueEntries.some((entry) => entry.status === "pending" || entry.status === "syncing")) {
-			setError("Pending transactions appeared while closing. Wait for synchronization and try again.");
-			return;
-		}
-		if (queueEntries.some((entry) => entry.status === "error")) {
-			setError("Resolve rejected transactions before closing the POS shift.");
-			return;
-		}
 		if (preview.payments.some((row) => !countedAmount(row.mode_of_payment, row.expected_amount).trim())) {
 			setError("Enter a counted amount for every payment mode.");
 			return;
@@ -87,12 +72,17 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 			setError("Enter a valid counted amount for every payment mode.");
 			return;
 		}
+		setError("");
 		setConfirmOpen(true);
 	}
 
 	async function confirmClose() {
 		if (!preview) return;
 		setError("");
+		if (!isReachable || navigator.onLine === false) {
+			setError("Reconnect to the server before closing this shift.");
+			return;
+		}
 		try {
 			const closingBalances = preview.payments.map((row) => ({
 				mode_of_payment: row.mode_of_payment,
@@ -110,7 +100,6 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 			// live session check is briefly unavailable during the reload.
 			window.location.reload();
 		} catch (err) {
-			setConfirmOpen(false);
 			setError(err instanceof Error ? err.message : "Failed to close POS session");
 		}
 	}
@@ -207,13 +196,17 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 				title="Close this POS shift?"
 				description="Review the shift summary before closing. A new POS Opening Entry will be required before making another sale."
 				confirmLabel="Close POS Shift"
+				confirmDisabled={Boolean(blocker)}
 				danger
 				size="lg"
 				loading={closeCall.loading}
-				onCancel={() => setConfirmOpen(false)}
+				onCancel={() => {
+					setConfirmOpen(false);
+					setError("");
+				}}
 				onConfirm={() => void confirmClose()}
 			>
-				{preview ? <div className="space-y-3 text-sm"><div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = Number(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
+				{preview ? <div className="space-y-3 text-sm">{blocker || error ? <div role="alert" className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-on-error-container"><AlertCircle className="size-4 shrink-0" /><span>{blocker || error}</span></div> : null}<div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = Number(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
 			</ConfirmDialog>
 		</section>
 	);
@@ -224,5 +217,5 @@ function Summary({ label, value }: { label: string; value: string }) {
 }
 
 function money(value: number, currency?: string) {
-	return `${currency || ""} ${value.toFixed(2)}`.trim();
+	return formatCurrency(value, currency);
 }

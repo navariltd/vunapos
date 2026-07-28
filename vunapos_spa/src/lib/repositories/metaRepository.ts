@@ -4,12 +4,8 @@ export const META_KEYS = {
 	lastFullSync: "last_full_sync",
 	lastDeltaSync: "last_delta_sync",
 	bootstrapVersion: "bootstrap_version",
-	deviceId: "device_id",
-	localCounter: "local_counter",
 	taxSettings: "tax_settings",
 	posSession: "pos_session",
-	offlineSessionTtlHours: "offline_session_ttl_hours",
-	storagePersisted: "storage_persisted",
 } as const;
 
 export const metaRepository = {

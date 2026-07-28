@@ -22,22 +22,6 @@ export type CachedItem = {
 	item_tax_template?: string | null;
 };
 
-export type CachedBatchInventory = {
-	key: string;
-	pos_profile: string;
-	warehouse: string;
-	item_code: string;
-	verified_at: string;
-	requires_batch: boolean;
-	requires_serial: boolean;
-	batches: Array<{
-		batch_no: string;
-		expiry_date?: string | null;
-		available_qty?: number | null;
-	}>;
-	serials?: Array<{ serial_no: string; batch_no?: string | null }>;
-};
-
 export type CachedCustomer = {
 	customer: string;
 	customer_name: string;
@@ -145,7 +129,6 @@ export type BootstrapPayload = {
 	mode: "full" | "delta";
 	pos_profile: CachedProfile;
 	pos_session: CachedPosSession;
-	offline_session_ttl_hours: number;
 	items: CachedItem[];
 	customers: CachedCustomer[];
 	tax_templates: CachedTaxTemplate[];
@@ -153,98 +136,4 @@ export type BootstrapPayload = {
 	tax_settings: TaxSettings;
 	payment_modes: CachedPaymentMode[];
 	deleted?: BootstrapDeleted;
-};
-
-// ── Synchronization (Section 6.2 / 8.2 of the spec) ──
-
-export type QueueStatus = "pending" | "syncing" | "succeeded" | "error" | "archived";
-
-export type QueueAttempt = {
-	at: string;
-	outcome: "network_error" | "server_error" | "totals_variance" | "rejected" | "success";
-	detail?: string;
-};
-
-export type InvoicePayload = {
-	invoice_doctype?: string;
-	pos_profile?: string;
-	customer?: string;
-	items: Array<{
-		item_code: string;
-		qty: number;
-		uom?: string;
-		conversion_factor?: number;
-		batch_allocations?: Array<{ batch_no: string; qty: number }>;
-		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
-		item_note?: string | null;
-		pricing_override?: PricingOverride;
-	}>;
-	payments: { mode_of_payment: string; amount: number }[];
-	posting_date?: string;
-	posting_time?: string;
-	opening_entry?: string;
-	pos_session_verified_at?: string;
-	cashier?: string;
-	totals?: {
-		net_total?: number;
-		total_taxes_and_charges?: number;
-		grand_total?: number;
-		rounded_total?: number;
-	};
-	/** Device-generated reference (e.g. "POS-XXXX-00001"), stored server-side on
-	 * vunapos_invoice_number_offline so a synced invoice can be traced back to the
-	 * offline sale that created it. */
-	local_ref: string;
-};
-
-// A hold has no payments yet and no "sale moment" (posting_date/time) - that's set
-// later at whichever checkout eventually submits it. totals is kept so the server
-// can still verify it (_verify_totals_or_park), same defense-in-depth as a sale.
-export type HoldPayload = {
-	invoice_doctype?: string;
-	pos_profile?: string;
-	customer?: string;
-	items: Array<{
-		item_code: string;
-		qty: number;
-		uom?: string;
-		conversion_factor?: number;
-		batch_allocations?: Array<{ batch_no: string; qty: number }>;
-		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
-		item_note?: string | null;
-		pricing_override?: PricingOverride;
-	}>;
-	totals?: {
-		net_total?: number;
-		total_taxes_and_charges?: number;
-		grand_total?: number;
-		rounded_total?: number;
-	};
-	local_ref: string;
-};
-
-export type PricingOverride = {
-	type: "rate" | "discount_percentage" | "discount_amount";
-	value: number;
-};
-
-type QueueEntryCommon = {
-	local_id: string;
-	local_ref: string;
-	idempotency_key: string;
-	schema_version: 1;
-	group: string | null;
-	status: QueueStatus;
-	next_retry_at: string | null;
-	created_at: string;
-	attempts: QueueAttempt[];
-};
-
-export type QueueEntry =
-	| (QueueEntryCommon & { type: "create_invoice"; payload: InvoicePayload })
-	| (QueueEntryCommon & { type: "hold_invoice"; payload: HoldPayload });
-
-export type QueueMapping = {
-	local_id: string;
-	server_name: string;
 };

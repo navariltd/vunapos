@@ -10,26 +10,24 @@ export const itemRepository = {
 		return db.items.get(itemCode);
 	},
 
+	async updateActualQty(itemCode: string, actualQty: number | null | undefined): Promise<void> {
+		const item = await db.items.get(itemCode);
+		if (!item) return;
+		await db.items.put({ ...item, actual_qty: actualQty });
+	},
+
 	async search(query: string, limit = 50): Promise<CachedItem[]> {
 		const needle = query.trim().toLowerCase();
-		if (!needle) {
-			return db.items.limit(limit).toArray();
-		}
-		const byCode = await db.items.where("item_code").startsWithIgnoreCase(needle).limit(limit).toArray();
-		if (byCode.length >= limit) {
-			return byCode;
-		}
-		const seen = new Set(byCode.map((item) => item.item_code));
-		const remaining = limit - byCode.length;
-		const byName = await db.items
-			.filter((item) => item.item_name.toLowerCase().includes(needle) && !seen.has(item.item_code))
-			.limit(remaining)
-			.toArray();
-		return [...byCode, ...byName];
+		const items = await db.items.toArray();
+		if (!needle) return items.slice(0, limit);
+		return items
+			.filter((item) => item.item_code.toLowerCase().includes(needle) || item.item_name.toLowerCase().includes(needle))
+			.sort((a, b) => Number(b.item_code.toLowerCase().startsWith(needle)) - Number(a.item_code.toLowerCase().startsWith(needle)))
+			.slice(0, limit);
 	},
 
 	async getByBarcode(barcode: string): Promise<CachedItem | undefined> {
-		return db.items.where("barcode").equals(barcode).first();
+		return (await db.items.toArray()).find((item) => item.barcode === barcode);
 	},
 
 	async count(): Promise<number> {

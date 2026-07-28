@@ -1,24 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useState } from "react";
 
 import type { ItemDTO } from "../types";
 import { itemRepository } from "../../../lib/repositories/itemRepository";
-import { useQueueStore } from "../../../lib/stores/queueStore";
-import { applyPendingStock } from "../../../lib/pendingStock";
+import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
-// Read-path cutover (P5, I3): item search never touches the network - it's a Dexie
-// prefix/substring query against the last-synced catalog (useItemSearch's job is
-// speed and offline availability; freshness is the Cache Engine's job, separately).
-// develop's useFrappeGetCall/SWR version (customer/pos_profile-aware server search)
-// was superseded by this cutover rather than merged - the two are incompatible
-// (one requires a network round trip, the other must work with zero connectivity)
-// and offline availability is this branch's whole point.
-//
-// KNOWN GAP: pricing offline is the item's cached bootstrap rate (default-customer
-// pricing) - selecting a different customer with a distinct price list will not
-// re-price offline the way the previous online-only flow did. See invoiceEngine.ts.
+// Search the current server-hydrated in-memory catalogue without a request per keypress.
+// Reloading the application starts empty and requires a fresh server bootstrap.
 export function useItemSearch(query: string) {
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
+	const [items, setItems] = useState<ItemDTO[]>();
+	const revision = useRuntimeCacheStore((state) => state.revision);
 
 	useEffect(() => {
 		const timeout = window.setTimeout(() => {
@@ -28,17 +19,14 @@ export function useItemSearch(query: string) {
 		return () => window.clearTimeout(timeout);
 	}, [query]);
 
-	const items = useLiveQuery(() => itemRepository.search(debouncedQuery, 60), [debouncedQuery]);
-	const queueEntries = useQueueStore((state) => state.entries);
-	const availableItems = useMemo(
-		() => applyPendingStock((items ?? []) as ItemDTO[], queueEntries),
-		[items, queueEntries],
-	);
+	useEffect(() => {
+		void itemRepository.search(debouncedQuery, 60).then((rows) => setItems(rows as ItemDTO[]));
+	}, [debouncedQuery, revision]);
 
 	return {
 		error: null as string | null,
 		isLoading: query !== debouncedQuery || items === undefined,
-		items: availableItems,
+		items: (items ?? []) as ItemDTO[],
 		reload: () => {},
 	};
 }

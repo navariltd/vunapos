@@ -13,16 +13,11 @@ export const customerRepository = {
 	async search(query: string, limit = 20): Promise<CachedCustomer[]> {
 		const needle = query.trim().toLowerCase();
 		if (!needle) {
-			return db.customers.limit(limit).toArray();
+			return (await db.customers.toArray()).slice(0, limit);
 		}
-		return db.customers
-			.filter(
-				(row) =>
-					row.customer_name.toLowerCase().includes(needle) ||
-					(row.mobile_no ?? "").toLowerCase().includes(needle),
-			)
-			.limit(limit)
-			.toArray();
+		return (await db.customers.toArray())
+			.filter((row) => row.customer_name.toLowerCase().includes(needle) || (row.mobile_no ?? "").toLowerCase().includes(needle))
+			.slice(0, limit);
 	},
 
 	async count(): Promise<number> {

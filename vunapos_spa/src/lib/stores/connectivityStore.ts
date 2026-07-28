@@ -4,7 +4,7 @@ import { pingServer } from "../apiClient";
 
 // navigator.onLine reflects NIC state, not server reachability (a killed backend still
 // reports `true`). "Reachable" here means we've actually heard back from Frappe - via a
-// health-check ping or any successful sync (a drainQueue upload counts too, cheaper than a redundant ping).
+// health-check ping or another successful server request.
 export type ConnectivityState = "unknown" | "checking" | "reachable" | "unreachable";
 
 type ConnectivityStore = {
@@ -15,7 +15,7 @@ type ConnectivityStore = {
 
 export const useConnectivityStore = create<ConnectivityStore>((set, get) => ({
 	state: "unknown",
-	// Call this whenever a sync succeeds - a successful upload is stronger proof than a ping.
+	// A successful application request is stronger proof of reachability than a separate ping.
 	reportReachable: () => set({ state: "reachable" }),
 	checkReachability: async () => {
 		set({ state: "checking" });
@@ -29,16 +29,14 @@ export const useConnectivityStore = create<ConnectivityStore>((set, get) => ({
 	},
 }));
 
-// Vanilla, non-React entry points - getState()/setState()/subscribe() need no
-// component mounted, so plain modules (syncEngine.ts, called from timers, other
-// tabs, or a plain click handler) can call these directly, never the hook itself.
+// Vanilla, non-React entry points let bootstrap timers and event handlers use the
+// connectivity state without requiring a mounted React component.
 export const getConnectivityState = (): ConnectivityState => useConnectivityStore.getState().state;
 export const reportReachable = (): void => useConnectivityStore.getState().reportReachable();
 export const checkReachability = (): Promise<ConnectivityState> =>
 	useConnectivityStore.getState().checkReachability();
 
-// Back-compat adapter for the old connectivity.ts's (state) => void subscription
-// signature - useOfflineSync.ts still uses this until its own migration phase.
+// Subscription adapter used by the bootstrap refresh and connectivity monitor.
 export function onConnectivityChange(listener: (state: ConnectivityState) => void): () => void {
 	return useConnectivityStore.subscribe((s) => listener(s.state));
 }

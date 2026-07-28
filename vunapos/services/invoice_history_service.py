@@ -79,8 +79,6 @@ def get_invoice_history(
 		"vunapos_session_cashier",
 		"vunapos_closing_entry",
 	]
-	if frappe.get_meta(doctype).has_field("vunapos_invoice_number_offline"):
-		fields.append("vunapos_invoice_number_offline as local_ref")
 	rows = frappe.get_list(
 		doctype,
 		filters=filters,
@@ -194,7 +192,6 @@ def get_invoice_details(pos_profile=None, invoice_name=None):
 			"opening_entry": doc.get("vunapos_opening_entry"),
 			"cashier": doc.get("vunapos_session_cashier"),
 			"closing_entry": doc.get("vunapos_closing_entry"),
-			"local_ref": doc.get("vunapos_invoice_number_offline"),
 			"returns": returns,
 			"payment_entries": payment_entries,
 		}

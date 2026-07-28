@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
-import { useLiveQuery } from "dexie-react-hooks";
 
 import type { CustomerDTO } from "../types";
 import { createCustomer, vunaMethods } from "../../../services/vunaApi";
 import { customerRepository } from "../../../lib/repositories/customerRepository";
+import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
-// Search is local (Dexie), never network. Creating a customer still requires
-// connectivity - master data is server-authoritative and there's no offline
-// create/reconcile flow yet, so offline sales fall back to the default walk-in customer.
+// Search the current server-hydrated in-memory customer snapshot. Creating a customer
+// remains server-authoritative and requires connectivity.
 export function useCustomerSearch(query: string) {
 	const createCall = useFrappePostCall(vunaMethods.createCustomer);
 	const [isCreating, setIsCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
 	const [createdCustomers, setCreatedCustomers] = useState<CustomerDTO[]>([]);
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
+	const [cachedCustomers, setCachedCustomers] = useState<CustomerDTO[]>();
+	const revision = useRuntimeCacheStore((state) => state.revision);
 
 	useEffect(() => {
 		const timeout = window.setTimeout(() => {
@@ -24,7 +25,9 @@ export function useCustomerSearch(query: string) {
 		return () => window.clearTimeout(timeout);
 	}, [query]);
 
-	const cachedCustomers = useLiveQuery(() => customerRepository.search(debouncedQuery, 20), [debouncedQuery]);
+	useEffect(() => {
+		void customerRepository.search(debouncedQuery, 20).then((rows) => setCachedCustomers(rows as CustomerDTO[]));
+	}, [debouncedQuery, revision]);
 
 	const customers = useMemo(() => {
 		const merged = [...createdCustomers];

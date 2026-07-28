@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "../../../../lib/db";
-import { makeHoldEntry, makeInvoiceEntry } from "../../../../lib/__tests__/fixtures/queueEntries";
 import { META_KEYS } from "../../../../lib/repositories/metaRepository";
-import { queueRepository } from "../../../../lib/repositories/queueRepository";
-import * as syncEngine from "../../../../lib/syncEngine";
 import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO } from "../../types";
 import { getActiveCustomer, useCartStore, type CartApi } from "../cartStore";
 
@@ -18,6 +15,8 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 		removeItem: reject,
 		clearInvoice: reject,
 		createInvoiceFromCart: reject,
+		previewInvoice: reject,
+		createAndSubmitInvoice: reject,
 		checkoutInvoice: reject,
 		holdInvoice: reject,
 		listHeldInvoices: reject,
@@ -43,12 +42,9 @@ const CUSTOMER: CustomerDTO = { customer: "CUST-1", customer_name: "Test Custome
 beforeEach(async () => {
 	await Promise.all([
 		db.items.clear(),
-		db.batchInventory.clear(),
 		db.taxTemplates.clear(),
 		db.itemTaxTemplates.clear(),
 		db.profile.clear(),
-		db.queue.clear(),
-		db.mappings.clear(),
 		db.meta.clear(),
 	]);
 	await db.profile.put({ name: "Profile-1" });
@@ -65,7 +61,6 @@ beforeEach(async () => {
 			verified_at: new Date().toISOString(),
 		},
 	});
-	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 	useCartStore.setState({
 		invoice: null,
 		heldInvoices: [],
@@ -75,20 +70,6 @@ beforeEach(async () => {
 		posProfile: "Profile-1",
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
-	});
-});
-
-describe("restoreFailedSale", () => {
-	it("restores a delayed rejected sale to the cart and removes its queue entry", async () => {
-		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, modified: "2026-07-10" });
-		await queueRepository.append(makeInvoiceEntry({ local_id: "failed-sale", status: "error" }));
-
-		const restored = await useCartStore.getState().restoreFailedSale("failed-sale");
-
-		expect(restored.items).toHaveLength(1);
-		expect(restored.items[0].item_code).toBe("ITEM-1");
-		expect(useCartStore.getState().invoice?.is_local).toBe(true);
-		expect(await queueRepository.getByLocalId("failed-sale")).toBeUndefined();
 	});
 });
 
@@ -298,13 +279,12 @@ describe("submitCart", () => {
 	it("returns null when there is no active cart", async () => {
 		useCartStore.setState({ invoice: null });
 
-		const result = await useCartStore.getState().submitCart([], null, "idem-1", makeApi());
+		const result = await useCartStore.getState().submitCart([], null, "idem-1", makeApi(), true);
 
 		expect(result).toBeNull();
 	});
 
-	it("persists a manual multi-batch allocation in the offline queue payload", async () => {
-		vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
+	it("sends manual multi-batch allocations directly to the server", async () => {
 		const row = useCartStore.getState().invoice?.items[0];
 		expect(row).toBeDefined();
 		await useCartStore.getState().updateCartItemBatchAllocations(
@@ -316,12 +296,20 @@ describe("submitCart", () => {
 			makeApi(),
 		);
 
-		await useCartStore
-			.getState()
-			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-batches", makeApi());
+		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice", name: "SINV-1", docstatus: 1, items: [], totals: {},
+		});
+		await useCartStore.getState().submitCart(
+			[{ mode_of_payment: "Cash", amount: 100 }], null, "idem-batches",
+			makeApi({
+				getItemDetails: vi.fn().mockResolvedValue(makeItem()),
+				createAndSubmitInvoice,
+				renderInvoice: vi.fn().mockRejectedValue(new Error("no print")),
+			}), true,
+		);
 
-		const [queued] = await db.queue.toArray();
-		expect(queued.payload.items[0].batch_allocations).toEqual([
+		const submittedItems = JSON.parse(createAndSubmitInvoice.mock.calls[0][0].items);
+		expect(submittedItems[0].batch_allocations).toEqual([
 			{ batch_no: "BATCH-A", qty: 0.4 },
 			{ batch_no: "BATCH-B", qty: 0.6 },
 		]);
@@ -338,11 +326,10 @@ describe("submitCart", () => {
 		).rejects.toThrow(/must equal the quantity/);
 	});
 
-	it("settles succeeded within the race window: renders the server receipt and clears the cart", async () => {
-		vi.spyOn(syncEngine, "drainQueue").mockImplementation(async () => {
-			const [entry] = await db.queue.toArray();
-			await queueRepository.markSucceeded(entry.local_id, { at: "t", outcome: "success" }, "ACC-SINV-0001");
-			return { processed: 1, parked: [], stoppedReason: "empty" };
+	it("submits directly with the checkout idempotency key and clears the cart", async () => {
+		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, actual_qty: 5, modified: "2026-07-10" });
+		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice", name: "ACC-SINV-0001", docstatus: 1, items: [], totals: {},
 		});
 		const renderInvoice = vi.fn().mockResolvedValue({
 			invoice_doctype: "Sales Invoice",
@@ -353,38 +340,40 @@ describe("submitCart", () => {
 
 		const result = await useCartStore
 			.getState()
-			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi({ renderInvoice }));
+			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi({
+				getItemDetails: vi.fn().mockResolvedValue(makeItem({ actual_qty: 4 })), createAndSubmitInvoice, renderInvoice,
+			}), true);
 
 		expect(result?.invoice.name).toBe("ACC-SINV-0001");
 		expect(result?.invoice.docstatus).toBe(1);
 		expect(result?.printPayload?.html).toContain("receipt");
 		expect(useCartStore.getState().invoice).toBeNull();
+		expect((await db.items.get("ITEM-1"))?.actual_qty).toBe(4);
+		expect(createAndSubmitInvoice).toHaveBeenCalledWith(expect.objectContaining({ idempotency_key: "idem-1" }));
 	});
 
-	it("settles error within the race window: throws and preserves the cart for the cashier", async () => {
-		vi.spyOn(syncEngine, "drainQueue").mockImplementation(async () => {
-			const [entry] = await db.queue.toArray();
-			await queueRepository.markError(entry.local_id, {
-				at: "t",
-				outcome: "totals_variance",
-				detail: "Totals do not match",
-			});
-			return { processed: 0, parked: [entry.local_id], stoppedReason: "empty" };
-		});
-
+	it("preserves the cart when direct server submission fails", async () => {
 		await expect(
-			useCartStore.getState().submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi()),
+			useCartStore.getState().submitCart(
+				[{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1",
+				makeApi({
+					getItemDetails: vi.fn().mockResolvedValue(makeItem()),
+					createAndSubmitInvoice: vi.fn().mockRejectedValue(new Error("Totals do not match")),
+				}), true,
+			),
 		).rejects.toThrow(/Totals do not match/);
-
-		// The just-hardened branch: a permanently rejected sale must not silently
-		// complete as if queued - the cart stays so the cashier can see/fix it, while
-		// the immediately rejected attempt is removed instead of becoming a blocked invoice.
 		expect(useCartStore.getState().invoice).not.toBeNull();
 		expect(useCartStore.getState().error).toMatch(/Totals do not match/);
-		expect(await db.queue.count()).toBe(0);
 	});
 
-	it("refreshes stock before online checkout and does not queue a rejected sale", async () => {
+	it("rejects checkout while offline and preserves the cart", async () => {
+		await expect(useCartStore.getState().submitCart(
+			[{ mode_of_payment: "Cash", amount: 100 }], null, "idem-offline", makeApi(), false,
+		)).rejects.toThrow(/online-only/);
+		expect(useCartStore.getState().invoice).not.toBeNull();
+	});
+
+	it("refreshes stock before online checkout and preserves a rejected sale", async () => {
 		const getItemDetails = vi.fn().mockResolvedValue(
 			makeItem({ is_stock_item: 1, actual_qty: 0, allow_negative_stock: 0 }),
 		);
@@ -411,26 +400,10 @@ describe("submitCart", () => {
 			pos_profile: "Profile-1",
 			customer: "CUST-1",
 		});
-		expect(await db.queue.count()).toBe(0);
 		expect(useCartStore.getState().invoice).not.toBeNull();
 	});
 
-	it("falls back to a local receipt when the race times out still pending (offline/slow)", async () => {
-		// drainQueue resolves without ever touching this entry's status - identical,
-		// from submitCart's point of view, to genuinely losing the settlement race.
-		vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
-
-		const result = await useCartStore
-			.getState()
-			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi());
-
-		expect(result?.invoice.docstatus).toBe(1);
-		expect(result?.invoice.name).toMatch(/^POS-/);
-		expect(result?.printPayload?.html).toContain("<html");
-		expect(useCartStore.getState().invoice).toBeNull();
-	});
-
-	it("checks out a held/source-tracked invoice via the server (not the local queue)", async () => {
+	it("checks out a held/source-tracked invoice through the server", async () => {
 		useCartStore.setState({
 			invoice: {
 				doctype: "Sales Invoice",
@@ -452,12 +425,71 @@ describe("submitCart", () => {
 
 		const result = await useCartStore
 			.getState()
-			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi({ checkoutInvoice, renderInvoice }));
+			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi({ checkoutInvoice, renderInvoice }), true);
 
 		// Render failure on this path is non-fatal - the sale already succeeded server-side.
 		expect(result?.invoice.docstatus).toBe(1);
 		expect(result?.printPayload).toBeNull();
 		expect(useCartStore.getState().invoice).toBeNull();
+	});
+});
+
+describe("validateCart", () => {
+	it("replaces local totals with the server preview before checkout", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			customer: "CUST-1",
+			items: [{ row_name: "server-row", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 125, amount: 125 }],
+			taxes: [],
+			totals: { net_total: 125, total_taxes_and_charges: 0, grand_total: 125, rounded_total: 125 },
+		});
+
+		const validated = await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(validated?.items[0].rate).toBe(125);
+		expect(validated?.totals.grand_total).toBe(125);
+		expect(useCartStore.getState().invoice?.totals.grand_total).toBe(125);
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			pos_profile: "Profile-1",
+			customer: "CUST-1",
+		}));
+	});
+
+	it("validates a restored hold using its original server doctype", async () => {
+		useCartStore.setState({
+			invoice: {
+				doctype: "VunaPOS Cart",
+				name: "SINV-HELD-1",
+				docstatus: 0,
+				is_local: true,
+				source_invoice_doctype: "Sales Invoice",
+				source_invoice_name: "SINV-HELD-1",
+				items: [{ row_name: "row-1", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 100, amount: 100 }],
+				totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+			},
+		});
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			items: [{ row_name: "server-row", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 100, amount: 100 }],
+			taxes: [],
+			totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+		});
+
+		await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({ invoice_doctype: "Sales Invoice" }));
+		expect(useCartStore.getState().invoice).toMatchObject({
+			doctype: "Sales Invoice",
+			is_local: true,
+			source_invoice_doctype: "Sales Invoice",
+			source_invoice_name: "SINV-HELD-1",
+		});
 	});
 });
 
@@ -470,60 +502,69 @@ describe("holdCart", () => {
 		expect(result).toBeNull();
 	});
 
-	describe("brand-new local cart (queued, offline-capable)", () => {
+	describe("brand-new local cart", () => {
 		beforeEach(async () => {
 			await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, modified: "2026-07-10" });
 			useCartStore.setState({ defaultCustomer: CUSTOMER });
 			await useCartStore.getState().addCartItem(makeItem(), makeApi());
 		});
 
-		it("settles succeeded within the race window: returns the synced held invoice", async () => {
-			vi.spyOn(syncEngine, "drainQueue").mockImplementation(async () => {
-				const [entry] = await db.queue.toArray();
-				await queueRepository.markSucceeded(entry.local_id, { at: "t", outcome: "success" }, "ACC-SINV-HELD-1");
-				return { processed: 1, parked: [], stoppedReason: "empty" };
-			});
-
-			const result = await useCartStore.getState().holdCart(makeApi());
-
+		it("creates and holds a server draft directly", async () => {
+			const draft = { doctype: "Sales Invoice", name: "ACC-SINV-DRAFT-1", docstatus: 0, items: [], totals: {} };
+			const held = { ...draft, name: "ACC-SINV-HELD-1" };
+			const createInvoiceFromCart = vi.fn().mockResolvedValue(draft);
+			const holdInvoice = vi.fn().mockResolvedValue(held);
+			const listHeldInvoices = vi.fn().mockResolvedValue([]);
+			const result = await useCartStore.getState().holdCart(makeApi({ createInvoiceFromCart, holdInvoice, listHeldInvoices }));
 			expect(result?.name).toBe("ACC-SINV-HELD-1");
 			expect(result?.docstatus).toBe(0);
-			expect(result?.is_local).toBe(true);
 			expect(useCartStore.getState().invoice).toBeNull();
+			expect(createInvoiceFromCart).toHaveBeenCalledOnce();
+			expect(holdInvoice).toHaveBeenCalledOnce();
 		});
 
-		it("settles error within the race window: throws and preserves the cart", async () => {
-			vi.spyOn(syncEngine, "drainQueue").mockImplementation(async () => {
-				const [entry] = await db.queue.toArray();
-				await queueRepository.markError(entry.local_id, {
-					at: "t",
-					outcome: "totals_variance",
-					detail: "Totals do not match",
-				});
-				return { processed: 0, parked: [entry.local_id], stoppedReason: "empty" };
-			});
-
-			await expect(useCartStore.getState().holdCart(makeApi())).rejects.toThrow(/Totals do not match/);
+		it("preserves the cart when server draft creation fails", async () => {
+			await expect(useCartStore.getState().holdCart(makeApi({
+				createInvoiceFromCart: vi.fn().mockRejectedValue(new Error("Server unavailable")),
+			}))).rejects.toThrow(/Server unavailable/);
 			expect(useCartStore.getState().invoice).not.toBeNull();
 		});
 
-		it("falls back to a provisional held invoice when the race times out still pending (offline/slow)", async () => {
-			vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
+		it("holds a combined batch-and-serial item immediately after serial selection", async () => {
+			const invoice = useCartStore.getState().invoice!;
+			const serialItem = {
+				...invoice.items[0],
+				item_code: "SERIAL-BATCH-1",
+				item_name: "Batched and Serialed 1",
+				has_batch_no: 1,
+				has_serial_no: 1,
+				actual_qty: 1,
+			};
+			useCartStore.setState({ invoice: { ...invoice, items: [serialItem] } });
+			const serial = { serial_no: "SERIAL-0001", batch_no: "BATCH-0001" };
 
-			const result = await useCartStore.getState().holdCart(makeApi());
+			const saving = useCartStore.getState().updateCartItemSerialAllocations(
+				serialItem.row_name,
+				[serial],
+				makeApi(),
+			);
+			const draft = { doctype: "Sales Invoice", name: "ACC-SINV-DRAFT-1", docstatus: 0, items: [], totals: {} };
+			const held = { ...draft, name: "ACC-SINV-HELD-1", is_held: true };
+			const createInvoiceFromCart = vi.fn().mockResolvedValue(draft);
+			const holdInvoice = vi.fn().mockResolvedValue(held);
+			const listHeldInvoices = vi.fn().mockResolvedValue([]);
 
-			expect(result?.docstatus).toBe(0);
-			expect(result?.is_local).toBe(true);
-			expect(result?.name).toMatch(/^POS-/);
+			const result = await useCartStore.getState().holdCart(makeApi({
+				createInvoiceFromCart,
+				holdInvoice,
+				listHeldInvoices,
+			}));
+			await saving;
+
+			const payload = createInvoiceFromCart.mock.calls[0][0] as { items: string };
+			expect(JSON.parse(payload.items)[0].serial_allocations).toEqual([serial]);
+			expect(result?.name).toBe("ACC-SINV-HELD-1");
 			expect(useCartStore.getState().invoice).toBeNull();
-		});
-
-		it("never calls listHeldInvoices for this branch (would throw offline even though the hold itself succeeded)", async () => {
-			vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
-			const listHeldInvoices = vi.fn().mockRejectedValue(new Error("offline"));
-
-			await expect(useCartStore.getState().holdCart(makeApi({ listHeldInvoices }))).resolves.not.toBeNull();
-			expect(listHeldInvoices).not.toHaveBeenCalled();
 		});
 	});
 
@@ -613,89 +654,5 @@ describe("restoreHeldInvoice", () => {
 		expect(invoice?.totals.total_taxes_and_charges).toBeCloseTo(192, 2);
 		expect(invoice?.totals.grand_total).toBeCloseTo(1392, 2);
 		expect(invoice?.taxes?.[0]?.account_head).toBe("VAT - TC");
-	});
-});
-
-describe("restoreLocalHold", () => {
-	beforeEach(async () => {
-		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, modified: "2026-07-10" });
-		await db.customers.clear();
-		await db.customers.put({ customer: "CUST-1", customer_name: "Test Customer", modified: "2026-07-10" });
-	});
-
-	it("rebuilds the cart from a queued hold's items/customer using current cached data", async () => {
-		await queueRepository.append(
-			makeHoldEntry({
-				local_id: "hold-1",
-				payload: {
-					items: [{ item_code: "ITEM-1", qty: 3 }],
-					customer: "CUST-1",
-					local_ref: "POS-TEST-HOLD-00001",
-				},
-			}),
-		);
-
-		const result = await useCartStore.getState().restoreLocalHold("hold-1", makeApi());
-
-		expect(result.is_local).toBe(true);
-		expect(result.items).toHaveLength(1);
-		expect(result.items[0].qty).toBe(3);
-		expect(result.items[0].rate).toBe(100);
-		// No source invoice - re-holding/checking out goes back through the local
-		// queue, not syncLocalCartToSource (there is no server doc to attach to).
-		expect(result.source_invoice_doctype).toBeUndefined();
-		expect(result.source_invoice_name).toBeUndefined();
-		// Customer survives the round trip.
-		expect(useCartStore.getState().selectedCustomerOverride?.customer).toBe("CUST-1");
-		expect(result.customer).toBe("CUST-1");
-		expect(useCartStore.getState().invoice).toEqual(result);
-	});
-
-	it("deletes the queue entry so it can't be restored twice", async () => {
-		await queueRepository.append(makeHoldEntry({ local_id: "hold-2" }));
-
-		await useCartStore.getState().restoreLocalHold("hold-2", makeApi());
-
-		expect(await queueRepository.getByLocalId("hold-2")).toBeUndefined();
-	});
-
-	it("works from status: error, not just pending - a parked local hold is still just local data", async () => {
-		await queueRepository.append(makeHoldEntry({ local_id: "hold-3", status: "error" }));
-
-		const result = await useCartStore.getState().restoreLocalHold("hold-3", makeApi());
-
-		expect(result.is_local).toBe(true);
-		expect(await queueRepository.getByLocalId("hold-3")).toBeUndefined();
-	});
-
-	it("throws for a local_id that no longer exists in the queue", async () => {
-		await expect(useCartStore.getState().restoreLocalHold("never-existed", makeApi())).rejects.toThrow(
-			/no longer available/,
-		);
-	});
-
-	it("throws for a queue entry that isn't a hold (defends against a mismatched local_id)", async () => {
-		await queueRepository.append(
-			makeInvoiceEntry({ local_id: "sale-not-a-hold" }),
-		);
-
-		await expect(useCartStore.getState().restoreLocalHold("sale-not-a-hold", makeApi())).rejects.toThrow(
-			/no longer available/,
-		);
-	});
-
-	it("keeps the queue entry when item resolution fails - the local hold must not be silently lost", async () => {
-		await queueRepository.append(
-			makeHoldEntry({
-				local_id: "hold-4",
-				payload: { items: [{ item_code: "NOT-CACHED", qty: 1 }], local_ref: "POS-TEST-HOLD-00001" },
-			}),
-		);
-
-		await expect(useCartStore.getState().restoreLocalHold("hold-4", makeApi())).rejects.toThrow(
-			/no longer available locally/,
-		);
-
-		expect(await queueRepository.getByLocalId("hold-4")).toBeDefined();
 	});
 });

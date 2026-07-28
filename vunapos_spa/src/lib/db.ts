@@ -1,56 +1,42 @@
-import Dexie, { type EntityTable } from "dexie";
-
 import type {
 	CachedCustomer,
-	CachedBatchInventory,
 	CachedItem,
 	CachedItemTaxTemplate,
 	CachedPaymentMode,
 	CachedProfile,
 	CachedTaxTemplate,
 	MetaRow,
-	QueueEntry,
-	QueueMapping,
 } from "./types";
 
-// Dexie schema v1. Index lists only fields we actually query/filter by -
-// see the source-of-truth table in the spec (§5/§6) for why each table exists.
-export const db = new Dexie("vunapos") as Dexie & {
-	items: EntityTable<CachedItem, "item_code">;
-	batchInventory: EntityTable<CachedBatchInventory, "key">;
-	customers: EntityTable<CachedCustomer, "customer">;
-	taxTemplates: EntityTable<CachedTaxTemplate, "name">;
-	itemTaxTemplates: EntityTable<CachedItemTaxTemplate, "name">;
-	paymentModes: EntityTable<CachedPaymentMode, "mode_of_payment">;
-	profile: EntityTable<CachedProfile, "name">;
-	meta: EntityTable<MetaRow, "key">;
-	queue: EntityTable<QueueEntry, "local_id">;
-	mappings: EntityTable<QueueMapping, "local_id">;
+type Key = string;
+
+class MemoryTable<T> {
+	private rows = new Map<Key, T>();
+	private readonly keyOf: (row: T) => Key;
+
+	constructor(keyOf: (row: T) => Key) {
+		this.keyOf = keyOf;
+	}
+
+	async clear() { this.rows.clear(); }
+	async count() { return this.rows.size; }
+	async toArray() { return [...this.rows.values()]; }
+	async get(key: Key) { return this.rows.get(key); }
+	async put(row: T) { this.rows.set(this.keyOf(row), row); return this.keyOf(row); }
+	async bulkPut(rows: T[]) { for (const row of rows) this.rows.set(this.keyOf(row), row); }
+	async bulkDelete(keys: Key[]) { for (const key of keys) this.rows.delete(key); }
+}
+
+// Process-local read cache only. A reload starts empty and must hydrate from the server.
+export const db = {
+	items: new MemoryTable<CachedItem>((row) => row.item_code),
+	customers: new MemoryTable<CachedCustomer>((row) => row.customer),
+	taxTemplates: new MemoryTable<CachedTaxTemplate>((row) => row.name),
+	itemTaxTemplates: new MemoryTable<CachedItemTaxTemplate>((row) => row.name),
+	paymentModes: new MemoryTable<CachedPaymentMode>((row) => row.mode_of_payment),
+	profile: new MemoryTable<CachedProfile>((row) => row.name),
+	meta: new MemoryTable<MetaRow>((row) => row.key),
 };
-
-db.version(1).stores({
-	items: "item_code, item_name, barcode, modified",
-	customers: "customer, customer_name, mobile_no, customer_group, modified",
-	taxTemplates: "name, modified",
-	paymentModes: "mode_of_payment",
-	profile: "name",
-	meta: "key",
-	queue: "local_id, idempotency_key, status, next_retry_at, created_at, group",
-	mappings: "local_id, server_name",
-});
-
-// v2 (N9): item-level tax templates, synced alongside the existing profile-level
-// Sales Taxes and Charges Template - see invoiceEngine.ts for why both exist.
-db.version(2).stores({
-	itemTaxTemplates: "name, modified",
-});
-
-// v3: batch availability is cached on demand per profile/warehouse/item. It is
-// deliberately separate from the master Item snapshot because batch stock changes
-// much more frequently and can be absent without making the item catalog unusable.
-db.version(3).stores({
-	batchInventory: "key, pos_profile, warehouse, item_code, verified_at",
-});
 
 export const MASTER_DATA_TABLES = [
 	db.items,

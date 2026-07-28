@@ -2,6 +2,7 @@ import math
 
 import frappe
 from erpnext.stock.doctype.batch.batch import get_batch_qty
+from erpnext.stock.doctype.serial_no.serial_no import get_serial_nos_for_outward
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
 	get_sre_reserved_serial_nos_details,
 )
@@ -209,6 +210,60 @@ def validate_serial_allocation(item_code, qty, allocations, warehouse=None):
 			)
 		allocation["batch_no"] = batch_no
 	return allocations
+
+
+def auto_allocate_serials(item_code, qty, warehouse=None):
+	warehouse = _resolve_warehouse(warehouse=warehouse)
+	try:
+		required = int(qty)
+	except (OverflowError, TypeError, ValueError):
+		required = -1
+	if required <= 0 or flt(qty) != required:
+		_throw("INVALID_SERIAL_QUANTITY", _("Serial-numbered item quantity must be a whole number."))
+	if not frappe.get_single_value("Stock Settings", "auto_create_serial_and_batch_bundle_for_outward"):
+		_throw(
+			"SERIAL_SELECTION_REQUIRED",
+			_(
+				"Select {0} serial numbers for item {1} because automatic outward bundle creation is disabled."
+			).format(required, item_code),
+		)
+
+	flags = get_item_tracking_flags(item_code)
+	serial_nos = get_serial_nos_for_outward(
+		frappe._dict(
+			{
+				"item_code": item_code,
+				"warehouse": warehouse,
+				"qty": required,
+				"has_batch_no": flags["requires_batch"],
+				"based_on": frappe.get_single_value("Stock Settings", "pick_serial_and_batch_based_on")
+				or "FIFO",
+			}
+		)
+	)
+	if len(serial_nos) != required:
+		_throw(
+			"SERIAL_QUANTITY_MISMATCH",
+			_("Only {0} serial numbers are available for item {1}; {2} are required.").format(
+				len(serial_nos), item_code, required
+			),
+			{"available_qty": len(serial_nos), "requested_qty": required},
+		)
+
+	batch_by_serial = dict(
+		frappe.get_all(
+			"Serial No",
+			filters={"name": ["in", serial_nos]},
+			fields=["name", "batch_no"],
+			as_list=True,
+		)
+	)
+	return validate_serial_allocation(
+		item_code,
+		required,
+		[{"serial_no": serial_no, "batch_no": batch_by_serial.get(serial_no)} for serial_no in serial_nos],
+		warehouse=warehouse,
+	)
 
 
 def allocate_batches(item_code, qty, warehouse=None, pos_profile=None, strategy="FEFO"):

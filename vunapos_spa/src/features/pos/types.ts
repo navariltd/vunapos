@@ -182,7 +182,6 @@ export type ItemBatchesDTO = {
 	batches: ItemBatchDTO[];
 	serials?: SerialAllocationDTO[];
 	verified_at?: string;
-	from_cache?: boolean;
 };
 
 export type BatchAllocationResultDTO = {
@@ -277,10 +276,6 @@ export type HeldInvoiceDTO = {
 	rounded_total?: number;
 	total?: number;
 	currency?: string;
-	/** Set for a hold that only exists in this device's local queue (not yet synced to ERPNext). */
-	is_local?: boolean;
-	local_id?: string;
-	queue_status?: "pending" | "error";
 };
 
 export type PaymentInput = {

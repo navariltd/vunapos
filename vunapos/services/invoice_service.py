@@ -14,6 +14,7 @@ from frappe.utils import cstr, flt, get_datetime, now_datetime, nowdate
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
 from vunapos.services.batch_service import (
+	auto_allocate_serials,
 	get_item_batches,
 	get_item_tracking_flags,
 	validate_batch_allocation,
@@ -24,7 +25,6 @@ from vunapos.services.profile_service import (
 	get_invoice_mode,
 	require_open_pos_session,
 	resolve_pos_profile,
-	validate_historical_pos_session,
 )
 from vunapos.utils.permissions import require_create, require_read, require_write
 
@@ -32,7 +32,6 @@ SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
 HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
-LOCAL_REF_FIELD = "vunapos_invoice_number_offline"
 OPENING_ENTRY_FIELD = "vunapos_opening_entry"
 SESSION_CASHIER_FIELD = "vunapos_session_cashier"
 SESSION_VERIFIED_AT_FIELD = "vunapos_session_verified_at"
@@ -604,7 +603,13 @@ def _manual_batch_allocations(item_code, qty, warehouse, allocations):
 def _apply_batch_allocation(row, doc, profile, qty=None):
 	flags = get_item_tracking_flags(row.item_code)
 	if flags["requires_serial"]:
-		_throw("SERIAL_SELECTION_REQUIRED", _("Serial-numbered items require manual serial selection."))
+		serials = auto_allocate_serials(
+			row.item_code,
+			qty or flt(row.qty) * flt(row.get("conversion_factor") or 1),
+			warehouse=profile.warehouse or row.get("warehouse"),
+		)
+		_set_row_serial_allocations(row, serials)
+		return row
 	if not flags["requires_batch"]:
 		return row
 
@@ -763,8 +768,15 @@ def _append_cart_items(doc, profile, items):
 		_unused_uom, conversion_factor = _resolve_item_uom(item.get("item_code"), item.get("uom"))
 		stock_qty = flt(item.get("qty")) * conversion_factor
 		if flags["requires_serial"]:
-			serials = validate_serial_allocation(
-				item.get("item_code"), stock_qty, item.get("serial_allocations"), warehouse=profile.warehouse
+			serials = (
+				validate_serial_allocation(
+					item.get("item_code"),
+					stock_qty,
+					item.get("serial_allocations"),
+					warehouse=profile.warehouse,
+				)
+				if item.get("serial_allocations")
+				else auto_allocate_serials(item.get("item_code"), stock_qty, warehouse=profile.warehouse)
 			)
 			row = doc.append(
 				"items",
@@ -872,6 +884,7 @@ def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype
 		customer=customer,
 		invoice_doctype=invoice_doctype,
 	)
+	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
 	validate_cart_items(cart_items, profile)
 	_append_cart_items(doc, profile, cart_items)
@@ -1142,202 +1155,23 @@ def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
 		raise
 
 
-def create_and_submit_invoice(pos_profile=None, customer=None, items=None, payments=None):
+def create_and_submit_invoice(
+	pos_profile=None, customer=None, items=None, payments=None, idempotency_key=None
+):
+	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
+	if existing:
+		return invoice_to_dict(existing)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
 	try:
 		draft = create_invoice_from_cart(pos_profile=pos_profile, customer=customer, items=items)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		return checkout_invoice(doc.doctype, doc.name, payments=payments)
+		return checkout_invoice(
+			doc.doctype,
+			doc.name,
+			payments=payments,
+			idempotency_key=idempotency_key,
+		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise
-
-
-def _invoice_payload(payload):
-	if isinstance(payload, str):
-		payload = json.loads(payload or "{}")
-	return payload or {}
-
-
-TOTALS_VARIANCE_FIELDS = ("net_total", "total_taxes_and_charges", "grand_total", "rounded_total")
-
-
-def _verify_totals_or_park(doc, claimed_totals):
-	# Client amounts are facts: we never silently re-price a synced invoice.
-	# We only ever accept-as-is or park for a review so that we never adopt the client's numbers over
-	# our own computation, and never adjust the client's numbers underneath the till.
-	if not claimed_totals:
-		return
-	precision = _currency_precision(doc)
-	variances = {}
-	for fieldname in TOTALS_VARIANCE_FIELDS:
-		if claimed_totals.get(fieldname) is None:
-			continue
-		server_value = flt(_value_for_field(doc, fieldname), precision)
-		claimed_value = flt(claimed_totals.get(fieldname), precision)
-		if server_value != claimed_value:
-			variances[fieldname] = {"server": server_value, "device": claimed_value}
-	if variances:
-		_throw(
-			"TOTALS_VARIANCE",
-			_("Computed totals do not match the device's totals; this sale needs supervisor review."),
-			{"variances": variances},
-		)
-
-
-def _value_for_field(doc, fieldname):
-	return doc.get(fieldname)
-
-
-def create_pos_invoice(payload=None, idempotency_key=None, local_id=None):
-	if not idempotency_key:
-		_throw("IDEMPOTENCY_KEY_REQUIRED", _("An idempotency key is required"))
-	if not local_id:
-		_throw("LOCAL_ID_REQUIRED", _("A local_id is required"))
-
-	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
-	if existing:
-		return {"local_id": local_id, "invoice": existing.name, "status": "synced", "duplicate": True}
-
-	payload = _invoice_payload(payload)
-	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
-	require_create(invoice_doctype)
-	validated_session = validate_historical_pos_session(
-		pos_profile=payload.get("pos_profile"),
-		opening_entry=payload.get("opening_entry"),
-		cashier=payload.get("cashier"),
-		posting_date=payload.get("posting_date"),
-		posting_time=payload.get("posting_time"),
-		verified_at=payload.get("pos_session_verified_at"),
-	)
-
-	savepoint = "vunapos_sync_invoice"
-	frappe.db.savepoint(savepoint)
-	try:
-		doc, profile = _build_invoice_doc(
-			pos_profile=payload.get("pos_profile"),
-			customer=payload.get("customer"),
-			invoice_doctype=invoice_doctype,
-		)
-		cart_items = _cart_item_rows(payload.get("items"))
-		validate_cart_items(cart_items, profile)
-		_append_cart_items(doc, profile, cart_items)
-		_recalculate(doc)
-		validate_invoice_batch_allocations(doc)
-
-		# Verify totals before payments: checking payments first could mask a real price
-		# variance (e.g. a stale device-cached price list) as a confusing PAYMENT_TOTAL_MISMATCH.
-		_verify_totals_or_park(doc, payload.get("totals"))
-
-		payment_rows = validate_payment_rows(doc, payload.get("payments"), profile)
-		set_payment_rows(doc, payment_rows)
-
-		# Set after pricing/tax is resolved: pricing always uses "now", so a backdated
-		# posting_date must never feed back into it or it could re-price against expired Item Price validity.
-		if payload.get("posting_date"):
-			doc.posting_date = payload["posting_date"]
-		if payload.get("posting_time") and _has_field(doc.doctype, "posting_time"):
-			doc.posting_time = payload["posting_time"]
-
-		if hasattr(doc, "set_paid_amount"):
-			doc.set_paid_amount()
-		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
-		_set_if_has_field(doc, HELD_FIELD, 0)
-		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
-		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
-		_stamp_validated_session(doc, validated_session, payload.get("pos_session_verified_at"))
-		doc.flags.ignore_mandatory = False
-		doc.save()
-		_materialize_batch_bundles(doc)
-		doc.submit()
-	except frappe.UniqueValidationError:
-		# Two retries of the same queued sale raced each other; the unique index is the
-		# real guarantee here (I2), this branch just resolves the loser to the winner's doc.
-		frappe.db.rollback(save_point=savepoint)
-		existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
-		if existing:
-			return {"local_id": local_id, "invoice": existing.name, "status": "synced", "duplicate": True}
-		raise
-	except Exception:
-		frappe.db.rollback(save_point=savepoint)
-		raise
-
-	return {"local_id": local_id, "invoice": doc.name, "status": "synced", "duplicate": False}
-
-
-def _find_held_invoice_by_idempotency_key(idempotency_key):
-	if not idempotency_key:
-		return None
-
-	for doctype in SUPPORTED_INVOICE_DOCTYPES:
-		if not frappe.db.table_exists(doctype) or not _has_field(doctype, IDEMPOTENCY_FIELD):
-			continue
-		filters = {
-			"docstatus": 0,
-			HELD_FIELD: 1,
-			IDEMPOTENCY_FIELD: idempotency_key,
-		}
-		if _has_field(doctype, VUNAPOS_FIELD):
-			filters[VUNAPOS_FIELD] = 1
-		name = frappe.db.get_value(doctype, filters, "name")
-		if name:
-			require_read(doctype, name)
-			return frappe.get_doc(doctype, name)
-	return None
-
-
-def create_pos_hold(payload=None, idempotency_key=None, local_id=None):
-	# Same idempotency pattern as create_pos_invoice, keyed off the same unique index but
-	# docstatus:0/vunapos_held:1 here vs docstatus:1 there, so the two can never collide.
-	if not idempotency_key:
-		_throw("IDEMPOTENCY_KEY_REQUIRED", _("An idempotency key is required"))
-	if not local_id:
-		_throw("LOCAL_ID_REQUIRED", _("A local_id is required"))
-
-	existing = _find_held_invoice_by_idempotency_key(idempotency_key)
-	if existing:
-		return {"local_id": local_id, "invoice": existing.name, "status": "held", "duplicate": True}
-
-	payload = _invoice_payload(payload)
-	invoice_doctype = _resolve_invoice_doctype(payload.get("invoice_doctype"))
-	require_create(invoice_doctype)
-	validated_session = require_open_pos_session(payload.get("pos_profile"))
-
-	savepoint = "vunapos_sync_hold"
-	frappe.db.savepoint(savepoint)
-	try:
-		doc, profile = _build_invoice_doc(
-			pos_profile=payload.get("pos_profile"),
-			customer=payload.get("customer"),
-			invoice_doctype=invoice_doctype,
-		)
-		cart_items = _cart_item_rows(payload.get("items"))
-		validate_cart_items(cart_items, profile)
-		_append_cart_items(doc, profile, cart_items)
-		_recalculate(doc)
-		validate_invoice_batch_allocations(doc)
-
-		# Same reasoning as create_pos_invoice: verify totals before anything else that
-		# could mask a real price variance behind a more confusing error.
-		_verify_totals_or_park(doc, payload.get("totals"))
-
-		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
-		_set_if_has_field(doc, HELD_FIELD, 1)
-		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
-		_set_if_has_field(doc, LOCAL_REF_FIELD, payload.get("local_ref"))
-		_stamp_validated_session(doc, validated_session)
-		doc.flags.ignore_mandatory = False
-		doc.save()
-		_materialize_batch_bundles(doc)
-	except frappe.UniqueValidationError:
-		frappe.db.rollback(save_point=savepoint)
-		existing = _find_held_invoice_by_idempotency_key(idempotency_key)
-		if existing:
-			return {"local_id": local_id, "invoice": existing.name, "status": "held", "duplicate": True}
-		raise
-	except Exception:
-		frappe.db.rollback(save_point=savepoint)
-		raise
-
-	return {"local_id": local_id, "invoice": doc.name, "status": "held", "duplicate": False}
