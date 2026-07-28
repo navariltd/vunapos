@@ -11,7 +11,7 @@ type BootstrapSyncStore = {
 };
 
 // §10.1: Install -> Authenticate -> Bootstrap -> Verify -> Ready. Owned by
-// useOfflineSync.ts's bootstrap sequencing effect; BootstrapGate.tsx reads it to
+// useBootstrapSync.ts's bootstrap sequencing effect; BootstrapGate.tsx reads it to
 // decide whether to render the app, a loading screen, or the hard-block screen.
 export const useBootstrapSyncStore = create<BootstrapSyncStore>((set) => ({
 	phase: "hydrating",

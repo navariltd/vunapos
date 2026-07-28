@@ -1,22 +1,10 @@
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, get_datetime
+from frappe.utils import get_datetime
 
 from vunapos.dto.profile import profile_to_dict
 
 SUPPORTED_INVOICE_MODES = ("Sales Invoice", "POS Invoice")
-
-
-def get_offline_session_ttl_hours():
-	configured = cint(frappe.db.get_single_value("POS Settings", "vunapos_offline_session_ttl_hours"))
-	if configured > 0:
-		return configured
-
-	field = frappe.get_meta("POS Settings").get_field("vunapos_offline_session_ttl_hours")
-	default_value = cint(field.default) if field else 0
-	if default_value <= 0:
-		frappe.throw(_("VunaPOS Maximum Offline Session Age must be greater than zero"))
-	return default_value
 
 
 def _session_error(code, message, meta=None):
@@ -189,12 +177,6 @@ def validate_historical_pos_session(
 			"POS_SESSION_TIME_INVALID",
 			_("The queued sale predates POS Opening Entry {0}").format(opening_entry),
 		)
-	if sale_at > add_to_date(opened_at, hours=get_offline_session_ttl_hours()):
-		_session_error(
-			"POS_SESSION_CACHE_EXPIRED",
-			_("The cached POS session had expired before this offline sale was completed"),
-		)
-
 	closed_at = None
 	if entry.status == "Closed":
 		if entry.get("pos_closing_entry") and frappe.db.exists("POS Closing Entry", entry.pos_closing_entry):

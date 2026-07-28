@@ -1,5 +1,5 @@
 import { Button } from "../components/ui/Button";
-import { useOfflineSync } from "../features/pos/hooks/useOfflineSync";
+import { useBootstrapSync } from "../features/pos/hooks/useBootstrapSync";
 
 type BootstrapGateProps = {
 	children: React.ReactNode;
@@ -19,7 +19,7 @@ function getPosProfileIssue(code: string | null, message: string | null): "missi
 }
 
 export function BootstrapGate({ children }: BootstrapGateProps) {
-	const { phase, error, errorCode, retry } = useOfflineSync();
+	const { phase, error, errorCode, retry } = useBootstrapSync();
 
 	if (phase === "blocked") {
 		// Not a connectivity problem - a config problem the "try again" retry can't

@@ -62,7 +62,6 @@ beforeEach(async () => {
 			verified_at: new Date().toISOString(),
 		},
 	});
-	await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: 12 });
 	useCartStore.setState({
 		invoice: null,
 		heldInvoices: [],

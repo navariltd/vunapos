@@ -69,16 +69,6 @@ class TestVunaPOSPing(IntegrationTestCase):
 
 
 class TestVunaPOSBootstrap(IntegrationTestCase):
-	def test_bootstrap_honors_custom_offline_session_lifetime(self):
-		profile = ensure_test_pos_profile()
-		ensure_test_item()
-		frappe.db.set_single_value("POS Settings", "vunapos_offline_session_ttl_hours", 100)
-
-		response = get_pos_bootstrap(pos_profile=profile)
-
-		self.assertTrue(response["ok"], response)
-		self.assertEqual(response["data"]["offline_session_ttl_hours"], 100)
-
 	def test_full_bootstrap_returns_dependency_set(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -101,7 +91,6 @@ class TestVunaPOSBootstrap(IntegrationTestCase):
 		self.assertTrue(data["payment_modes"])
 		self.assertEqual(data["pos_session"]["cashier"], frappe.session.user)
 		self.assertEqual(data["pos_session"]["pos_profile"], profile)
-		self.assertGreater(data["offline_session_ttl_hours"], 0)
 		self.assertNotIn("deleted", data)
 
 	def test_bootstrap_reports_each_items_item_level_tax_template(self):
@@ -319,29 +308,6 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "POS_SESSION_CASHIER_MISMATCH")
 
-	def test_rejects_sale_created_after_cached_session_expired(self):
-		profile = ensure_test_pos_profile()
-		item_code = ensure_test_item()
-		set_invoice_mode("Sales Invoice")
-		payload = _payload_for(profile, item_code)
-		frappe.db.set_single_value("POS Settings", "vunapos_offline_session_ttl_hours", 12)
-		frappe.db.set_value(
-			"POS Opening Entry",
-			payload["opening_entry"],
-			"period_start_date",
-			add_to_date(now_datetime(), hours=-14),
-		)
-		payload["pos_session_verified_at"] = str(add_to_date(now_datetime(), hours=-13))
-
-		response = create_pos_invoice(
-			payload=json.dumps(payload),
-			idempotency_key=frappe.generate_hash(length=20),
-			local_id="expired-session",
-		)
-
-		self.assertFalse(response["ok"], response)
-		self.assertEqual(response["errors"][0]["code"], "POS_SESSION_CACHE_EXPIRED")
-
 	def test_requires_idempotency_key_and_local_id(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -391,7 +357,6 @@ class TestVunaPOSCreatePosInvoice(IntegrationTestCase):
 		item_code = ensure_test_item()
 		set_invoice_mode("Sales Invoice")
 		payload = _payload_for(profile, item_code)
-		frappe.db.set_single_value("POS Settings", "vunapos_offline_session_ttl_hours", 72)
 		device_date = add_to_date(now_datetime(), days=-2).strftime("%Y-%m-%d")
 		frappe.db.set_value(
 			"POS Opening Entry",

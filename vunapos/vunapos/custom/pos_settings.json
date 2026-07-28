@@ -16,7 +16,7 @@
    "creation": "2026-07-10 00:00:00.000000",
    "default": "1",
    "depends_on": null,
-   "description": "Bumped by a supervisor when the offline dependency set changes structurally, forcing every terminal to do a full re-hydration instead of a delta sync.",
+   "description": "Bumped when the POS catalogue dependency set changes structurally, forcing active terminals to refresh their complete in-memory snapshot.",
    "docstatus": 0,
    "dt": "POS Settings",
    "fetch_from": null,

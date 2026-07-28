@@ -22,7 +22,6 @@ function makeBootstrap(overrides: Partial<BootstrapPayload> = {}): BootstrapPayl
 			opened_at: "2026-07-10 07:00:00",
 			verified_at: "2026-07-10 08:00:00",
 		},
-		offline_session_ttl_hours: 12,
 		items: [{ item_code: "ITEM-1", item_name: "Item One", modified: "2026-07-10 08:00:00" }],
 		customers: [
 			{ customer: "CUST-1", customer_name: "Customer One", modified: "2026-07-10 08:00:00" },

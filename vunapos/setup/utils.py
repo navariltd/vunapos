@@ -55,18 +55,6 @@ def ensure_vunapos_custom_fields():
 					"read_only": 1,
 				},
 			],
-			"POS Settings": [
-				{
-					"fieldname": "vunapos_offline_session_ttl_hours",
-					"label": "VunaPOS Maximum Offline Session Age (Hours)",
-					"fieldtype": "Int",
-					"insert_after": "invoice_type",
-					"default": "12",
-					"non_negative": 1,
-					"reqd": 1,
-					"description": "Maximum time a device may sell offline after its POS Opening Entry started.",
-				},
-			],
 			"Sales Invoice": [
 				{
 					"fieldname": "vunapos_invoice",

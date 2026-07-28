@@ -38,7 +38,7 @@ export const checkReachability = (): Promise<ConnectivityState> =>
 	useConnectivityStore.getState().checkReachability();
 
 // Back-compat adapter for the old connectivity.ts's (state) => void subscription
-// signature - useOfflineSync.ts still uses this until its own migration phase.
+// signature used by the bootstrap refresh and connectivity monitor.
 export function onConnectivityChange(listener: (state: ConnectivityState) => void): () => void {
 	return useConnectivityStore.subscribe((s) => listener(s.state));
 }

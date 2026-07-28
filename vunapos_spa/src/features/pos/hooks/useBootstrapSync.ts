@@ -6,9 +6,9 @@ import { useBootstrapSyncStore } from "../../../lib/stores/bootstrapSyncStore";
 import { checkReachability, onConnectivityChange } from "../../../lib/stores/connectivityStore";
 import { VunaApiError } from "../../../services/vunaApi";
 
-// Hydrates the local read cache used for fast catalogue rendering. Transaction
-// synchronization no longer runs here: all sales and holds are server-owned.
-export function useOfflineSync() {
+// Hydrates the process-local read cache. Every browser load requires a successful
+// server bootstrap; background refreshes only keep the active application current.
+export function useBootstrapSync() {
 	const phase = useBootstrapSyncStore((s) => s.phase);
 	const error = useBootstrapSyncStore((s) => s.error);
 	const errorCode = useBootstrapSyncStore((s) => s.errorCode);
@@ -17,42 +17,26 @@ export function useOfflineSync() {
 
 	useEffect(() => {
 		let cancelled = false;
-
-		async function bootstrap() {
-			try {
-				await applyDelta();
-				if (!cancelled) {
-					setPhase("ready");
-				}
-			} catch (err) {
-				if (cancelled) {
-					return;
-				}
+		void applyDelta().then(
+			() => { if (!cancelled) setPhase("ready"); },
+			(err: unknown) => {
+				if (cancelled) return;
 				setError(
-					err instanceof Error ? err.message : "Failed to load offline data",
+					err instanceof Error ? err.message : "Failed to load VunaPOS data",
 					err instanceof VunaApiError ? err.code : null,
 				);
 				setPhase("blocked");
-			}
-		}
-
-		void bootstrap();
-		return () => {
-			cancelled = true;
-		};
+			},
+		);
+		return () => { cancelled = true; };
 	}, [setError, setPhase]);
 
 	useEffect(() => {
 		void checkReachability();
-
 		const unsubscribe = onConnectivityChange((state) => {
-			if (state === "reachable") {
-				void refreshInBackground();
-			}
+			if (state === "reachable") void refreshInBackground();
 		});
-
 		const refreshInterval = window.setInterval(() => void refreshInBackground(), DEFAULT_FRESHNESS_TTL_MS);
-
 		return () => {
 			unsubscribe();
 			window.clearInterval(refreshInterval);
@@ -62,12 +46,10 @@ export function useOfflineSync() {
 	return { phase, error, errorCode, retry: () => window.location.reload() };
 }
 
-// Background refreshes (periodic TTL tick, reconnect) must never throw unhandled -
-// a failed refresh just means the cache stays STALE until the next attempt.
 async function refreshInBackground(): Promise<void> {
 	try {
 		await applyDelta();
 	} catch (err) {
-		console.error("Background cache refresh failed", err);
+		console.error("Background catalogue refresh failed", err);
 	}
 }
