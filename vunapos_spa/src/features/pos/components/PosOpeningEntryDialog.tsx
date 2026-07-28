@@ -38,10 +38,8 @@ type PosOpeningEntryDialogProps = {
 // Ported from feat/pos-opening-entry-bootstrap-flow's PosOpenningEntryDialog.tsx.
 // Dropped: its own posProfileStore.ts/modesOfPaymentStore.ts (both called the raw
 // browser fetch API directly, bypassing this app's CSRF/response-envelope handling,
-// and both cached data this app's offline profile cache already has) and its
-// profile picker (a cashier
-// only ever has the one active offline-cached profile on this device, not a list to
-// choose from). Kept: the per-payment-mode opening balance form and the create flow,
+// and duplicated bootstrap data) and its profile picker (a cashier only has one
+// active assigned profile in this application). Kept: the per-payment-mode opening balance form and the create flow,
 // now going through useFrappePostCall like every other mutation in this app. No
 // cancel/dismiss - opening a session is a genuine requirement, not optional, same as
 // BootstrapGate's hard block has no bypass either.

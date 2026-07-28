@@ -9,11 +9,8 @@
 // inclusive concept, can vary per item/account). Both can be active at once; their
 // contributions to the same account simply add.
 //
-// KNOWN GAP: pricing comes from `priceResolver`, which today is the item's cached
-// bootstrap rate for the profile's *default* customer at last sync. Selecting a
-// different customer offline will not re-price against that customer's price list
-// (unlike the online flow's live search_items call) - the cached default-customer
-// rate is used regardless of selected customer.
+// Pricing starts from the current in-memory bootstrap rate. The server independently
+// resolves customer pricing and recalculates the invoice before checkout.
 
 export type CartLine = {
 	item_code: string;
@@ -232,7 +229,7 @@ export function assembleInvoice(input: {
 		if (row.charge_type && row.charge_type !== SUPPORTED_CHARGE_TYPE) {
 			throw new InvoiceEngineError(
 				`Unsupported tax charge type "${row.charge_type}" on account ${row.account_head ?? "?"} - ` +
-					`the offline Invoice Engine only implements "${SUPPORTED_CHARGE_TYPE}" (see N9/ADR-005: ` +
+					`the client Invoice Engine only implements "${SUPPORTED_CHARGE_TYPE}" (see N9/ADR-005: ` +
 					"scoped to this client's actual configuration, not a generic replica of ERPNext's tax engine).",
 			);
 		}

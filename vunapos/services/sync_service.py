@@ -10,8 +10,8 @@ from vunapos.services.profile_service import (
 	resolve_pos_profile,
 )
 
-# Doctypes the device replicates are read-only. Deleted records are reported
-# so the device can remove them from its local copy.
+# Catalogue doctypes included in incremental in-memory refreshes. Deleted records
+# are reported so active terminals can remove them from their current snapshot.
 SYNCED_DOCTYPES = ("Item", "Customer")
 CACHE_SCHEMA_REVISION = 5
 

@@ -27,7 +27,7 @@ def search_customers(query=None, limit=20, since=None):
 		]
 
 	# get_list applies Customer permission query conditions; get_all would leak rows
-	# into both online search and the device's offline cache.
+	# into both directory search and the active POS catalogue snapshot.
 	customers = frappe.get_list(
 		"Customer",
 		filters=filters,
