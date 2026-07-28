@@ -9,7 +9,7 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.utils import flt, get_datetime, now_datetime, nowdate
+from frappe.utils import cstr, flt, get_datetime, now_datetime, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
@@ -17,6 +17,7 @@ from vunapos.services.batch_service import (
 	get_item_batches,
 	get_item_tracking_flags,
 	validate_batch_allocation,
+	validate_serial_allocation,
 )
 from vunapos.services.item_service import get_priority_price_list
 from vunapos.services.profile_service import (
@@ -122,6 +123,7 @@ def _sync_invoice_item_pricing(doc, profile):
 			doc,
 			profile,
 			item_tax_template=row.get("item_tax_template"),
+			pricing_item={"uom": row.get("uom")},
 		)
 		for fieldname in (
 			"uom",
@@ -300,6 +302,17 @@ def _cart_item_rows(items):
 	return items or []
 
 
+def _resolve_item_uom(item_code, uom=None):
+	item = frappe.get_cached_doc("Item", item_code)
+	uom = uom or item.stock_uom
+	if uom == item.stock_uom:
+		return uom, 1.0
+	for row in item.get("uoms", []):
+		if row.uom == uom and flt(row.conversion_factor) > 0:
+			return uom, flt(row.conversion_factor)
+	_throw("INVALID_ITEM_UOM", _("UOM {0} is not configured for item {1}.").format(uom, item_code))
+
+
 def _get_cart_item_qtys(items):
 	item_qtys = {}
 	for item in _cart_item_rows(items):
@@ -309,7 +322,8 @@ def _get_cart_item_qtys(items):
 			frappe.throw(_("Item code is required"))
 		if qty <= 0:
 			frappe.throw(_("Quantity for item {0} must be greater than zero").format(item_code))
-		item_qtys[item_code] = item_qtys.get(item_code, 0) + qty
+		_unused_uom, conversion_factor = _resolve_item_uom(item_code, item.get("uom"))
+		item_qtys[item_code] = item_qtys.get(item_code, 0) + qty * conversion_factor
 	return item_qtys
 
 
@@ -399,6 +413,7 @@ def _apply_pricing_override(row, item, profile):
 
 
 def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_item=None):
+	uom, conversion_factor = _resolve_item_uom(item_code, (pricing_item or {}).get("uom"))
 	ctx = frappe._dict(
 		{
 			"doctype": doc.doctype,
@@ -414,6 +429,8 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 			"plc_conversion_rate": doc.get("plc_conversion_rate") or 1,
 			"warehouse": profile.warehouse,
 			"qty": flt(qty),
+			"uom": uom,
+			"conversion_factor": conversion_factor,
 			"is_pos": doc.get("is_pos"),
 			"update_stock": doc.get("update_stock"),
 		}
@@ -430,6 +447,8 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 		"against_pick_list": None,
 		"pick_list_item": None,
 	}
+	row["uom"] = uom
+	row["conversion_factor"] = conversion_factor
 	for fieldname in (
 		"item_name",
 		"description",
@@ -439,6 +458,7 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 		"item_tax_template",
 		"item_tax_rate",
 		"price_list_rate",
+		"pricing_rules",
 	):
 		if details.get(fieldname) is not None:
 			row[fieldname] = details.get(fieldname)
@@ -449,8 +469,43 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 	return _apply_pricing_override(row, pricing_item or {}, profile)
 
 
+def _apply_vunapos_item_metadata(row, item):
+	note = cstr(item.get("item_note") or "").strip()
+	if len(note) > 500:
+		_throw("ITEM_NOTE_TOO_LONG", _("Item notes cannot exceed 500 characters"))
+	if row.meta.has_field("vunapos_item_note"):
+		row.vunapos_item_note = note or None
+	override = _pricing_override(item)
+	if row.meta.has_field("vunapos_pricing_override"):
+		row.vunapos_pricing_override = (
+			_("{0}: {1}").format(override.get("type"), override.get("value")) if override else None
+		)
+	if row.meta.has_field("vunapos_pricing_override_by"):
+		row.vunapos_pricing_override_by = frappe.session.user if override else None
+	return row
+
+
 def _set_row_batch_allocations(row, allocations):
 	row._batch_allocations = allocations or []
+
+
+def _set_row_serial_allocations(row, allocations):
+	row._serial_allocations = allocations or []
+
+
+def _get_row_serial_allocations(row):
+	if getattr(row, "_serial_allocations", None):
+		return row._serial_allocations
+	if row.get("serial_and_batch_bundle") and frappe.db.exists(
+		"Serial and Batch Bundle", row.serial_and_batch_bundle
+	):
+		bundle = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+		return [
+			{"serial_no": entry.serial_no, "batch_no": entry.get("batch_no")}
+			for entry in bundle.get("entries", [])
+			if entry.get("serial_no")
+		]
+	return []
 
 
 def _get_row_batch_allocations(row):
@@ -569,7 +624,10 @@ def _apply_batch_allocation(row, doc, profile, qty=None):
 
 
 def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
-	if not allocations or len(allocations) <= 1 or not row.meta.has_field("serial_and_batch_bundle"):
+	serial_allocations = _get_row_serial_allocations(row)
+	if not row.meta.has_field("serial_and_batch_bundle") or (
+		not serial_allocations and (not allocations or len(allocations) <= 1)
+	):
 		return None
 	if row.get("serial_and_batch_bundle"):
 		bundle = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
@@ -579,20 +637,22 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 	bundle.item_code = row.item_code
 	bundle.warehouse = row.get("warehouse")
 	bundle.company = doc.company
-	bundle.has_batch_no = 1
-	bundle.has_serial_no = 0
+	bundle.has_batch_no = int(bool(allocations or any(entry.get("batch_no") for entry in serial_allocations)))
+	bundle.has_serial_no = int(bool(serial_allocations))
 	bundle.voucher_type = doc.doctype
 	bundle.voucher_no = doc.name
 	bundle.voucher_detail_no = row.name
 	bundle.type_of_transaction = "Outward"
 	bundle.posting_datetime = get_datetime(f"{doc.posting_date} {doc.get('posting_time') or '00:00:00'}")
 	bundle.set("entries", [])
-	for allocation in allocations:
+	entries = serial_allocations or allocations
+	for allocation in entries:
 		bundle.append(
 			"entries",
 			{
-				"batch_no": allocation["batch_no"],
-				"qty": -abs(flt(allocation["qty"])),
+				"serial_no": allocation.get("serial_no"),
+				"batch_no": allocation.get("batch_no"),
+				"qty": -1 if allocation.get("serial_no") else -abs(flt(allocation["qty"])),
 				"warehouse": row.get("warehouse"),
 			},
 		)
@@ -611,7 +671,7 @@ def _materialize_batch_bundles(doc):
 	changed = False
 	for row in doc.get("items", []):
 		allocations = _get_row_batch_allocations(row)
-		if len(allocations) > 1:
+		if len(allocations) > 1 or _get_row_serial_allocations(row):
 			_create_serial_and_batch_bundle_for_row(doc, row, allocations)
 			changed = True
 	if changed:
@@ -624,7 +684,13 @@ def validate_invoice_batch_allocations(doc):
 	for row in doc.get("items", []):
 		flags = get_item_tracking_flags(row.item_code)
 		if flags["requires_serial"]:
-			_throw("SERIAL_SELECTION_REQUIRED", _("Serial-numbered items require manual serial selection."))
+			validate_serial_allocation(
+				row.item_code,
+				flt(row.qty) * flt(row.get("conversion_factor") or 1),
+				_get_row_serial_allocations(row),
+				warehouse=row.get("warehouse"),
+			)
+			continue
 		if not flags["requires_batch"]:
 			continue
 		allocations = _get_row_batch_allocations(row)
@@ -694,17 +760,35 @@ def _append_cart_items(doc, profile, items):
 	reserved = _reserved_batch_qtys(doc)
 	for item in _cart_item_rows(items):
 		flags = get_item_tracking_flags(item.get("item_code"))
+		_unused_uom, conversion_factor = _resolve_item_uom(item.get("item_code"), item.get("uom"))
+		stock_qty = flt(item.get("qty")) * conversion_factor
 		if flags["requires_serial"]:
-			_throw("SERIAL_SELECTION_REQUIRED", _("Serial-numbered items require manual serial selection."))
+			serials = validate_serial_allocation(
+				item.get("item_code"), stock_qty, item.get("serial_allocations"), warehouse=profile.warehouse
+			)
+			row = doc.append(
+				"items",
+				_get_item_row(
+					item.get("item_code"),
+					item.get("qty"),
+					doc,
+					profile,
+					item_tax_template=item.get("item_tax_template"),
+					pricing_item=item,
+				),
+			)
+			_set_row_serial_allocations(row, serials)
+			_apply_vunapos_item_metadata(row, item)
+			continue
 		if flags["requires_batch"]:
 			if item.get("batch_allocations"):
 				allocations = _manual_batch_allocations(
-					item.get("item_code"), item.get("qty"), profile.warehouse, item.get("batch_allocations")
+					item.get("item_code"), stock_qty, profile.warehouse, item.get("batch_allocations")
 				)
 			else:
 				allocations = _allocate_batches_for_doc(
 					item.get("item_code"),
-					item.get("qty"),
+					stock_qty,
 					profile.warehouse,
 					reserved,
 				)
@@ -724,13 +808,14 @@ def _append_cart_items(doc, profile, items):
 				if row.meta.has_field("actual_batch_qty"):
 					row.actual_batch_qty = allocations[0].get("qty")
 			_set_row_batch_allocations(row, allocations)
+			_apply_vunapos_item_metadata(row, item)
 			continue
 		if item.get("batch_allocations"):
 			_throw(
 				"INVALID_BATCH_ALLOCATION",
 				_("Item {0} is not configured for batch tracking.").format(item.get("item_code")),
 			)
-		doc.append(
+		row = doc.append(
 			"items",
 			_get_item_row(
 				item.get("item_code"),
@@ -741,6 +826,7 @@ def _append_cart_items(doc, profile, items):
 				pricing_item=item,
 			),
 		)
+		_apply_vunapos_item_metadata(row, item)
 	return doc
 
 
@@ -980,7 +1066,7 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
-		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
+		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
 		profile,
 	)
 	_validate_existing_pricing_permissions(doc, profile)
@@ -1015,7 +1101,7 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
-		[{"item_code": item.item_code, "qty": item.qty} for item in doc.get("items", [])],
+		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
 		profile,
 	)
 	_validate_existing_pricing_permissions(doc, profile)

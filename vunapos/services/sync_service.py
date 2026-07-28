@@ -14,7 +14,7 @@ from vunapos.services.profile_service import (
 # Doctypes the device replicates are read-only. Deleted records are reported
 # so the device can remove them from its local copy.
 SYNCED_DOCTYPES = ("Item", "Customer")
-CACHE_SCHEMA_REVISION = 3
+CACHE_SCHEMA_REVISION = 4
 
 
 def _bootstrap_version():

@@ -15,7 +15,7 @@ function makeInvoice(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
 }
 
 beforeEach(() => {
-	useUiFeedbackStore.setState({ toast: null, pageError: null });
+	useUiFeedbackStore.setState({ toast: null, toastClosing: false, pageError: null });
 	vi.useFakeTimers();
 });
 
@@ -35,10 +35,14 @@ describe("uiFeedbackStore", () => {
 	it("auto-dismisses the toast after 5 seconds", () => {
 		useUiFeedbackStore.getState().showToast({ type: "held", invoice: makeInvoice({ docstatus: 0 }) });
 
-		vi.advanceTimersByTime(4999);
+		vi.advanceTimersByTime(4749);
 		expect(useUiFeedbackStore.getState().toast).not.toBeNull();
+		expect(useUiFeedbackStore.getState().toastClosing).toBe(false);
 
 		vi.advanceTimersByTime(1);
+		expect(useUiFeedbackStore.getState().toastClosing).toBe(true);
+		expect(useUiFeedbackStore.getState().toast).not.toBeNull();
+		vi.advanceTimersByTime(250);
 		expect(useUiFeedbackStore.getState().toast).toBeNull();
 	});
 
@@ -50,17 +54,21 @@ describe("uiFeedbackStore", () => {
 
 		// The first toast's timer must not fire and clear the second toast early.
 		vi.advanceTimersByTime(3000);
-		expect(useUiFeedbackStore.getState().toast?.invoice.name).toBe("SINV-0002");
+		const toast = useUiFeedbackStore.getState().toast;
+		expect(toast?.type === "submitted" ? toast.invoice.name : null).toBe("SINV-0002");
 
 		vi.advanceTimersByTime(2000);
 		expect(useUiFeedbackStore.getState().toast).toBeNull();
 	});
 
-	it("clearToast clears immediately and cancels the pending auto-dismiss", () => {
+	it("clearToast animates out and cancels the pending auto-dismiss", () => {
 		useUiFeedbackStore.getState().showToast({ type: "submitted", invoice: makeInvoice() });
 
 		useUiFeedbackStore.getState().clearToast();
 
+		expect(useUiFeedbackStore.getState().toastClosing).toBe(true);
+		expect(useUiFeedbackStore.getState().toast).not.toBeNull();
+		vi.advanceTimersByTime(250);
 		expect(useUiFeedbackStore.getState().toast).toBeNull();
 		// No error/leak from the cancelled timer still firing later.
 		vi.advanceTimersByTime(5000);
@@ -73,5 +81,12 @@ describe("uiFeedbackStore", () => {
 
 		useUiFeedbackStore.getState().setPageError(null);
 		expect(useUiFeedbackStore.getState().pageError).toBeNull();
+	});
+
+	it("auto-dismisses error toasts", () => {
+		useUiFeedbackStore.getState().showToast({ type: "error", message: "Insufficient stock" });
+		expect(useUiFeedbackStore.getState().toast).toEqual({ type: "error", message: "Insufficient stock" });
+		vi.advanceTimersByTime(5000);
+		expect(useUiFeedbackStore.getState().toast).toBeNull();
 	});
 });

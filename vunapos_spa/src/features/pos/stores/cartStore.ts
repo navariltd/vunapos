@@ -87,16 +87,31 @@ function cartItemPayload(item: InvoiceItemDTO) {
 	return {
 		item_code: item.item_code,
 		qty: item.qty,
+		uom: item.uom,
+		conversion_factor: item.conversion_factor,
 		batch_allocations: item.batch_allocations?.map((allocation) => ({
 			batch_no: allocation.batch_no,
 			qty: allocation.qty,
 		})),
+		serial_allocations: item.serial_allocations,
+		item_note: item.item_note,
 		pricing_override: item.pricing_override,
 	};
 }
 
 function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 	for (const item of items) {
+		if (item.has_serial_no) {
+			const required = item.qty * Number(item.conversion_factor || 1);
+			const serials = item.serial_allocations || [];
+			if (!Number.isInteger(required) || required <= 0) {
+				throw new Error(`${item.item_name} requires a whole-number stock quantity for serial selection.`);
+			}
+			if (serials.length !== required || new Set(serials.map((row) => row.serial_no)).size !== required) {
+				throw new Error(`Select exactly ${required} unique serial numbers for ${item.item_name}.`);
+			}
+			continue;
+		}
 		const allocations = item.batch_allocations || [];
 		if (!allocations.length) continue;
 		const batchNumbers = new Set<string>();
@@ -111,20 +126,23 @@ function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 			batchNumbers.add(allocation.batch_no);
 			allocated += allocation.qty;
 		}
-		if (Math.abs(allocated - item.qty) > 0.000001) {
-			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${item.qty}.`);
+		const stockQty = item.qty * Number(item.conversion_factor || 1);
+		if (Math.abs(allocated - stockQty) > 0.000001) {
+			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${stockQty} stock units.`);
 		}
 	}
 }
 
 async function subtractPendingBatchAllocations(payload: ItemBatchesDTO): Promise<ItemBatchesDTO> {
 	const pendingByBatch = new Map<string, number>();
+	const pendingSerials = new Set<string>();
 	let automaticPendingQty = 0;
 	for (const entry of await queueRepository.getAll()) {
 		if (entry.type !== "create_invoice" || (entry.status !== "pending" && entry.status !== "syncing")) continue;
 		for (const item of entry.payload.items) {
 			if (item.item_code !== payload.item_code) continue;
-			if (!item.batch_allocations?.length) automaticPendingQty += Number(item.qty || 0);
+			if (!item.batch_allocations?.length && !item.serial_allocations?.length) automaticPendingQty += Number(item.qty || 0) * Number(item.conversion_factor || 1);
+			for (const allocation of item.serial_allocations || []) pendingSerials.add(allocation.serial_no);
 			for (const allocation of item.batch_allocations || []) {
 				pendingByBatch.set(
 					allocation.batch_no,
@@ -145,6 +163,7 @@ async function subtractPendingBatchAllocations(payload: ItemBatchesDTO): Promise
 	return {
 		...payload,
 		batches,
+		serials: payload.serials?.filter((row) => !pendingSerials.has(row.serial_no)),
 	};
 }
 
@@ -181,13 +200,22 @@ function pricingOverrideFromSavedItem(item: InvoiceItemDTO): InvoiceItemDTO["pri
 }
 
 function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemDTO[]): InvoiceDTO {
-	const overrides = new Map(sourceItems.map((item) => [item.item_code, item.pricing_override]));
+	const sourceByCode = new Map(sourceItems.map((item) => [item.item_code, item]));
 	return {
 		...invoice,
-		items: invoice.items.map((item) => ({
-			...item,
-			pricing_override: overrides.get(item.item_code) ?? pricingOverrideFromSavedItem(item),
-		})),
+		items: invoice.items.map((item) => {
+			const source = sourceByCode.get(item.item_code);
+			return {
+				...item,
+				uoms: source?.uoms || item.uoms,
+				barcode: source?.barcode || item.barcode,
+				item_note: source?.item_note ?? item.item_note,
+				pricing_rules: source?.pricing_rules ?? item.pricing_rules,
+				pricing_override_audit: source?.pricing_override_audit ?? item.pricing_override_audit,
+				pricing_override_by: source?.pricing_override_by ?? item.pricing_override_by,
+				pricing_override: source?.pricing_override ?? pricingOverrideFromSavedItem(item),
+			};
+		}),
 	};
 }
 
@@ -245,6 +273,7 @@ function assembledToInvoiceDTO(
 				uom: meta?.uom,
 				stock_uom: meta?.stock_uom,
 				conversion_factor: meta?.conversion_factor,
+				uoms: meta?.uoms,
 				rate: item.rate,
 				price_list_rate: meta?.price_list_rate ?? meta?.rate ?? item.rate,
 				discount_percentage: item.discount_percentage,
@@ -259,6 +288,12 @@ function assembledToInvoiceDTO(
 				batch_no: meta?.batch_no,
 				serial_and_batch_bundle: meta?.serial_and_batch_bundle,
 				batch_allocations: meta?.batch_allocations,
+				serial_allocations: meta?.serial_allocations,
+				barcode: meta?.barcode,
+				item_note: meta?.item_note,
+				pricing_rules: meta?.pricing_rules,
+				pricing_override_audit: meta?.pricing_override_audit,
+				pricing_override_by: meta?.pricing_override_by,
 				pricing_override: item.pricing_override ?? meta?.pricing_override,
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
@@ -367,6 +402,8 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		qty,
 		uom: item.uom || item.stock_uom,
 		stock_uom: item.stock_uom,
+		conversion_factor: 1,
+		uoms: item.uoms,
 		rate,
 		price_list_rate: Number(item.price_list_rate ?? rate),
 		amount: rate * qty,
@@ -375,6 +412,7 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		allow_negative_stock: item.allow_negative_stock,
 		has_batch_no: item.has_batch_no,
 		has_serial_no: item.has_serial_no,
+		barcode: item.barcode,
 		item_tax_template: item.item_tax_template,
 	};
 }
@@ -404,7 +442,8 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
 		return;
 	}
 
-	if (qty > Number(item.actual_qty || 0)) {
+	const stockQty = qty * Number(("conversion_factor" in item && item.conversion_factor) || 1);
+	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
 	}
 }
@@ -417,7 +456,7 @@ async function refreshAndValidateStock(
 ): Promise<InvoiceDTO> {
 	const requestedByCode = new Map<string, number>();
 	for (const item of invoice.items) {
-		requestedByCode.set(item.item_code, (requestedByCode.get(item.item_code) || 0) + item.qty);
+		requestedByCode.set(item.item_code, (requestedByCode.get(item.item_code) || 0) + item.qty * Number(item.conversion_factor || 1));
 	}
 
 	const freshByCode = new Map<string, ItemDTO>();
@@ -478,7 +517,10 @@ type CartActions = {
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
+	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
+	updateCartItemSerialAllocations: (rowName: string, allocations: InvoiceItemDTO["serial_allocations"], api: CartApi) => Promise<void>;
 	updateCartItemPricing: (rowName: string, pricingOverride: InvoiceItemDTO["pricing_override"], api: CartApi) => Promise<void>;
+	updateCartItemNote: (rowName: string, note: string, api: CartApi) => Promise<void>;
 	updateCartItemBatchAllocations: (
 		rowName: string,
 		allocations: InvoiceItemDTO["batch_allocations"],
@@ -676,6 +718,60 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
 		},
 
+		updateCartItemNote: async (rowName, note, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const cleanNote = note.trim();
+			if (cleanNote.length > 500) throw new Error("Item notes cannot exceed 500 characters.");
+			const nextItems = invoice.items.map((item) =>
+				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
+			);
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype,
+					invoice_name: invoice.name,
+					customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: preservePricingOverrides(updated, nextItems) });
+		},
+
+		updateCartItemUom: async (rowName, uom, conversionFactor, api) => {
+			const invoice = get().invoice;
+			if (!invoice || !(conversionFactor > 0)) return;
+			const nextItems = invoice.items.map((item) => {
+				if (item.row_name !== rowName) return item;
+				const oldFactor = Number(item.conversion_factor || 1);
+				const stockRate = Number(item.price_list_rate ?? item.rate) / oldFactor;
+				const configuredRate = item.uoms?.find((row) => row.uom === uom)?.rate;
+				const rate = configuredRate == null ? stockRate * conversionFactor : Number(configuredRate);
+				return { ...item, uom, conversion_factor: conversionFactor, rate, price_list_rate: rate,
+					pricing_override: undefined, batch_allocations: [], serial_allocations: [] };
+			});
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: updated });
+		},
+
+		updateCartItemSerialAllocations: async (rowName, allocations, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const nextItems = invoice.items.map((item) => item.row_name === rowName
+				? { ...item, serial_allocations: allocations || [] } : item);
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: updated });
+		},
+
 		updateCartItemBatchAllocations: async (rowName, allocations, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
@@ -718,6 +814,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						requires_batch: Boolean(fresh.requires_batch),
 						requires_serial: Boolean(fresh.requires_serial),
 						batches: fresh.batches,
+						serials: fresh.serials,
 					});
 					return subtractPendingBatchAllocations({ ...fresh, verified_at: verifiedAt, from_cache: false });
 				} catch (error) {
@@ -1058,7 +1155,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 						}
 						return {
 							...itemToCartRow(cached as ItemDTO, line.qty),
+							uom: line.uom,
+							conversion_factor: line.conversion_factor,
+							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
+							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
 							batch_allocations: line.batch_allocations,
+							serial_allocations: line.serial_allocations,
+							item_note: line.item_note,
 							pricing_override: line.pricing_override,
 						};
 					}),
@@ -1103,6 +1206,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 						return {
 							...itemToCartRow(cached as ItemDTO, line.qty),
 							batch_allocations: line.batch_allocations,
+							uom: line.uom,
+							conversion_factor: line.conversion_factor,
+							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
+							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
+							serial_allocations: line.serial_allocations,
+							item_note: line.item_note,
 							pricing_override: line.pricing_override,
 						};
 					}),

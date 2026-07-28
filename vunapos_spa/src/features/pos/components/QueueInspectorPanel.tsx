@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AlertTriangle, RotateCw, ShoppingCart, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { queueRepository } from "../../../lib/repositories/queueRepository";
 import { drainQueue } from "../../../lib/syncEngine";
 import { navigateToPosPage } from "../../../lib/stores/navigationStore";
@@ -23,6 +24,7 @@ function formatCreatedAt(value: string) {
 export function QueueInspectorPanel() {
 	const entries = useQueueEntries();
 	const [retryingId, setRetryingId] = useState<string | null>(null);
+	const [confirmation, setConfirmation] = useState<{ action: "restore" | "discard"; localId: string } | null>(null);
 	const currentInvoice = useCartStore((state) => state.invoice);
 	const restoreFailedSale = useCartStore((state) => state.restoreFailedSale);
 
@@ -44,7 +46,14 @@ export function QueueInspectorPanel() {
 	};
 
 	const handleRestore = async (localId: string) => {
-		if (currentInvoice?.items?.length && !window.confirm("Replace the current cart with this failed offline sale?")) return;
+		if (currentInvoice?.items?.length) {
+			setConfirmation({ action: "restore", localId });
+			return;
+		}
+		await restoreSale(localId);
+	};
+
+	const restoreSale = async (localId: string) => {
 		try {
 			await restoreFailedSale(localId);
 			navigateToPosPage("Home");
@@ -54,8 +63,15 @@ export function QueueInspectorPanel() {
 	};
 
 	const handleDiscard = async (localId: string) => {
-		if (!window.confirm("Discard this failed offline sale from this device? This cannot be undone.")) return;
-		await queueRepository.remove(localId);
+		setConfirmation({ action: "discard", localId });
+	};
+
+	const confirmAction = async () => {
+		if (!confirmation) return;
+		const pendingConfirmation = confirmation;
+		setConfirmation(null);
+		if (pendingConfirmation.action === "restore") await restoreSale(pendingConfirmation.localId);
+		else await queueRepository.remove(pendingConfirmation.localId);
 	};
 
 	return (
@@ -122,6 +138,15 @@ export function QueueInspectorPanel() {
 					})}
 				</div>
 			) : null}
+			<ConfirmDialog
+				isOpen={Boolean(confirmation)}
+				title={confirmation?.action === "discard" ? "Discard this failed sale?" : "Replace the current cart?"}
+				description={confirmation?.action === "discard" ? "This removes the failed offline sale from this device and cannot be undone." : "The current cart will be replaced by the selected failed offline sale."}
+				confirmLabel={confirmation?.action === "discard" ? "Discard Sale" : "Replace Cart"}
+				danger
+				onCancel={() => setConfirmation(null)}
+				onConfirm={() => void confirmAction()}
+			/>
 		</div>
 	);
 }

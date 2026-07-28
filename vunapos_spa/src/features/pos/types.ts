@@ -139,6 +139,7 @@ export type ItemDTO = {
 	description?: string;
 	image?: string | null;
 	stock_uom?: string;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	uom?: string;
 	rate?: number;
 	price_list_rate?: number;
@@ -158,6 +159,8 @@ export type BatchAllocationDTO = {
 	available_qty?: number | null;
 };
 
+export type SerialAllocationDTO = { serial_no: string; batch_no?: string | null };
+
 export type PricingOverrideDTO = {
 	type: "rate" | "discount_percentage" | "discount_amount";
 	value: number;
@@ -175,6 +178,7 @@ export type ItemBatchesDTO = {
 	requires_batch?: boolean;
 	requires_serial?: boolean;
 	batches: ItemBatchDTO[];
+	serials?: SerialAllocationDTO[];
 	verified_at?: string;
 	from_cache?: boolean;
 };
@@ -199,6 +203,7 @@ export type InvoiceItemDTO = {
 	uom?: string;
 	stock_uom?: string;
 	conversion_factor?: number;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate: number;
 	price_list_rate?: number;
 	discount_percentage?: number;
@@ -213,7 +218,13 @@ export type InvoiceItemDTO = {
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
 	batch_allocations?: BatchAllocationDTO[];
+	serial_allocations?: SerialAllocationDTO[];
 	item_tax_template?: string | null;
+	barcode?: string | null;
+	item_note?: string | null;
+	pricing_rules?: string | null;
+	pricing_override_audit?: string | null;
+	pricing_override_by?: string | null;
 	pricing_override?: PricingOverrideDTO;
 };
 

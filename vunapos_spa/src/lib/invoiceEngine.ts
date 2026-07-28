@@ -18,7 +18,10 @@
 export type CartLine = {
 	item_code: string;
 	qty: number;
+	uom?: string;
+	conversion_factor?: number;
 	batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
 	pricing_override?: {
 		type: "rate" | "discount_percentage" | "discount_amount";
 		value: number;

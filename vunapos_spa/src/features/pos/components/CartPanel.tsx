@@ -4,7 +4,7 @@ import { Pause, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
@@ -23,7 +23,10 @@ type CartPanelProps = {
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
+	onUpdateNote: (rowName: string, note: string) => Promise<void>;
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
+	onUpdateUom: (rowName: string, uom: string, conversionFactor: number) => Promise<void>;
+	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
 };
@@ -42,7 +45,10 @@ export function CartPanel({
 	onSelectCustomer,
 	onUpdateQty,
 	onUpdatePricing,
+	onUpdateNote,
 	onUpdateBatchAllocations,
+	onUpdateUom,
+	onUpdateSerialAllocations,
 	isOnline,
 	warehouse,
 }: CartPanelProps) {
@@ -86,7 +92,10 @@ export function CartPanel({
 							}
 							onUpdateQty={onUpdateQty}
 							onUpdatePricing={onUpdatePricing}
+							onUpdateNote={onUpdateNote}
 							onUpdateBatchAllocations={onUpdateBatchAllocations}
+							onUpdateUom={onUpdateUom}
+							onUpdateSerialAllocations={onUpdateSerialAllocations}
 							warehouse={warehouse}
 						/>
 					))

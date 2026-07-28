@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { CreditCard, Printer, Search } from "lucide-react";
 
@@ -147,8 +147,17 @@ function PaymentHistory({ rows, filters, setFilters, paymentModes, currency, loa
 }
 
 function CustomerPicker({ selected, query, setQuery, customers, onSelect, onClear }: { selected: string; query: string; setQuery: (value: string) => void; customers: Array<{ customer: string; customer_name: string; mobile_no?: string | null }>; onSelect: (value: string) => void; onClear: () => void }) {
-	if (selected) return <div className="flex items-center justify-between rounded-md bg-surface-container-low p-3"><strong>{selected}</strong><Button variant="ghost" onClick={onClear}>Change</Button></div>;
-	return <><label className="flex items-center gap-2 rounded-md border border-outline-variant px-3"><Search className="size-4"/><input className="flex-1 bg-transparent py-2 outline-none" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search customer"/></label><div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-outline-variant">{customers.map((row) => <button key={row.customer} className="block w-full border-t border-outline-variant px-3 py-2 text-left text-sm first:border-t-0 hover:bg-surface-container-low" onClick={() => { onSelect(row.customer); setQuery(""); }}>{row.customer_name}<span className="ml-2 text-xs text-on-surface-variant">{row.mobile_no || row.customer}</span></button>)}</div></>;
+	const [open, setOpen] = useState(false);
+	const pickerRef = useRef<HTMLDivElement>(null);
+	useEffect(() => {
+		const closeWhenOutside = (event: MouseEvent) => {
+			if (!pickerRef.current?.contains(event.target as Node)) setOpen(false);
+		};
+		document.addEventListener("mousedown", closeWhenOutside);
+		return () => document.removeEventListener("mousedown", closeWhenOutside);
+	}, []);
+	if (selected) return <div ref={pickerRef} className="flex items-center justify-between rounded-md bg-surface-container-low p-3"><strong>{selected}</strong><Button variant="ghost" onClick={() => { setOpen(true); onClear(); }}>Change</Button></div>;
+	return <div ref={pickerRef} className="relative"><label className="flex items-center gap-2 rounded-md border border-outline-variant px-3"><Search className="size-4"/><input className="flex-1 bg-transparent py-2 outline-none" value={query} onFocus={() => setOpen(true)} onClick={() => setOpen(true)} onChange={(event) => { setQuery(event.target.value); setOpen(true); }} placeholder="Search customer" aria-expanded={open} aria-autocomplete="list"/></label>{open ? <div className="absolute z-20 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-outline-variant bg-surface shadow-lg">{customers.length ? customers.map((row) => <button key={row.customer} type="button" className="block w-full border-t border-outline-variant px-3 py-2 text-left text-sm first:border-t-0 hover:bg-surface-container-low" onClick={() => { onSelect(row.customer); setQuery(""); setOpen(false); }}>{row.customer_name}<span className="ml-2 text-xs text-on-surface-variant">{row.mobile_no || row.customer}</span></button>) : <p className="px-3 py-2 text-sm text-on-surface-variant">No customers found.</p>}</div> : null}</div>;
 }
 
 function SelectionList({ title, empty, rows, selected, onToggle, invoices = false }: { title: string; empty: string; rows: Candidate[]; selected: string[]; onToggle: (name: string) => void; invoices?: boolean }) {

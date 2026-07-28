@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, ChevronDown, Minus, Plus, RefreshCw, Trash2, WandSparkles } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
-import type { BatchAllocationDTO, InvoiceItemDTO, ItemBatchesDTO, PricingOverrideDTO } from "../types";
+import type { BatchAllocationDTO, InvoiceItemDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 import { formatCurrency } from "../utils";
 
 type CartItemRowProps = {
@@ -18,6 +18,9 @@ type CartItemRowProps = {
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
 	onUpdateQty: (rowName: string, qty: number) => void;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
+	onUpdateNote: (rowName: string, note: string) => Promise<void>;
+	onUpdateUom: (rowName: string, uom: string, conversionFactor: number) => Promise<void>;
+	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
 };
@@ -39,6 +42,9 @@ export function CartItemRow({
 	onUpdateBatchAllocations,
 	onUpdateQty,
 	onUpdatePricing,
+	onUpdateNote,
+	onUpdateUom,
+	onUpdateSerialAllocations,
 	isOnline,
 	warehouse,
 }: CartItemRowProps) {
@@ -46,6 +52,7 @@ export function CartItemRow({
 	const [batchData, setBatchData] = useState<ItemBatchesDTO | null>(null);
 	const [batchError, setBatchError] = useState<string | null>(null);
 	const [batchExpanded, setBatchExpanded] = useState(false);
+	const [serialExpanded, setSerialExpanded] = useState(false);
 	const requestedBatches = useRef<string | null>(null);
 
 	const commitQuantity = () => {
@@ -62,9 +69,11 @@ export function CartItemRow({
 	const isBatchTracked = Boolean(item.has_batch_no || item.batch_no || item.batch_allocations?.length);
 	const isSerialTracked = Boolean(item.has_serial_no || item.serial_and_batch_bundle);
 	const itemWarehouse = item.warehouse || warehouse || "";
+	const stockQuantity = item.qty * Number(item.conversion_factor || 1);
+	const projectedQuantity = item.actual_qty == null ? null : Number(item.actual_qty) - stockQuantity;
 
 	useEffect(() => {
-		if (!expanded || !batchExpanded || !isBatchTracked || isSerialTracked || !itemWarehouse || batchData) return;
+		if (!expanded || (!batchExpanded && !serialExpanded) || (!isBatchTracked && !isSerialTracked) || !itemWarehouse || batchData) return;
 		const requestKey = `${item.item_code}:${itemWarehouse}:${isOnline}`;
 		if (requestedBatches.current === requestKey) return;
 		requestedBatches.current = requestKey;
@@ -75,7 +84,7 @@ export function CartItemRow({
 			},
 			(error: unknown) => setBatchError(error instanceof Error ? error.message : "Failed to load batches"),
 		);
-	}, [batchData, batchExpanded, expanded, isBatchTracked, isOnline, isSerialTracked, item.item_code, itemWarehouse, onLoadBatches]);
+	}, [batchData, batchExpanded, serialExpanded, expanded, isBatchTracked, isOnline, isSerialTracked, item.item_code, itemWarehouse, onLoadBatches]);
 
 	return (
 		<article className="overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
@@ -135,6 +144,7 @@ export function CartItemRow({
 					{description ? <p className="mb-4 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
 
 					<PricingEditor
+						key={`${item.uom}-${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
 						allowDiscountChange={Boolean(allowDiscountChange)}
 						allowRateChange={Boolean(allowRateChange)}
 						currency={currency}
@@ -142,13 +152,19 @@ export function CartItemRow({
 						item={item}
 						onUpdate={(override) => onUpdatePricing(item.row_name, override)}
 					/>
+					{item.pricing_override ? <div className="mt-3 rounded-md border border-tertiary bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container"><span className="font-semibold">Manual price override:</span> {pricingOverrideLabel(item.pricing_override, currency)}{item.pricing_override_by ? ` · ${item.pricing_override_by}` : " · current cashier"}</div> : item.pricing_rules ? <div className="mt-3 rounded-md bg-secondary-container px-3 py-2 text-xs text-on-secondary-container">Promotion or pricing rule applied: {item.pricing_rules}</div> : null}
 
 					<div className="mt-4 grid gap-4 sm:grid-cols-2">
-						<Detail label="UOM" value={item.uom || item.stock_uom || "-"} />
+						<label><span className="text-xs font-medium text-on-surface-variant">UOM</span><select className="mt-1 h-9 w-full rounded-md border border-outline-variant bg-surface px-2 text-sm" disabled={disabled || (item.uoms?.length || 0) < 2} value={item.uom || item.stock_uom || ""} onChange={(event) => { const selected = item.uoms?.find((row) => row.uom === event.target.value); if (selected) void onUpdateUom(item.row_name, selected.uom, selected.conversion_factor); }}>{(item.uoms?.length ? item.uoms : [{ uom: item.uom || item.stock_uom || "", conversion_factor: 1 }]).map((row) => <option key={row.uom} value={row.uom}>{row.uom} ({row.conversion_factor} {item.stock_uom})</option>)}</select></label>
 						<Detail label="Line amount" value={formatCurrency(item.amount, currency)} strong />
 						<Detail label="Warehouse" value={itemWarehouse || "-"} />
 						<Detail label="Available quantity" value={item.actual_qty == null ? "Not available" : `${item.actual_qty} ${item.stock_uom || item.uom || ""}`} />
+						<Detail label="Projected after sale" value={projectedQuantity == null ? "Not available" : `${projectedQuantity} ${item.stock_uom || item.uom || ""}`} warning={projectedQuantity != null && projectedQuantity <= 0} />
+						<Detail label="Tax template" value={item.item_tax_template || "No item tax template"} />
+						<Detail label="Barcode" value={item.barcode || "No barcode"} />
 					</div>
+
+					<ItemNoteEditor key={item.item_note || "empty-note"} disabled={Boolean(disabled)} item={item} onSave={(note) => onUpdateNote(item.row_name, note)} />
 
 					<div className="mt-4 flex flex-wrap gap-2">
 						<Indicator active={isStockItem} label={isStockItem ? "Stock item" : "Non-stock item"} />
@@ -157,11 +173,7 @@ export function CartItemRow({
 						{item.allow_negative_stock ? <Indicator active label="Negative stock allowed" /> : null}
 					</div>
 
-					{isBatchTracked && isSerialTracked ? (
-						<div className="mt-4 flex gap-2 rounded-md border border-tertiary bg-tertiary-container p-3 text-sm text-on-tertiary-container">
-							<AlertCircle className="size-4 shrink-0" /> This item also requires serial numbers. Manual bundle selection will be added with serial-number support.
-						</div>
-					) : null}
+					{isSerialTracked ? <div className="mt-4 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"><button type="button" className="flex w-full items-center justify-between p-3 text-left" onClick={() => setSerialExpanded((value) => !value)}><span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Serial numbers</span><span className="text-xs text-on-surface-variant">{item.serial_allocations?.length || 0} of {item.qty * Number(item.conversion_factor || 1)} selected</span></span><ChevronDown className={`size-4 transition-transform ${serialExpanded ? "rotate-180" : ""}`} /></button>{serialExpanded ? <SerialAllocationEditor data={batchData} disabled={Boolean(disabled)} item={item} onSave={(rows) => onUpdateSerialAllocations(item.row_name, rows)} /> : null}</div> : null}
 					{isBatchTracked && !isSerialTracked ? (
 						<div className="mt-4 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
 							<button type="button" className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-surface-container" onClick={() => setBatchExpanded((value) => !value)} aria-expanded={batchExpanded}>
@@ -187,6 +199,35 @@ export function CartItemRow({
 			) : null}
 		</article>
 	);
+}
+
+function pricingOverrideLabel(override: PricingOverrideDTO, currency?: string) {
+	if (override.type === "rate") return `rate set to ${formatCurrency(override.value, currency)}`;
+	if (override.type === "discount_percentage") return `${override.value}% discount`;
+	return `${formatCurrency(override.value, currency)} discount`;
+}
+
+function ItemNoteEditor({ disabled, item, onSave }: { disabled: boolean; item: InvoiceItemDTO; onSave: (note: string) => Promise<void> }) {
+	const [note, setNote] = useState(item.item_note || "");
+	const [error, setError] = useState<string | null>(null);
+	const save = async () => {
+		if (note.trim() === (item.item_note || "")) return;
+		try { setError(null); await onSave(note); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Failed to save item note"); }
+	};
+	return <label className="mt-4 block"><span className="text-xs font-medium text-on-surface-variant">Item note</span><textarea className="mt-1 min-h-20 w-full resize-y rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary" disabled={disabled} maxLength={500} placeholder="Add packing, handling, or cashier notes…" value={note} onChange={(event) => setNote(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") event.currentTarget.blur(); }} /><span className="mt-1 flex justify-between text-xs text-on-surface-variant"><span>{error ? <span className="text-error">{error}</span> : "Ctrl/⌘ + Enter to save"}</span><span>{note.length}/500</span></span></label>;
+}
+
+function SerialAllocationEditor({ data, disabled, item, onSave }: { data: ItemBatchesDTO | null; disabled: boolean; item: InvoiceItemDTO; onSave: (rows: SerialAllocationDTO[]) => Promise<void> }) {
+	const [query, setQuery] = useState("");
+	const [selected, setSelected] = useState(() => new Set((item.serial_allocations || []).map((row) => row.serial_no)));
+	const [saving, setSaving] = useState(false);
+
+	const required = item.qty * Number(item.conversion_factor || 1);
+	const serials = data?.serials || [];
+	const filtered = serials.filter((row) => row.serial_no.toLowerCase().includes(query.toLowerCase()));
+	const toggle = (serialNo: string) => setSelected((current) => { const next = new Set(current); if (next.has(serialNo)) next.delete(serialNo); else if (next.size < required) next.add(serialNo); return next; });
+	const scan = () => { const exact = serials.find((row) => row.serial_no.toLowerCase() === query.trim().toLowerCase()); if (exact) { toggle(exact.serial_no); setQuery(""); } };
+	return <div className="border-t border-outline-variant p-3"><div className="flex gap-2"><input className="h-9 min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-sm" placeholder="Scan or search serial number" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }} /><Button size="sm" variant="ghost" onClick={scan}>Add scan</Button></div><div className="mt-3 max-h-56 space-y-2 overflow-y-auto">{filtered.map((row) => <label key={row.serial_no} className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface p-2 text-sm"><input type="checkbox" checked={selected.has(row.serial_no)} disabled={disabled || (!selected.has(row.serial_no) && selected.size >= required)} onChange={() => toggle(row.serial_no)} /><span className="min-w-0 flex-1 truncate">{row.serial_no}</span>{row.batch_no ? <span className="text-xs text-on-surface-variant">{row.batch_no}</span> : null}</label>)}</div><div className="mt-3 flex items-center justify-between"><span className={selected.size === required ? "text-xs text-on-surface-variant" : "text-xs text-error"}>Selected {selected.size} / {required}</span><Button size="sm" disabled={disabled || saving || selected.size !== required || !Number.isInteger(required)} onClick={() => { setSaving(true); void onSave(serials.filter((row) => selected.has(row.serial_no))).finally(() => setSaving(false)); }}>{saving ? "Saving…" : "Save serials"}</Button></div></div>;
 }
 
 function PricingEditor({ allowDiscountChange, allowRateChange, currency, disabled, item, onUpdate }: {
@@ -290,8 +331,9 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 		...batch,
 		qty: Number(amounts[batch.batch_no] || 0),
 	}));
+	const requiredQty = item.qty * Number(item.conversion_factor || 1);
 	const allocated = parsed.reduce((sum, batch) => sum + (Number.isFinite(batch.qty) ? batch.qty : 0), 0);
-	const remaining = item.qty - allocated;
+	const remaining = requiredQty - allocated;
 	const invalid = parsed.some((batch) => batch.qty < 0 || batch.qty > Number(batch.available_qty || 0));
 	const complete = !invalid && Math.abs(remaining) < 0.000001 && allocated > 0;
 
@@ -326,7 +368,7 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 	};
 
 	const autoAllocate = () => {
-		let required = item.qty;
+		let required = requiredQty;
 		const next: Record<string, string> = {};
 		for (const batch of batches) {
 			const qty = Math.min(required, Number(batch.available_qty || 0));
@@ -352,7 +394,7 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 			{batchData ? (
 				<>
 					<div className="mt-3 grid grid-cols-3 gap-2 rounded-md bg-surface p-2 text-center text-xs">
-						<div><span className="text-on-surface-variant">Required</span><p className="font-semibold">{item.qty}</p></div>
+						<div><span className="text-on-surface-variant">Required</span><p className="font-semibold">{requiredQty}</p></div>
 						<div><span className="text-on-surface-variant">Allocated</span><p className="font-semibold">{allocated}</p></div>
 						<div><span className="text-on-surface-variant">Remaining</span><p className={remaining < 0 ? "font-semibold text-error" : "font-semibold"}>{remaining}</p></div>
 					</div>
@@ -377,11 +419,11 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 	);
 }
 
-function Detail({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function Detail({ label, value, strong = false, warning = false }: { label: string; value: string; strong?: boolean; warning?: boolean }) {
 	return (
 		<div>
 			<p className="text-xs font-medium text-on-surface-variant">{label}</p>
-			<p className={`mt-1 text-sm ${strong ? "font-semibold" : "font-medium"} text-on-surface`}>{value}</p>
+			<p className={`mt-1 text-sm ${strong ? "font-semibold" : "font-medium"} ${warning ? "text-error" : "text-on-surface"}`}>{value}</p>
 		</div>
 	);
 }

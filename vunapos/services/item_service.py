@@ -52,6 +52,17 @@ def _get_rate(item_code, profile):
 def _to_item_payload(item_code, profile, barcode=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
+	price_list = get_priority_price_list(customer=profile.customer, pos_profile=profile)
+	uom_rates = _get_uom_rate_map([item_code], price_list)
+	uoms = []
+	for row in item.get("uoms", []):
+		uoms.append(
+			{
+				"uom": row.uom,
+				"conversion_factor": row.conversion_factor,
+				"rate": uom_rates.get(item_code, {}).get(row.uom),
+			}
+		)
 	item_tax_template = next(
 		(row.item_tax_template for row in item.get("taxes", []) if row.item_tax_template), None
 	)
@@ -61,6 +72,7 @@ def _to_item_payload(item_code, profile, barcode=None):
 		actual_qty=_get_actual_qty(item.item_code, profile.warehouse),
 		barcode=barcode or _get_barcode(item.item_code),
 		item_tax_template=item_tax_template,
+		uoms=uoms,
 	)
 
 
@@ -120,7 +132,7 @@ def _get_actual_qty_map(item_codes, warehouse):
 	return {row.item_code: max(flt(row.available_qty), 0) for row in rows}
 
 
-def _get_rate_map(item_codes, price_list):
+def _get_uom_rate_map(item_codes, price_list):
 	if not item_codes or not price_list:
 		return {}
 
@@ -128,7 +140,7 @@ def _get_rate_map(item_codes, price_list):
 	current_date = today()
 	rows = frappe.db.sql(
 		f"""
-		select item_code, price_list_rate
+		select item_code, uom, price_list_rate
 		from `tabItem Price`
 		where selling = 1
 			and price_list = %s
@@ -142,12 +154,15 @@ def _get_rate_map(item_codes, price_list):
 	)
 	rate_map = {}
 	for row in rows:
-		if row.item_code not in rate_map:
-			rate_map[row.item_code] = flt(row.price_list_rate)
+		item_rates = rate_map.setdefault(row.item_code, {})
+		if row.uom not in item_rates:
+			item_rates[row.uom] = flt(row.price_list_rate)
 	return rate_map
 
 
-def _to_item_payload_from_row(item, rate_map, actual_qty_map, barcode_map, item_tax_template_map=None):
+def _to_item_payload_from_row(
+	item, rate_map, actual_qty_map, barcode_map, item_tax_template_map=None, uom_map=None
+):
 	rate = rate_map.get(item.name)
 	if rate is None:
 		rate = flt(item.standard_rate)
@@ -159,7 +174,23 @@ def _to_item_payload_from_row(item, rate_map, actual_qty_map, barcode_map, item_
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
 		item_tax_template=(item_tax_template_map or {}).get(item.name),
+		uoms=(uom_map or {}).get(item.name, []),
 	)
+
+
+def _get_uom_map(item_codes, uom_rate_map=None):
+	result = {item_code: [] for item_code in item_codes}
+	if not item_codes:
+		return result
+	for row in frappe.get_all(
+		"UOM Conversion Detail",
+		filters={"parenttype": "Item", "parent": ["in", item_codes]},
+		fields=["parent", "uom", "conversion_factor"],
+		order_by="idx asc",
+	):
+		row["rate"] = (uom_rate_map or {}).get(row.parent, {}).get(row.uom)
+		result.setdefault(row.parent, []).append(row)
+	return result
 
 
 def get_priority_price_list(customer=None, pos_profile=None):
@@ -273,14 +304,23 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 	item_codes = [item_code for item_code in item_codes if item_code in item_by_code]
 	barcode_map = _get_first_barcode_map(item_codes)
 	actual_qty_map = _get_actual_qty_map(item_codes, profile.warehouse)
-	rate_map = _get_rate_map(item_codes, price_list)
+	uom_rate_map = _get_uom_rate_map(item_codes, price_list)
+	rate_map = {}
+	for item_code in item_codes:
+		item_rates = uom_rate_map.get(item_code, {})
+		stock_uom = item_by_code[item_code].stock_uom
+		for price_uom in (stock_uom, None, ""):
+			if price_uom in item_rates:
+				rate_map[item_code] = item_rates[price_uom]
+				break
 	item_tax_template_map = _get_item_tax_template_map(item_codes)
+	uom_map = _get_uom_map(item_codes, uom_rate_map)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
 
 	return [
 		_to_item_payload_from_row(
-			item_by_code[item_code], rate_map, actual_qty_map, barcode_map, item_tax_template_map
+			item_by_code[item_code], rate_map, actual_qty_map, barcode_map, item_tax_template_map, uom_map
 		)
 		for item_code in item_codes
 	]

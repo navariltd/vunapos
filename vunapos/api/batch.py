@@ -3,6 +3,7 @@ import frappe
 from vunapos.services.batch_service import allocate_batches as allocate_batches_service
 from vunapos.services.batch_service import get_item_batches as get_item_batches_service
 from vunapos.services.batch_service import validate_batch_allocation as validate_batch_allocation_service
+from vunapos.services.batch_service import validate_serial_allocation as validate_serial_allocation_service
 from vunapos.utils.response import failure, success
 
 
@@ -60,6 +61,23 @@ def validate_batch_allocation(
 				qty=qty,
 				allocations=frappe.parse_json(allocations),
 				warehouse=warehouse,
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def validate_serial_allocation(
+	item_code: str,
+	qty: float | int | str,
+	allocations: list | str | None,
+	warehouse: str | None = None,
+):
+	try:
+		return success(
+			validate_serial_allocation_service(
+				item_code=item_code, qty=qty, allocations=frappe.parse_json(allocations), warehouse=warehouse
 			)
 		)
 	except Exception as exc:

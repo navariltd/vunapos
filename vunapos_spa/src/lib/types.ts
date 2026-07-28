@@ -7,6 +7,7 @@ export type CachedItem = {
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
 	price_list_rate?: number | null;
 	actual_qty?: number | null;
@@ -33,6 +34,7 @@ export type CachedBatchInventory = {
 		expiry_date?: string | null;
 		available_qty?: number | null;
 	}>;
+	serials?: Array<{ serial_no: string; batch_no?: string | null }>;
 };
 
 export type CachedCustomer = {
@@ -168,7 +170,11 @@ export type InvoicePayload = {
 	items: Array<{
 		item_code: string;
 		qty: number;
+		uom?: string;
+		conversion_factor?: number;
 		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+		item_note?: string | null;
 		pricing_override?: PricingOverride;
 	}>;
 	payments: { mode_of_payment: string; amount: number }[];
@@ -199,7 +205,11 @@ export type HoldPayload = {
 	items: Array<{
 		item_code: string;
 		qty: number;
+		uom?: string;
+		conversion_factor?: number;
 		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+		item_note?: string | null;
 		pricing_override?: PricingOverride;
 	}>;
 	totals?: {

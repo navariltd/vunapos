@@ -6,7 +6,7 @@ export function pendingSaleQuantities(entries: QueueEntry[]): Map<string, number
 	for (const entry of entries) {
 		if (entry.type !== "create_invoice" || (entry.status !== "pending" && entry.status !== "syncing")) continue;
 		for (const item of entry.payload.items) {
-			quantities.set(item.item_code, (quantities.get(item.item_code) || 0) + Number(item.qty || 0));
+			quantities.set(item.item_code, (quantities.get(item.item_code) || 0) + Number(item.qty || 0) * Number(item.conversion_factor || 1));
 		}
 	}
 	return quantities;
