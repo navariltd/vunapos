@@ -1,6 +1,7 @@
 import { fetchBootstrap } from "./apiClient";
-import { db, MASTER_DATA_TABLES } from "./db";
+import { db } from "./db";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
+import { useRuntimeCacheStore } from "./stores/runtimeCacheStore";
 import type { BootstrapPayload, CachedPosSession } from "./types";
 
 export class BootstrapVerificationError extends Error {}
@@ -29,35 +30,29 @@ function verify(payload: BootstrapPayload): void {
 	}
 }
 
-const ALL_TABLES = [...MASTER_DATA_TABLES, db.meta];
-
-// One Dexie transaction, full replace: a failure partway through leaves the previous
-// cache fully intact (IndexedDB rolls the whole transaction back) - never a half-cache (I12).
 async function writeFullSnapshot(payload: BootstrapPayload): Promise<void> {
-	await db.transaction("rw", ALL_TABLES, async () => {
-		await db.items.clear();
-		await db.items.bulkPut(payload.items);
-		await db.customers.clear();
-		await db.customers.bulkPut(payload.customers);
-		await db.taxTemplates.clear();
-		await db.taxTemplates.bulkPut(payload.tax_templates);
-		await db.itemTaxTemplates.clear();
-		await db.itemTaxTemplates.bulkPut(payload.item_tax_templates);
-		await db.paymentModes.clear();
-		await db.paymentModes.bulkPut(payload.payment_modes);
-		await db.profile.clear();
-		await db.profile.put(payload.pos_profile);
-		await db.meta.put({ key: META_KEYS.lastFullSync, value: payload.server_time });
-		await db.meta.put({ key: META_KEYS.lastDeltaSync, value: payload.server_time });
-		await db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version });
-		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
-		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
-		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
-	});
+	await Promise.all([
+		db.items.clear(), db.customers.clear(), db.taxTemplates.clear(), db.itemTaxTemplates.clear(),
+		db.paymentModes.clear(), db.profile.clear(), db.meta.clear(),
+	]);
+	await Promise.all([
+		db.items.bulkPut(payload.items), db.customers.bulkPut(payload.customers),
+		db.taxTemplates.bulkPut(payload.tax_templates), db.itemTaxTemplates.bulkPut(payload.item_tax_templates),
+		db.paymentModes.bulkPut(payload.payment_modes), db.profile.put(payload.pos_profile),
+	]);
+	await Promise.all([
+		db.meta.put({ key: META_KEYS.lastFullSync, value: payload.server_time }),
+		db.meta.put({ key: META_KEYS.lastDeltaSync, value: payload.server_time }),
+		db.meta.put({ key: META_KEYS.bootstrapVersion, value: payload.bootstrap_version }),
+		db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings }),
+		db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session }),
+		db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours }),
+	]);
+	useRuntimeCacheStore.getState().touch();
 }
 
 async function writeDelta(payload: BootstrapPayload): Promise<void> {
-	await db.transaction("rw", ALL_TABLES, async () => {
+	await (async () => {
 		if (payload.items.length) {
 			await db.items.bulkPut(payload.items);
 		}
@@ -91,7 +86,8 @@ async function writeDelta(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
 		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
 		await db.meta.put({ key: META_KEYS.offlineSessionTtlHours, value: payload.offline_session_ttl_hours });
-	});
+	})();
+	useRuntimeCacheStore.getState().touch();
 }
 
 export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {

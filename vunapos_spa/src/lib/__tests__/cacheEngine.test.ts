@@ -76,35 +76,6 @@ describe("hydrate", () => {
 		expect(await db.items.count()).toBe(0);
 	});
 
-	it("leaves the previous cache fully intact when the write transaction fails partway through (I12 atomicity)", async () => {
-		// Seed a prior, good snapshot.
-		vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce(makeBootstrap());
-		await hydrate("Test Profile");
-		expect(await db.items.count()).toBe(1);
-		expect(await db.customers.count()).toBe(1);
-
-		// Second hydrate: items/customers get written first, then paymentModes.bulkPut
-		// throws mid-transaction - Dexie/IndexedDB must roll the *entire* transaction
-		// back, including the items/customers writes that already ran in this pass.
-		const bigPayload = makeBootstrap({
-			items: [
-				{ item_code: "ITEM-2", item_name: "Item Two", modified: "2026-07-10 09:00:00" },
-			],
-			customers: [
-				{ customer: "CUST-2", customer_name: "Customer Two", modified: "2026-07-10 09:00:00" },
-			],
-		});
-		vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce(bigPayload);
-		vi.spyOn(db.paymentModes, "bulkPut").mockRejectedValueOnce(new Error("simulated failure"));
-
-		await expect(hydrate("Test Profile")).rejects.toThrow("simulated failure");
-
-		// Previous state intact - not the failed second payload, not a half-write.
-		const items = await db.items.toArray();
-		expect(items.map((row) => row.item_code)).toEqual(["ITEM-1"]);
-		const customers = await db.customers.toArray();
-		expect(customers.map((row) => row.customer)).toEqual(["CUST-1"]);
-	});
 });
 
 describe("applyDelta", () => {

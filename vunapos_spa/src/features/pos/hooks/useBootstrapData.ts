@@ -1,16 +1,22 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFrappeAuth } from "frappe-react-sdk";
-import { useLiveQuery } from "dexie-react-hooks";
 
 import type { BootstrapData } from "../types";
 import { applyDelta } from "../../../lib/cacheEngine";
 import { profileRepository } from "../../../lib/repositories/profileRepository";
+import type { CachedProfile } from "../../../lib/types";
+import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
 //  The POS profile comes from the local cache, reactively
 // (useLiveQuery re-renders the moment the Cache Engine writes a fresher profile)
 export function useBootstrapData() {
-	const profile = useLiveQuery(() => profileRepository.getActive());
+	const revision = useRuntimeCacheStore((state) => state.revision);
+	const [profile, setProfile] = useState<CachedProfile>();
 	const { currentUser } = useFrappeAuth();
+
+	useEffect(() => {
+		void profileRepository.getActive().then(setProfile);
+	}, [revision]);
 
 	const data = useMemo<BootstrapData | null>(() => {
 		if (!profile) {

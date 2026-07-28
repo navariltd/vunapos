@@ -2,8 +2,6 @@ import { useEffect } from "react";
 
 import { applyDelta } from "../../../lib/cacheEngine";
 import { DEFAULT_FRESHNESS_TTL_MS } from "../../../lib/freshness";
-import { itemRepository } from "../../../lib/repositories/itemRepository";
-import { requestPersistentStorage } from "../../../lib/storagePersistence";
 import { useBootstrapSyncStore } from "../../../lib/stores/bootstrapSyncStore";
 import { checkReachability, onConnectivityChange } from "../../../lib/stores/connectivityStore";
 import { VunaApiError } from "../../../services/vunaApi";
@@ -21,7 +19,6 @@ export function useOfflineSync() {
 		let cancelled = false;
 
 		async function bootstrap() {
-			void requestPersistentStorage();
 			try {
 				await applyDelta();
 				if (!cancelled) {
@@ -29,11 +26,6 @@ export function useOfflineSync() {
 				}
 			} catch (err) {
 				if (cancelled) {
-					return;
-				}
-				const cachedItemCount = await itemRepository.count();
-				if (cachedItemCount > 0) {
-					setPhase("ready");
 					return;
 				}
 				setError(
