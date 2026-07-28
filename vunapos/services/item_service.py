@@ -5,7 +5,9 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
+from frappe.query_builder.functions import Sum
 from frappe.utils import cint, flt, today
+from pypika import Order
 
 from vunapos.dto.item import item_to_dict
 from vunapos.services.profile_service import resolve_pos_profile
@@ -117,18 +119,17 @@ def _get_actual_qty_map(item_codes, warehouse):
 	if not item_codes or not warehouse:
 		return None
 
-	placeholders = ", ".join(["%s"] * len(item_codes))
-	rows = frappe.db.sql(
-		f"""
-		select item_code, sum(actual_qty - reserved_stock) as available_qty
-		from `tabBin`
-		where warehouse = %s
-			and item_code in ({placeholders})
-		group by item_code
-		""",
-		[warehouse, *item_codes],
-		as_dict=True,
-	)
+	bin_table = frappe.qb.DocType("Bin")
+	rows = (
+		frappe.qb.from_(bin_table)
+		.select(
+			bin_table.item_code,
+			Sum(bin_table.actual_qty - bin_table.reserved_stock).as_("available_qty"),
+		)
+		.where(bin_table.warehouse == warehouse)
+		.where(bin_table.item_code.isin(item_codes))
+		.groupby(bin_table.item_code)
+	).run(as_dict=True)
 	return {row.item_code: max(flt(row.available_qty), 0) for row in rows}
 
 
@@ -136,22 +137,20 @@ def _get_uom_rate_map(item_codes, price_list):
 	if not item_codes or not price_list:
 		return {}
 
-	placeholders = ", ".join(["%s"] * len(item_codes))
 	current_date = today()
-	rows = frappe.db.sql(
-		f"""
-		select item_code, uom, price_list_rate
-		from `tabItem Price`
-		where selling = 1
-			and price_list = %s
-			and item_code in ({placeholders})
-			and (valid_from <= %s or valid_from is null)
-			and (valid_upto >= %s or valid_upto is null)
-		order by item_code asc, valid_from desc, modified desc
-		""",
-		[price_list, *item_codes, current_date, current_date],
-		as_dict=True,
-	)
+	item_price = frappe.qb.DocType("Item Price")
+	rows = (
+		frappe.qb.from_(item_price)
+		.select(item_price.item_code, item_price.uom, item_price.price_list_rate)
+		.where(item_price.selling == 1)
+		.where(item_price.price_list == price_list)
+		.where(item_price.item_code.isin(item_codes))
+		.where((item_price.valid_from <= current_date) | item_price.valid_from.isnull())
+		.where((item_price.valid_upto >= current_date) | item_price.valid_upto.isnull())
+		.orderby(item_price.item_code)
+		.orderby(item_price.valid_from, order=Order.desc)
+		.orderby(item_price.modified, order=Order.desc)
+	).run(as_dict=True)
 	rate_map = {}
 	for row in rows:
 		item_rates = rate_map.setdefault(row.item_code, {})
