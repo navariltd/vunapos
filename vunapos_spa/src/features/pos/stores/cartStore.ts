@@ -29,6 +29,7 @@ import {
 	getItemDetails,
 	holdInvoice,
 	listHeldInvoices,
+	previewInvoice,
 	removeItem,
 	renderInvoice,
 	restoreInvoice,
@@ -48,6 +49,7 @@ export type CartApi = {
 	removeItem: FrappeCall;
 	clearInvoice: FrappeCall;
 	createInvoiceFromCart: FrappeCall;
+	previewInvoice: FrappeCall;
 	createAndSubmitInvoice: FrappeCall;
 	checkoutInvoice: FrappeCall;
 	holdInvoice: FrappeCall;
@@ -506,6 +508,7 @@ type CartActions = {
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
+	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
@@ -870,6 +873,27 @@ export const useCartStore = create<CartStore>((set, get) => {
 				}),
 			);
 			set({ invoice: updatedInvoice.items.length ? updatedInvoice : null });
+		},
+
+		validateCart: async (api) => {
+			const invoice = get().invoice;
+			if (!invoice?.items?.length) return null;
+			const selectedCustomer = getActiveCustomer(get());
+			const sourceInvoice = getLocalCartSource(invoice);
+			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
+				pos_profile: get().posProfile,
+				customer: selectedCustomer?.customer || invoice.customer,
+				invoice_doctype: invoice.doctype,
+				items: invoice.items.map(cartItemPayload),
+			}));
+			const validated = localizePreviewInvoice(
+				authoritative,
+				invoice.items,
+				selectedCustomer,
+				sourceInvoice,
+			);
+			set({ invoice: validated });
+			return validated;
 		},
 
 		submitCart: async (payments, printFormat, idempotencyKey, api, isOnline = false) => {

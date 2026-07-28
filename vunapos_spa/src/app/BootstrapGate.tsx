@@ -5,9 +5,8 @@ type BootstrapGateProps = {
 	children: React.ReactNode;
 };
 
-// The only real hard block in the app: no offline data cached yet, and no way to
-// fetch it. Every other bad state (stale cache, a failed background refresh) still
-// lets the cashier sell - this screen is for that one case only.
+// Bootstrap still hydrates the local read cache for fast catalogue rendering, but
+// VunaPOS is online-only: cached data never authorizes sales when the server is unavailable.
 function getPosProfileIssue(code: string | null, message: string | null): "missing" | "permission" | null {
 	if (code === "POS_PROFILE_NOT_ASSIGNED" || code === "POS_PROFILE_NOT_ENABLED") return "missing";
 	if (code === "POS_PROFILE_READ_DENIED") return "permission";
@@ -46,10 +45,9 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
 				<div className="max-w-sm text-center">
-					<h1 className="text-lg font-semibold text-on-surface">Initial sync required</h1>
+					<h1 className="text-lg font-semibold text-on-surface">Connection required</h1>
 					<p className="mt-2 text-sm text-on-surface-variant">
-						This device has no offline data yet and can't reach the server to download it. Connect to
-						the internet once to prepare this terminal for offline sales.
+						VunaPOS could not reach the server to load the active POS Profile and catalogue. Reconnect before continuing.
 					</p>
 					{error ? <p className="mt-2 text-xs text-on-surface-variant">{error}</p> : null}
 					<Button className="mt-4" onClick={retry}>
@@ -63,7 +61,7 @@ export function BootstrapGate({ children }: BootstrapGateProps) {
 	if (phase === "hydrating") {
 		return (
 			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
-				<div className="text-sm font-medium text-on-surface-variant">Preparing VunaPOS for offline use...</div>
+				<div className="text-sm font-medium text-on-surface-variant">Loading VunaPOS data...</div>
 			</div>
 		);
 	}

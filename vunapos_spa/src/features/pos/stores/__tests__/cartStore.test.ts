@@ -17,6 +17,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 		removeItem: reject,
 		clearInvoice: reject,
 		createInvoiceFromCart: reject,
+		previewInvoice: reject,
 		createAndSubmitInvoice: reject,
 		checkoutInvoice: reject,
 		holdInvoice: reject,
@@ -453,6 +454,32 @@ describe("submitCart", () => {
 		expect(result?.invoice.docstatus).toBe(1);
 		expect(result?.printPayload).toBeNull();
 		expect(useCartStore.getState().invoice).toBeNull();
+	});
+});
+
+describe("validateCart", () => {
+	it("replaces local totals with the server preview before checkout", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			customer: "CUST-1",
+			items: [{ row_name: "server-row", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 125, amount: 125 }],
+			taxes: [],
+			totals: { net_total: 125, total_taxes_and_charges: 0, grand_total: 125, rounded_total: 125 },
+		});
+
+		const validated = await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(validated?.items[0].rate).toBe(125);
+		expect(validated?.totals.grand_total).toBe(125);
+		expect(useCartStore.getState().invoice?.totals.grand_total).toBe(125);
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			pos_profile: "Profile-1",
+			customer: "CUST-1",
+		}));
 	});
 });
 

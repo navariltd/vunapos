@@ -872,6 +872,7 @@ def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype
 		customer=customer,
 		invoice_doctype=invoice_doctype,
 	)
+	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
 	validate_cart_items(cart_items, profile)
 	_append_cart_items(doc, profile, cart_items)

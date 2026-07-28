@@ -1,8 +1,5 @@
-import { useEffect } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
-import { cachePosSession } from "../../../lib/cacheEngine";
-import type { CachedPosSession } from "../../../lib/types";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { BootstrapData, POSSessionDTO } from "../types";
 
@@ -26,17 +23,6 @@ export function usePosSessionStatus(posProfile: string | undefined) {
 			error = err instanceof Error ? err.message : "Failed to load POS session status";
 		}
 	}
-
-	useEffect(() => {
-		if (
-			session?.cashier &&
-			session.pos_profile &&
-			session.status &&
-			typeof session.ready === "boolean"
-		) {
-			void cachePosSession(session as CachedPosSession);
-		}
-	}, [session]);
 
 	return {
 		session,
