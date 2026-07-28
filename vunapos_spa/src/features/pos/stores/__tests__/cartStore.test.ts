@@ -327,6 +327,7 @@ describe("submitCart", () => {
 	});
 
 	it("submits directly with the checkout idempotency key and clears the cart", async () => {
+		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, actual_qty: 5, modified: "2026-07-10" });
 		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
 			doctype: "Sales Invoice", name: "ACC-SINV-0001", docstatus: 1, items: [], totals: {},
 		});
@@ -340,13 +341,14 @@ describe("submitCart", () => {
 		const result = await useCartStore
 			.getState()
 			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-1", makeApi({
-				getItemDetails: vi.fn().mockResolvedValue(makeItem()), createAndSubmitInvoice, renderInvoice,
+				getItemDetails: vi.fn().mockResolvedValue(makeItem({ actual_qty: 4 })), createAndSubmitInvoice, renderInvoice,
 			}), true);
 
 		expect(result?.invoice.name).toBe("ACC-SINV-0001");
 		expect(result?.invoice.docstatus).toBe(1);
 		expect(result?.printPayload?.html).toContain("receipt");
 		expect(useCartStore.getState().invoice).toBeNull();
+		expect((await db.items.get("ITEM-1"))?.actual_qty).toBe(4);
 		expect(createAndSubmitInvoice).toHaveBeenCalledWith(expect.objectContaining({ idempotency_key: "idem-1" }));
 	});
 
@@ -456,6 +458,39 @@ describe("validateCart", () => {
 			customer: "CUST-1",
 		}));
 	});
+
+	it("validates a restored hold using its original server doctype", async () => {
+		useCartStore.setState({
+			invoice: {
+				doctype: "VunaPOS Cart",
+				name: "SINV-HELD-1",
+				docstatus: 0,
+				is_local: true,
+				source_invoice_doctype: "Sales Invoice",
+				source_invoice_name: "SINV-HELD-1",
+				items: [{ row_name: "row-1", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 100, amount: 100 }],
+				totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+			},
+		});
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			items: [{ row_name: "server-row", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 100, amount: 100 }],
+			taxes: [],
+			totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+		});
+
+		await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({ invoice_doctype: "Sales Invoice" }));
+		expect(useCartStore.getState().invoice).toMatchObject({
+			doctype: "Sales Invoice",
+			is_local: true,
+			source_invoice_doctype: "Sales Invoice",
+			source_invoice_name: "SINV-HELD-1",
+		});
+	});
 });
 
 describe("holdCart", () => {
@@ -493,6 +528,43 @@ describe("holdCart", () => {
 				createInvoiceFromCart: vi.fn().mockRejectedValue(new Error("Server unavailable")),
 			}))).rejects.toThrow(/Server unavailable/);
 			expect(useCartStore.getState().invoice).not.toBeNull();
+		});
+
+		it("holds a combined batch-and-serial item immediately after serial selection", async () => {
+			const invoice = useCartStore.getState().invoice!;
+			const serialItem = {
+				...invoice.items[0],
+				item_code: "SERIAL-BATCH-1",
+				item_name: "Batched and Serialed 1",
+				has_batch_no: 1,
+				has_serial_no: 1,
+				actual_qty: 1,
+			};
+			useCartStore.setState({ invoice: { ...invoice, items: [serialItem] } });
+			const serial = { serial_no: "SERIAL-0001", batch_no: "BATCH-0001" };
+
+			const saving = useCartStore.getState().updateCartItemSerialAllocations(
+				serialItem.row_name,
+				[serial],
+				makeApi(),
+			);
+			const draft = { doctype: "Sales Invoice", name: "ACC-SINV-DRAFT-1", docstatus: 0, items: [], totals: {} };
+			const held = { ...draft, name: "ACC-SINV-HELD-1", is_held: true };
+			const createInvoiceFromCart = vi.fn().mockResolvedValue(draft);
+			const holdInvoice = vi.fn().mockResolvedValue(held);
+			const listHeldInvoices = vi.fn().mockResolvedValue([]);
+
+			const result = await useCartStore.getState().holdCart(makeApi({
+				createInvoiceFromCart,
+				holdInvoice,
+				listHeldInvoices,
+			}));
+			await saving;
+
+			const payload = createInvoiceFromCart.mock.calls[0][0] as { items: string };
+			expect(JSON.parse(payload.items)[0].serial_allocations).toEqual([serial]);
+			expect(result?.name).toBe("ACC-SINV-HELD-1");
+			expect(useCartStore.getState().invoice).toBeNull();
 		});
 	});
 

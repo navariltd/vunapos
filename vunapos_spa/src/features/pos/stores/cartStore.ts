@@ -12,9 +12,11 @@ import type {
 } from "../types";
 import { assembleInvoice, type AssembledInvoice, type ItemTaxRow } from "../../../lib/invoiceEngine";
 import { itemTaxTemplateRepository } from "../../../lib/repositories/itemTaxTemplateRepository";
+import { itemRepository } from "../../../lib/repositories/itemRepository";
 import { profileRepository } from "../../../lib/repositories/profileRepository";
 import { taxTemplateRepository } from "../../../lib/repositories/taxTemplateRepository";
 import { resolveTaxSettings } from "../../../lib/taxSettings";
+import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 import {
 	addItem,
 	checkoutInvoice,
@@ -101,6 +103,9 @@ function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 			if (!Number.isInteger(required) || required <= 0) {
 				throw new Error(`${item.item_name} requires a whole-number stock quantity for serial selection.`);
 			}
+			// An empty selection delegates to ERPNext's configured automatic outward
+			// bundle allocation. A partially entered manual selection must still be complete.
+			if (!serials.length) continue;
 			if (serials.length !== required || new Set(serials.map((row) => row.serial_no)).size !== required) {
 				throw new Error(`Select exactly ${required} unique serial numbers for ${item.item_name}.`);
 			}
@@ -419,6 +424,30 @@ async function refreshAndValidateStock(
 	};
 }
 
+async function refreshSoldItemStock(
+	items: InvoiceItemDTO[],
+	posProfile: string | undefined,
+	customer: string | undefined,
+	api: CartApi,
+): Promise<void> {
+	try {
+		const itemCodes = [...new Set(items.map((item) => item.item_code))];
+		await Promise.all(itemCodes.map(async (itemCode) => {
+			const fresh = await getItemDetails(api.getItemDetails, {
+				item_code: itemCode,
+				pos_profile: posProfile,
+				customer,
+			});
+			await itemRepository.updateActualQty(itemCode, fresh.actual_qty);
+		}));
+		useRuntimeCacheStore.getState().touch();
+	} catch (error) {
+		// The accounting transaction already succeeded. A catalogue refresh failure
+		// must not turn a completed sale into a failed checkout or invite a retry.
+		console.error("Failed to refresh sold item stock", error);
+	}
+}
+
 // ---- store ----
 
 export type CartState = {
@@ -690,9 +719,22 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (!invoice) return;
 			const nextItems = invoice.items.map((item) => item.row_name === rowName
 				? { ...item, serial_allocations: allocations || [] } : item);
-			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewLocalCart(nextItems, invoice))
-				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+			if (isLocalCart(invoice)) {
+				// Store the selected serials before recalculating the preview. This closes the
+				// gap where Hold could run after the checkbox changed but before the preview
+				// promise updated the cart, incorrectly observing no serial allocation.
+				const optimisticInvoice = { ...invoice, items: nextItems };
+				set({ invoice: optimisticInvoice });
+				try {
+					const updated = await runMutation(() => previewLocalCart(nextItems, optimisticInvoice));
+					if (get().invoice === optimisticInvoice) set({ invoice: updated });
+				} catch (error) {
+					if (get().invoice === optimisticInvoice) set({ invoice });
+					throw error;
+				}
+				return;
+			}
+			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
 					items: nextItems.map(cartItemPayload),
 				}));
@@ -817,7 +859,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
 				pos_profile: get().posProfile,
 				customer: selectedCustomer?.customer || invoice.customer,
-				invoice_doctype: invoice.doctype,
+				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
 				items: invoice.items.map(cartItemPayload),
 			}));
 			const validated = localizePreviewInvoice(
@@ -867,6 +909,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						idempotency_key: idempotencyKey,
 					}),
 				);
+				await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);
 				try {
 					const receipt = await renderInvoice(api.renderInvoice, {
 						invoice_doctype: submittedInvoice.doctype,
@@ -903,6 +946,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					idempotency_key: idempotencyKey,
 				});
 			});
+			await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);
 
 			try {
 				const receipt = await renderInvoice(api.renderInvoice, {

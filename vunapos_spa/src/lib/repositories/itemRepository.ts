@@ -10,6 +10,12 @@ export const itemRepository = {
 		return db.items.get(itemCode);
 	},
 
+	async updateActualQty(itemCode: string, actualQty: number | null | undefined): Promise<void> {
+		const item = await db.items.get(itemCode);
+		if (!item) return;
+		await db.items.put({ ...item, actual_qty: actualQty });
+	},
+
 	async search(query: string, limit = 50): Promise<CachedItem[]> {
 		const needle = query.trim().toLowerCase();
 		const items = await db.items.toArray();

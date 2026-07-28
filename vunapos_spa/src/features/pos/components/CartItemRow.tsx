@@ -234,13 +234,13 @@ function SerialAllocationEditor({ data, disabled, item, onSave }: { data: ItemBa
 			.catch((error: unknown) => setSaveError(error instanceof Error ? error.message : "Failed to save serial numbers"))
 			.finally(() => setSaving(false));
 	};
-	const toggle = (serialNo: string) => setSelected((current) => {
-		const next = new Set(current);
+	const toggle = (serialNo: string) => {
+		const next = new Set(selected);
 		if (next.has(serialNo)) next.delete(serialNo);
 		else if (next.size < required) next.add(serialNo);
+		setSelected(next);
 		persist(next);
-		return next;
-	});
+	};
 	const scan = () => { const exact = serials.find((row) => row.serial_no.toLowerCase() === query.trim().toLowerCase()); if (exact) { toggle(exact.serial_no); setQuery(""); } };
 	return <div className="border-t border-outline-variant p-3"><div className="flex gap-2"><input className="h-9 min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-sm" placeholder="Scan or search serial number" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }} /><Button size="sm" variant="ghost" onClick={scan}>Add scan</Button></div><div className="mt-3 max-h-56 space-y-2 overflow-y-auto">{filtered.map((row) => <label key={row.serial_no} className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface p-2 text-sm"><input type="checkbox" checked={selected.has(row.serial_no)} disabled={disabled || saving || (!selected.has(row.serial_no) && selected.size >= required)} onChange={() => toggle(row.serial_no)} /><span className="min-w-0 flex-1 truncate">{row.serial_no}</span>{row.batch_no ? <span className="text-xs text-on-surface-variant">{row.batch_no}</span> : null}</label>)}</div><div className="mt-3 flex items-center justify-between"><span className={selected.size === required ? "text-xs text-on-surface-variant" : "text-xs text-error"}>Selected {selected.size} / {required}</span><span className="text-xs text-on-surface-variant">{saving ? "Saving…" : selected.size === required ? "Saved automatically" : "Select the required serials"}</span></div>{saveError ? <p className="mt-2 text-xs text-error">{saveError}</p> : null}</div>;
 }

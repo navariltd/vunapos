@@ -14,6 +14,7 @@ from frappe.utils import cstr, flt, get_datetime, now_datetime, nowdate
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
 from vunapos.services.batch_service import (
+	auto_allocate_serials,
 	get_item_batches,
 	get_item_tracking_flags,
 	validate_batch_allocation,
@@ -602,7 +603,13 @@ def _manual_batch_allocations(item_code, qty, warehouse, allocations):
 def _apply_batch_allocation(row, doc, profile, qty=None):
 	flags = get_item_tracking_flags(row.item_code)
 	if flags["requires_serial"]:
-		_throw("SERIAL_SELECTION_REQUIRED", _("Serial-numbered items require manual serial selection."))
+		serials = auto_allocate_serials(
+			row.item_code,
+			qty or flt(row.qty) * flt(row.get("conversion_factor") or 1),
+			warehouse=profile.warehouse or row.get("warehouse"),
+		)
+		_set_row_serial_allocations(row, serials)
+		return row
 	if not flags["requires_batch"]:
 		return row
 
@@ -761,8 +768,15 @@ def _append_cart_items(doc, profile, items):
 		_unused_uom, conversion_factor = _resolve_item_uom(item.get("item_code"), item.get("uom"))
 		stock_qty = flt(item.get("qty")) * conversion_factor
 		if flags["requires_serial"]:
-			serials = validate_serial_allocation(
-				item.get("item_code"), stock_qty, item.get("serial_allocations"), warehouse=profile.warehouse
+			serials = (
+				validate_serial_allocation(
+					item.get("item_code"),
+					stock_qty,
+					item.get("serial_allocations"),
+					warehouse=profile.warehouse,
+				)
+				if item.get("serial_allocations")
+				else auto_allocate_serials(item.get("item_code"), stock_qty, warehouse=profile.warehouse)
 			)
 			row = doc.append(
 				"items",

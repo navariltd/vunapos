@@ -257,12 +257,23 @@ export function checkoutInvoice(
 	});
 }
 
+type CartItemInput = {
+	item_code: string;
+	qty: number;
+	uom?: string;
+	conversion_factor?: number;
+	batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+	item_note?: string | null;
+	pricing_override?: { type: string; value: number };
+};
+
 export function createAndSubmitInvoice(
 	call: FrappeCall,
 	params: {
 		pos_profile?: string;
 		customer?: string;
-		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
+		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
 	},
@@ -279,7 +290,7 @@ export function createInvoiceFromCart(
 	params: {
 		pos_profile?: string;
 		customer?: string;
-		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
+		items: CartItemInput[];
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
