@@ -125,6 +125,7 @@ export type BootstrapData = {
 	allow_partial_payment?: boolean;
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
+	hide_images?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -136,6 +137,7 @@ export type BootstrapData = {
 export type ItemDTO = {
 	item_code: string;
 	item_name: string;
+	item_group?: string;
 	description?: string;
 	image?: string | null;
 	stock_uom?: string;

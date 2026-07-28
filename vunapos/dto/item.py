@@ -16,6 +16,7 @@ def item_to_dict(item, rate=None, actual_qty=None, barcode=None, item_tax_templa
 	return {
 		"item_code": item.item_code,
 		"item_name": item.item_name,
+		"item_group": item.item_group,
 		"description": item.description,
 		"image": item.image,
 		"stock_uom": item.stock_uom,

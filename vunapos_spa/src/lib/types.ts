@@ -4,6 +4,7 @@
 export type CachedItem = {
 	item_code: string;
 	item_name: string;
+	item_group?: string;
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
@@ -108,6 +109,7 @@ export type CachedProfile = {
 	allow_partial_payment?: boolean;
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
+	hide_images?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

@@ -272,6 +272,7 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 			"name",
 			"item_code",
 			"item_name",
+			"item_group",
 			"description",
 			"image",
 			"stock_uom",
