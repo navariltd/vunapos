@@ -182,7 +182,6 @@ export type ItemBatchesDTO = {
 	batches: ItemBatchDTO[];
 	serials?: SerialAllocationDTO[];
 	verified_at?: string;
-	from_cache?: boolean;
 };
 
 export type BatchAllocationResultDTO = {

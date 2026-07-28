@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // CI import-rule gate (spec §4.4). Presentation/Sales UI code must never reach past
-// its repositories: no raw fetch, no Dexie/db.ts, no the low-level API client
-// (lib/apiClient.ts, used only by the Cache/Sync Engines outside React's lifecycle).
+// its repositories: no raw fetch, no direct memory-store access, and no low-level API client
+// (lib/apiClient.ts, used by catalogue bootstrap and connectivity checks).
 //
 // Scope: app/, components/, pages/, features (UI + hooks) - hooks may call repository/engine
 // functions but not touch storage or network directly. lib/ and services/vunaApi.ts (hook-bound
@@ -28,7 +28,7 @@ const FORBIDDEN_PATTERNS = [
     regex: /from\s+["']dexie["']/,
   },
   {
-    name: "direct Dexie db import (lib/db)",
+    name: "direct memory-store import (lib/db)",
     regex: /from\s+["'][^"']*\/lib\/db["']/,
   },
   {
@@ -95,5 +95,5 @@ if (violations.length > 0) {
 }
 
 console.log(
-  "Import-rule gate passed: no fetch/dexie/apiClient imports in Presentation or Sales UI code."
+  "Import-rule gate passed: no fetch/persistent-db/apiClient imports in Presentation or Sales UI code."
 );

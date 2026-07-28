@@ -42,7 +42,6 @@ const CUSTOMER: CustomerDTO = { customer: "CUST-1", customer_name: "Test Custome
 beforeEach(async () => {
 	await Promise.all([
 		db.items.clear(),
-		db.batchInventory.clear(),
 		db.taxTemplates.clear(),
 		db.itemTaxTemplates.clear(),
 		db.profile.clear(),

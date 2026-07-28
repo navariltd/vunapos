@@ -7,8 +7,8 @@ import { profileRepository } from "../../../lib/repositories/profileRepository";
 import type { CachedProfile } from "../../../lib/types";
 import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
-//  The POS profile comes from the local cache, reactively
-// (useLiveQuery re-renders the moment the Cache Engine writes a fresher profile)
+// The POS profile comes from the process-local read store and updates whenever
+// a successful server bootstrap refreshes that store.
 export function useBootstrapData() {
 	const revision = useRuntimeCacheStore((state) => state.revision);
 	const [profile, setProfile] = useState<CachedProfile>();

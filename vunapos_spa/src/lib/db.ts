@@ -1,5 +1,4 @@
 import type {
-	CachedBatchInventory,
 	CachedCustomer,
 	CachedItem,
 	CachedItemTaxTemplate,
@@ -31,7 +30,6 @@ class MemoryTable<T> {
 // Process-local read cache only. A reload starts empty and must hydrate from the server.
 export const db = {
 	items: new MemoryTable<CachedItem>((row) => row.item_code),
-	batchInventory: new MemoryTable<CachedBatchInventory>((row) => row.key),
 	customers: new MemoryTable<CachedCustomer>((row) => row.customer),
 	taxTemplates: new MemoryTable<CachedTaxTemplate>((row) => row.name),
 	itemTaxTemplates: new MemoryTable<CachedItemTaxTemplate>((row) => row.name),

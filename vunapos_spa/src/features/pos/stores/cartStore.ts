@@ -11,7 +11,6 @@ import type {
 	PrintPayload,
 } from "../types";
 import { assembleInvoice, type AssembledInvoice, type ItemTaxRow } from "../../../lib/invoiceEngine";
-import { batchInventoryRepository } from "../../../lib/repositories/batchInventoryRepository";
 import { itemTaxTemplateRepository } from "../../../lib/repositories/itemTaxTemplateRepository";
 import { profileRepository } from "../../../lib/repositories/profileRepository";
 import { taxTemplateRepository } from "../../../lib/repositories/taxTemplateRepository";
@@ -726,34 +725,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 		loadItemBatches: async (itemCode, warehouse, isOnline, api) => {
 			const posProfile = get().posProfile;
 			if (!posProfile || !warehouse) throw new Error("A POS Profile and warehouse are required to load batches.");
-			if (isOnline) {
-				try {
-					const fresh = await getItemBatches(api.getItemBatches, {
-						item_code: itemCode,
-						warehouse,
-						pos_profile: posProfile,
-					});
-					const verifiedAt = new Date().toISOString();
-					await batchInventoryRepository.put({
-						pos_profile: posProfile,
-						warehouse,
-						item_code: itemCode,
-						verified_at: verifiedAt,
-						requires_batch: Boolean(fresh.requires_batch),
-						requires_serial: Boolean(fresh.requires_serial),
-						batches: fresh.batches,
-						serials: fresh.serials,
-					});
-					return { ...fresh, verified_at: verifiedAt, from_cache: false };
-				} catch (error) {
-					const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
-					if (!cached) throw error;
-					return { ...cached, from_cache: true };
-				}
-			}
-			const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
-			if (!cached) throw new Error("No cached batch availability is available. Reconnect to load batches.");
-			return { ...cached, from_cache: true };
+			if (!isOnline) throw new Error("Connect to the server to load current batch availability.");
+			const fresh = await getItemBatches(api.getItemBatches, {
+				item_code: itemCode,
+				warehouse,
+				pos_profile: posProfile,
+			});
+			return { ...fresh, verified_at: new Date().toISOString() };
 		},
 
 		removeCartItem: async (rowName, api) => {

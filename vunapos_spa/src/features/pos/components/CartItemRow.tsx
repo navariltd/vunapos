@@ -397,7 +397,7 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 		<div className="border-t border-outline-variant p-3">
 			<div className="flex items-start justify-between gap-3">
 				<div>
-					{batchData?.verified_at ? <p className="mt-1 text-xs text-on-surface-variant">{batchData.from_cache ? "Cached" : "Verified"} {new Date(batchData.verified_at).toLocaleString()}</p> : null}
+					{batchData?.verified_at ? <p className="mt-1 text-xs text-on-surface-variant">Verified {new Date(batchData.verified_at).toLocaleString()}</p> : null}
 				</div>
 				<Button variant="ghost" size="sm" className="gap-1" disabled={disabled || !isOnline} onClick={onReload} title={isOnline ? "Refresh batch availability" : "Reconnect to refresh batches"}>
 					<RefreshCw className="size-3.5" /> Refresh

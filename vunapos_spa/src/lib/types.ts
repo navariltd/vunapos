@@ -22,22 +22,6 @@ export type CachedItem = {
 	item_tax_template?: string | null;
 };
 
-export type CachedBatchInventory = {
-	key: string;
-	pos_profile: string;
-	warehouse: string;
-	item_code: string;
-	verified_at: string;
-	requires_batch: boolean;
-	requires_serial: boolean;
-	batches: Array<{
-		batch_no: string;
-		expiry_date?: string | null;
-		available_qty?: number | null;
-	}>;
-	serials?: Array<{ serial_no: string; batch_no?: string | null }>;
-};
-
 export type CachedCustomer = {
 	customer: string;
 	customer_name: string;

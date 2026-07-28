@@ -186,7 +186,7 @@ export function assembleInvoice(input: {
 		}
 		const rate = input.priceResolver(line.item_code);
 		if (rate === undefined) {
-			throw new InvoiceEngineError(`No cached price for item ${line.item_code}`);
+			throw new InvoiceEngineError(`No price is available for item ${line.item_code}`);
 		}
 		const priceListRate = rate;
 		let sellingRate = priceListRate;

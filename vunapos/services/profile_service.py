@@ -1,6 +1,5 @@
 import frappe
 from frappe import _
-from frappe.utils import get_datetime
 
 from vunapos.dto.profile import profile_to_dict
 
@@ -130,66 +129,6 @@ def require_open_pos_session(pos_profile, user=None):
 			{"pos_profile": pos_profile, "cashier": user},
 		)
 	return frappe.get_doc("POS Opening Entry", session["opening_entry"])
-
-
-def validate_historical_pos_session(
-	pos_profile, opening_entry, cashier, posting_date, posting_time=None, verified_at=None
-):
-	user = frappe.session.user
-	require_pos_profile_assignment(pos_profile, user)
-	if not opening_entry or not cashier or not posting_date or not verified_at:
-		_session_error(
-			"POS_SESSION_METADATA_REQUIRED",
-			_("This queued sale has no complete verified POS session metadata"),
-		)
-	if cashier != user:
-		_session_error(
-			"POS_SESSION_CASHIER_MISMATCH",
-			_("The queued sale belongs to cashier {0}, not {1}").format(cashier, user),
-		)
-	if not frappe.db.exists("POS Opening Entry", opening_entry):
-		_session_error(
-			"POS_SESSION_NOT_FOUND",
-			_("POS Opening Entry {0} was not found").format(opening_entry),
-		)
-
-	entry = frappe.get_doc("POS Opening Entry", opening_entry)
-	if entry.docstatus != 1 or entry.status not in ("Open", "Closed"):
-		_session_error(
-			"POS_SESSION_INVALID",
-			_("POS Opening Entry {0} is cancelled or invalid").format(opening_entry),
-		)
-	if entry.user != cashier or entry.pos_profile != pos_profile:
-		_session_error(
-			"POS_SESSION_MISMATCH",
-			_("POS Opening Entry {0} does not match this cashier and profile").format(opening_entry),
-		)
-
-	try:
-		sale_at = get_datetime(f"{posting_date} {posting_time or '00:00:00'}")
-		verified = get_datetime(verified_at)
-	except (TypeError, ValueError):
-		_session_error("POS_SESSION_TIME_INVALID", _("The queued sale has invalid session timestamps"))
-
-	opened_at = get_datetime(entry.period_start_date)
-	if sale_at < opened_at or verified < opened_at:
-		_session_error(
-			"POS_SESSION_TIME_INVALID",
-			_("The queued sale predates POS Opening Entry {0}").format(opening_entry),
-		)
-	closed_at = None
-	if entry.status == "Closed":
-		if entry.get("pos_closing_entry") and frappe.db.exists("POS Closing Entry", entry.pos_closing_entry):
-			closed_at = frappe.db.get_value("POS Closing Entry", entry.pos_closing_entry, "period_end_date")
-		fallback_end = closed_at or entry.get("period_end_date")
-		closed_at = get_datetime(fallback_end) if fallback_end else None
-		if not closed_at or sale_at > closed_at:
-			_session_error(
-				"POS_SESSION_CLOSED_BEFORE_SALE",
-				_("POS Opening Entry {0} was closed before this sale").format(opening_entry),
-			)
-
-	return entry
 
 
 def get_profile_defaults(pos_profile=None):

@@ -50,6 +50,6 @@ export function AuthGate({ children }: AuthGateProps) {
 	}
 
 	// Confirmed session, or an unconfirmed one trusted via cookie (no server rejection
-	// yet); BootstrapGate separately checks whether cached data is enough to sell.
+	// yet); BootstrapGate independently requires a successful server bootstrap.
 	return <CsrfTokenLoader>{children}</CsrfTokenLoader>;
 }

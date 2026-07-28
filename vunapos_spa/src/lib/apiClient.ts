@@ -1,8 +1,8 @@
 import { unwrapVunaResponse, VunaApiError } from "../services/vunaApi";
 import type { BootstrapPayload } from "./types";
 
-// The only module allowed to import fetch (dependency rule, spec §4.4) - the Cache Engine
-// and Sync Engine run outside React's render lifecycle, so they can't use the
+// The only module allowed to import fetch (dependency rule, spec §4.4). Catalogue
+// bootstrap and connectivity checks run outside React's render lifecycle, so they can't use the
 // useFrappeGetCall/useFrappePostCall hooks that the rest of the app calls the API with.
 const API_BASE = "/api/method";
 
