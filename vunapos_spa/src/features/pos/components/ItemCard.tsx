@@ -23,7 +23,7 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
 		<div className="flex min-h-40 flex-col overflow-hidden rounded-md border border-outline-variant bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44">
 			<button
 				type="button"
-				className="flex flex-1 flex-col text-left"
+				className="flex flex-1 cursor-pointer flex-col text-left disabled:cursor-not-allowed"
 				disabled={isDisabled}
 				onClick={() => onAdd(item)}
 			>

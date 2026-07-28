@@ -316,6 +316,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
 							<ItemGrid
 								currency={bootstrap.data?.currency}
+								hideImages={bootstrap.data?.hide_images}
 								isLoading={items.isLoading}
 								items={items.items}
 								mutationDisabled={cartIsMutating}

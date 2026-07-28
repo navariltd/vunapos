@@ -92,7 +92,7 @@ export function CartItemRow({
 				<div className="flex items-start justify-between gap-3">
 					<button
 						type="button"
-						className="flex min-w-0 flex-1 items-start justify-between gap-3 text-left"
+						className="flex min-w-0 flex-1 cursor-pointer items-start justify-between gap-3 text-left"
 						onClick={() => onToggle(item.row_name)}
 						aria-expanded={expanded}
 						aria-controls={`cart-item-details-${item.row_name}`}
