@@ -5,6 +5,7 @@ import type {
 	HeldInvoiceDTO,
 	InvoiceDTO,
 	InvoiceItemDTO,
+	ItemBatchesDTO,
 	ItemDTO,
 	PaymentInput,
 	PrintPayload,
@@ -14,6 +15,7 @@ import { assembleInvoice, type AssembledInvoice, type ItemTaxRow } from "../../.
 import { invoiceRepository } from "../../../lib/invoiceRepository";
 import { renderLocalReceipt } from "../../../lib/localReceipt";
 import { customerRepository } from "../../../lib/repositories/customerRepository";
+import { batchInventoryRepository } from "../../../lib/repositories/batchInventoryRepository";
 import { itemRepository } from "../../../lib/repositories/itemRepository";
 import { itemTaxTemplateRepository } from "../../../lib/repositories/itemTaxTemplateRepository";
 import { profileRepository } from "../../../lib/repositories/profileRepository";
@@ -26,6 +28,7 @@ import {
 	checkoutInvoice,
 	clearInvoice,
 	createInvoiceFromCart,
+	getItemBatches,
 	getItemDetails,
 	holdInvoice,
 	listHeldInvoices,
@@ -43,6 +46,7 @@ import {
 export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
+	getItemBatches: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
 	clearInvoice: FrappeCall;
@@ -79,6 +83,90 @@ function getLocalCartSource(invoice?: InvoiceDTO | null) {
 	};
 }
 
+function cartItemPayload(item: InvoiceItemDTO) {
+	return {
+		item_code: item.item_code,
+		qty: item.qty,
+		uom: item.uom,
+		conversion_factor: item.conversion_factor,
+		batch_allocations: item.batch_allocations?.map((allocation) => ({
+			batch_no: allocation.batch_no,
+			qty: allocation.qty,
+		})),
+		serial_allocations: item.serial_allocations,
+		item_note: item.item_note,
+		pricing_override: item.pricing_override,
+	};
+}
+
+function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
+	for (const item of items) {
+		if (item.has_serial_no) {
+			const required = item.qty * Number(item.conversion_factor || 1);
+			const serials = item.serial_allocations || [];
+			if (!Number.isInteger(required) || required <= 0) {
+				throw new Error(`${item.item_name} requires a whole-number stock quantity for serial selection.`);
+			}
+			if (serials.length !== required || new Set(serials.map((row) => row.serial_no)).size !== required) {
+				throw new Error(`Select exactly ${required} unique serial numbers for ${item.item_name}.`);
+			}
+			continue;
+		}
+		const allocations = item.batch_allocations || [];
+		if (!allocations.length) continue;
+		const batchNumbers = new Set<string>();
+		let allocated = 0;
+		for (const allocation of allocations) {
+			if (!allocation.batch_no || !Number.isFinite(allocation.qty) || allocation.qty <= 0) {
+				throw new Error(`Invalid batch allocation for ${item.item_name}.`);
+			}
+			if (batchNumbers.has(allocation.batch_no)) {
+				throw new Error(`Batch ${allocation.batch_no} is allocated more than once for ${item.item_name}.`);
+			}
+			batchNumbers.add(allocation.batch_no);
+			allocated += allocation.qty;
+		}
+		const stockQty = item.qty * Number(item.conversion_factor || 1);
+		if (Math.abs(allocated - stockQty) > 0.000001) {
+			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${stockQty} stock units.`);
+		}
+	}
+}
+
+async function subtractPendingBatchAllocations(payload: ItemBatchesDTO): Promise<ItemBatchesDTO> {
+	const pendingByBatch = new Map<string, number>();
+	const pendingSerials = new Set<string>();
+	let automaticPendingQty = 0;
+	for (const entry of await queueRepository.getAll()) {
+		if (entry.type !== "create_invoice" || (entry.status !== "pending" && entry.status !== "syncing")) continue;
+		for (const item of entry.payload.items) {
+			if (item.item_code !== payload.item_code) continue;
+			if (!item.batch_allocations?.length && !item.serial_allocations?.length) automaticPendingQty += Number(item.qty || 0) * Number(item.conversion_factor || 1);
+			for (const allocation of item.serial_allocations || []) pendingSerials.add(allocation.serial_no);
+			for (const allocation of item.batch_allocations || []) {
+				pendingByBatch.set(
+					allocation.batch_no,
+					(pendingByBatch.get(allocation.batch_no) || 0) + Number(allocation.qty || 0),
+				);
+			}
+		}
+	}
+	const batches = payload.batches.map((batch) => {
+		const afterManual = Math.max(
+			Number(batch.available_qty || 0) - (pendingByBatch.get(batch.batch_no) || 0),
+			0,
+		);
+		const automaticDeduction = Math.min(afterManual, automaticPendingQty);
+		automaticPendingQty -= automaticDeduction;
+		return { ...batch, available_qty: afterManual - automaticDeduction };
+	});
+	return {
+		...payload,
+		batches,
+		serials: payload.serials?.filter((row) => !pendingSerials.has(row.serial_no)),
+	};
+}
+
 // Converts a held draft being restored into the local-cart shape for editing. Must NOT
 // zero/recompute totals here: they stay ground truth until the cashier edits the cart
 // (previewLocalCart then recomputes). CheckoutDialog pre-fills the payment amount from
@@ -91,6 +179,43 @@ function invoiceToLocalCart(invoice: InvoiceDTO): InvoiceDTO {
 		is_local: true,
 		source_invoice_doctype: invoice.doctype,
 		source_invoice_name: invoice.name,
+		items: invoice.items.map((item) => ({
+			...item,
+			pricing_override: item.pricing_override ?? pricingOverrideFromSavedItem(item),
+		})),
+	};
+}
+
+function pricingOverrideFromSavedItem(item: InvoiceItemDTO): InvoiceItemDTO["pricing_override"] {
+	if (Number(item.discount_percentage || 0) > 0) {
+		return { type: "discount_percentage", value: Number(item.discount_percentage) };
+	}
+	if (Number(item.discount_amount || 0) > 0) {
+		return { type: "discount_amount", value: Number(item.discount_amount) };
+	}
+	if (item.price_list_rate != null && Number(item.rate) !== Number(item.price_list_rate)) {
+		return { type: "rate", value: Number(item.rate) };
+	}
+	return undefined;
+}
+
+function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemDTO[]): InvoiceDTO {
+	const sourceByCode = new Map(sourceItems.map((item) => [item.item_code, item]));
+	return {
+		...invoice,
+		items: invoice.items.map((item) => {
+			const source = sourceByCode.get(item.item_code);
+			return {
+				...item,
+				uoms: source?.uoms || item.uoms,
+				barcode: source?.barcode || item.barcode,
+				item_note: source?.item_note ?? item.item_note,
+				pricing_rules: source?.pricing_rules ?? item.pricing_rules,
+				pricing_override_audit: source?.pricing_override_audit ?? item.pricing_override_audit,
+				pricing_override_by: source?.pricing_override_by ?? item.pricing_override_by,
+				pricing_override: source?.pricing_override ?? pricingOverrideFromSavedItem(item),
+			};
+		}),
 	};
 }
 
@@ -117,6 +242,9 @@ function localizePreviewInvoice(
 				actual_qty: metadata?.actual_qty,
 				is_stock_item: metadata?.is_stock_item,
 				allow_negative_stock: metadata?.allow_negative_stock,
+				has_batch_no: metadata?.has_batch_no,
+				has_serial_no: metadata?.has_serial_no,
+				warehouse: metadata?.warehouse,
 			};
 		}),
 	};
@@ -143,8 +271,30 @@ function assembledToInvoiceDTO(
 				description: meta?.description,
 				qty: item.qty,
 				uom: meta?.uom,
+				stock_uom: meta?.stock_uom,
+				conversion_factor: meta?.conversion_factor,
+				uoms: meta?.uoms,
 				rate: item.rate,
+				price_list_rate: meta?.price_list_rate ?? meta?.rate ?? item.rate,
+				discount_percentage: item.discount_percentage,
+				discount_amount: item.discount_amount,
 				amount: item.amount,
+				actual_qty: meta?.actual_qty,
+				is_stock_item: meta?.is_stock_item,
+				allow_negative_stock: meta?.allow_negative_stock,
+				has_batch_no: meta?.has_batch_no,
+				has_serial_no: meta?.has_serial_no,
+				warehouse: meta?.warehouse,
+				batch_no: meta?.batch_no,
+				serial_and_batch_bundle: meta?.serial_and_batch_bundle,
+				batch_allocations: meta?.batch_allocations,
+				serial_allocations: meta?.serial_allocations,
+				barcode: meta?.barcode,
+				item_note: meta?.item_note,
+				pricing_rules: meta?.pricing_rules,
+				pricing_override_audit: meta?.pricing_override_audit,
+				pricing_override_by: meta?.pricing_override_by,
+				pricing_override: item.pricing_override ?? meta?.pricing_override,
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
 				item_tax_template: meta?.item_tax_template,
@@ -215,9 +365,17 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	}
 
 	const taxSettings = await resolveTaxSettings();
-	const rateByCode = new Map(items.map((row) => [row.item_code, Number(row.rate || 0)]));
+	// Every override replaces the previous one. Never use the already-discounted
+	// selling rate as the base or sequential edits will compound discounts.
+	const rateByCode = new Map(
+		items.map((row) => [row.item_code, Number(row.price_list_rate ?? row.rate ?? 0)]),
+	);
 	return assembleInvoice({
-		cart: items.map((row) => ({ item_code: row.item_code, qty: row.qty })),
+		cart: items.map((row) => ({
+			item_code: row.item_code,
+			qty: row.qty,
+			pricing_override: row.pricing_override,
+		})),
 		priceResolver: (code) => rateByCode.get(code),
 		taxRows: taxTemplate?.taxes ?? [],
 		itemTaxResolver: (code) => {
@@ -225,6 +383,12 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 			return templateName ? itemTaxRowsByTemplate.get(templateName) : undefined;
 		},
 		taxSettings,
+		roundingSettings: profile ? {
+			currencyPrecision: profile.currency_precision,
+			disableRoundedTotal: profile.disable_rounded_total,
+			smallestCurrencyFractionValue: profile.smallest_currency_fraction_value,
+			roundingMethod: profile.rounding_method,
+		} : undefined,
 	});
 }
 
@@ -237,11 +401,18 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		description: item.description,
 		qty,
 		uom: item.uom || item.stock_uom,
+		stock_uom: item.stock_uom,
+		conversion_factor: 1,
+		uoms: item.uoms,
 		rate,
+		price_list_rate: Number(item.price_list_rate ?? rate),
 		amount: rate * qty,
 		actual_qty: item.actual_qty,
 		is_stock_item: item.is_stock_item,
 		allow_negative_stock: item.allow_negative_stock,
+		has_batch_no: item.has_batch_no,
+		has_serial_no: item.has_serial_no,
+		barcode: item.barcode,
 		item_tax_template: item.item_tax_template,
 	};
 }
@@ -271,7 +442,8 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
 		return;
 	}
 
-	if (qty > Number(item.actual_qty || 0)) {
+	const stockQty = qty * Number(("conversion_factor" in item && item.conversion_factor) || 1);
+	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
 	}
 }
@@ -284,7 +456,7 @@ async function refreshAndValidateStock(
 ): Promise<InvoiceDTO> {
 	const requestedByCode = new Map<string, number>();
 	for (const item of invoice.items) {
-		requestedByCode.set(item.item_code, (requestedByCode.get(item.item_code) || 0) + item.qty);
+		requestedByCode.set(item.item_code, (requestedByCode.get(item.item_code) || 0) + item.qty * Number(item.conversion_factor || 1));
 	}
 
 	const freshByCode = new Map<string, ItemDTO>();
@@ -345,6 +517,21 @@ type CartActions = {
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
+	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
+	updateCartItemSerialAllocations: (rowName: string, allocations: InvoiceItemDTO["serial_allocations"], api: CartApi) => Promise<void>;
+	updateCartItemPricing: (rowName: string, pricingOverride: InvoiceItemDTO["pricing_override"], api: CartApi) => Promise<void>;
+	updateCartItemNote: (rowName: string, note: string, api: CartApi) => Promise<void>;
+	updateCartItemBatchAllocations: (
+		rowName: string,
+		allocations: InvoiceItemDTO["batch_allocations"],
+		api: CartApi,
+	) => Promise<void>;
+	loadItemBatches: (
+		itemCode: string,
+		warehouse: string,
+		isOnline: boolean,
+		api: CartApi,
+	) => Promise<ItemBatchesDTO>;
 	removeCartItem: (rowName: string, api: CartApi) => Promise<void>;
 	listHeld: (api: CartApi) => Promise<HeldInvoiceDTO[]>;
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
@@ -401,10 +588,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			invoice_doctype: cart.source_invoice_doctype,
 			invoice_name: cart.source_invoice_name,
 			customer: selectedCustomer?.customer || cart.customer,
-			items: cart.items.map((item) => ({
-				item_code: item.item_code,
-				qty: item.qty,
-			})),
+			items: cart.items.map(cartItemPayload),
 		});
 	}
 
@@ -505,6 +689,145 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: updatedInvoice });
 		},
 
+		updateCartItemPricing: async (rowName, pricingOverride, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const nextItems = invoice.items.map((item) =>
+				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
+			);
+			const profile = await profileRepository.getActive();
+			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change) {
+				throw new Error("Rate changes are not allowed for this POS Profile.");
+			}
+			if (pricingOverride?.type.startsWith("discount") && !profile?.allow_discount_change) {
+				throw new Error("Discount changes are not allowed for this POS Profile.");
+			}
+			if (isLocalCart(invoice)) {
+				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				set({ invoice: preview });
+				return;
+			}
+			const updatedInvoice = await runMutation(() =>
+				updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype,
+					invoice_name: invoice.name,
+					customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}),
+			);
+			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
+		},
+
+		updateCartItemNote: async (rowName, note, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const cleanNote = note.trim();
+			if (cleanNote.length > 500) throw new Error("Item notes cannot exceed 500 characters.");
+			const nextItems = invoice.items.map((item) =>
+				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
+			);
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype,
+					invoice_name: invoice.name,
+					customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: preservePricingOverrides(updated, nextItems) });
+		},
+
+		updateCartItemUom: async (rowName, uom, conversionFactor, api) => {
+			const invoice = get().invoice;
+			if (!invoice || !(conversionFactor > 0)) return;
+			const nextItems = invoice.items.map((item) => {
+				if (item.row_name !== rowName) return item;
+				const oldFactor = Number(item.conversion_factor || 1);
+				const stockRate = Number(item.price_list_rate ?? item.rate) / oldFactor;
+				const configuredRate = item.uoms?.find((row) => row.uom === uom)?.rate;
+				const rate = configuredRate == null ? stockRate * conversionFactor : Number(configuredRate);
+				return { ...item, uom, conversion_factor: conversionFactor, rate, price_list_rate: rate,
+					pricing_override: undefined, batch_allocations: [], serial_allocations: [] };
+			});
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: updated });
+		},
+
+		updateCartItemSerialAllocations: async (rowName, allocations, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const nextItems = invoice.items.map((item) => item.row_name === rowName
+				? { ...item, serial_allocations: allocations || [] } : item);
+			const updated = isLocalCart(invoice)
+				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}));
+			set({ invoice: updated });
+		},
+
+		updateCartItemBatchAllocations: async (rowName, allocations, api) => {
+			const invoice = get().invoice;
+			if (!invoice) return;
+			const nextItems = invoice.items.map((item) =>
+				item.row_name === rowName ? { ...item, batch_allocations: allocations || [] } : item,
+			);
+			validateManualBatchAllocations(nextItems);
+			if (isLocalCart(invoice)) {
+				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				set({ invoice: preview });
+				return;
+			}
+			const updatedInvoice = await runMutation(() =>
+				updateInvoiceFromCart(api.updateInvoiceFromCart, {
+					invoice_doctype: invoice.doctype,
+					invoice_name: invoice.name,
+					customer: invoice.customer,
+					items: nextItems.map(cartItemPayload),
+				}),
+			);
+			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
+		},
+
+		loadItemBatches: async (itemCode, warehouse, isOnline, api) => {
+			const posProfile = get().posProfile;
+			if (!posProfile || !warehouse) throw new Error("A POS Profile and warehouse are required to load batches.");
+			if (isOnline) {
+				try {
+					const fresh = await getItemBatches(api.getItemBatches, {
+						item_code: itemCode,
+						warehouse,
+						pos_profile: posProfile,
+					});
+					const verifiedAt = new Date().toISOString();
+					await batchInventoryRepository.put({
+						pos_profile: posProfile,
+						warehouse,
+						item_code: itemCode,
+						verified_at: verifiedAt,
+						requires_batch: Boolean(fresh.requires_batch),
+						requires_serial: Boolean(fresh.requires_serial),
+						batches: fresh.batches,
+						serials: fresh.serials,
+					});
+					return subtractPendingBatchAllocations({ ...fresh, verified_at: verifiedAt, from_cache: false });
+				} catch (error) {
+					const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
+					if (!cached) throw error;
+					return subtractPendingBatchAllocations({ ...cached, from_cache: true });
+				}
+			}
+			const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
+			if (!cached) throw new Error("No cached batch availability is available. Reconnect to load batches.");
+			return subtractPendingBatchAllocations({ ...cached, from_cache: true });
+		},
+
 		removeCartItem: async (rowName, api) => {
 			const invoice = get().invoice;
 			if (!invoice) {
@@ -602,6 +925,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			for (const item of invoice.items) {
 				validateAvailableQty(item, item.qty);
 			}
+			validateManualBatchAllocations(invoice.items);
 
 			// The common "new sale" path: a local cart with no server draft behind it yet.
 			// This is the one the problem statement is actually about (I3/I6) - it always
@@ -610,7 +934,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				return runMutation(async () => {
 					const local = await invoiceRepository.create({
 						customer: selectedCustomer?.customer,
-						items: invoice.items.map((item) => ({ item_code: item.item_code, qty: item.qty })),
+						items: invoice.items.map(cartItemPayload),
 						payments: payments.map((payment) => ({
 							mode_of_payment: payment.mode_of_payment,
 							amount: payment.amount,
@@ -727,6 +1051,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			for (const item of invoice.items) {
 				validateAvailableQty(item, item.qty);
 			}
+			validateManualBatchAllocations(invoice.items);
 
 			const selectedCustomer = getActiveCustomer(get());
 			const posProfile = get().posProfile;
@@ -738,7 +1063,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				return runMutation(async () => {
 					const local = await holdRepository.create({
 						customer: selectedCustomer?.customer,
-						items: invoice.items.map((item) => ({ item_code: item.item_code, qty: item.qty })),
+						items: invoice.items.map(cartItemPayload),
 					});
 
 					await Promise.race([drainQueue(), new Promise((resolve) => setTimeout(resolve, SETTLEMENT_RACE_MS))]);
@@ -781,10 +1106,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					return createInvoiceFromCart(api.createInvoiceFromCart, {
 						pos_profile: posProfile,
 						customer: selectedCustomer?.customer,
-						items: invoice.items.map((item) => ({
-							item_code: item.item_code,
-							qty: item.qty,
-						})),
+						items: invoice.items.map(cartItemPayload),
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {
 							invoice_doctype: draftInvoice.doctype,
@@ -831,7 +1153,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 						if (!cached) {
 							throw new Error(`Item ${line.item_code} is no longer available locally - sync and try again.`);
 						}
-						return itemToCartRow(cached as ItemDTO, line.qty);
+						return {
+							...itemToCartRow(cached as ItemDTO, line.qty),
+							uom: line.uom,
+							conversion_factor: line.conversion_factor,
+							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
+							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
+							batch_allocations: line.batch_allocations,
+							serial_allocations: line.serial_allocations,
+							item_note: line.item_note,
+							pricing_override: line.pricing_override,
+						};
 					}),
 				);
 
@@ -871,7 +1203,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 						if (!cached) {
 							throw new Error(`Item ${line.item_code} is no longer available locally - sync and try again.`);
 						}
-						return itemToCartRow(cached as ItemDTO, line.qty);
+						return {
+							...itemToCartRow(cached as ItemDTO, line.qty),
+							batch_allocations: line.batch_allocations,
+							uom: line.uom,
+							conversion_factor: line.conversion_factor,
+							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
+							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
+							serial_allocations: line.serial_allocations,
+							item_note: line.item_note,
+							pricing_override: line.pricing_override,
+						};
 					}),
 				);
 

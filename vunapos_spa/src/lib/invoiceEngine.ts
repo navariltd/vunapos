@@ -18,6 +18,14 @@
 export type CartLine = {
 	item_code: string;
 	qty: number;
+	uom?: string;
+	conversion_factor?: number;
+	batch_allocations?: Array<{ batch_no: string; qty: number }>;
+	serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+	pricing_override?: {
+		type: "rate" | "discount_percentage" | "discount_amount";
+		value: number;
+	};
 };
 
 export type TaxTemplateRow = {
@@ -41,11 +49,22 @@ export type EngineTaxSettings = {
 	addTaxesFromTaxesAndChargesTemplate: boolean;
 };
 
+export type EngineRoundingSettings = {
+	currencyPrecision?: number;
+	disableRoundedTotal?: boolean;
+	smallestCurrencyFractionValue?: number | null;
+	roundingMethod?: string;
+};
+
 export type AssembledInvoiceItem = {
 	item_code: string;
 	qty: number;
 	rate: number;
 	amount: number;
+	price_list_rate?: number;
+	discount_percentage?: number;
+	discount_amount?: number;
+	pricing_override?: CartLine["pricing_override"];
 };
 
 export type AssembledTaxRow = {
@@ -85,6 +104,43 @@ function round(value: number, precision = CURRENCY_PRECISION): number {
 	return Math.round((value + Number.EPSILON) * factor) / factor;
 }
 
+function roundBasedOnSmallestCurrencyFraction(
+	value: number,
+	settings?: EngineRoundingSettings,
+): number {
+	const precision = settings?.currencyPrecision ?? CURRENCY_PRECISION;
+	if (!settings) return round(value, precision);
+	const fraction = Number(settings?.smallestCurrencyFractionValue || 0);
+	if (!(fraction > 0)) {
+		const absolute = Math.abs(value);
+		const floor = Math.floor(absolute);
+		const decimal = Number((absolute - floor).toFixed(8));
+		let roundedAbsolute: number;
+		if (decimal === 0.5) {
+			if (settings?.roundingMethod === "Commercial Rounding") {
+				roundedAbsolute = floor + 1;
+			} else {
+				roundedAbsolute = floor % 2 === 0 ? floor : floor + 1;
+			}
+		} else {
+			roundedAbsolute = Math.round(absolute);
+		}
+		return round(Math.sign(value) * roundedAbsolute, precision);
+	}
+
+	// Mirrors frappe.utils.data.round_based_on_smallest_currency_fraction:
+	// an exact half fraction rounds down; values above half round up.
+	const factor = 10 ** precision;
+	const integerValue = Math.round(value * factor);
+	const integerFraction = Math.round(fraction * factor);
+	if (!(integerFraction > 0)) return round(value, precision);
+	const remainder = integerValue % integerFraction;
+	const roundedInteger = remainder > integerFraction / 2
+		? integerValue + integerFraction - remainder
+		: integerValue - remainder;
+	return roundedInteger / factor;
+}
+
 type AccountTotal = {
 	account_head: string;
 	rate: number;
@@ -121,6 +177,7 @@ export function assembleInvoice(input: {
 	taxSettings: EngineTaxSettings;
 	taxRows?: TaxTemplateRow[] | null;
 	itemTaxResolver?: ItemTaxResolver;
+	roundingSettings?: EngineRoundingSettings;
 }): AssembledInvoice {
 	if (!input.cart.length) {
 		throw new InvoiceEngineError("Cannot assemble an invoice from an empty cart");
@@ -134,7 +191,38 @@ export function assembleInvoice(input: {
 		if (rate === undefined) {
 			throw new InvoiceEngineError(`No cached price for item ${line.item_code}`);
 		}
-		return { item_code: line.item_code, qty: line.qty, rate, amount: round(rate * line.qty) };
+		const priceListRate = rate;
+		let sellingRate = priceListRate;
+		let discountPercentage = 0;
+		let discountAmount = 0;
+		const override = line.pricing_override;
+		if (override) {
+			if (!Number.isFinite(override.value) || override.value < 0) {
+				throw new InvoiceEngineError(`Invalid price override for ${line.item_code}`);
+			}
+			if (override.type === "rate") sellingRate = override.value;
+			else if (override.type === "discount_percentage") {
+				if (override.value > 100) throw new InvoiceEngineError(`Discount for ${line.item_code} cannot exceed 100%`);
+				discountPercentage = override.value;
+				discountAmount = round(priceListRate * discountPercentage / 100);
+				sellingRate = round(priceListRate - discountAmount);
+			} else if (override.type === "discount_amount") {
+				if (override.value > priceListRate) throw new InvoiceEngineError(`Discount for ${line.item_code} cannot exceed its price-list rate`);
+				discountAmount = override.value;
+				discountPercentage = priceListRate ? round(discountAmount / priceListRate * 100) : 0;
+				sellingRate = round(priceListRate - discountAmount);
+			}
+		}
+		return {
+			item_code: line.item_code,
+			qty: line.qty,
+			rate: sellingRate,
+			amount: round(sellingRate * line.qty),
+			price_list_rate: priceListRate,
+			discount_percentage: discountPercentage,
+			discount_amount: discountAmount,
+			pricing_override: override,
+		};
 	});
 
 	const grossTotal = round(items.reduce((sum, item) => sum + item.amount, 0));
@@ -206,8 +294,12 @@ export function assembleInvoice(input: {
 
 	const totalTaxesAndCharges = round(taxes.reduce((sum, row) => sum + row.tax_amount, 0));
 	const grandTotal = round(netTotal + totalTaxesAndCharges);
-	const roundedTotal = round(grandTotal);
-	const roundingAdjustment = round(roundedTotal - grandTotal);
+	const roundedTotal = input.roundingSettings?.disableRoundedTotal
+		? 0
+		: roundBasedOnSmallestCurrencyFraction(grandTotal, input.roundingSettings);
+	const roundingAdjustment = input.roundingSettings?.disableRoundedTotal
+		? 0
+		: round(roundedTotal - grandTotal);
 
 	return {
 		items,

@@ -1,35 +1,56 @@
+import { useState } from "react";
 import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { CustomerDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
 
 type CartPanelProps = {
+	allowDiscountChange?: boolean;
+	allowRateChange?: boolean;
 	className?: string;
 	currency?: string;
 	onCheckout: () => void;
 	onClearCustomer: () => void;
 	onClearCart: () => void;
 	onHold: () => void;
+	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
+	onUpdateNote: (rowName: string, note: string) => Promise<void>;
+	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
+	onUpdateUom: (rowName: string, uom: string, conversionFactor: number) => Promise<void>;
+	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
+	isOnline: boolean;
+	warehouse?: string;
 };
 
 export function CartPanel({
+	allowDiscountChange,
+	allowRateChange,
 	className,
 	currency,
 	onCheckout,
 	onClearCustomer,
 	onClearCart,
 	onHold,
+	onLoadBatches,
 	onRemoveItem,
 	onSelectCustomer,
 	onUpdateQty,
+	onUpdatePricing,
+	onUpdateNote,
+	onUpdateBatchAllocations,
+	onUpdateUom,
+	onUpdateSerialAllocations,
+	isOnline,
+	warehouse,
 }: CartPanelProps) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isMutating = useCartStore((s) => s.isMutating);
@@ -40,6 +61,7 @@ export function CartPanel({
 	const grandTotal = Number(invoice?.totals?.grand_total || 0);
 	const roundedTotal = Number(invoice?.totals?.rounded_total || 0);
 	const showRoundedTotal = Boolean(roundedTotal && Math.abs(roundedTotal - grandTotal) > 0.0001);
+	const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
 	return (
 		<aside className={cn("flex min-h-0 flex-col border-t border-outline-variant bg-surface p-4 xl:border-l xl:border-t-0", className)}>
@@ -55,12 +77,26 @@ export function CartPanel({
 				{items?.length ? (
 					items?.map((item) => (
 						<CartItemRow
-							key={item.row_name}
+							key={`${item.row_name}-${item.qty}`}
 							currency={currency}
+							allowDiscountChange={allowDiscountChange}
+							allowRateChange={allowRateChange}
 							disabled={isMutating}
+							expanded={expandedRow === item.row_name}
+							isOnline={isOnline}
 							item={item}
+							onLoadBatches={onLoadBatches}
 							onRemove={onRemoveItem}
+							onToggle={(rowName) =>
+								setExpandedRow((current) => (current === rowName ? null : rowName))
+							}
 							onUpdateQty={onUpdateQty}
+							onUpdatePricing={onUpdatePricing}
+							onUpdateNote={onUpdateNote}
+							onUpdateBatchAllocations={onUpdateBatchAllocations}
+							onUpdateUom={onUpdateUom}
+							onUpdateSerialAllocations={onUpdateSerialAllocations}
+							warehouse={warehouse}
 						/>
 					))
 				) : (

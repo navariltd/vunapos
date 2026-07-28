@@ -7,6 +7,54 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"Sales Invoice Item": [
+				{
+					"fieldname": "vunapos_item_note",
+					"label": "VunaPOS Item Note",
+					"fieldtype": "Small Text",
+					"insert_after": "description",
+					"read_only": 1,
+				},
+				{
+					"fieldname": "vunapos_pricing_override",
+					"label": "VunaPOS Pricing Override",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_item_note",
+					"read_only": 1,
+				},
+				{
+					"fieldname": "vunapos_pricing_override_by",
+					"label": "VunaPOS Pricing Override By",
+					"fieldtype": "Link",
+					"options": "User",
+					"insert_after": "vunapos_pricing_override",
+					"read_only": 1,
+				},
+			],
+			"POS Invoice Item": [
+				{
+					"fieldname": "vunapos_item_note",
+					"label": "VunaPOS Item Note",
+					"fieldtype": "Small Text",
+					"insert_after": "description",
+					"read_only": 1,
+				},
+				{
+					"fieldname": "vunapos_pricing_override",
+					"label": "VunaPOS Pricing Override",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_item_note",
+					"read_only": 1,
+				},
+				{
+					"fieldname": "vunapos_pricing_override_by",
+					"label": "VunaPOS Pricing Override By",
+					"fieldtype": "Link",
+					"options": "User",
+					"insert_after": "vunapos_pricing_override",
+					"read_only": 1,
+				},
+			],
 			"POS Settings": [
 				{
 					"fieldname": "vunapos_offline_session_ttl_hours",

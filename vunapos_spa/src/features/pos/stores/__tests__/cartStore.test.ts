@@ -13,6 +13,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	return {
 		addItem: reject,
 		getItemDetails: reject,
+		getItemBatches: reject,
 		updateItem: reject,
 		removeItem: reject,
 		clearInvoice: reject,
@@ -42,6 +43,7 @@ const CUSTOMER: CustomerDTO = { customer: "CUST-1", customer_name: "Test Custome
 beforeEach(async () => {
 	await Promise.all([
 		db.items.clear(),
+		db.batchInventory.clear(),
 		db.taxTemplates.clear(),
 		db.itemTaxTemplates.clear(),
 		db.profile.clear(),
@@ -201,6 +203,51 @@ describe("updateCartItemQty", () => {
 	});
 });
 
+describe("updateCartItemPricing", () => {
+	it("replaces the previous discount using the original price-list rate", async () => {
+		await db.profile.put({
+			name: "Profile-1",
+			allow_discount_change: true,
+			allow_rate_change: true,
+		});
+		await db.items.put({
+			item_code: "ITEM-1",
+			item_name: "Widget",
+			rate: 100,
+			price_list_rate: 100,
+			modified: "2026-07-10",
+		});
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100, price_list_rate: 100 }), makeApi());
+		const rowName = useCartStore.getState().invoice!.items[0].row_name;
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_percentage", value: 20 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0].rate).toBe(80);
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_amount", value: 8 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0].rate).toBe(92);
+
+		await useCartStore.getState().updateCartItemPricing(
+			rowName,
+			{ type: "discount_percentage", value: 10 },
+			makeApi(),
+		);
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			price_list_rate: 100,
+			rate: 90,
+			discount_percentage: 10,
+			discount_amount: 10,
+		});
+	});
+});
+
 describe("clearCart", () => {
 	it("empties a brand-new local cart directly, no API call needed", async () => {
 		await useCartStore.getState().addCartItem(makeItem(), makeApi());
@@ -254,6 +301,41 @@ describe("submitCart", () => {
 		const result = await useCartStore.getState().submitCart([], null, "idem-1", makeApi());
 
 		expect(result).toBeNull();
+	});
+
+	it("persists a manual multi-batch allocation in the offline queue payload", async () => {
+		vi.spyOn(syncEngine, "drainQueue").mockResolvedValue({ processed: 0, parked: [], stoppedReason: "empty" });
+		const row = useCartStore.getState().invoice?.items[0];
+		expect(row).toBeDefined();
+		await useCartStore.getState().updateCartItemBatchAllocations(
+			row!.row_name,
+			[
+				{ batch_no: "BATCH-A", qty: 0.4 },
+				{ batch_no: "BATCH-B", qty: 0.6 },
+			],
+			makeApi(),
+		);
+
+		await useCartStore
+			.getState()
+			.submitCart([{ mode_of_payment: "Cash", amount: 100 }], null, "idem-batches", makeApi());
+
+		const [queued] = await db.queue.toArray();
+		expect(queued.payload.items[0].batch_allocations).toEqual([
+			{ batch_no: "BATCH-A", qty: 0.4 },
+			{ batch_no: "BATCH-B", qty: 0.6 },
+		]);
+	});
+
+	it("rejects an incomplete saved manual allocation", async () => {
+		const row = useCartStore.getState().invoice?.items[0];
+		await expect(
+			useCartStore.getState().updateCartItemBatchAllocations(
+				row!.row_name,
+				[{ batch_no: "BATCH-A", qty: 0.5 }],
+				makeApi(),
+			),
+		).rejects.toThrow(/must equal the quantity/);
 	});
 
 	it("settles succeeded within the race window: renders the server receipt and clears the cart", async () => {

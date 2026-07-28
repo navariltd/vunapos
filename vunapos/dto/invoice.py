@@ -35,7 +35,42 @@ def _batch_allocations(row):
 	return []
 
 
+def _serial_allocations(row):
+	if getattr(row, "_serial_allocations", None):
+		return row._serial_allocations
+	if not row.get("serial_and_batch_bundle"):
+		return []
+	try:
+		bundle = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+	except frappe.DoesNotExistError:
+		return []
+	return [
+		{"serial_no": entry.serial_no, "batch_no": entry.get("batch_no")}
+		for entry in bundle.get("entries", [])
+		if entry.get("serial_no")
+	]
+
+
 def invoice_to_dict(doc):
+	item_tracking = {
+		row.item_code: frappe.get_cached_value(
+			"Item",
+			row.item_code,
+			["is_stock_item", "allow_negative_stock", "has_batch_no", "has_serial_no"],
+			as_dict=True,
+		)
+		for row in doc.get("items", [])
+	}
+	uom_map = {
+		row.item_code: [
+			{"uom": frappe.get_cached_value("Item", row.item_code, "stock_uom"), "conversion_factor": 1.0},
+			*[
+				{"uom": uom.uom, "conversion_factor": uom.conversion_factor}
+				for uom in frappe.get_cached_doc("Item", row.item_code).get("uoms", [])
+			],
+		]
+		for row in doc.get("items", [])
+	}
 	return {
 		"doctype": doc.doctype,
 		"name": doc.name,
@@ -53,11 +88,29 @@ def invoice_to_dict(doc):
 				"description": row.description,
 				"qty": row.qty,
 				"uom": row.uom,
+				"stock_uom": row.get("stock_uom"),
+				"conversion_factor": row.get("conversion_factor"),
+				"uoms": uom_map.get(row.item_code, []),
 				"rate": row.rate,
+				"price_list_rate": row.get("price_list_rate"),
+				"discount_percentage": row.get("discount_percentage"),
+				"discount_amount": row.get("discount_amount"),
 				"amount": row.amount,
+				"warehouse": row.get("warehouse"),
+				"actual_qty": row.get("actual_qty"),
+				"is_stock_item": (item_tracking.get(row.item_code) or {}).get("is_stock_item"),
+				"allow_negative_stock": (item_tracking.get(row.item_code) or {}).get("allow_negative_stock"),
+				"has_batch_no": (item_tracking.get(row.item_code) or {}).get("has_batch_no"),
+				"has_serial_no": (item_tracking.get(row.item_code) or {}).get("has_serial_no"),
 				"batch_no": row.get("batch_no"),
 				"serial_and_batch_bundle": row.get("serial_and_batch_bundle"),
 				"batch_allocations": _batch_allocations(row),
+				"serial_allocations": _serial_allocations(row),
+				"item_tax_template": row.get("item_tax_template"),
+				"pricing_rules": row.get("pricing_rules"),
+				"item_note": row.get("vunapos_item_note"),
+				"pricing_override_audit": row.get("vunapos_pricing_override"),
+				"pricing_override_by": row.get("vunapos_pricing_override_by"),
 			}
 			for row in doc.get("items", [])
 		],

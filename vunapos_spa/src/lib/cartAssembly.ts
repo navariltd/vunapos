@@ -17,7 +17,7 @@ export async function assembleCartAgainstCache(
 	itemRows.forEach((row, index) => {
 		const itemCode = items[index].item_code;
 		if (row?.rate != null) {
-			rateByCode.set(itemCode, row.rate);
+			rateByCode.set(itemCode, Number(row.price_list_rate ?? row.rate));
 		}
 		if (row?.item_tax_template) {
 			itemTaxTemplateByCode.set(itemCode, row.item_tax_template);
@@ -49,5 +49,11 @@ export async function assembleCartAgainstCache(
 			return templateName ? itemTaxTemplateRows.get(templateName) : undefined;
 		},
 		taxSettings,
+		roundingSettings: {
+			currencyPrecision: profile.currency_precision,
+			disableRoundedTotal: profile.disable_rounded_total,
+			smallestCurrencyFractionValue: profile.smallest_currency_fraction_value,
+			roundingMethod: profile.rounding_method,
+		},
 	});
 }

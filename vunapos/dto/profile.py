@@ -26,7 +26,14 @@ def profile_to_dict(profile, invoice_mode):
 		"price_list": profile.selling_price_list,
 		"currency": profile.currency,
 		"currency_precision": get_currency_precision(),
+		"disable_rounded_total": bool(profile.get("disable_rounded_total")),
+		"smallest_currency_fraction_value": frappe.get_cached_value(
+			"Currency", profile.currency, "smallest_currency_fraction_value"
+		),
+		"rounding_method": frappe.get_system_settings("rounding_method") or "Banker's Rounding (legacy)",
 		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
+		"allow_rate_change": bool(profile.get("allow_rate_change")),
+		"allow_discount_change": bool(profile.get("allow_discount_change")),
 		"default_customer": profile.customer,
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

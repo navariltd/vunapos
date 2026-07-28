@@ -18,6 +18,41 @@ const ITEM_ONLY = {
 };
 
 describe("assembleInvoice - profile-level tax template", () => {
+	it("applies explicit rate and discount overrides before calculating totals", () => {
+		const rateResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "rate", value: 80 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+		const percentageResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "discount_percentage", value: 10 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+		const amountResult = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2, pricing_override: { type: "discount_amount", value: 15 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		});
+
+		expect(rateResult.totals.grand_total).toBe(160);
+		expect(percentageResult.items[0]).toMatchObject({ rate: 90, discount_percentage: 10, discount_amount: 10 });
+		expect(percentageResult.totals.grand_total).toBe(180);
+		expect(amountResult.items[0]).toMatchObject({ rate: 85, discount_percentage: 15, discount_amount: 15 });
+		expect(amountResult.totals.grand_total).toBe(170);
+	});
+
+	it("rejects invalid local price overrides", () => {
+		expect(() => assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1, pricing_override: { type: "discount_percentage", value: 101 } }],
+			priceResolver,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		})).toThrow(InvoiceEngineError);
+	});
 	it("computes net/tax/grand totals for a single exclusive tax row (mirrors backend fixture)", () => {
 		const result = assembleInvoice({
 			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],
@@ -97,6 +132,87 @@ describe("assembleInvoice - profile-level tax template", () => {
 			result.totals.rounded_total - result.totals.grand_total,
 			5,
 		);
+	});
+
+	it("rounds totals using ERPNext's smallest currency fraction", () => {
+		const single = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],
+			priceResolver: () => 58.47,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+			roundingSettings: { currencyPrecision: 2, smallestCurrencyFractionValue: 1 },
+		});
+		const double = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2 }],
+			priceResolver: () => 58.47,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+			roundingSettings: { currencyPrecision: 2, smallestCurrencyFractionValue: 1 },
+		});
+
+		expect(single.totals.grand_total).toBe(58.47);
+		expect(single.totals.rounded_total).toBe(58);
+		expect(single.totals.rounding_adjustment).toBe(-0.47);
+		expect(double.totals.grand_total).toBe(116.94);
+		expect(double.totals.rounded_total).toBe(117);
+		expect(double.totals.rounding_adjustment).toBe(0.06);
+	});
+
+	it("rounds to a whole unit when the Currency has no smallest fraction", () => {
+		const single = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],
+			priceResolver: () => 58.47,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+			roundingSettings: {
+				currencyPrecision: 2,
+				smallestCurrencyFractionValue: 0,
+				roundingMethod: "Banker's Rounding",
+			},
+		});
+		const double = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 2 }],
+			priceResolver: () => 58.47,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+			roundingSettings: {
+				currencyPrecision: 2,
+				smallestCurrencyFractionValue: 0,
+				roundingMethod: "Banker's Rounding",
+			},
+		});
+
+		expect(single.totals.rounded_total).toBe(58);
+		expect(double.totals.rounded_total).toBe(117);
+	});
+
+	it("uses the configured ERPNext rounding method for half units", () => {
+		const input = {
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],
+			priceResolver: () => 58.5,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+		};
+
+		expect(assembleInvoice({ ...input, roundingSettings: { roundingMethod: "Banker's Rounding" } }).totals.rounded_total).toBe(58);
+		expect(assembleInvoice({ ...input, roundingSettings: { roundingMethod: "Commercial Rounding" } }).totals.rounded_total).toBe(59);
+	});
+
+	it("does not provide a rounded total when the POS Profile disables it", () => {
+		const result = assembleInvoice({
+			cart: [{ item_code: "_Test VunaPOS Item", qty: 1 }],
+			priceResolver: () => 58.47,
+			taxSettings: PROFILE_ONLY,
+			taxRows: [],
+			roundingSettings: {
+				currencyPrecision: 2,
+				disableRoundedTotal: true,
+				smallestCurrencyFractionValue: 1,
+			},
+		});
+
+		expect(result.totals.rounded_total).toBe(0);
+		expect(result.totals.rounding_adjustment).toBe(0);
 	});
 
 	it("ignores taxRows entirely when addTaxesFromTaxesAndChargesTemplate is off", () => {

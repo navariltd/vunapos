@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Plus, Search, X } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -12,11 +12,23 @@ type CustomerSelectorProps = {
 };
 
 export function CustomerSelector({ onClear, onSelect, selectedCustomer }: CustomerSelectorProps) {
+	const selectorRef = useRef<HTMLDivElement>(null);
 	const [isOpen, setIsOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [showCreate, setShowCreate] = useState(false);
 	const [customerName, setCustomerName] = useState("");
 	const { create, customers, error, isCreating, isLoading } = useCustomerSearch(query);
+
+	useEffect(() => {
+		if (!isOpen) return;
+		const closeWhenOutside = (event: PointerEvent) => {
+			if (selectorRef.current?.contains(event.target as Node)) return;
+			setIsOpen(false);
+			setShowCreate(false);
+		};
+		document.addEventListener("pointerdown", closeWhenOutside);
+		return () => document.removeEventListener("pointerdown", closeWhenOutside);
+	}, [isOpen]);
 
 	const toggleDropdown = () => {
 		setIsOpen((current) => {
@@ -41,7 +53,7 @@ export function CustomerSelector({ onClear, onSelect, selectedCustomer }: Custom
 	};
 
 	return (
-		<div className="relative">
+		<div ref={selectorRef} className="relative">
 			<label className="mb-2 block text-sm font-semibold text-on-surface">Customer</label>
 			<div className="flex min-h-touch items-center rounded-md border border-outline-variant bg-surface-container-low">
 				<button

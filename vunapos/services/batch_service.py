@@ -1,5 +1,10 @@
+import math
+
 import frappe
 from erpnext.stock.doctype.batch.batch import get_batch_qty
+from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+	get_sre_reserved_serial_nos_details,
+)
 from frappe import _
 from frappe.utils import flt, getdate, nowdate
 
@@ -14,6 +19,13 @@ def _throw(code, message, meta=None):
 
 
 def _resolve_warehouse(warehouse=None, pos_profile=None):
+	if pos_profile:
+		profile = resolve_pos_profile(pos_profile)
+		if warehouse and warehouse != profile.warehouse:
+			frappe.throw(_("Warehouse {0} is not available for this POS Profile").format(warehouse))
+		if not profile.warehouse:
+			frappe.throw(_("Warehouse is required because the POS Profile has no warehouse"))
+		return profile.warehouse
 	if warehouse:
 		return warehouse
 	profile = resolve_pos_profile(pos_profile)
@@ -101,6 +113,16 @@ def _get_batch_qty_map(item_code, warehouse):
 def get_item_batches(item_code, warehouse=None, pos_profile=None):
 	warehouse = _resolve_warehouse(warehouse=warehouse, pos_profile=pos_profile)
 	flags = get_item_tracking_flags(item_code)
+	serials = []
+	if flags["requires_serial"]:
+		reserved = get_sre_reserved_serial_nos_details(item_code, warehouse)
+		serials = frappe.get_all(
+			"Serial No",
+			filters={"item_code": item_code, "warehouse": warehouse, "status": "Active"},
+			fields=["name as serial_no", "batch_no"],
+			order_by="creation asc",
+		)
+		serials = [row for row in serials if row.serial_no not in reserved]
 	if not flags["requires_batch"]:
 		return {
 			"item_code": item_code,
@@ -108,12 +130,8 @@ def get_item_batches(item_code, warehouse=None, pos_profile=None):
 			"requires_batch": False,
 			"requires_serial": flags["requires_serial"],
 			"batches": [],
+			"serials": serials,
 		}
-	if flags["requires_serial"]:
-		_throw(
-			"SERIAL_SELECTION_REQUIRED",
-			_("Serial-numbered items require manual serial selection."),
-		)
 
 	qty_map = _get_batch_qty_map(item_code, warehouse)
 	rows = []
@@ -140,7 +158,8 @@ def get_item_batches(item_code, warehouse=None, pos_profile=None):
 		"item_code": item_code,
 		"warehouse": warehouse,
 		"requires_batch": True,
-		"requires_serial": False,
+		"requires_serial": flags["requires_serial"],
+		"serials": serials,
 		"batches": [
 			{
 				"batch_no": row.name,
@@ -152,6 +171,44 @@ def get_item_batches(item_code, warehouse=None, pos_profile=None):
 			and (not row.expiry_date or getdate(row.expiry_date) >= getdate(nowdate()))
 		],
 	}
+
+
+def validate_serial_allocation(item_code, qty, allocations, warehouse=None):
+	warehouse = _resolve_warehouse(warehouse=warehouse)
+	try:
+		required = int(qty)
+	except (OverflowError, TypeError, ValueError):
+		required = -1
+	if required <= 0 or flt(qty) != required:
+		_throw("INVALID_SERIAL_QUANTITY", _("Serial-numbered item quantity must be a whole number."))
+	if not isinstance(allocations, list) or len(allocations) != required:
+		_throw(
+			"SERIAL_QUANTITY_MISMATCH",
+			_("Select exactly {0} serial numbers for item {1}.").format(required, item_code),
+		)
+	serial_nos = [row.get("serial_no") for row in allocations]
+	if any(not serial_no for serial_no in serial_nos) or len(set(serial_nos)) != len(serial_nos):
+		_throw("INVALID_SERIAL_ALLOCATION", _("Serial numbers must be present and unique."))
+	available = {
+		row["serial_no"]: row for row in get_item_batches(item_code, warehouse=warehouse).get("serials", [])
+	}
+	for allocation in allocations:
+		serial_no = allocation["serial_no"]
+		if serial_no not in available:
+			_throw(
+				"SERIAL_NOT_AVAILABLE",
+				_("Serial number {0} is not available for item {1} in warehouse {2}.").format(
+					serial_no, item_code, warehouse
+				),
+			)
+		batch_no = available[serial_no].get("batch_no")
+		if allocation.get("batch_no") and allocation.get("batch_no") != batch_no:
+			_throw(
+				"INVALID_SERIAL_ALLOCATION",
+				_("Serial number {0} belongs to another batch.").format(serial_no),
+			)
+		allocation["batch_no"] = batch_no
+	return allocations
 
 
 def allocate_batches(item_code, qty, warehouse=None, pos_profile=None, strategy="FEFO"):
@@ -230,11 +287,18 @@ def validate_batch_allocation(item_code, qty, allocations, warehouse=None):
 		_throw("BATCH_ALLOCATION_REQUIRED", _("Batch allocation is required for item {0}.").format(item_code))
 	available = {row["batch_no"]: row for row in get_item_batches(item_code, warehouse=warehouse)["batches"]}
 	total_qty = 0
+	seen_batches = set()
 	for allocation in allocations:
 		batch_no = allocation.get("batch_no")
 		allocation_qty = flt(allocation.get("qty"))
-		if not batch_no or allocation_qty <= 0:
+		if not batch_no or not math.isfinite(allocation_qty) or allocation_qty <= 0:
 			_throw("INVALID_BATCH_ALLOCATION", _("Invalid batch allocation for item {0}.").format(item_code))
+		if batch_no in seen_batches:
+			_throw(
+				"DUPLICATE_BATCH_ALLOCATION",
+				_("Batch {0} is allocated more than once for item {1}.").format(batch_no, item_code),
+			)
+		seen_batches.add(batch_no)
 		if batch_no not in available:
 			batch = frappe.db.get_value("Batch", batch_no, ["item", "disabled", "expiry_date"], as_dict=True)
 			if (

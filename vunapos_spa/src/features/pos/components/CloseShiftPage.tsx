@@ -4,6 +4,7 @@ import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 
 import type { POSClosingPreviewDTO } from "../types";
 import { Button } from "../../../components/ui/Button";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { cachePosSession } from "../../../lib/cacheEngine";
 import { queueRepository } from "../../../lib/repositories/queueRepository";
 import type { CachedPosSession } from "../../../lib/types";
@@ -35,6 +36,9 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 	const closeCall = useFrappePostCall(vunaMethods.closePosSession);
 	const [amounts, setAmounts] = useState<Record<string, string>>({});
 	const [error, setError] = useState("");
+	const [confirmOpen, setConfirmOpen] = useState(false);
+	const countedAmount = (modeOfPayment: string, expectedAmount: number) =>
+		amounts[modeOfPayment] ?? String(expectedAmount);
 
 	const preview = useMemo(() => {
 		if (!previewCall.data) return null;
@@ -71,23 +75,29 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 			setError("Resolve rejected transactions before closing the POS shift.");
 			return;
 		}
-		if (preview.payments.some((row) => !amounts[row.mode_of_payment]?.trim())) {
+		if (preview.payments.some((row) => !countedAmount(row.mode_of_payment, row.expected_amount).trim())) {
 			setError("Enter a counted amount for every payment mode.");
 			return;
 		}
 		const closingBalances = preview.payments.map((row) => ({
 			mode_of_payment: row.mode_of_payment,
-			closing_amount: Number(amounts[row.mode_of_payment]),
+			closing_amount: Number(countedAmount(row.mode_of_payment, row.expected_amount)),
 		}));
 		if (closingBalances.some((row) => !Number.isFinite(row.closing_amount) || row.closing_amount < 0)) {
 			setError("Enter a valid counted amount for every payment mode.");
 			return;
 		}
-		if (!window.confirm("Close this POS shift? You will need a new opening entry before making more sales.")) {
-			return;
-		}
+		setConfirmOpen(true);
+	}
+
+	async function confirmClose() {
+		if (!preview) return;
 		setError("");
 		try {
+			const closingBalances = preview.payments.map((row) => ({
+				mode_of_payment: row.mode_of_payment,
+				closing_amount: Number(countedAmount(row.mode_of_payment, row.expected_amount)),
+			}));
 			const result = await closePosSession(closeCall.call, {
 				pos_profile: posProfile,
 				closing_balances: closingBalances,
@@ -100,6 +110,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 			// live session check is briefly unavailable during the reload.
 			window.location.reload();
 		} catch (err) {
+			setConfirmOpen(false);
 			setError(err instanceof Error ? err.message : "Failed to close POS session");
 		}
 	}
@@ -136,13 +147,13 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 							<h3 className="font-semibold">Payment reconciliation</h3>
 							<div className="mt-3 space-y-3">
 								{preview.payments.map((row) => {
-									const rawAmount = amounts[row.mode_of_payment];
+									const rawAmount = countedAmount(row.mode_of_payment, row.expected_amount);
 									const counted = Number(rawAmount);
 									const difference = rawAmount?.trim() && Number.isFinite(counted) ? counted - row.expected_amount : null;
 									return (
 										<div key={row.mode_of_payment} className="grid items-center gap-2 rounded-md bg-surface p-3 sm:grid-cols-[1fr_1fr_1fr]">
 											<div><p className="text-sm font-medium">{row.mode_of_payment}</p><p className="text-xs text-on-surface-variant">Expected {money(row.expected_amount, currency)}</p></div>
-											<input type="number" min="0" step="0.01" placeholder="Counted amount" value={amounts[row.mode_of_payment] ?? ""} onChange={(event) => setAmounts((current) => ({ ...current, [row.mode_of_payment]: event.target.value }))} className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm" />
+											<input type="number" min="0" step="0.01" placeholder="Counted amount" value={rawAmount} onChange={(event) => setAmounts((current) => ({ ...current, [row.mode_of_payment]: event.target.value }))} className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm" />
 											<p className="text-sm text-on-surface-variant">Difference: {difference === null ? "-" : money(difference, currency)}</p>
 										</div>
 									);
@@ -191,6 +202,19 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 					</>
 				) : null}
 			</div>
+			<ConfirmDialog
+				isOpen={confirmOpen}
+				title="Close this POS shift?"
+				description="Review the shift summary before closing. A new POS Opening Entry will be required before making another sale."
+				confirmLabel="Close POS Shift"
+				danger
+				size="lg"
+				loading={closeCall.loading}
+				onCancel={() => setConfirmOpen(false)}
+				onConfirm={() => void confirmClose()}
+			>
+				{preview ? <div className="space-y-3 text-sm"><div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = Number(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
+			</ConfirmDialog>
 		</section>
 	);
 }

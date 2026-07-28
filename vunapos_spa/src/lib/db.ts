@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from "dexie";
 
 import type {
 	CachedCustomer,
+	CachedBatchInventory,
 	CachedItem,
 	CachedItemTaxTemplate,
 	CachedPaymentMode,
@@ -16,6 +17,7 @@ import type {
 // see the source-of-truth table in the spec (§5/§6) for why each table exists.
 export const db = new Dexie("vunapos") as Dexie & {
 	items: EntityTable<CachedItem, "item_code">;
+	batchInventory: EntityTable<CachedBatchInventory, "key">;
 	customers: EntityTable<CachedCustomer, "customer">;
 	taxTemplates: EntityTable<CachedTaxTemplate, "name">;
 	itemTaxTemplates: EntityTable<CachedItemTaxTemplate, "name">;
@@ -41,6 +43,13 @@ db.version(1).stores({
 // Sales Taxes and Charges Template - see invoiceEngine.ts for why both exist.
 db.version(2).stores({
 	itemTaxTemplates: "name, modified",
+});
+
+// v3: batch availability is cached on demand per profile/warehouse/item. It is
+// deliberately separate from the master Item snapshot because batch stock changes
+// much more frequently and can be absent without making the item catalog unusable.
+db.version(3).stores({
+	batchInventory: "key, pos_profile, warehouse, item_code, verified_at",
 });
 
 export const MASTER_DATA_TABLES = [

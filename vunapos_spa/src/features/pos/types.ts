@@ -119,7 +119,12 @@ export type BootstrapData = {
 	price_list?: string;
 	currency?: string;
 	currency_precision?: number;
+	disable_rounded_total?: boolean;
+	smallest_currency_fraction_value?: number | null;
+	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_rate_change?: boolean;
+	allow_discount_change?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -134,11 +139,15 @@ export type ItemDTO = {
 	description?: string;
 	image?: string | null;
 	stock_uom?: string;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	uom?: string;
 	rate?: number;
+	price_list_rate?: number;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	item_tax_template?: string | null;
 };
@@ -148,6 +157,13 @@ export type BatchAllocationDTO = {
 	qty: number;
 	expiry_date?: string | null;
 	available_qty?: number | null;
+};
+
+export type SerialAllocationDTO = { serial_no: string; batch_no?: string | null };
+
+export type PricingOverrideDTO = {
+	type: "rate" | "discount_percentage" | "discount_amount";
+	value: number;
 };
 
 export type ItemBatchDTO = {
@@ -162,6 +178,9 @@ export type ItemBatchesDTO = {
 	requires_batch?: boolean;
 	requires_serial?: boolean;
 	batches: ItemBatchDTO[];
+	serials?: SerialAllocationDTO[];
+	verified_at?: string;
+	from_cache?: boolean;
 };
 
 export type BatchAllocationResultDTO = {
@@ -182,15 +201,31 @@ export type InvoiceItemDTO = {
 	description?: string;
 	qty: number;
 	uom?: string;
+	stock_uom?: string;
+	conversion_factor?: number;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate: number;
+	price_list_rate?: number;
+	discount_percentage?: number;
+	discount_amount?: number;
 	amount: number;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
+	warehouse?: string;
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
 	batch_allocations?: BatchAllocationDTO[];
+	serial_allocations?: SerialAllocationDTO[];
 	item_tax_template?: string | null;
+	barcode?: string | null;
+	item_note?: string | null;
+	pricing_rules?: string | null;
+	pricing_override_audit?: string | null;
+	pricing_override_by?: string | null;
+	pricing_override?: PricingOverrideDTO;
 };
 
 export type TaxDTO = {

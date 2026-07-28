@@ -7,14 +7,34 @@ export type CachedItem = {
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
+	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
+	price_list_rate?: number | null;
 	actual_qty?: number | null;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
+	has_batch_no?: boolean | number;
+	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	modified: string;
 	/** N9: this item's assigned Item Tax Template, if any (vunapos/dto/item.py). */
 	item_tax_template?: string | null;
+};
+
+export type CachedBatchInventory = {
+	key: string;
+	pos_profile: string;
+	warehouse: string;
+	item_code: string;
+	verified_at: string;
+	requires_batch: boolean;
+	requires_serial: boolean;
+	batches: Array<{
+		batch_no: string;
+		expiry_date?: string | null;
+		available_qty?: number | null;
+	}>;
+	serials?: Array<{ serial_no: string; batch_no?: string | null }>;
 };
 
 export type CachedCustomer = {
@@ -82,7 +102,12 @@ export type CachedProfile = {
 	price_list?: string;
 	currency?: string;
 	currency_precision?: number;
+	disable_rounded_total?: boolean;
+	smallest_currency_fraction_value?: number | null;
+	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_rate_change?: boolean;
+	allow_discount_change?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;
@@ -142,7 +167,16 @@ export type InvoicePayload = {
 	invoice_doctype?: string;
 	pos_profile?: string;
 	customer?: string;
-	items: { item_code: string; qty: number }[];
+	items: Array<{
+		item_code: string;
+		qty: number;
+		uom?: string;
+		conversion_factor?: number;
+		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+		item_note?: string | null;
+		pricing_override?: PricingOverride;
+	}>;
 	payments: { mode_of_payment: string; amount: number }[];
 	posting_date?: string;
 	posting_time?: string;
@@ -168,7 +202,16 @@ export type HoldPayload = {
 	invoice_doctype?: string;
 	pos_profile?: string;
 	customer?: string;
-	items: { item_code: string; qty: number }[];
+	items: Array<{
+		item_code: string;
+		qty: number;
+		uom?: string;
+		conversion_factor?: number;
+		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+		item_note?: string | null;
+		pricing_override?: PricingOverride;
+	}>;
 	totals?: {
 		net_total?: number;
 		total_taxes_and_charges?: number;
@@ -176,6 +219,11 @@ export type HoldPayload = {
 		rounded_total?: number;
 	};
 	local_ref: string;
+};
+
+export type PricingOverride = {
+	type: "rate" | "discount_percentage" | "discount_amount";
+	value: number;
 };
 
 type QueueEntryCommon = {

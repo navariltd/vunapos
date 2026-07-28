@@ -6,6 +6,7 @@ import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./ut
 import { getCustomerFromPath, getInvoiceFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomersPage } from "../customers/CustomersPage";
 import { CustomerDetailsPage } from "../customers/CustomerDetailsPage";
 import { PaymentsPage } from "../payments/PaymentsPage";
@@ -74,12 +75,14 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
+	const [clearCartConfirmation, setClearCartConfirmation] = useState<{ closeCheckout: boolean } | null>(null);
 	const activePage = useNavigationStore((s) => s.activePage);
 	const currentPath = useNavigationStore((s) => s.currentPath);
 	const setActivePage = useNavigationStore((s) => s.setActivePage);
 	const pageError = useUiFeedbackStore((s) => s.pageError);
 	const setPageError = useUiFeedbackStore((s) => s.setPageError);
 	const toast = useUiFeedbackStore((s) => s.toast);
+	const toastClosing = useUiFeedbackStore((s) => s.toastClosing);
 	const showToast = useUiFeedbackStore((s) => s.showToast);
 	const clearToast = useUiFeedbackStore((s) => s.clearToast);
 
@@ -101,7 +104,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const cartActions = useCartActions();
 	const { isReachable } = useConnectivity();
 
-	const error = pageError || bootstrap.error || items.error || cartError;
+	const error = pageError || bootstrap.error || items.error;
+
+	useEffect(() => {
+		if (cartError) showToast({ type: "error", message: cartError });
+	}, [cartError, showToast]);
 
 	useEffect(() => {
 		setCartPosProfile(bootstrap.data?.pos_profile);
@@ -133,7 +140,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		try {
 			await cartActions.addCartItem(item);
 		} catch (err) {
-			setPageError(err instanceof Error ? err.message : "Failed to add item");
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to add item" });
 		}
 	};
 
@@ -147,12 +154,20 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		setIsCheckoutOpen(true);
 	};
 
-	const handleClearCart = () => {
-		if (cartInvoice?.items?.length && !window.confirm("Clear all items from the current cart?")) {
+	const handleClearCart = (closeCheckout = false) => {
+		if (cartInvoice?.items?.length) {
+			setClearCartConfirmation({ closeCheckout });
 			return false;
 		}
 		void cartActions.clearCart();
 		return true;
+	};
+
+	const confirmClearCart = () => {
+		const closeCheckout = Boolean(clearCartConfirmation?.closeCheckout);
+		setClearCartConfirmation(null);
+		void cartActions.clearCart();
+		if (closeCheckout) setIsCheckoutOpen(false);
 	};
 
 	const handleHoldCart = async () => {
@@ -310,14 +325,24 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					</section>
 					<CartPanel
 						className="hidden xl:flex"
+						allowDiscountChange={bootstrap.data?.allow_discount_change}
+						allowRateChange={bootstrap.data?.allow_rate_change}
 						currency={bootstrap.data?.currency}
+						warehouse={bootstrap.data?.warehouse}
+						isOnline={isReachable && navigator.onLine !== false}
 						onCheckout={handleOpenCheckout}
 						onClearCustomer={() => setSelectedCustomer(null)}
-						onClearCart={handleClearCart}
+						onClearCart={() => handleClearCart(false)}
 						onHold={handleHoldCart}
+						onLoadBatches={cartActions.loadItemBatches}
 						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={setSelectedCustomer}
 						onUpdateQty={cartActions.updateCartItemQty}
+						onUpdatePricing={cartActions.updateCartItemPricing}
+						onUpdateNote={cartActions.updateCartItemNote}
+						onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
+						onUpdateUom={cartActions.updateCartItemUom}
+						onUpdateSerialAllocations={cartActions.updateCartItemSerialAllocations}
 					/>
 				</div>
 			)}
@@ -361,14 +386,24 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 						<CartPanel
 							className="flex-1 border-0"
+							allowDiscountChange={bootstrap.data?.allow_discount_change}
+							allowRateChange={bootstrap.data?.allow_rate_change}
 							currency={bootstrap.data?.currency}
+							warehouse={bootstrap.data?.warehouse}
+							isOnline={isReachable && navigator.onLine !== false}
 							onCheckout={handleOpenCheckout}
 							onClearCustomer={() => setSelectedCustomer(null)}
-							onClearCart={handleClearCart}
+							onClearCart={() => handleClearCart(false)}
 							onHold={handleHoldCart}
+							onLoadBatches={cartActions.loadItemBatches}
 							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={setSelectedCustomer}
 							onUpdateQty={cartActions.updateCartItemQty}
+							onUpdatePricing={cartActions.updateCartItemPricing}
+							onUpdateNote={cartActions.updateCartItemNote}
+							onUpdateBatchAllocations={cartActions.updateCartItemBatchAllocations}
+							onUpdateUom={cartActions.updateCartItemUom}
+							onUpdateSerialAllocations={cartActions.updateCartItemSerialAllocations}
 						/>
 					</div>
 				</div>
@@ -382,7 +417,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
 				onClear={() => {
-					if (handleClearCart()) setIsCheckoutOpen(false);
+					if (handleClearCart(true)) setIsCheckoutOpen(false);
 				}}
 				onClose={() => setIsCheckoutOpen(false)}
 				onConfirm={handleCheckout}
@@ -396,7 +431,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
 				<div
 					role="status"
-					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md"
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
 					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}.
 				</div>
@@ -405,11 +440,35 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{toast?.type === "held" && toast.invoice.docstatus === 0 ? (
 				<div
 					role="status"
-					className="fixed right-4 top-16 z-40 max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md"
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
 					Invoice {toast.invoice.name} held as draft.
 				</div>
 			) : null}
+
+			{toast?.type === "error" ? (
+				<div
+					role="alert"
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto flex w-[calc(100%-2rem)] max-w-sm items-start gap-3 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
+				>
+					<span className="min-w-0 flex-1">{toast.message}</span>
+					<button type="button" className="shrink-0 rounded p-0.5 hover:bg-error/10" onClick={clearToast} aria-label="Dismiss error">
+						<X className="size-4" />
+					</button>
+				</div>
+			) : null}
+
+			<ConfirmDialog
+				isOpen={Boolean(clearCartConfirmation)}
+				title="Clear the current cart?"
+				description="Every item, quantity, payment allocation, batch or serial selection, discount, and note in this cart will be removed."
+				confirmLabel="Clear Cart"
+				danger
+				onCancel={() => setClearCartConfirmation(null)}
+				onConfirm={confirmClearCart}
+			>
+				<div className="flex justify-between gap-3 text-sm"><span className="text-on-surface-variant">Items in cart</span><strong>{cartInvoice?.items?.length || 0}</strong></div>
+			</ConfirmDialog>
 		</div>
 	);
 }
