@@ -9,8 +9,6 @@ import type {
 	CachedProfile,
 	CachedTaxTemplate,
 	MetaRow,
-	QueueEntry,
-	QueueMapping,
 } from "./types";
 
 // Dexie schema v1. Index lists only fields we actually query/filter by -
@@ -24,8 +22,6 @@ export const db = new Dexie("vunapos") as Dexie & {
 	paymentModes: EntityTable<CachedPaymentMode, "mode_of_payment">;
 	profile: EntityTable<CachedProfile, "name">;
 	meta: EntityTable<MetaRow, "key">;
-	queue: EntityTable<QueueEntry, "local_id">;
-	mappings: EntityTable<QueueMapping, "local_id">;
 };
 
 db.version(1).stores({
@@ -50,6 +46,13 @@ db.version(2).stores({
 // much more frequently and can be absent without making the item catalog unusable.
 db.version(3).stores({
 	batchInventory: "key, pos_profile, warehouse, item_code, verified_at",
+});
+
+// v4 removes the offline transaction queue. Sales and holds are now created on
+// the server immediately, so legacy device-only entries are intentionally dropped.
+db.version(4).stores({
+	queue: null,
+	mappings: null,
 });
 
 export const MASTER_DATA_TABLES = [

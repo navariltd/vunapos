@@ -7,14 +7,13 @@ import { formatCurrency } from "../utils";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { cachePosSession } from "../../../lib/cacheEngine";
-import { queueRepository } from "../../../lib/repositories/queueRepository";
 import type { CachedPosSession } from "../../../lib/types";
 import {
 	closePosSession,
 	unwrapVunaResponse,
 	vunaMethods,
 } from "../../../services/vunaApi";
-import { useQueueStatus } from "../hooks/useQueueStatus";
+import { useConnectivity } from "../hooks/useConnectivity";
 
 type CloseShiftPageProps = {
 	posProfile: string;
@@ -23,7 +22,7 @@ type CloseShiftPageProps = {
 };
 
 export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageProps) {
-	const queue = useQueueStatus();
+	const { isReachable } = useConnectivity();
 	const previewCall = useFrappeGetCall<unknown>(
 		vunaMethods.getClosingPreview,
 		{ pos_profile: posProfile },
@@ -57,25 +56,10 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 		}
 	}, [previewCall.data]);
 
-	const blocker = !queue.isReachable
-		? "Reconnect to the server before closing this shift."
-		: queue.pending > 0
-			? `Wait for ${queue.pending} pending transaction${queue.pending === 1 ? "" : "s"} to sync.`
-			: queue.parked > 0
-				? `Resolve ${queue.parked} rejected transaction${queue.parked === 1 ? "" : "s"} before closing.`
-				: null;
+	const blocker = !isReachable ? "Reconnect to the server before closing this shift." : null;
 
 	async function handleClose() {
 		if (!preview || blocker) return;
-		const queueEntries = await queueRepository.getAll();
-		if (queueEntries.some((entry) => entry.status === "pending" || entry.status === "syncing")) {
-			setError("Pending transactions appeared while closing. Wait for synchronization and try again.");
-			return;
-		}
-		if (queueEntries.some((entry) => entry.status === "error")) {
-			setError("Resolve rejected transactions before closing the POS shift.");
-			return;
-		}
 		if (preview.payments.some((row) => !countedAmount(row.mode_of_payment, row.expected_amount).trim())) {
 			setError("Enter a counted amount for every payment mode.");
 			return;
@@ -95,7 +79,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 	async function confirmClose() {
 		if (!preview) return;
 		setError("");
-		if (!queue.isReachable || navigator.onLine === false) {
+		if (!isReachable || navigator.onLine === false) {
 			setError("Reconnect to the server before closing this shift.");
 			return;
 		}

@@ -24,7 +24,6 @@ export function useCartActions() {
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
-	const restoreLocalHoldAction = useCartStore((s) => s.restoreLocalHold);
 
 	return useMemo(
 		() => ({
@@ -53,7 +52,6 @@ export function useCartActions() {
 			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
-			restoreLocalHold: (localId: string) => restoreLocalHoldAction(localId, api),
 		}),
 		[
 			api,
@@ -72,7 +70,6 @@ export function useCartActions() {
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,
-			restoreLocalHoldAction,
 		],
 	);
 }

@@ -4,7 +4,7 @@ import { pingServer } from "../apiClient";
 
 // navigator.onLine reflects NIC state, not server reachability (a killed backend still
 // reports `true`). "Reachable" here means we've actually heard back from Frappe - via a
-// health-check ping or any successful sync (a drainQueue upload counts too, cheaper than a redundant ping).
+// health-check ping or another successful server request.
 export type ConnectivityState = "unknown" | "checking" | "reachable" | "unreachable";
 
 type ConnectivityStore = {

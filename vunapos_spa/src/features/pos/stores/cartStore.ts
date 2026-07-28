@@ -11,12 +11,9 @@ import type {
 	PrintPayload,
 } from "../types";
 import { assembleInvoice, type AssembledInvoice, type ItemTaxRow } from "../../../lib/invoiceEngine";
-import { customerRepository } from "../../../lib/repositories/customerRepository";
 import { batchInventoryRepository } from "../../../lib/repositories/batchInventoryRepository";
-import { itemRepository } from "../../../lib/repositories/itemRepository";
 import { itemTaxTemplateRepository } from "../../../lib/repositories/itemTaxTemplateRepository";
 import { profileRepository } from "../../../lib/repositories/profileRepository";
-import { queueRepository } from "../../../lib/repositories/queueRepository";
 import { taxTemplateRepository } from "../../../lib/repositories/taxTemplateRepository";
 import { resolveTaxSettings } from "../../../lib/taxSettings";
 import {
@@ -65,9 +62,7 @@ function isLocalCart(invoice?: InvoiceDTO | null) {
 	return Boolean(invoice?.is_local);
 }
 
-// A brand-new cart that has never been queued/synced anywhere - the only case that
-// can hold (or sell) fully offline. Exported so POSHomePage can decide whether
-// holdCart needs a connectivity pre-check without duplicating this condition.
+// A brand-new local cart that has not yet been materialized as a server draft.
 export function isUnsyncedLocalCart(invoice?: InvoiceDTO | null): boolean {
 	return isLocalCart(invoice) && !invoice?.source_invoice_doctype;
 }
@@ -131,40 +126,6 @@ function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${stockQty} stock units.`);
 		}
 	}
-}
-
-async function subtractPendingBatchAllocations(payload: ItemBatchesDTO): Promise<ItemBatchesDTO> {
-	const pendingByBatch = new Map<string, number>();
-	const pendingSerials = new Set<string>();
-	let automaticPendingQty = 0;
-	for (const entry of await queueRepository.getAll()) {
-		if (entry.type !== "create_invoice" || (entry.status !== "pending" && entry.status !== "syncing")) continue;
-		for (const item of entry.payload.items) {
-			if (item.item_code !== payload.item_code) continue;
-			if (!item.batch_allocations?.length && !item.serial_allocations?.length) automaticPendingQty += Number(item.qty || 0) * Number(item.conversion_factor || 1);
-			for (const allocation of item.serial_allocations || []) pendingSerials.add(allocation.serial_no);
-			for (const allocation of item.batch_allocations || []) {
-				pendingByBatch.set(
-					allocation.batch_no,
-					(pendingByBatch.get(allocation.batch_no) || 0) + Number(allocation.qty || 0),
-				);
-			}
-		}
-	}
-	const batches = payload.batches.map((batch) => {
-		const afterManual = Math.max(
-			Number(batch.available_qty || 0) - (pendingByBatch.get(batch.batch_no) || 0),
-			0,
-		);
-		const automaticDeduction = Math.min(afterManual, automaticPendingQty);
-		automaticPendingQty -= automaticDeduction;
-		return { ...batch, available_qty: afterManual - automaticDeduction };
-	});
-	return {
-		...payload,
-		batches,
-		serials: payload.serials?.filter((row) => !pendingSerials.has(row.serial_no)),
-	};
 }
 
 // Converts a held draft being restored into the local-cart shape for editing. Must NOT
@@ -518,11 +479,6 @@ type CartActions = {
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
-	/** Restores a not-yet-synced local hold - purely local, no network call, works in
-	 * any queue status (pending/syncing/error) since it's still just local data
-	 * regardless of sync status. */
-	restoreLocalHold: (localId: string, api: CartApi) => Promise<InvoiceDTO>;
-	restoreFailedSale: (localId: string) => Promise<InvoiceDTO>;
 };
 
 export type CartStore = CartState & CartActions;
@@ -788,16 +744,16 @@ export const useCartStore = create<CartStore>((set, get) => {
 						batches: fresh.batches,
 						serials: fresh.serials,
 					});
-					return subtractPendingBatchAllocations({ ...fresh, verified_at: verifiedAt, from_cache: false });
+					return { ...fresh, verified_at: verifiedAt, from_cache: false };
 				} catch (error) {
 					const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
 					if (!cached) throw error;
-					return subtractPendingBatchAllocations({ ...cached, from_cache: true });
+					return { ...cached, from_cache: true };
 				}
 			}
 			const cached = await batchInventoryRepository.get(posProfile, warehouse, itemCode);
 			if (!cached) throw new Error("No cached batch availability is available. Reconnect to load batches.");
-			return subtractPendingBatchAllocations({ ...cached, from_cache: true });
+			return { ...cached, from_cache: true };
 		},
 
 		removeCartItem: async (rowName, api) => {
@@ -1043,98 +999,6 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: invoiceToLocalCart(restoredInvoice) });
 			await get().listHeld(api);
 			return restoredInvoice;
-		},
-
-		restoreLocalHold: async (localId) => {
-			return runMutation(async () => {
-				const entry = await queueRepository.getByLocalId(localId);
-				if (!entry || entry.type !== "hold_invoice") {
-					throw new Error("This held sale is no longer available on this device.");
-				}
-
-				// Re-resolve each item against current cached data (price, tax template)
-				// rather than trusting the stale queued item_code/qty snapshot.
-				const itemRows = await Promise.all(
-					entry.payload.items.map(async (line) => {
-						const cached = await itemRepository.getByCode(line.item_code);
-						if (!cached) {
-							throw new Error(`Item ${line.item_code} is no longer available locally - sync and try again.`);
-						}
-						return {
-							...itemToCartRow(cached as ItemDTO, line.qty),
-							uom: line.uom,
-							conversion_factor: line.conversion_factor,
-							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
-							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
-							batch_allocations: line.batch_allocations,
-							serial_allocations: line.serial_allocations,
-							item_note: line.item_note,
-							pricing_override: line.pricing_override,
-						};
-					}),
-				);
-
-				let customer: CustomerDTO | null = null;
-				if (entry.payload.customer) {
-					const cached = await customerRepository.getByName(entry.payload.customer);
-					customer = cached ?? { customer: entry.payload.customer, customer_name: entry.payload.customer };
-				}
-				// Must happen before previewLocalCart, which derives customer/customer_name
-				// from getActiveCustomer(get()) at call time via localizePreviewInvoice.
-				set({ selectedCustomerOverride: customer });
-
-				// No source invoice - this is a fresh local cart, not a re-attach to the
-				// (nonexistent) server doc, so re-holding/checking it out goes back through
-				// the local queue (holdRepository/invoiceRepository), not syncLocalCartToSource.
-				const preview = await previewLocalCart(itemRows, null);
-
-				// Delete only after the rebuild succeeds - if item resolution throws above,
-				// the local hold must still exist afterward rather than being silently lost.
-				await queueRepository.remove(localId);
-
-				set({ invoice: preview });
-				return preview;
-			});
-		},
-
-		restoreFailedSale: async (localId) => {
-			return runMutation(async () => {
-				const entry = await queueRepository.getByLocalId(localId);
-				if (!entry || entry.type !== "create_invoice" || entry.status !== "error") {
-					throw new Error("This failed offline sale is no longer available on this device.");
-				}
-
-				const itemRows = await Promise.all(
-					entry.payload.items.map(async (line) => {
-						const cached = await itemRepository.getByCode(line.item_code);
-						if (!cached) {
-							throw new Error(`Item ${line.item_code} is no longer available locally - sync and try again.`);
-						}
-						return {
-							...itemToCartRow(cached as ItemDTO, line.qty),
-							batch_allocations: line.batch_allocations,
-							uom: line.uom,
-							conversion_factor: line.conversion_factor,
-							rate: Number(cached.rate || 0) * Number(line.conversion_factor || 1),
-							price_list_rate: Number(cached.price_list_rate ?? cached.rate ?? 0) * Number(line.conversion_factor || 1),
-							serial_allocations: line.serial_allocations,
-							item_note: line.item_note,
-							pricing_override: line.pricing_override,
-						};
-					}),
-				);
-
-				let customer: CustomerDTO | null = null;
-				if (entry.payload.customer) {
-					const cached = await customerRepository.getByName(entry.payload.customer);
-					customer = cached ?? { customer: entry.payload.customer, customer_name: entry.payload.customer };
-				}
-				set({ selectedCustomerOverride: customer });
-				const preview = await previewLocalCart(itemRows, null);
-				await queueRepository.remove(localId);
-				set({ invoice: preview });
-				return preview;
-			});
 		},
 	};
 });

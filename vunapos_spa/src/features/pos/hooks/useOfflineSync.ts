@@ -6,14 +6,10 @@ import { itemRepository } from "../../../lib/repositories/itemRepository";
 import { requestPersistentStorage } from "../../../lib/storagePersistence";
 import { useBootstrapSyncStore } from "../../../lib/stores/bootstrapSyncStore";
 import { checkReachability, onConnectivityChange } from "../../../lib/stores/connectivityStore";
-import { drainQueue } from "../../../lib/syncEngine";
 import { VunaApiError } from "../../../services/vunaApi";
 
-const DRAIN_INTERVAL_MS = 15_000;
-
-// The only legitimate hard block is empty cache + unreachable server on first boot -
-// any other bootstrap failure with existing cached data still reaches "ready" (stale),
-// since a failed refresh must never stop selling.
+// Hydrates the local read cache used for fast catalogue rendering. Transaction
+// synchronization no longer runs here: all sales and holds are server-owned.
 export function useOfflineSync() {
 	const phase = useBootstrapSyncStore((s) => s.phase);
 	const error = useBootstrapSyncStore((s) => s.error);
@@ -59,19 +55,14 @@ export function useOfflineSync() {
 
 		const unsubscribe = onConnectivityChange((state) => {
 			if (state === "reachable") {
-				// Drain before refresh: upload pending sales before freshening the catalog.
-				// force:true since reachability just regained overrides whatever backoff
-				// schedule was computed while offline.
-				void drainQueue({ force: true }).then(() => refreshInBackground());
+				void refreshInBackground();
 			}
 		});
 
-		const drainInterval = window.setInterval(() => void drainQueue(), DRAIN_INTERVAL_MS);
 		const refreshInterval = window.setInterval(() => void refreshInBackground(), DEFAULT_FRESHNESS_TTL_MS);
 
 		return () => {
 			unsubscribe();
-			window.clearInterval(drainInterval);
 			window.clearInterval(refreshInterval);
 		};
 	}, []);

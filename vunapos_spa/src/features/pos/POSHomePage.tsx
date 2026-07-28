@@ -230,10 +230,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		setPageError(null);
 		clearToast();
 		try {
-			const restoredInvoice =
-				heldInvoice.is_local && heldInvoice.local_id
-					? await cartActions.restoreLocalHold(heldInvoice.local_id)
-					: await cartActions.restoreHeldInvoice(heldInvoice);
+			const restoredInvoice = await cartActions.restoreHeldInvoice(heldInvoice);
 			setSelectedCustomer(
 				restoredInvoice.customer
 					? {

@@ -1,6 +1,5 @@
 import { Moon, Sun } from "lucide-react";
 
-import { SyncStatusPill } from "./SyncStatusPill";
 import { useThemeSync } from "../../features/pos/hooks/useThemeSync";
 import { useThemeStore } from "../../lib/stores/themeStore";
 
@@ -19,7 +18,6 @@ export function Header({ cashier, posProfile, warehouse }: HeaderProps) {
 			<div className="flex h-full items-center justify-between gap-3">
 				<div className="flex shrink-0 items-center gap-2">
 					<h1 className="text-sm font-semibold tracking-tight text-on-surface">VunaPOS</h1>
-					<SyncStatusPill />
 				</div>
 				<div className="flex min-w-0 items-center gap-3">
 					<div className="min-w-0 text-right text-[11px] leading-4 text-on-surface-variant sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-x-4 sm:gap-y-1 sm:text-xs">

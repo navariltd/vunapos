@@ -8,7 +8,7 @@ import { customerRepository } from "../../../lib/repositories/customerRepository
 
 // Search is local (Dexie), never network. Creating a customer still requires
 // connectivity - master data is server-authoritative and there's no offline
-// create/reconcile flow yet, so offline sales fall back to the default walk-in customer.
+// create/reconcile flow yet, so checkout falls back to the default walk-in customer.
 export function useCustomerSearch(query: string) {
 	const createCall = useFrappePostCall(vunaMethods.createCustomer);
 	const [isCreating, setIsCreating] = useState(false);
