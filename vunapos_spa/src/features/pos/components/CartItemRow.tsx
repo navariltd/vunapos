@@ -221,13 +221,28 @@ function SerialAllocationEditor({ data, disabled, item, onSave }: { data: ItemBa
 	const [query, setQuery] = useState("");
 	const [selected, setSelected] = useState(() => new Set((item.serial_allocations || []).map((row) => row.serial_no)));
 	const [saving, setSaving] = useState(false);
+	const [saveError, setSaveError] = useState<string | null>(null);
 
 	const required = item.qty * Number(item.conversion_factor || 1);
 	const serials = data?.serials || [];
 	const filtered = serials.filter((row) => row.serial_no.toLowerCase().includes(query.toLowerCase()));
-	const toggle = (serialNo: string) => setSelected((current) => { const next = new Set(current); if (next.has(serialNo)) next.delete(serialNo); else if (next.size < required) next.add(serialNo); return next; });
+	const persist = (next: Set<string>) => {
+		if (next.size !== required || !Number.isInteger(required)) return;
+		setSaving(true);
+		setSaveError(null);
+		void onSave(serials.filter((row) => next.has(row.serial_no)))
+			.catch((error: unknown) => setSaveError(error instanceof Error ? error.message : "Failed to save serial numbers"))
+			.finally(() => setSaving(false));
+	};
+	const toggle = (serialNo: string) => setSelected((current) => {
+		const next = new Set(current);
+		if (next.has(serialNo)) next.delete(serialNo);
+		else if (next.size < required) next.add(serialNo);
+		persist(next);
+		return next;
+	});
 	const scan = () => { const exact = serials.find((row) => row.serial_no.toLowerCase() === query.trim().toLowerCase()); if (exact) { toggle(exact.serial_no); setQuery(""); } };
-	return <div className="border-t border-outline-variant p-3"><div className="flex gap-2"><input className="h-9 min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-sm" placeholder="Scan or search serial number" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }} /><Button size="sm" variant="ghost" onClick={scan}>Add scan</Button></div><div className="mt-3 max-h-56 space-y-2 overflow-y-auto">{filtered.map((row) => <label key={row.serial_no} className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface p-2 text-sm"><input type="checkbox" checked={selected.has(row.serial_no)} disabled={disabled || (!selected.has(row.serial_no) && selected.size >= required)} onChange={() => toggle(row.serial_no)} /><span className="min-w-0 flex-1 truncate">{row.serial_no}</span>{row.batch_no ? <span className="text-xs text-on-surface-variant">{row.batch_no}</span> : null}</label>)}</div><div className="mt-3 flex items-center justify-between"><span className={selected.size === required ? "text-xs text-on-surface-variant" : "text-xs text-error"}>Selected {selected.size} / {required}</span><Button size="sm" disabled={disabled || saving || selected.size !== required || !Number.isInteger(required)} onClick={() => { setSaving(true); void onSave(serials.filter((row) => selected.has(row.serial_no))).finally(() => setSaving(false)); }}>{saving ? "Saving…" : "Save serials"}</Button></div></div>;
+	return <div className="border-t border-outline-variant p-3"><div className="flex gap-2"><input className="h-9 min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-sm" placeholder="Scan or search serial number" value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); scan(); } }} /><Button size="sm" variant="ghost" onClick={scan}>Add scan</Button></div><div className="mt-3 max-h-56 space-y-2 overflow-y-auto">{filtered.map((row) => <label key={row.serial_no} className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface p-2 text-sm"><input type="checkbox" checked={selected.has(row.serial_no)} disabled={disabled || saving || (!selected.has(row.serial_no) && selected.size >= required)} onChange={() => toggle(row.serial_no)} /><span className="min-w-0 flex-1 truncate">{row.serial_no}</span>{row.batch_no ? <span className="text-xs text-on-surface-variant">{row.batch_no}</span> : null}</label>)}</div><div className="mt-3 flex items-center justify-between"><span className={selected.size === required ? "text-xs text-on-surface-variant" : "text-xs text-error"}>Selected {selected.size} / {required}</span><span className="text-xs text-on-surface-variant">{saving ? "Saving…" : selected.size === required ? "Saved automatically" : "Select the required serials"}</span></div>{saveError ? <p className="mt-2 text-xs text-error">{saveError}</p> : null}</div>;
 }
 
 function PricingEditor({ allowDiscountChange, allowRateChange, currency, disabled, item, onUpdate }: {
