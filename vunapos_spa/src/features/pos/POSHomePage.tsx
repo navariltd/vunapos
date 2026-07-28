@@ -21,7 +21,7 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
-import { getActiveCustomer, isUnsyncedLocalCart, useCartStore } from "./stores/cartStore";
+import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 
 type POSHomePageProps = {
@@ -146,6 +146,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleOpenCheckout = async () => {
 		setPageError(null);
+		if (!isReachable || navigator.onLine === false) {
+			setPageError("VunaPOS is online-only. Reconnect before checkout.");
+			return;
+		}
 		if (!activeCustomer?.customer) {
 			setPageError("Select a customer, or set a default customer on this POS Profile, before checkout");
 			return;
@@ -173,11 +177,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleHoldCart = async () => {
 		setPageError(null);
 		clearToast();
-		// A brand-new local cart holds itself via the offline queue, no connectivity
-		// needed. Only the two online-only branches (editing/holding an already
-		// server-tracked invoice) need this guard, for the same frappe-react-sdk
-		// raw-TypeError-on-network-failure reason as the fetch guard above.
-		if (!isUnsyncedLocalCart(cartInvoice) && (!isReachable || navigator.onLine === false)) {
+		if (!isReachable || navigator.onLine === false) {
 			setPageError("Holding invoices needs a connection - try again once you're back online.");
 			return;
 		}
@@ -242,12 +242,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
 		setPageError(null);
+		if (!isReachable || navigator.onLine === false) {
+			setPageError("VunaPOS is online-only. Reconnect before completing this sale.");
+			return;
+		}
 		try {
 			const result = await cartActions.submitCart(
 				payments,
 				bootstrap.data?.print_format,
 				idempotencyKey,
-				isReachable && navigator.onLine !== false,
+				true,
 			);
 			setIsCheckoutOpen(false);
 			setSelectedCustomer(undefined);

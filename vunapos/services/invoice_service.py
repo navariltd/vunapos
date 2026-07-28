@@ -1142,13 +1142,23 @@ def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
 		raise
 
 
-def create_and_submit_invoice(pos_profile=None, customer=None, items=None, payments=None):
+def create_and_submit_invoice(
+	pos_profile=None, customer=None, items=None, payments=None, idempotency_key=None
+):
+	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
+	if existing:
+		return invoice_to_dict(existing)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
 	try:
 		draft = create_invoice_from_cart(pos_profile=pos_profile, customer=customer, items=items)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		return checkout_invoice(doc.doctype, doc.name, payments=payments)
+		return checkout_invoice(
+			doc.doctype,
+			doc.name,
+			payments=payments,
+			idempotency_key=idempotency_key,
+		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise

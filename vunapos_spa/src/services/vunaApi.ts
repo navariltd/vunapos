@@ -264,6 +264,7 @@ export function createAndSubmitInvoice(
 		customer?: string;
 		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		payments?: PaymentInput[];
+		idempotency_key?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {

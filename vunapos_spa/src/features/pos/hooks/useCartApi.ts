@@ -13,6 +13,7 @@ export function useCartApi(): CartApi {
 	const removeItemCall = useFrappePostCall(vunaMethods.removeItem);
 	const clearInvoiceCall = useFrappePostCall(vunaMethods.clearInvoice);
 	const createInvoiceFromCartCall = useFrappePostCall(vunaMethods.createInvoiceFromCart);
+	const createAndSubmitInvoiceCall = useFrappePostCall(vunaMethods.createAndSubmitInvoice);
 	const checkoutInvoiceCall = useFrappePostCall(vunaMethods.checkoutInvoice);
 	const holdInvoiceCall = useFrappePostCall(vunaMethods.holdInvoice);
 	const listHeldInvoicesCall = useFrappePostCall(vunaMethods.listHeldInvoices);
@@ -28,6 +29,7 @@ export function useCartApi(): CartApi {
 		removeItem: removeItemCall.call,
 		clearInvoice: clearInvoiceCall.call,
 		createInvoiceFromCart: createInvoiceFromCartCall.call,
+		createAndSubmitInvoice: createAndSubmitInvoiceCall.call,
 		checkoutInvoice: checkoutInvoiceCall.call,
 		holdInvoice: holdInvoiceCall.call,
 		listHeldInvoices: listHeldInvoicesCall.call,
