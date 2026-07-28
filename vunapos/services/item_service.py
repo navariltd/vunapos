@@ -55,7 +55,7 @@ def _to_item_payload(item_code, profile, barcode=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
 	price_list = get_priority_price_list(customer=profile.customer, pos_profile=profile)
-	uom_rates = _get_uom_rate_map([item_code], price_list)
+	uom_rates = _get_uom_rate_map([item_code], price_list, profile.customer)
 	uoms = []
 	for row in item.get("uoms", []):
 		uoms.append(
@@ -133,21 +133,29 @@ def _get_actual_qty_map(item_codes, warehouse):
 	return {row.item_code: max(flt(row.available_qty), 0) for row in rows}
 
 
-def _get_uom_rate_map(item_codes, price_list):
+def _get_uom_rate_map(item_codes, price_list, customer=None):
 	if not item_codes or not price_list:
 		return {}
 
 	current_date = today()
 	item_price = frappe.qb.DocType("Item Price")
+	blank_batch = item_price.batch_no.isnull() | (item_price.batch_no == "")
+	blank_party = (item_price.customer.isnull() | (item_price.customer == "")) & (
+		item_price.supplier.isnull() | (item_price.supplier == "")
+	)
+	party_match = (item_price.customer == customer) | blank_party if customer else blank_party
 	rows = (
 		frappe.qb.from_(item_price)
 		.select(item_price.item_code, item_price.uom, item_price.price_list_rate)
 		.where(item_price.selling == 1)
 		.where(item_price.price_list == price_list)
 		.where(item_price.item_code.isin(item_codes))
+		.where(blank_batch)
+		.where(party_match)
 		.where((item_price.valid_from <= current_date) | item_price.valid_from.isnull())
 		.where((item_price.valid_upto >= current_date) | item_price.valid_upto.isnull())
 		.orderby(item_price.item_code)
+		.orderby(item_price.customer, order=Order.desc)
 		.orderby(item_price.valid_from, order=Order.desc)
 		.orderby(item_price.modified, order=Order.desc)
 	).run(as_dict=True)
@@ -303,7 +311,7 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 	item_codes = [item_code for item_code in item_codes if item_code in item_by_code]
 	barcode_map = _get_first_barcode_map(item_codes)
 	actual_qty_map = _get_actual_qty_map(item_codes, profile.warehouse)
-	uom_rate_map = _get_uom_rate_map(item_codes, price_list)
+	uom_rate_map = _get_uom_rate_map(item_codes, price_list, customer)
 	rate_map = {}
 	for item_code in item_codes:
 		item_rates = uom_rate_map.get(item_code, {})
