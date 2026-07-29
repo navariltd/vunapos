@@ -564,6 +564,31 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def test_payment_validation_accepts_split_at_currency_precision(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
 		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{
+				"payments": [
+					frappe._dict({"mode_of_payment": "Cash"}),
+					frappe._dict({"mode_of_payment": "M-Pesa"}),
+				]
+			}
+		)
+
+		rows = validate_payment_rows(
+			doc,
+			[
+				{"mode_of_payment": "Cash", "amount": "25.25"},
+				{"mode_of_payment": "M-Pesa", "amount": "74.75"},
+			],
+			profile,
+		)
+
+		self.assertEqual(
+			rows,
+			[
+				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
+				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
+			],
+		)
 
 	def test_payment_validation_subtracts_loyalty_redemption_from_amount_due(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 25})
@@ -584,23 +609,6 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		)
 
 		self.assertEqual(validate_payment_rows(doc, [], profile), [])
-
-		rows = validate_payment_rows(
-			doc,
-			[
-				{"mode_of_payment": "Cash", "amount": "25.25"},
-				{"mode_of_payment": "M-Pesa", "amount": "74.75"},
-			],
-			profile,
-		)
-
-		self.assertEqual(
-			rows,
-			[
-				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
-				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
-			],
-		)
 
 	def test_payment_validation_allows_cash_overpayment_for_change(self):
 		doc = frappe._dict({"rounded_total": 654, "grand_total": 654})
