@@ -58,6 +58,86 @@ def _tracking_flags(item_codes: set[str]) -> dict[str, dict]:
 	}
 
 
+def _row_tracking_entries(row, flags: dict) -> list[dict]:
+	if not flags.get("has_batch_no") and not flags.get("has_serial_no"):
+		return []
+	entries = []
+	if row.get("serial_and_batch_bundle"):
+		bundle = frappe.get_doc("Serial and Batch Bundle", row.serial_and_batch_bundle)
+		if (
+			bundle.get("item_code") != row.item_code
+			or bundle.get("warehouse") != row.warehouse
+			or bundle.get("voucher_detail_no") != row.name
+		):
+			_reservation_error(
+				"TRACKED_STOCK_BUNDLE_MISMATCH",
+				_("The Serial and Batch Bundle for item {0} does not belong to this invoice row").format(
+					row.item_code
+				),
+			)
+		for entry in bundle.get("entries", []):
+			entries.append(
+				{
+					"serial_no": entry.get("serial_no") or None,
+					"batch_no": entry.get("batch_no") or None,
+					"qty": 1.0 if entry.get("serial_no") else abs(flt(entry.get("qty"))),
+					"warehouse": row.warehouse,
+				}
+			)
+	elif flags.get("has_batch_no") and row.get("batch_no"):
+		entries.append(
+			{
+				"serial_no": None,
+				"batch_no": row.batch_no,
+				"qty": _stock_qty(row),
+				"warehouse": row.warehouse,
+			}
+		)
+
+	if flags.get("has_serial_no"):
+		serials = [entry.get("serial_no") for entry in entries]
+		if not serials or any(not serial for serial in serials) or len(serials) != len(set(serials)):
+			_reservation_error(
+				"SERIAL_RESERVATION_INVALID",
+				_("Invoice row {0} does not contain a unique serial selection").format(row.name),
+			)
+		if flags.get("has_batch_no") and any(not entry.get("batch_no") for entry in entries):
+			_reservation_error(
+				"SERIAL_BATCH_RESERVATION_INVALID",
+				_("Every serial number for item {0} must belong to a selected batch").format(row.item_code),
+			)
+	elif flags.get("has_batch_no"):
+		if not entries or any(not entry.get("batch_no") for entry in entries):
+			_reservation_error(
+				"BATCH_RESERVATION_INVALID",
+				_("Invoice row {0} does not contain a batch selection").format(row.name),
+			)
+		consolidated = {}
+		for entry in entries:
+			consolidated[entry["batch_no"]] = flt(consolidated.get(entry["batch_no"])) + flt(entry["qty"])
+		entries = [
+			{
+				"serial_no": None,
+				"batch_no": batch_no,
+				"qty": qty,
+				"warehouse": row.warehouse,
+			}
+			for batch_no, qty in sorted(consolidated.items())
+		]
+
+	selected_qty = sum(flt(entry["qty"]) for entry in entries)
+	if abs(selected_qty - _stock_qty(row)) > 1e-9:
+		_reservation_error(
+			"TRACKED_STOCK_QUANTITY_MISMATCH",
+			_("Tracked stock selection for item {0} must equal {1}").format(row.item_code, _stock_qty(row)),
+			{"selected_qty": selected_qty, "required_qty": _stock_qty(row)},
+		)
+	return sorted(
+		entries,
+		key=lambda entry: (entry.get("serial_no") or "", entry.get("batch_no") or ""),
+	)
+
+
 def _lock_and_validate_stock(rows: list) -> None:
 	required = {}
 	for row in rows:
@@ -84,7 +164,8 @@ def _lock_and_validate_stock(rows: list) -> None:
 			)
 
 
-def _reservation_payload(doc, rows: list) -> list[dict]:
+def _reservation_payload(doc, rows: list, flags: dict | None = None) -> list[dict]:
+	flags = flags if flags is not None else _tracking_flags({row.item_code for row in rows})
 	return sorted(
 		[
 			{
@@ -94,6 +175,7 @@ def _reservation_payload(doc, rows: list) -> list[dict]:
 				"warehouse": row.warehouse,
 				"stock_uom": row.stock_uom,
 				"reserved_qty": _stock_qty(row),
+				"tracking": _row_tracking_entries(row, flags.get(row.item_code, {})),
 			}
 			for row in rows
 		],
@@ -102,7 +184,8 @@ def _reservation_payload(doc, rows: list) -> list[dict]:
 
 
 def reservation_fingerprint(doc, rows: list | None = None) -> str:
-	payload = _reservation_payload(doc, rows if rows is not None else _stock_rows(doc))
+	selected_rows = rows if rows is not None else _stock_rows(doc)
+	payload = _reservation_payload(doc, selected_rows)
 	encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 	return hashlib.sha256(encoded).hexdigest()
 
@@ -135,22 +218,6 @@ def create_invoice_stock_reservations(doc) -> list[str]:
 		return [row.name for row in existing]
 
 	flags = _tracking_flags({row.item_code for row in rows})
-	tracked_items = sorted(
-		{
-			row.item_code
-			for row in rows
-			if flags.get(row.item_code, {}).get("has_batch_no")
-			or flags.get(row.item_code, {}).get("has_serial_no")
-		}
-	)
-	if tracked_items:
-		_reservation_error(
-			"TRACKED_STOCK_RESERVATION_PENDING",
-			_("Batch and serial reservation will be enabled in the tracked-stock phase: {0}").format(
-				", ".join(tracked_items)
-			),
-			{"items": tracked_items},
-		)
 
 	savepoint = "vunapos_stock_reservation"
 	frappe.db.savepoint(savepoint)
@@ -159,6 +226,8 @@ def create_invoice_stock_reservations(doc) -> list[str]:
 		reservations = []
 		for row in rows:
 			qty = _stock_qty(row)
+			row_flags = flags.get(row.item_code, {})
+			tracking_entries = _row_tracking_entries(row, row_flags)
 			available = flt(get_available_qty_to_reserve(row.item_code, row.warehouse))
 			sre = frappe.get_doc(
 				{
@@ -174,9 +243,13 @@ def create_invoice_stock_reservations(doc) -> list[str]:
 					"company": doc.company,
 					"stock_uom": row.stock_uom,
 					"project": doc.get("project"),
-					"reservation_based_on": "Qty",
+					"has_serial_no": int(bool(row_flags.get("has_serial_no"))),
+					"has_batch_no": int(bool(row_flags.get("has_batch_no"))),
+					"reservation_based_on": "Serial and Batch" if tracking_entries else "Qty",
 				}
 			)
+			for entry in tracking_entries:
+				sre.append("sb_entries", entry)
 			sre.insert(ignore_permissions=True)
 			sre.submit()
 			reservations.append(sre.name)
@@ -192,11 +265,18 @@ def create_invoice_stock_reservations(doc) -> list[str]:
 
 def validate_invoice_stock_reservations(doc) -> None:
 	rows = _stock_rows(doc)
-	expected = {(row.item_code, row.warehouse, row.name): _stock_qty(row) for row in rows}
+	flags = _tracking_flags({row.item_code for row in rows})
+	expected = {
+		(row.item_code, row.warehouse, row.name): {
+			"qty": _stock_qty(row),
+			"tracking": _row_tracking_entries(row, flags.get(row.item_code, {})),
+		}
+		for row in rows
+	}
 	reservations = get_stock_reservation_entries_for_voucher(
 		doc.doctype,
 		doc.name,
-		fields=["item_code", "warehouse", "voucher_detail_no", "reserved_qty"],
+		fields=["name", "item_code", "warehouse", "voucher_detail_no", "reserved_qty"],
 	)
 	actual = {}
 	for reservation in reservations:
@@ -205,7 +285,27 @@ def validate_invoice_stock_reservations(doc) -> None:
 			reservation.warehouse,
 			reservation.voucher_detail_no,
 		)
-		actual[key] = flt(actual.get(key)) + flt(reservation.reserved_qty)
+		sre = frappe.get_doc("Stock Reservation Entry", reservation.name)
+		tracking = sorted(
+			[
+				{
+					"serial_no": entry.get("serial_no") or None,
+					"batch_no": entry.get("batch_no") or None,
+					"qty": flt(entry.get("qty")),
+					"warehouse": entry.get("warehouse"),
+				}
+				for entry in sre.get("sb_entries", [])
+			],
+			key=lambda entry: (entry.get("serial_no") or "", entry.get("batch_no") or ""),
+		)
+		if key in actual:
+			_reservation_error(
+				"STOCK_RESERVATION_MISMATCH",
+				_("More than one active stock reservation exists for invoice row {0}").format(
+					reservation.voucher_detail_no
+				),
+			)
+		actual[key] = {"qty": flt(reservation.reserved_qty), "tracking": tracking}
 
 	if actual != expected or doc.get("vunapos_reservation_fingerprint") != reservation_fingerprint(doc, rows):
 		_reservation_error(
@@ -217,18 +317,20 @@ def validate_invoice_stock_reservations(doc) -> None:
 						"item_code": key[0],
 						"warehouse": key[1],
 						"invoice_row": key[2],
-						"qty": qty,
+						"qty": details["qty"],
+						"tracking": details["tracking"],
 					}
-					for key, qty in sorted(expected.items())
+					for key, details in sorted(expected.items())
 				],
 				"actual": [
 					{
 						"item_code": key[0],
 						"warehouse": key[1],
 						"invoice_row": key[2],
-						"qty": qty,
+						"qty": details["qty"],
+						"tracking": details["tracking"],
 					}
-					for key, qty in sorted(actual.items())
+					for key, details in sorted(actual.items())
 				],
 			},
 		)

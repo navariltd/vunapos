@@ -4,6 +4,7 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 	get_available_qty_to_reserve,
 )
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, nowdate
 
 from vunapos.services.invoice_service import create_invoice_from_cart
 from vunapos.services.stock_reservation_service import (
@@ -11,7 +12,13 @@ from vunapos.services.stock_reservation_service import (
 	release_invoice_stock_reservations,
 	validate_invoice_stock_reservations,
 )
-from vunapos.tests.helpers import ensure_test_pos_profile, ensure_test_stock_item, set_invoice_mode
+from vunapos.tests.helpers import (
+	ensure_batch_stock,
+	ensure_test_batch_item,
+	ensure_test_pos_profile,
+	ensure_test_stock_item,
+	set_invoice_mode,
+)
 
 
 class TestVunaPOSStockReservationService(IntegrationTestCase):
@@ -105,3 +112,125 @@ class TestVunaPOSStockReservationService(IntegrationTestCase):
 			validate_invoice_stock_reservations(doc)
 
 		self.assertEqual(context.exception.vuna_error_code, "STOCK_RESERVATION_MISMATCH")
+
+	def test_reserves_exact_multi_batch_bundle_entries(self):
+		item_code = ensure_test_batch_item("_Test VunaPOS Reserved Multi Batch Item")
+		ensure_batch_stock(
+			item_code,
+			self.profile.warehouse,
+			[
+				("VUNA-RESERVE-BATCH-A", 3, add_days(nowdate(), 30)),
+				("VUNA-RESERVE-BATCH-B", 4, add_days(nowdate(), 60)),
+			],
+		)
+		invoice = create_invoice_from_cart(
+			pos_profile=self.profile_name,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 5,
+					"batch_allocations": [
+						{"batch_no": "VUNA-RESERVE-BATCH-A", "qty": 2},
+						{"batch_no": "VUNA-RESERVE-BATCH-B", "qty": 3},
+					],
+				}
+			],
+		)
+		doc = frappe.get_doc(invoice["doctype"], invoice["name"])
+
+		reservations = create_invoice_stock_reservations(doc)
+
+		sre = frappe.get_doc("Stock Reservation Entry", reservations[0])
+		self.assertEqual(sre.reservation_based_on, "Serial and Batch")
+		self.assertTrue(sre.has_batch_no)
+		self.assertEqual(
+			[(entry.batch_no, entry.qty) for entry in sre.sb_entries],
+			[("VUNA-RESERVE-BATCH-A", 2), ("VUNA-RESERVE-BATCH-B", 3)],
+		)
+		validate_invoice_stock_reservations(doc)
+
+	def test_reserves_single_batch_as_a_native_tracking_entry(self):
+		item_code = ensure_test_batch_item("_Test VunaPOS Reserved Single Batch Item")
+		ensure_batch_stock(
+			item_code,
+			self.profile.warehouse,
+			[("VUNA-RESERVE-SINGLE-BATCH", 4, add_days(nowdate(), 30))],
+		)
+		invoice = create_invoice_from_cart(
+			pos_profile=self.profile_name,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 2,
+					"batch_allocations": [{"batch_no": "VUNA-RESERVE-SINGLE-BATCH", "qty": 2}],
+				}
+			],
+		)
+		doc = frappe.get_doc(invoice["doctype"], invoice["name"])
+
+		reservations = create_invoice_stock_reservations(doc)
+
+		sre = frappe.get_doc("Stock Reservation Entry", reservations[0])
+		self.assertEqual(sre.reservation_based_on, "Serial and Batch")
+		self.assertEqual(len(sre.sb_entries), 1)
+		self.assertEqual(sre.sb_entries[0].batch_no, "VUNA-RESERVE-SINGLE-BATCH")
+		self.assertEqual(sre.sb_entries[0].qty, 2)
+
+	def test_reserves_exact_serials_with_their_batches(self):
+		item_code = ensure_test_batch_item("_Test VunaPOS Reserved Serial Batch Item", has_serial_no=1)
+		batch_no = f"VUNA-RESERVE-SERIAL-BATCH-{frappe.generate_hash(length=6)}"
+		frappe.get_doc(
+			{
+				"doctype": "Batch",
+				"batch_id": batch_no,
+				"item": item_code,
+				"expiry_date": add_days(nowdate(), 30),
+			}
+		).insert(ignore_permissions=True)
+		serials = [
+			f"VUNA-RESERVE-SERIAL-{frappe.generate_hash(length=8)}",
+			f"VUNA-RESERVE-SERIAL-{frappe.generate_hash(length=8)}",
+		]
+		for serial_no in serials:
+			frappe.get_doc(
+				{
+					"doctype": "Serial No",
+					"serial_no": serial_no,
+					"item_code": item_code,
+					"company": self.profile.company,
+					"batch_no": batch_no,
+				}
+			).insert(ignore_permissions=True)
+		make_stock_entry(
+			item_code=item_code,
+			to_warehouse=self.profile.warehouse,
+			qty=2,
+			rate=100,
+			serial_no=serials,
+			batch_no=batch_no,
+		)
+		invoice = create_invoice_from_cart(
+			pos_profile=self.profile_name,
+			items=[
+				{
+					"item_code": item_code,
+					"qty": 2,
+					"serial_allocations": [
+						{"serial_no": serial_no, "batch_no": batch_no} for serial_no in serials
+					],
+				}
+			],
+		)
+		doc = frappe.get_doc(invoice["doctype"], invoice["name"])
+
+		reservations = create_invoice_stock_reservations(doc)
+
+		sre = frappe.get_doc("Stock Reservation Entry", reservations[0])
+		self.assertEqual(sre.reservation_based_on, "Serial and Batch")
+		self.assertTrue(sre.has_serial_no)
+		self.assertTrue(sre.has_batch_no)
+		self.assertEqual(
+			{(entry.serial_no, entry.batch_no, entry.qty) for entry in sre.sb_entries},
+			{(serial_no, batch_no, 1) for serial_no in serials},
+		)
+		validate_invoice_stock_reservations(doc)
