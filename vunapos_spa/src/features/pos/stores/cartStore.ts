@@ -25,6 +25,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	searchItems,
 	holdInvoice,
 	listHeldInvoices,
 	previewInvoice,
@@ -42,6 +43,7 @@ import {
 export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
+	searchItems: FrappeCall;
 	getItemBatches: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
@@ -95,6 +97,10 @@ function cartItemPayload(item: InvoiceItemDTO) {
 	};
 }
 
+function cartItemsPayload(items: InvoiceItemDTO[]) {
+	return items.filter((item) => !item.is_free_item).map(cartItemPayload);
+}
+
 function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 	for (const item of items) {
 		if (item.has_serial_no) {
@@ -130,6 +136,26 @@ function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${stockQty} stock units.`);
 		}
 	}
+}
+
+function clearIncompleteSerialAllocation(item: InvoiceItemDTO): InvoiceItemDTO {
+	if (!item.has_serial_no || !item.serial_allocations?.length) return item;
+	const required = item.qty * Number(item.conversion_factor || 1);
+	const uniqueSerials = new Set(item.serial_allocations.map((row) => row.serial_no));
+	if (
+		Number.isInteger(required)
+		&& item.serial_allocations.length === required
+		&& uniqueSerials.size === required
+	) {
+		return item;
+	}
+	return {
+		...item,
+		batch_no: null,
+		serial_and_batch_bundle: null,
+		batch_allocations: [],
+		serial_allocations: [],
+	};
 }
 
 // Converts a held draft being restored into the local-cart shape for editing. Must NOT
@@ -174,6 +200,7 @@ function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemD
 				...item,
 				uoms: source?.uoms || item.uoms,
 				barcode: source?.barcode || item.barcode,
+				item_tax: source?.item_tax ?? item.item_tax,
 				item_note: source?.item_note ?? item.item_note,
 				pricing_rules: source?.pricing_rules ?? item.pricing_rules,
 				pricing_override_audit: source?.pricing_override_audit ?? item.pricing_override_audit,
@@ -210,6 +237,7 @@ function localizePreviewInvoice(
 				has_batch_no: metadata?.has_batch_no,
 				has_serial_no: metadata?.has_serial_no,
 				warehouse: metadata?.warehouse,
+				item_tax: metadata?.item_tax,
 			};
 		}),
 	};
@@ -257,12 +285,14 @@ function assembledToInvoiceDTO(
 				barcode: meta?.barcode,
 				item_note: meta?.item_note,
 				pricing_rules: meta?.pricing_rules,
+				catalogue_pricing_rule: meta?.catalogue_pricing_rule,
 				pricing_override_audit: meta?.pricing_override_audit,
 				pricing_override_by: meta?.pricing_override_by,
 				pricing_override: item.pricing_override ?? meta?.pricing_override,
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
 				item_tax_template: meta?.item_tax_template,
+				item_tax: meta?.item_tax,
 			};
 		}),
 		taxes: assembled.taxes.map((row) => ({
@@ -301,11 +331,19 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	}
 
 	const taxSettings = await resolveTaxSettings();
+	const profileTaxByAccount = new Map(
+		(taxTemplate?.taxes ?? []).map((row) => [row.account_head, row]),
+	);
 	// Every override replaces the previous one. Never use the already-discounted
 	// selling rate as the base or sequential edits will compound discounts.
-	const rateByCode = new Map(
-		items.map((row) => [row.item_code, Number(row.price_list_rate ?? row.rate ?? 0)]),
-	);
+	const rateByCode = new Map(items.map((row) => [
+		row.item_code,
+		Number(
+			row.catalogue_pricing_rule?.preview_qty === row.qty
+				? row.catalogue_pricing_rule.rate
+				: row.price_list_rate ?? row.rate ?? 0,
+		),
+	]));
 	return assembleInvoice({
 		cart: items.map((row) => ({
 			item_code: row.item_code,
@@ -316,7 +354,14 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 		taxRows: taxTemplate?.taxes ?? [],
 		itemTaxResolver: (code) => {
 			const templateName = itemTaxTemplateByCode.get(code);
-			return templateName ? itemTaxRowsByTemplate.get(templateName) : undefined;
+			return templateName
+				? itemTaxRowsByTemplate.get(templateName)?.map((row) => ({
+					...row,
+					included_in_print_rate: profileTaxByAccount.has(row.account_head)
+						? Boolean(profileTaxByAccount.get(row.account_head)?.included_in_print_rate)
+						: Boolean(profile?.item_prices_include_tax),
+				}))
+				: undefined;
 		},
 		taxSettings,
 		roundingSettings: profile ? {
@@ -350,6 +395,8 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		has_serial_no: item.has_serial_no,
 		barcode: item.barcode,
 		item_tax_template: item.item_tax_template,
+		item_tax: item.item_tax,
+		catalogue_pricing_rule: item.pricing_rule,
 	};
 }
 
@@ -358,6 +405,15 @@ function updateLocalQty(row: InvoiceItemDTO, qty: number): InvoiceItemDTO {
 		...row,
 		qty,
 		amount: Number(row.rate || 0) * qty,
+		...(qty !== row.qty ? {
+			// Batch and serial allocations describe an exact stock quantity. Once that
+			// quantity changes, retaining an old partial selection prevents the server
+			// from applying its configured automatic outward allocation.
+			batch_no: null,
+			serial_and_batch_bundle: null,
+			batch_allocations: [],
+			serial_allocations: [],
+		} : {}),
 	};
 }
 
@@ -388,6 +444,7 @@ async function refreshAndValidateStock(
 	invoice: InvoiceDTO,
 	posProfile: string | undefined,
 	customer: string | undefined,
+	priceList: string | undefined,
 	api: CartApi,
 ): Promise<InvoiceDTO> {
 	const requestedByCode = new Map<string, number>();
@@ -402,6 +459,7 @@ async function refreshAndValidateStock(
 				item_code: itemCode,
 				pos_profile: posProfile,
 				customer,
+				price_list: priceList,
 			});
 			validateAvailableQty(fresh, qty);
 			freshByCode.set(itemCode, fresh);
@@ -428,6 +486,7 @@ async function refreshSoldItemStock(
 	items: InvoiceItemDTO[],
 	posProfile: string | undefined,
 	customer: string | undefined,
+	priceList: string | undefined,
 	api: CartApi,
 ): Promise<void> {
 	try {
@@ -437,6 +496,7 @@ async function refreshSoldItemStock(
 				item_code: itemCode,
 				pos_profile: posProfile,
 				customer,
+				price_list: priceList,
 			});
 			await itemRepository.updateActualQty(itemCode, fresh.actual_qty);
 		}));
@@ -461,6 +521,7 @@ export type CartState = {
 	// undefined = "use defaultCustomer", null = "explicitly cleared", value = "chosen" -
 	// preserved exactly from the old POSHomePage-local tri-state (not redesigned).
 	selectedCustomerOverride: CustomerDTO | null | undefined;
+	selectedPriceList: string | undefined;
 };
 
 export function getActiveCustomer(
@@ -498,12 +559,19 @@ type CartActions = {
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
 	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	previewLoyaltyRedemption: (loyaltyPoints: number, api: CartApi) => Promise<InvoiceDTO | null>;
+	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
+	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
+	refreshPriceListPricing: (priceList: string | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
 		idempotencyKey: string | undefined,
 		api: CartApi,
 		isOnline?: boolean,
+		isCreditSale?: boolean,
+		dueDate?: string,
+		loyaltyPoints?: number,
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -534,6 +602,28 @@ export const useCartStore = create<CartStore>((set, get) => {
 		return localizePreviewInvoice(preview, items, getActiveCustomer(get()), sourceInvoice);
 	}
 
+	async function previewCartWithPricingRules(
+		items: InvoiceItemDTO[],
+		currentInvoice: InvoiceDTO | null | undefined,
+		api: CartApi,
+	): Promise<InvoiceDTO> {
+		const selectedCustomer = getActiveCustomer(get());
+		const customer = selectedCustomer?.customer || currentInvoice?.customer;
+		if (!customer) {
+			return previewLocalCart(items, currentInvoice);
+		}
+		const sourceInvoice = getLocalCartSource(currentInvoice);
+		const authoritative = await previewInvoice(api.previewInvoice, {
+			pos_profile: get().posProfile,
+			customer,
+			invoice_doctype: sourceInvoice?.doctype || currentInvoice?.doctype,
+			price_list: get().selectedPriceList || currentInvoice?.selling_price_list,
+			items: cartItemsPayload(items),
+			loyalty_points: currentInvoice?.loyalty_points || undefined,
+		});
+		return localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
+	}
+
 	async function syncLocalCartToSource(cart: InvoiceDTO, api: CartApi) {
 		if (!cart.source_invoice_doctype || !cart.source_invoice_name) {
 			return null;
@@ -544,8 +634,25 @@ export const useCartStore = create<CartStore>((set, get) => {
 			invoice_doctype: cart.source_invoice_doctype,
 			invoice_name: cart.source_invoice_name,
 			customer: selectedCustomer?.customer || cart.customer,
-			items: cart.items.map(cartItemPayload),
+			price_list: get().selectedPriceList || cart.selling_price_list,
+			items: cartItemsPayload(cart.items),
+			loyalty_points: cart.loyalty_points || undefined,
 		});
+	}
+
+	async function restoreDefaultCataloguePricing(api: CartApi) {
+		try {
+			const pricedItems = await searchItems(api.searchItems, {
+				pos_profile: get().posProfile,
+				customer: getActiveCustomer(get())?.customer,
+				limit: 100000,
+			});
+			await itemRepository.replaceAll(pricedItems);
+			useRuntimeCacheStore.getState().touch();
+		} catch (error) {
+			// Do not report a completed transaction as failed if only this refresh fails.
+			console.error("Unable to restore the default price list", error);
+		}
 	}
 
 	return {
@@ -557,6 +664,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 		posProfile: undefined,
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
+		selectedPriceList: undefined,
 
 		setPosProfile: (posProfile) => set({ posProfile }),
 		setDefaultCustomer: (defaultCustomer) => set({ defaultCustomer }),
@@ -580,7 +688,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 							return row;
 						})
 					: [...currentItems, itemToCartRow(item)];
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -617,7 +725,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -659,7 +767,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				throw new Error("Discount changes are not allowed for this POS Profile.");
 			}
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -668,7 +776,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					items: nextItems.map(cartItemPayload),
+					price_list: get().selectedPriceList || invoice.selling_price_list,
+					items: cartItemsPayload(nextItems),
 				}),
 			);
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
@@ -683,12 +792,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
 			);
 			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
 				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					items: nextItems.map(cartItemPayload),
+					price_list: get().selectedPriceList || invoice.selling_price_list,
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: preservePricingOverrides(updated, nextItems) });
 		},
@@ -706,10 +816,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 					pricing_override: undefined, batch_allocations: [], serial_allocations: [] };
 			});
 			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
 				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
-					items: nextItems.map(cartItemPayload),
+					price_list: get().selectedPriceList || invoice.selling_price_list,
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: updated });
 		},
@@ -726,7 +837,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				const optimisticInvoice = { ...invoice, items: nextItems };
 				set({ invoice: optimisticInvoice });
 				try {
-					const updated = await runMutation(() => previewLocalCart(nextItems, optimisticInvoice));
+					const updated = await runMutation(() => previewCartWithPricingRules(nextItems, optimisticInvoice, api));
 					if (get().invoice === optimisticInvoice) set({ invoice: updated });
 				} catch (error) {
 					if (get().invoice === optimisticInvoice) set({ invoice });
@@ -736,7 +847,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
-					items: nextItems.map(cartItemPayload),
+					price_list: get().selectedPriceList || invoice.selling_price_list,
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: updated });
 		},
@@ -749,7 +861,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			);
 			validateManualBatchAllocations(nextItems);
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -758,7 +870,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					items: nextItems.map(cartItemPayload),
+					price_list: get().selectedPriceList || invoice.selling_price_list,
+					items: cartItemsPayload(nextItems),
 				}),
 			);
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
@@ -788,7 +901,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -824,7 +937,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 		clearCart: async (api) => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) {
-				set({ invoice: null });
+				set({ invoice: null, selectedPriceList: undefined });
+				await restoreDefaultCataloguePricing(api);
 				return;
 			}
 
@@ -838,7 +952,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 					);
 					await get().listHeld(api);
 				}
-				set({ invoice: null });
+				set({ invoice: null, selectedPriceList: undefined });
+				await restoreDefaultCataloguePricing(api);
 				return;
 			}
 
@@ -848,23 +963,26 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 				}),
 			);
-			set({ invoice: updatedInvoice.items.length ? updatedInvoice : null });
+			set({ invoice: updatedInvoice.items.length ? updatedInvoice : null, selectedPriceList: undefined });
+			await restoreDefaultCataloguePricing(api);
 		},
 
 		validateCart: async (api) => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) return null;
+			const items = invoice.items.map(clearIncompleteSerialAllocation);
 			const selectedCustomer = getActiveCustomer(get());
 			const sourceInvoice = getLocalCartSource(invoice);
 			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
 				pos_profile: get().posProfile,
 				customer: selectedCustomer?.customer || invoice.customer,
 				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
-				items: invoice.items.map(cartItemPayload),
+				price_list: get().selectedPriceList,
+				items: cartItemsPayload(items),
 			}));
 			const validated = localizePreviewInvoice(
 				authoritative,
-				invoice.items,
+				items,
 				selectedCustomer,
 				sourceInvoice,
 			);
@@ -872,7 +990,127 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return validated;
 		},
 
-		submitCart: async (payments, printFormat, idempotencyKey, api, isOnline = false) => {
+		previewLoyaltyRedemption: async (loyaltyPoints, api) => {
+			const invoice = get().invoice;
+			if (!invoice?.items?.length) return null;
+			const items = invoice.items.map(clearIncompleteSerialAllocation);
+			const selectedCustomer = getActiveCustomer(get());
+			const sourceInvoice = getLocalCartSource(invoice);
+			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
+				pos_profile: get().posProfile,
+				customer: selectedCustomer?.customer || invoice.customer,
+				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
+				price_list: get().selectedPriceList,
+				items: cartItemsPayload(items),
+				loyalty_points: loyaltyPoints || undefined,
+			}));
+			const validated = localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
+			set({ invoice: validated });
+			return validated;
+		},
+
+		refreshCartConfiguration: async (api) => {
+			const invoice = get().invoice;
+			if (!invoice?.items.length) return null;
+			const catalogueItems = await Promise.all(
+				invoice.items.map((item) => itemRepository.getByCode(item.item_code)),
+			);
+			const refreshedItems = invoice.items.map((item, index) => {
+				const catalogueItem = catalogueItems[index];
+				if (!catalogueItem) return item;
+				const conversionFactor = Number(item.conversion_factor || 1);
+				const configuredUomRate = catalogueItem.uoms?.find((row) => row.uom === item.uom)?.rate;
+				const stockRate = Number(catalogueItem.price_list_rate ?? catalogueItem.rate ?? item.price_list_rate ?? item.rate);
+				const priceListRate = configuredUomRate == null
+					? stockRate * conversionFactor
+					: Number(configuredUomRate);
+				return {
+					...item,
+					rate: priceListRate,
+					price_list_rate: priceListRate,
+					actual_qty: catalogueItem.actual_qty ?? undefined,
+					allow_negative_stock: catalogueItem.allow_negative_stock,
+					has_batch_no: catalogueItem.has_batch_no,
+					has_serial_no: catalogueItem.has_serial_no,
+					item_tax_template: catalogueItem.item_tax_template,
+					item_tax: catalogueItem.item_tax ?? undefined,
+					uoms: catalogueItem.uoms,
+				};
+			});
+			const selectedCustomer = getActiveCustomer(get());
+			const customer = selectedCustomer?.customer || invoice.customer;
+			if (!customer) {
+				// A cashier may build a cart before choosing a customer. Configuration
+				// refreshes must still work, so recalculate that cart from the freshly
+				// hydrated catalogue and defer customer validation until checkout.
+				const refreshed = await runMutation(() => previewCartWithPricingRules(refreshedItems, invoice, api));
+				set({ invoice: refreshed });
+				return refreshed;
+			}
+
+			const validated = await get().validateCart(api);
+			if (!validated) return null;
+			const refreshed = {
+				...validated,
+				items: validated.items.map((item, index) => {
+					const catalogueItem = catalogueItems[index];
+					return catalogueItem ? {
+						...item,
+						actual_qty: catalogueItem.actual_qty ?? undefined,
+						allow_negative_stock: catalogueItem.allow_negative_stock,
+						has_batch_no: catalogueItem.has_batch_no,
+						has_serial_no: catalogueItem.has_serial_no,
+						item_tax_template: catalogueItem.item_tax_template,
+						item_tax: catalogueItem.item_tax ?? undefined,
+						uoms: catalogueItem.uoms,
+					} : item;
+				}),
+			};
+			set({ invoice: refreshed });
+			return refreshed;
+		},
+
+		refreshCustomerPricing: async (customer, api) => {
+			set({ selectedPriceList: undefined });
+			const requestedCustomer = (customer === undefined ? get().defaultCustomer : customer)?.customer;
+			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
+				pos_profile: get().posProfile,
+				customer: requestedCustomer,
+				limit: 100000,
+			}));
+			// Ignore a response that completed after the cashier selected another customer.
+			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
+			await itemRepository.replaceAll(pricedItems);
+			useRuntimeCacheStore.getState().touch();
+			if (!get().invoice?.items.length) return null;
+			return get().validateCart(api);
+		},
+
+		refreshPriceListPricing: async (priceList, api) => {
+			const requestedCustomer = getActiveCustomer(get())?.customer;
+			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
+				pos_profile: get().posProfile,
+				customer: requestedCustomer,
+				price_list: priceList,
+				limit: 100000,
+			}));
+			set({ selectedPriceList: priceList });
+			await itemRepository.replaceAll(pricedItems);
+			useRuntimeCacheStore.getState().touch();
+			if (!get().invoice?.items.length) return null;
+			return get().validateCart(api);
+		},
+
+		submitCart: async (
+			payments,
+			printFormat,
+			idempotencyKey,
+			api,
+			isOnline = false,
+			isCreditSale = false,
+			dueDate,
+			loyaltyPoints,
+		) => {
 			if (!isOnline) {
 				throw new Error("VunaPOS is online-only. Reconnect before completing this sale.");
 			}
@@ -888,6 +1126,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						invoice as InvoiceDTO,
 						get().posProfile,
 						selectedCustomer?.customer,
+						get().selectedPriceList,
 						api,
 					),
 				);
@@ -904,23 +1143,31 @@ export const useCartStore = create<CartStore>((set, get) => {
 					createAndSubmitInvoice(api.createAndSubmitInvoice, {
 						pos_profile: get().posProfile,
 						customer: selectedCustomer?.customer,
-						items: invoice.items.map(cartItemPayload),
+						price_list: get().selectedPriceList,
+						items: cartItemsPayload(invoice.items),
 						payments,
 						idempotency_key: idempotencyKey,
+						is_credit_sale: isCreditSale,
+						due_date: dueDate,
+						loyalty_points: loyaltyPoints,
 					}),
 				);
-				await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);
+				await refreshSoldItemStock(
+					invoice.items, get().posProfile, selectedCustomer?.customer, get().selectedPriceList, api,
+				);
 				try {
 					const receipt = await renderInvoice(api.renderInvoice, {
 						invoice_doctype: submittedInvoice.doctype,
 						invoice_name: submittedInvoice.name,
 						print_format: printFormat || undefined,
 					});
-					set({ invoice: null });
+					set({ invoice: null, selectedPriceList: undefined });
+					await restoreDefaultCataloguePricing(api);
 					return { invoice: submittedInvoice, printPayload: receipt };
 				} catch (err) {
 					console.error(err);
-					set({ invoice: null });
+					set({ invoice: null, selectedPriceList: undefined });
+					await restoreDefaultCataloguePricing(api);
 					return { invoice: submittedInvoice, printPayload: null };
 				}
 			}
@@ -935,6 +1182,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 							invoice_name: updatedInvoice?.name || invoice.source_invoice_name || "",
 							payments,
 							idempotency_key: idempotencyKey,
+							is_credit_sale: isCreditSale,
+							due_date: dueDate,
+							loyalty_points: loyaltyPoints,
 						}),
 					);
 				}
@@ -944,9 +1194,14 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 					payments,
 					idempotency_key: idempotencyKey,
+					is_credit_sale: isCreditSale,
+					due_date: dueDate,
+					loyalty_points: loyaltyPoints,
 				});
 			});
-			await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);
+			await refreshSoldItemStock(
+				invoice.items, get().posProfile, selectedCustomer?.customer, get().selectedPriceList, api,
+			);
 
 			try {
 				const receipt = await renderInvoice(api.renderInvoice, {
@@ -954,11 +1209,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: submittedInvoice.name,
 					print_format: printFormat || undefined,
 				});
-				set({ invoice: null });
+				set({ invoice: null, selectedPriceList: undefined });
+				await restoreDefaultCataloguePricing(api);
 				return { invoice: submittedInvoice, printPayload: receipt };
 			} catch (err) {
 				console.error(err);
-				set({ invoice: null });
+				set({ invoice: null, selectedPriceList: undefined });
+				await restoreDefaultCataloguePricing(api);
 				return { invoice: submittedInvoice, printPayload: null };
 			}
 		},
@@ -991,7 +1248,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 					return createInvoiceFromCart(api.createInvoiceFromCart, {
 						pos_profile: posProfile,
 						customer: selectedCustomer?.customer,
-						items: invoice.items.map(cartItemPayload),
+						price_list: get().selectedPriceList,
+						items: cartItemsPayload(invoice.items),
+						loyalty_points: invoice.loyalty_points || undefined,
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {
 							invoice_doctype: draftInvoice.doctype,
@@ -1006,7 +1265,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 				});
 			});
 
-			set({ invoice: null });
+			set({ invoice: null, selectedPriceList: undefined });
+			await restoreDefaultCataloguePricing(api);
 			await get().listHeld(api);
 			return heldInvoice;
 		},
@@ -1018,7 +1278,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: heldInvoice.name,
 				}),
 			);
-			set({ invoice: invoiceToLocalCart(restoredInvoice) });
+			set({
+				invoice: invoiceToLocalCart(restoredInvoice),
+				selectedPriceList: restoredInvoice.selling_price_list,
+			});
+			if (restoredInvoice.selling_price_list) {
+				await get().refreshPriceListPricing(restoredInvoice.selling_price_list, api);
+			}
 			await get().listHeld(api);
 			return restoredInvoice;
 		},

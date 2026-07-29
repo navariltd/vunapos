@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Pause, Trash2, X } from "lucide-react";
+import { AlertCircle, Award, Check, Pause, Trash2, X } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import {
@@ -15,20 +15,30 @@ import {
 	totalToMinorUnits,
 } from "../paymentAllocation";
 import { useCartStore } from "../stores/cartStore";
-import type { ModeOfPaymentDTO, PaymentInput } from "../types";
+import type { CustomerLoyaltyDTO, InvoiceDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
+	allowCreditSales?: boolean;
 	allowPartialPayment?: boolean;
 	currency?: string;
 	currencyPrecision?: number;
+	customerLoyalty?: CustomerLoyaltyDTO | null;
+	defaultSaleType?: "Cash Sale" | "Credit Sale";
 	error?: string | null;
 	isOpen: boolean;
 	modesOfPayment: ModeOfPaymentDTO[];
 	onClear: () => void;
 	onClose: () => void;
-	onConfirm: (payments: PaymentInput[], idempotencyKey: string) => void;
+	onConfirm: (
+		payments: PaymentInput[],
+		idempotencyKey: string,
+		isCreditSale: boolean,
+		dueDate?: string,
+		loyaltyPoints?: number,
+	) => void;
 	onHold: () => void;
+	onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
 };
 
 function createIdempotencyKey() {
@@ -38,10 +48,21 @@ function createIdempotencyKey() {
 	return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function todayInputValue() {
+	const today = new Date();
+	const year = today.getFullYear();
+	const month = String(today.getMonth() + 1).padStart(2, "0");
+	const day = String(today.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
 export function CheckoutDialog({
+	allowCreditSales,
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	customerLoyalty,
+	defaultSaleType,
 	error,
 	isOpen,
 	modesOfPayment,
@@ -49,6 +70,7 @@ export function CheckoutDialog({
 	onClose,
 	onConfirm,
 	onHold,
+	onPreviewLoyalty,
 }: CheckoutDialogProps) {
 	if (!isOpen) {
 		return null;
@@ -56,29 +78,38 @@ export function CheckoutDialog({
 
 	return (
 		<CheckoutDialogContent
+			key={allowCreditSales ? "credit-enabled" : "credit-disabled"}
+			allowCreditSales={allowCreditSales}
 			allowPartialPayment={allowPartialPayment}
 			currency={currency}
 			currencyPrecision={currencyPrecision}
+			customerLoyalty={customerLoyalty}
+			defaultSaleType={defaultSaleType}
 			error={error}
 			modesOfPayment={modesOfPayment}
 			onClear={onClear}
 			onClose={onClose}
 			onConfirm={onConfirm}
 			onHold={onHold}
+			onPreviewLoyalty={onPreviewLoyalty}
 		/>
 	);
 }
 
 function CheckoutDialogContent({
+	allowCreditSales,
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	customerLoyalty,
+	defaultSaleType,
 	error,
 	modesOfPayment,
 	onClear,
 	onClose,
 	onConfirm,
 	onHold,
+	onPreviewLoyalty,
 }: Omit<CheckoutDialogProps, "isOpen">) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isSubmitting = useCartStore((s) => s.isMutating);
@@ -88,19 +119,78 @@ function CheckoutDialogContent({
 		() => Array.from(new Map(modesOfPayment.map((mode) => [mode.mode_of_payment, mode])).values()),
 		[modesOfPayment],
 	);
-	const totalMinor = totalToMinorUnits(total, precision);
-	const [amounts, setAmounts] = useState(() =>
-		createInitialPaymentAmounts(availableModes, totalMinor, precision),
-	);
-	const idempotencyKey = useRef(createIdempotencyKey());
-	const allocation = calculatePaymentAllocation(availableModes, amounts, totalMinor, precision);
-	const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
-	const isPayable =
-		availableModes.length > 0 &&
-		canCompletePaymentAllocation(allocation, totalMinor, Boolean(allowPartialPayment));
 	const scale = currencyScale(precision);
+	const totalMinor = totalToMinorUnits(total, precision);
+	const loyaltyFactor = Number(customerLoyalty?.conversion_factor || 0);
+	const availableLoyaltyPoints = Math.max(Math.floor(Number(customerLoyalty?.points || 0)), 0);
+	const maximumLoyaltyPoints = loyaltyFactor > 0
+		? Math.min(availableLoyaltyPoints, Math.floor(total / loyaltyFactor))
+		: 0;
+	const [loyaltyInput, setLoyaltyInput] = useState("");
+	const [appliedLoyaltyPoints, setAppliedLoyaltyPoints] = useState(
+		Math.min(Math.floor(Number(invoice?.loyalty_points || 0)), maximumLoyaltyPoints),
+	);
+	const [appliedLoyaltyAmount, setAppliedLoyaltyAmount] = useState(Number(invoice?.loyalty_amount || 0));
+	const [loyaltyError, setLoyaltyError] = useState("");
+	const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
+	const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
+	const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
+	const [amounts, setAmounts] = useState(() =>
+		allowCreditSales && defaultSaleType === "Credit Sale"
+			? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
+			: createInitialPaymentAmounts(availableModes, payableMinor, precision),
+	);
+	const [isCreditSale, setIsCreditSale] = useState(
+		Boolean(allowCreditSales && (invoice?.is_credit_sale || defaultSaleType === "Credit Sale")),
+	);
+	const today = useMemo(() => todayInputValue(), []);
+	const [dueDate, setDueDate] = useState(invoice?.due_date || today);
+	const idempotencyKey = useRef(createIdempotencyKey());
+	const allocation = calculatePaymentAllocation(availableModes, amounts, payableMinor, precision);
+	const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
+	const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
+	const isPayable = !isApplyingLoyalty && isLoyaltySelectionValid && (!isCreditSale || dueDate >= today) && (
+		payableMinor === 0
+			? !allocation.hasInvalidAmount && allocation.allocatedMinor === 0
+			: availableModes.length > 0 && (isCreditSale
+				? !allocation.hasInvalidAmount && !hasNonCashOverpayment
+				: canCompletePaymentAllocation(allocation, payableMinor, Boolean(allowPartialPayment)))
+	);
+	const loyaltyInputPoints = /^\d+$/.test(loyaltyInput) ? Number(loyaltyInput) : null;
+	const loyaltyInputError = loyaltyInput && (
+		loyaltyInputPoints === null || loyaltyInputPoints <= 0 || loyaltyInputPoints > maximumLoyaltyPoints
+	);
+	const applyLoyaltyPoints = async (points: number) => {
+		const normalizedPoints = Math.max(Math.min(Math.floor(points), maximumLoyaltyPoints), 0);
+		setIsApplyingLoyalty(true);
+		setLoyaltyError("");
+		try {
+			const preview = await onPreviewLoyalty(normalizedPoints);
+			const validatedPoints = Math.floor(Number(preview?.loyalty_points || 0));
+			const validatedAmount = Number(preview?.loyalty_amount || 0);
+			const validatedTotalMinor = totalToMinorUnits(
+				preview ? getInvoiceTotal(preview) : total,
+				precision,
+			);
+			const nextPayableMinor = Math.max(validatedTotalMinor - totalToMinorUnits(validatedAmount, precision), 0);
+			setAppliedLoyaltyPoints(validatedPoints);
+			setAppliedLoyaltyAmount(validatedAmount);
+			setLoyaltyInput(validatedPoints ? String(validatedPoints) : "");
+			setAmounts(isCreditSale
+				? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
+				: createInitialPaymentAmounts(availableModes, nextPayableMinor, precision));
+		} catch (applyError) {
+			setLoyaltyError(applyError instanceof Error ? applyError.message : "Unable to validate loyalty redemption");
+		} finally {
+			setIsApplyingLoyalty(false);
+		}
+	};
 	const isOverpaid = allocation.remainingMinor < 0;
-	const balanceLabel = isOverpaid ? "Change" : allocation.remainingMinor > 0 && allowPartialPayment ? "Outstanding" : "Remaining";
+	const balanceLabel = isOverpaid
+		? "Change"
+		: isCreditSale || (allocation.remainingMinor > 0 && allowPartialPayment)
+			? "Outstanding"
+			: "Remaining";
 	const balanceMinor = Math.abs(allocation.remainingMinor);
 	const paymentStatus = allocation.hasInvalidAmount
 		? "Invalid allocation"
@@ -108,9 +198,13 @@ function CheckoutDialogContent({
 			? "Change due"
 			: allocation.remainingMinor === 0
 				? "Fully paid"
-				: allowPartialPayment && allocation.allocatedMinor > 0
-					? "Partial payment"
-					: "Payment incomplete";
+				: isCreditSale && allocation.allocatedMinor > 0
+					? "Deposit + credit"
+					: isCreditSale
+						? "Credit sale"
+						: allowPartialPayment && allocation.allocatedMinor > 0
+							? "Partial payment"
+							: "Payment incomplete";
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-2 sm:p-4">
@@ -129,13 +223,98 @@ function CheckoutDialogContent({
 				<div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
 					<div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-2 lg:divide-x lg:divide-outline-variant">
 					<section className="flex min-h-0 flex-col p-4 sm:p-6">
+						{allowCreditSales ? (
+							<div className="mb-5 grid grid-cols-2 rounded-lg bg-surface-container p-1" role="group" aria-label="Sale type">
+								{([false, true] as const).map((credit) => (
+									<button
+										type="button"
+										key={String(credit)}
+										aria-pressed={isCreditSale === credit}
+										className={`rounded-md px-3 py-2 text-sm font-medium ${isCreditSale === credit ? "bg-surface text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+										onClick={() => {
+											setIsCreditSale(credit);
+											setAmounts(
+												credit
+													? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
+											: createInitialPaymentAmounts(availableModes, payableMinor, precision),
+											);
+										}}
+									>
+										{credit ? "Credit Sale" : "Cash Sale"}
+									</button>
+								))}
+							</div>
+						) : null}
+						{isCreditSale ? (
+							<label className="mb-5 block text-sm font-medium text-on-surface">
+								Payment due date
+								<input
+									type="date"
+									min={today}
+									required
+									value={dueDate}
+									onChange={(event) => setDueDate(event.target.value)}
+									className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+								/>
+								<span className="mt-1 block text-xs font-normal text-on-surface-variant">
+									The unpaid balance becomes due on this date.
+								</span>
+							</label>
+						) : null}
+						{customerLoyalty?.enrolled ? (
+							<div className="mb-5 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-4">
+								<div className="flex items-start gap-3">
+									<Award className="mt-0.5 size-5 shrink-0 text-tertiary" />
+									<div className="min-w-0 flex-1">
+										<div className="flex justify-between gap-3">
+											<div>
+												<p className="text-sm font-semibold text-on-surface">Redeem loyalty points</p>
+												<p className="text-xs text-on-surface-variant">{customerLoyalty.tier || customerLoyalty.program}</p>
+											</div>
+											<div className="text-right">
+												<p className="text-sm font-semibold text-on-surface">{availableLoyaltyPoints.toLocaleString()} pts</p>
+												<p className="text-xs text-on-surface-variant">{formatCurrency(customerLoyalty.redemption_value, currency, precision)}</p>
+											</div>
+										</div>
+										<div className="mt-3 flex gap-2">
+											<input
+												aria-label="Loyalty points to redeem"
+												className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm"
+												inputMode="numeric"
+												placeholder="Points to redeem"
+												value={loyaltyInput}
+												onChange={(event) => setLoyaltyInput(event.target.value)}
+											/>
+											<Button
+												variant="ghost"
+											disabled={!maximumLoyaltyPoints || isApplyingLoyalty}
+											onClick={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
+											>Maximum</Button>
+											<Button
+											disabled={Boolean(loyaltyInputError) || !loyaltyInputPoints || isApplyingLoyalty}
+											onClick={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
+										>{isApplyingLoyalty ? "Checking..." : "Apply"}</Button>
+										</div>
+										{loyaltyInputError ? <p className="mt-2 text-xs text-error">Enter between 1 and {maximumLoyaltyPoints.toLocaleString()} points.</p> : null}
+										{loyaltyError ? <p className="mt-2 text-xs text-error">{loyaltyError}</p> : null}
+										{!isLoyaltySelectionValid ? <p className="mt-2 text-xs text-error">The available balance changed. Apply a valid number of points again.</p> : null}
+										{appliedLoyaltyPoints ? (
+											<div className="mt-3 flex items-center justify-between text-xs">
+												<span className="text-on-surface-variant">Applied: {appliedLoyaltyPoints.toLocaleString()} points · {formatCurrency(loyaltyAmountMinor / scale, currency, precision)}</span>
+												<button type="button" className="font-medium text-error" onClick={() => void applyLoyaltyPoints(0)}>Remove</button>
+											</div>
+										) : null}
+									</div>
+								</div>
+							</div>
+						) : null}
 						<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Amount due</p>
-						<p className="mt-1 text-3xl font-semibold text-on-surface">{formatCurrency(total, currency, precision)}</p>
+						<p className="mt-1 text-3xl font-semibold text-on-surface">{formatCurrency(payableMinor / scale, currency, precision)}</p>
 						<div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
 						{availableModes.map((mode) => {
 							const amount = amounts[mode.mode_of_payment] ?? "";
 							const isAll =
-								parsePaymentAmount(amount, precision) === totalMinor &&
+								parsePaymentAmount(amount, precision) === payableMinor &&
 								availableModes.every(
 									(other) =>
 										other.mode_of_payment === mode.mode_of_payment ||
@@ -174,7 +353,7 @@ function CheckoutDialogContent({
 												: "bg-surface-container text-on-surface hover:bg-surface-container-high"
 										}`}
 										onClick={() =>
-											setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, totalMinor, precision))
+											setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, payableMinor, precision))
 										}
 									>
 										<Check className="size-4" /> All
@@ -185,7 +364,7 @@ function CheckoutDialogContent({
 						</div>
 						<div className="mt-5 grid gap-3 sm:grid-cols-3">
 							<PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / scale, currency, precision)} />
-							<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment)} />
+							<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment && !isCreditSale)} />
 							<PaymentSummary label="Status" value={paymentStatus} invalid={!isPayable} compact />
 						</div>
 					{allocation.hasInvalidAmount ? (
@@ -198,7 +377,11 @@ function CheckoutDialogContent({
 							<AlertCircle className="size-4 shrink-0" /> Electronic payments cannot exceed the amount due.
 						</div>
 					) : null}
-					{allocation.remainingMinor > 0 && allowPartialPayment ? (
+					{allocation.remainingMinor > 0 && isCreditSale ? (
+						<p className="text-sm text-on-surface-variant">
+							The outstanding balance will remain on the customer's account. Add a payment above only when taking a deposit.
+						</p>
+					) : allocation.remainingMinor > 0 && allowPartialPayment ? (
 						<p className="text-sm text-on-surface-variant">
 							Partial payment is enabled.
 						</p>
@@ -209,7 +392,7 @@ function CheckoutDialogContent({
 						</div>
 					) : null}
 					</section>
-					<InvoiceSummary invoice={invoice} currency={currency} precision={precision} allocatedMinor={allocation.allocatedMinor} remainingMinor={allocation.remainingMinor} />
+					<InvoiceSummary invoice={invoice} currency={currency} precision={precision} allocatedMinor={allocation.allocatedMinor} remainingMinor={allocation.remainingMinor} loyaltyAmountMinor={loyaltyAmountMinor} />
 					</div>
 				</div>
 				<div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-outline-variant px-4 py-3 sm:px-6">
@@ -223,10 +406,16 @@ function CheckoutDialogContent({
 					<Button
 						disabled={!isPayable || isSubmitting}
 						onClick={() =>
-							onConfirm(buildPaymentInputs(availableModes, amounts, precision), idempotencyKey.current)
+							onConfirm(
+								buildPaymentInputs(availableModes, amounts, precision),
+								idempotencyKey.current,
+								isCreditSale,
+								isCreditSale ? dueDate : undefined,
+								appliedLoyaltyPoints || undefined,
+							)
 						}
 					>
-						{isSubmitting ? "Submitting..." : "Complete sale"}
+						{isSubmitting ? "Submitting..." : isCreditSale ? "Complete credit sale" : "Complete sale"}
 					</Button>
 				</div>
 			</div>
@@ -240,12 +429,14 @@ function InvoiceSummary({
 	precision,
 	allocatedMinor,
 	remainingMinor,
+	loyaltyAmountMinor,
 }: {
 	invoice: ReturnType<typeof useCartStore.getState>["invoice"];
 	currency?: string;
 	precision: number;
 	allocatedMinor: number;
 	remainingMinor: number;
+	loyaltyAmountMinor: number;
 }) {
 	const scale = currencyScale(precision);
 	const taxes = invoice?.taxes || [];
@@ -274,6 +465,8 @@ function InvoiceSummary({
 					<SummaryRow key={`${tax.account_head || tax.description}-${index}`} label={`${tax.description || tax.account_head || "Tax"}${tax.rate ? ` ${tax.rate}%` : ""}`} value={formatCurrency(tax.tax_amount, currency, precision)} />
 				))}
 				<SummaryRow label="Grand total" value={formatCurrency(getInvoiceTotal(invoice), currency, precision)} strong />
+				{loyaltyAmountMinor ? <SummaryRow label="Loyalty redemption" value={`−${formatCurrency(loyaltyAmountMinor / scale, currency, precision)}`} /> : null}
+				{loyaltyAmountMinor ? <SummaryRow label="Amount payable" value={formatCurrency((totalToMinorUnits(getInvoiceTotal(invoice), precision) - loyaltyAmountMinor) / scale, currency, precision)} strong /> : null}
 				<SummaryRow label="Paid" value={formatCurrency(allocatedMinor / scale, currency, precision)} />
 				<SummaryRow label={remainingMinor < 0 ? "Change" : "Balance"} value={formatCurrency(Math.abs(remainingMinor) / scale, currency, precision)} strong />
 			</div>

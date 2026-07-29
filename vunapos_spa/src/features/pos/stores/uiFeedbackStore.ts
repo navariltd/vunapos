@@ -4,6 +4,7 @@ import type { InvoiceDTO } from "../types";
 
 export type Toast =
 	| { type: "submitted" | "held"; invoice: InvoiceDTO }
+	| { type: "info"; message: string }
 	| { type: "error"; message: string };
 
 type UiFeedbackStore = {

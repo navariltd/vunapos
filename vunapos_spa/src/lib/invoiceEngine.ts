@@ -5,8 +5,8 @@
 //
 // Two independent tax mechanisms exist in ERPNext, gated by Accounts Settings and
 // synced as tax_settings (not assumed): profile-level (one rate on net_total,
-// supports inclusive) and item-level (flat % per item's own line amount, no
-// inclusive concept, can vary per item/account). Both can be active at once; their
+// supports inclusive) and item-level (flat % per item's own line amount whose
+// inclusivity is controlled by the POS Profile). Both can be active at once; their
 // contributions to the same account simply add.
 //
 // Pricing starts from the current in-memory bootstrap rate. The server independently
@@ -36,6 +36,7 @@ export type TaxTemplateRow = {
 export type ItemTaxRow = {
 	account_head: string;
 	rate: number;
+	included_in_print_rate?: boolean;
 };
 
 export type PriceResolver = (itemCode: string) => number | undefined;
@@ -222,8 +223,6 @@ export function assembleInvoice(input: {
 		};
 	});
 
-	const grossTotal = round(items.reduce((sum, item) => sum + item.amount, 0));
-
 	const taxRows = input.taxSettings.addTaxesFromTaxesAndChargesTemplate ? (input.taxRows ?? []) : [];
 	for (const row of taxRows) {
 		if (row.charge_type && row.charge_type !== SUPPORTED_CHARGE_TYPE) {
@@ -235,38 +234,50 @@ export function assembleInvoice(input: {
 		}
 	}
 
-	// Inclusive rows are back-calculated out of the entered price; exclusive rows are
-	// added on top of the resulting net total - matching ERPNext's own
-	// calculate_taxes_and_totals for "On Net Total" rows. Item-level tax has no
-	// inclusive concept, so it never affects net_total.
-	const inclusiveRateSum = taxRows
-		.filter((row) => row.included_in_print_rate)
-		.reduce((sum, row) => sum + (row.rate ?? 0), 0);
-	const netTotal = round(grossTotal / (1 + inclusiveRateSum / 100));
+	// A matching Item Tax Template account overrides the profile template's rate for
+	// that item, while the profile row still controls whether the tax is included in
+	// the entered rate. Item-only accounts use the POS Profile fallback supplied by
+	// the item resolver. This mirrors ERPNext's item_wise_tax_detail behaviour.
+	const getEffectiveTaxRows = (itemCode: string): Array<TaxTemplateRow & { account_head: string; rate: number }> => {
+		const rowsByAccount = new Map<string, TaxTemplateRow & { account_head: string; rate: number }>();
+		for (const row of taxRows) {
+			const accountHead = row.account_head ?? "unknown";
+			rowsByAccount.set(accountHead, { ...row, account_head: accountHead, rate: row.rate ?? 0 });
+		}
+		const itemRows = input.taxSettings.addTaxesFromItemTaxTemplate && input.itemTaxResolver
+			? (input.itemTaxResolver(itemCode) ?? [])
+			: [];
+		for (const row of itemRows) {
+			const profileRow = rowsByAccount.get(row.account_head);
+			rowsByAccount.set(row.account_head, {
+				...profileRow,
+				account_head: row.account_head,
+				rate: row.rate,
+				included_in_print_rate: profileRow
+					? profileRow.included_in_print_rate
+					: row.included_in_print_rate,
+			});
+		}
+		return Array.from(rowsByAccount.values());
+	};
+	const getItemNetAmount = (item: AssembledInvoiceItem, rows: Array<TaxTemplateRow & { rate: number }>) => {
+		const inclusiveItemRate = rows
+			.filter((row) => row.included_in_print_rate)
+			.reduce((sum, row) => sum + row.rate, 0);
+		return round(item.amount / (1 + inclusiveItemRate / 100));
+	};
+	const netTotal = round(items.reduce((sum, item) => {
+		const rows = getEffectiveTaxRows(item.item_code);
+		return sum + getItemNetAmount(item, rows);
+	}, 0));
 
 	const accounts = new Map<string, AccountTotal>();
-
-	if (input.taxSettings.addTaxesFromItemTaxTemplate && input.itemTaxResolver) {
-		for (const item of items) {
-			const rows = input.itemTaxResolver(item.item_code) ?? [];
-			// Item-level tax has no inclusive concept of its own, but a profile-level
-			// inclusive rate can be active on the same cart and is baked into the entered
-			// price - back it out of this item's amount first (same ratio as netTotal) so
-			// item-level tax is computed on the tax-exclusive base, matching ERPNext instead
-			// of double-taxing the inclusive portion.
-			const itemNetAmount = round(item.amount / (1 + inclusiveRateSum / 100));
-			for (const row of rows) {
-				const contribution = round(itemNetAmount * (row.rate / 100));
-				addToAccount(accounts, row.account_head, contribution, { rate: row.rate });
-			}
-		}
-	}
-
-	if (input.taxSettings.addTaxesFromTaxesAndChargesTemplate) {
-		for (const row of taxRows) {
-			const key = row.account_head ?? "unknown";
-			const taxAmount = round(netTotal * ((row.rate ?? 0) / 100));
-			addToAccount(accounts, key, taxAmount, {
+	for (const item of items) {
+		const rows = getEffectiveTaxRows(item.item_code);
+		const itemNetAmount = getItemNetAmount(item, rows);
+		for (const row of rows) {
+			const contribution = round(itemNetAmount * (row.rate / 100));
+			addToAccount(accounts, row.account_head, contribution, {
 				rate: row.rate,
 				charge_type: row.charge_type,
 				included_in_print_rate: row.included_in_print_rate,

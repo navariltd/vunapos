@@ -21,8 +21,11 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
+import { useConfigurationRealtime } from "./hooks/useConfigurationRealtime";
+import { useCustomerLoyalty } from "./hooks/useCustomerLoyalty";
 import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
+import { hydrate } from "../../lib/cacheEngine";
 
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
@@ -93,6 +96,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const items = useItemSearch(itemSearchQuery);
 	const cartInvoice = useCartStore((s) => s.invoice);
+	const selectedPriceList = useCartStore((s) => s.selectedPriceList);
 	const activeCustomer = useCartStore(getActiveCustomer);
 	const heldInvoicesView = useHeldInvoicesView();
 	const cartIsMutating = useCartStore((s) => s.isMutating);
@@ -103,8 +107,76 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
 	const cartActions = useCartActions();
 	const { isReachable } = useConnectivity();
+	const customerLoyalty = useCustomerLoyalty(
+		activeCustomer?.customer,
+		bootstrap.data?.pos_profile,
+		isReachable && navigator.onLine !== false,
+	);
+	const handleSelectCustomer = async (
+		customer: Parameters<typeof setSelectedCustomer>[0],
+		reportError = true,
+	) => {
+		setSelectedCustomer(customer);
+		if (!isReachable || navigator.onLine === false) return;
+		try {
+			await cartActions.refreshCustomerPricing(customer);
+		} catch (pricingError) {
+			if (reportError) {
+				showToast({
+					type: "error",
+					message: pricingError instanceof Error
+						? `Customer selected, but prices could not be refreshed: ${pricingError.message}`
+						: "Customer selected, but prices could not be refreshed.",
+				});
+			}
+		}
+	};
+	const handleSelectPriceList = async (priceList?: string) => {
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "Connect to the server before changing the price list." });
+			return;
+		}
+		try {
+			await cartActions.refreshPriceListPricing(priceList);
+		} catch (pricingError) {
+			showToast({
+				type: "error",
+				message: pricingError instanceof Error ? pricingError.message : "Price list could not be changed.",
+			});
+		}
+	};
 
 	const error = pageError || bootstrap.error || items.error;
+
+	useConfigurationRealtime(async (event) => {
+		if (!isReachable || navigator.onLine === false) return;
+		try {
+			await hydrate(bootstrap.data?.pos_profile);
+			const cartState = useCartStore.getState();
+			if (cartState.selectedPriceList) {
+				try {
+					await cartActions.refreshPriceListPricing(cartState.selectedPriceList);
+				} catch {
+					// The profile change may have revoked the selected list. Reprice the
+					// current cart using its customer/profile default without losing it.
+					await cartActions.refreshPriceListPricing(undefined);
+				}
+			} else if (cartState.invoice?.items.length) {
+				await cartActions.refreshCartConfiguration();
+			}
+			showToast({
+				type: "info",
+				message: `${event.doctype || "POS"} configuration updated.`,
+			});
+		} catch (refreshError) {
+			showToast({
+				type: "error",
+				message: refreshError instanceof Error
+					? `Configuration changed, but VunaPOS could not refresh: ${refreshError.message}`
+					: "Configuration changed, but VunaPOS could not refresh.",
+			});
+		}
+	});
 
 	useEffect(() => {
 		if (cartError) showToast({ type: "error", message: cartError });
@@ -194,7 +266,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			const heldInvoice = await cartActions.holdCart();
 			if (heldInvoice) {
 				showToast({ type: "held", invoice: heldInvoice });
-				setSelectedCustomer(undefined);
+				void handleSelectCustomer(undefined, false);
 				setIsCartOpen(false);
 				return true;
 			}
@@ -231,14 +303,15 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		clearToast();
 		try {
 			const restoredInvoice = await cartActions.restoreHeldInvoice(heldInvoice);
-			setSelectedCustomer(
-				restoredInvoice.customer
+		void handleSelectCustomer(
+			restoredInvoice.customer
 					? {
 							customer: restoredInvoice.customer,
 							customer_name: restoredInvoice.customer_name || restoredInvoice.customer,
 						}
 					: null,
-			);
+			false,
+		);
 			setActivePage("Home");
 			setIsCartOpen(true);
 		} catch (err) {
@@ -246,7 +319,13 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		}
 	};
 
-	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
+	const handleCheckout = async (
+		payments: PaymentInput[],
+		idempotencyKey: string,
+		isCreditSale: boolean,
+		dueDate?: string,
+		loyaltyPoints?: number,
+	) => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
 			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before completing this sale." });
@@ -258,10 +337,14 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				bootstrap.data?.print_format,
 				idempotencyKey,
 				true,
+				isCreditSale,
+				dueDate,
+				loyaltyPoints,
 			);
 			setIsCheckoutOpen(false);
-			setSelectedCustomer(undefined);
+			void handleSelectCustomer(undefined, false);
 			if (result?.invoice) {
+				customerLoyalty.refresh();
 				showToast({ type: "submitted", invoice: result.invoice });
 			} else {
 				clearToast();
@@ -270,6 +353,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				printInvoiceHtml(result.printPayload);
 			}
 		} catch (err) {
+			customerLoyalty.refresh();
 			showToast({ type: "error", message: getCheckoutErrorMessage(err) });
 		}
 	};
@@ -291,7 +375,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			{activePage === "Invoices" ? (
-				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
+				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { void handleSelectCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
 				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (
@@ -299,7 +383,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					customer={getCustomerFromPath(currentPath) || ""}
 					posProfile={bootstrap.data?.pos_profile}
 					onStartSale={(customer) => {
-						setSelectedCustomer(customer);
+						void handleSelectCustomer(customer);
 						navigateToPosPage("Home");
 					}}
 				/> : <CustomersPage posProfile={bootstrap.data?.pos_profile} defaultCurrency={bootstrap.data?.currency} />
@@ -316,7 +400,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					</section>
 				)
 			) : (
-				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_390px]">
+				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_clamp(32rem,32vw,38rem)]">
 					<section className="flex min-w-0 min-h-0 flex-col p-4">
 						<ItemSearch
 							isLoading={items.isLoading}
@@ -335,19 +419,28 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 					</section>
 					<CartPanel
+						allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
+						allowedPriceLists={bootstrap.data?.allowed_price_lists}
 						className="hidden xl:flex"
 						allowDiscountChange={bootstrap.data?.allow_discount_change}
 						allowRateChange={bootstrap.data?.allow_rate_change}
 						currency={bootstrap.data?.currency}
+						customerLoyalty={customerLoyalty.data}
+						customerLoyaltyError={customerLoyalty.error}
+						isCustomerLoyaltyLoading={customerLoyalty.isLoading}
+						defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
+							? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 						warehouse={bootstrap.data?.warehouse}
 						isOnline={isReachable && navigator.onLine !== false}
 						onCheckout={handleOpenCheckout}
-						onClearCustomer={() => setSelectedCustomer(null)}
+						onClearCustomer={() => void handleSelectCustomer(null)}
 						onClearCart={() => handleClearCart(false)}
 						onHold={handleHoldCart}
 						onLoadBatches={cartActions.loadItemBatches}
 						onRemoveItem={cartActions.removeCartItem}
-						onSelectCustomer={setSelectedCustomer}
+						onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+						onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+						selectedPriceList={selectedPriceList}
 						onUpdateQty={cartActions.updateCartItemQty}
 						onUpdatePricing={cartActions.updateCartItemPricing}
 						onUpdateNote={cartActions.updateCartItemNote}
@@ -380,7 +473,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onClick={() => setIsCartOpen(false)}
 						aria-label="Close cart"
 					/>
-					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,26rem)] flex-col border-l border-outline-variant bg-surface shadow-lg">
+					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,32rem)] flex-col border-l border-outline-variant bg-surface shadow-lg">
 						<div className="flex h-12 shrink-0 items-center justify-between border-b border-outline-variant px-4">
 							<div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
 								<ShoppingCart className="size-4 text-primary" />
@@ -396,19 +489,28 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							</button>
 						</div>
 						<CartPanel
+							allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
+							allowedPriceLists={bootstrap.data?.allowed_price_lists}
 							className="flex-1 border-0"
 							allowDiscountChange={bootstrap.data?.allow_discount_change}
 							allowRateChange={bootstrap.data?.allow_rate_change}
 							currency={bootstrap.data?.currency}
+							customerLoyalty={customerLoyalty.data}
+							customerLoyaltyError={customerLoyalty.error}
+							isCustomerLoyaltyLoading={customerLoyalty.isLoading}
+							defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
+								? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 							warehouse={bootstrap.data?.warehouse}
 							isOnline={isReachable && navigator.onLine !== false}
 							onCheckout={handleOpenCheckout}
-							onClearCustomer={() => setSelectedCustomer(null)}
+							onClearCustomer={() => void handleSelectCustomer(null)}
 							onClearCart={() => handleClearCart(false)}
 							onHold={handleHoldCart}
 							onLoadBatches={cartActions.loadItemBatches}
 							onRemoveItem={cartActions.removeCartItem}
-							onSelectCustomer={setSelectedCustomer}
+							onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+							onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+							selectedPriceList={selectedPriceList}
 							onUpdateQty={cartActions.updateCartItemQty}
 							onUpdatePricing={cartActions.updateCartItemPricing}
 							onUpdateNote={cartActions.updateCartItemNote}
@@ -421,12 +523,15 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			<CheckoutDialog
+				allowCreditSales={bootstrap.data?.allow_credit_sales}
 				allowPartialPayment={bootstrap.data?.allow_partial_payment}
 				currency={bootstrap.data?.currency}
 				currencyPrecision={bootstrap.data?.currency_precision}
+				defaultSaleType={bootstrap.data?.default_sale_type}
 				error={pageError}
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
+				customerLoyalty={customerLoyalty.data}
 				onClear={() => {
 					if (handleClearCart(true)) setIsCheckoutOpen(false);
 				}}
@@ -437,6 +542,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						if (held) setIsCheckoutOpen(false);
 					});
 				}}
+				onPreviewLoyalty={(points) => cartActions.previewLoyaltyRedemption(points)}
 			/>
 
 			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
@@ -444,7 +550,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					role="status"
 					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
-					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}.
+					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}
+					{toast.invoice.is_credit_sale
+						? ` as a credit sale${toast.invoice.due_date ? ` due ${toast.invoice.due_date}` : ""}.`
+						: "."}
 				</div>
 			) : null}
 
@@ -454,6 +563,15 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
 					Invoice {toast.invoice.name} held as draft.
+				</div>
+			) : null}
+
+			{toast?.type === "info" ? (
+				<div
+					role="status"
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-primary bg-primary-container px-4 py-3 text-sm text-on-primary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
+				>
+					{toast.message}
 				</div>
 			) : null}
 

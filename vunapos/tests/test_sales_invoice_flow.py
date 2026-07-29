@@ -40,6 +40,11 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 0, update_modified=False)
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 0, update_modified=False)
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
 		ensure_open_pos_opening_entry(profile)
 
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
@@ -98,6 +103,43 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		)
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"][0]["rate"], 80)
+
+	def test_preview_reprices_cart_when_quantity_crosses_pricing_rule_threshold(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_item()
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Cart Quantity Discount",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Discount Percentage",
+				"discount_percentage": 20,
+				"min_qty": 5,
+				"priority": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		below_threshold = preview_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 1}],
+		)
+		qualified = preview_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 5}],
+		)
+
+		self.assertTrue(below_threshold["ok"], below_threshold)
+		self.assertTrue(qualified["ok"], qualified)
+		self.assertEqual(below_threshold["data"]["items"][0]["rate"], 100)
+		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
+		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
 
 	def test_manual_discount_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()
@@ -548,6 +590,26 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			],
 		)
 
+	def test_payment_validation_subtracts_loyalty_redemption_from_amount_due(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 25})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
+		)
+
+		rows = validate_payment_rows(doc, [{"mode_of_payment": "Cash", "amount": 75}], profile)
+
+		self.assertEqual(rows[0]["amount"], 75)
+
+	def test_payment_validation_accepts_no_rows_when_loyalty_covers_total(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 100})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
+		)
+
+		self.assertEqual(validate_payment_rows(doc, [], profile), [])
+
 	def test_payment_validation_allows_cash_overpayment_for_change(self):
 		doc = frappe._dict({"rounded_total": 654, "grand_total": 654})
 		doc.precision = lambda _fieldname: 2
@@ -644,6 +706,128 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["totals"]["paid_amount"], amount - 10)
 		self.assertEqual(response["data"]["totals"]["outstanding_amount"], 10)
+
+	def test_checkout_rejects_credit_sale_when_profile_disallows_it(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_SALES_NOT_ALLOWED")
+		self.assertEqual(frappe.db.get_value(invoice["doctype"], invoice["name"], "docstatus"), 0)
+
+	def test_checkout_submits_fully_unpaid_credit_sale(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=nowdate(),
+			idempotency_key="fully-unpaid-credit-sale",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertTrue(response["data"]["is_credit_sale"])
+		self.assertEqual(response["data"]["payments"], [])
+		self.assertEqual(response["data"]["totals"]["paid_amount"], 0)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], amount)
+		self.assertEqual(frappe.db.get_value(invoice["doctype"], invoice["name"], "vunapos_credit_sale"), 1)
+		self.assertEqual(response["data"]["due_date"], nowdate())
+
+	def test_checkout_accepts_credit_sale_deposit_without_partial_payment_setting(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		deposit = amount / 2
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": deposit}],
+			is_credit_sale=True,
+			due_date=add_days(nowdate(), 30),
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertTrue(response["data"]["is_credit_sale"])
+		self.assertEqual(response["data"]["totals"]["paid_amount"], deposit)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], amount - deposit)
+		self.assertEqual(response["data"]["due_date"], add_days(nowdate(), 30))
+
+	def test_checkout_credit_sale_requires_due_date(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], ensure_test_item(), 1)["data"]
+
+		response = checkout_invoice(invoice["doctype"], invoice["name"], payments=[], is_credit_sale=True)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_DUE_DATE_REQUIRED")
+
+	def test_checkout_credit_sale_rejects_past_due_date(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], ensure_test_item(), 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=add_days(nowdate(), -1),
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_DUE_DATE_INVALID")
+
+	def test_checkout_credit_sale_requires_customer(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		frappe.db.set_value(invoice["doctype"], invoice["name"], "customer", None, update_modified=False)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_CUSTOMER_REQUIRED")
 
 	def test_checkout_requires_current_open_session(self):
 		profile = ensure_test_pos_profile()
@@ -817,6 +1001,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		previous_tax_template_setting = frappe.db.get_single_value(
 			"Accounts Settings", "add_taxes_from_taxes_and_charges_template"
 		)
+		previous_inclusive_setting = frappe.db.get_value(
+			"POS Profile", profile, "vunapos_item_prices_include_tax"
+		)
 
 		try:
 			frappe.db.set_single_value("Accounts Settings", "add_taxes_from_item_tax_template", 1)
@@ -834,7 +1021,28 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			self.assertAlmostEqual(flt(invoice["totals"]["net_total"]), 100, places=2)
 			self.assertAlmostEqual(flt(invoice["totals"]["total_taxes_and_charges"]), 10, places=2)
 			self.assertAlmostEqual(flt(invoice["totals"]["grand_total"]), 110, places=2)
+
+			frappe.db.set_value("POS Profile", profile, "vunapos_item_prices_include_tax", 1)
+			frappe.clear_cache(doctype="POS Profile")
+			inclusive_response = preview_invoice(
+				pos_profile=profile,
+				items=[{"item_code": item_code, "qty": 1, "item_tax_template": item_tax_template}],
+				invoice_doctype="Sales Invoice",
+			)
+
+			self.assertTrue(inclusive_response["ok"], inclusive_response)
+			inclusive_invoice = inclusive_response["data"]
+			self.assertTrue(inclusive_invoice["taxes"][0]["included_in_print_rate"])
+			self.assertAlmostEqual(flt(inclusive_invoice["totals"]["net_total"]), 90.91, places=2)
+			self.assertAlmostEqual(
+				flt(inclusive_invoice["totals"]["total_taxes_and_charges"]), 9.09, places=2
+			)
+			self.assertAlmostEqual(flt(inclusive_invoice["totals"]["grand_total"]), 100, places=2)
 		finally:
+			frappe.db.set_value(
+				"POS Profile", profile, "vunapos_item_prices_include_tax", previous_inclusive_setting
+			)
+			frappe.clear_cache(doctype="POS Profile")
 			frappe.db.set_single_value(
 				"Accounts Settings",
 				"add_taxes_from_item_tax_template",

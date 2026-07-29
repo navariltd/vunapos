@@ -1,0 +1,34 @@
+{
+ "app": "vunapos",
+ "charts": [],
+ "content": "[{\"id\":\"Tal6TamMkR\",\"type\":\"custom_block\",\"data\":{\"custom_block_name\":\"VunaPOS Launcher\",\"col\":12}}]",
+ "creation": "2026-07-29 14:33:12.881877",
+ "custom_blocks": [
+  {
+   "custom_block_name": "VunaPOS Launcher",
+   "label": "VunaPOS Launcher"
+  }
+ ],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "hide_custom": 0,
+ "idx": 0,
+ "indicator_color": "green",
+ "is_hidden": 0,
+ "label": "VunaPOS",
+ "link_type": "DocType",
+ "links": [],
+ "modified": "2026-07-29 17:10:37.590310",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS",
+ "number_cards": [],
+ "owner": "Administrator",
+ "public": 1,
+ "quick_lists": [],
+ "roles": [],
+ "sequence_id": 0.0,
+ "shortcuts": [],
+ "title": "VunaPOS",
+ "type": "Workspace"
+}

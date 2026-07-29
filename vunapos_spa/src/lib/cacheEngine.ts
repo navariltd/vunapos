@@ -1,6 +1,7 @@
 import { fetchBootstrap } from "./apiClient";
 import { db } from "./db";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
+import { profileRepository } from "./repositories/profileRepository";
 import { useRuntimeCacheStore } from "./stores/runtimeCacheStore";
 import type { BootstrapPayload, CachedPosSession } from "./types";
 
@@ -93,19 +94,20 @@ export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {
 }
 
 export async function applyDelta(posProfile?: string): Promise<BootstrapPayload> {
+	const activePosProfile = posProfile || (await profileRepository.getActive())?.name;
 	const since = await metaRepository.get<string>(META_KEYS.lastDeltaSync);
 	if (!since) {
 		// No prior sync to delta against - the first sync of a device's life is always full (§10.1).
-		return hydrate(posProfile);
+		return hydrate(activePosProfile);
 	}
 
 	const lastKnownVersion = await metaRepository.get<number>(META_KEYS.bootstrapVersion);
-	const delta = await fetchBootstrap(posProfile, since);
+	const delta = await fetchBootstrap(activePosProfile, since);
 
 	if (lastKnownVersion !== undefined && delta.bootstrap_version !== lastKnownVersion) {
 		// BootstrapVersionBumped (§9.1): a delta against a superseded dependency set isn't
 		// safe to trust - re-hydrate fully instead of reconciling around the gap.
-		return hydrate(posProfile);
+		return hydrate(activePosProfile);
 	}
 
 	await writeDelta(delta);

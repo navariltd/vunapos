@@ -45,15 +45,38 @@ def resolve_pos_profile(pos_profile=None):
 		profile = frappe.get_cached_doc("POS Profile", pos_profile)
 
 	else:
-		profiles = frappe.get_all("POS Profile User", filters={"user": frappe.session.user}, pluck="parent")
+		profiles = sorted(
+			set(frappe.get_all("POS Profile User", filters={"user": frappe.session.user}, pluck="parent"))
+		)
 
 		if not profiles:
 			_profile_error("POS_PROFILE_NOT_ASSIGNED", _("No POS Profile is assigned to this user"))
 
-		profile_name = frappe.db.get_value("POS Profile", {"name": ["in", profiles], "disabled": 0}, "name")
-
-		if not profile_name:
+		enabled_profiles = frappe.get_all(
+			"POS Profile",
+			filters={"name": ["in", profiles], "disabled": 0},
+			pluck="name",
+			order_by="name asc",
+		)
+		if not enabled_profiles:
 			_profile_error("POS_PROFILE_NOT_ENABLED", _("No enabled POS Profile is assigned to this user"))
+
+		# A returning cashier must resume their existing shift rather than being
+		# prompted to open whichever assigned profile sorts first.
+		profile_name = (
+			frappe.db.get_value(
+				"POS Opening Entry",
+				{
+					"user": frappe.session.user,
+					"pos_profile": ["in", enabled_profiles],
+					"status": "Open",
+					"docstatus": 1,
+				},
+				"pos_profile",
+				order_by="period_start_date desc",
+			)
+			or enabled_profiles[0]
+		)
 
 		_require_profile_read(profile_name)
 
@@ -170,6 +193,7 @@ def get_user_pos_profiles():
 			"warehouse",
 			"currency",
 		],
+		order_by="name asc",
 	)
 
 	if not enabled_profiles:

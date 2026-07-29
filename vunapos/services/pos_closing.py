@@ -30,10 +30,12 @@ def _get_vunapos_invoices(opening_entry, period_end_date):
 			invoice.net_total,
 			invoice.total_qty,
 			invoice.total_taxes_and_charges,
+			invoice.outstanding_amount,
 			invoice.change_amount,
 			invoice.account_for_change_amount,
 			invoice.is_return,
 			invoice.return_against,
+			invoice.vunapos_credit_sale,
 			ConstantColumn(doctype).as_("doctype"),
 		)
 		.where(
@@ -241,6 +243,16 @@ def _closing_summary(closing_entry):
 			"customer_advances": advances,
 			"reconciled_existing_credits": reconciled_credits,
 			"cash_received": sale_collections + invoice_receipts + advances,
+			"credit_sales": sum(
+				flt(row.grand_total)
+				for row in vunapos_invoices
+				if row.get("vunapos_credit_sale") and not row.is_return
+			),
+			"credit_outstanding": sum(
+				max(flt(row.outstanding_amount), 0)
+				for row in vunapos_invoices
+				if row.get("vunapos_credit_sale") and not row.is_return
+			),
 		},
 		"payments": [
 			{

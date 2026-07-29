@@ -29,6 +29,7 @@ def get_invoice_history(
 	to_date=None,
 	status=None,
 	payment_mode=None,
+	sale_type=None,
 	current_shift=1,
 	start=0,
 	page_length=50,
@@ -78,6 +79,7 @@ def get_invoice_history(
 		"vunapos_opening_entry",
 		"vunapos_session_cashier",
 		"vunapos_closing_entry",
+		"vunapos_credit_sale",
 	]
 	rows = frappe.get_list(
 		doctype,
@@ -108,6 +110,10 @@ def get_invoice_history(
 			continue
 		if payment_mode and payment_mode not in {payment["mode_of_payment"] for payment in payments}:
 			continue
+		if sale_type == "Credit Sale" and not row.vunapos_credit_sale:
+			continue
+		if sale_type == "Cash Sale" and row.vunapos_credit_sale:
+			continue
 		result.append(
 			{
 				**row,
@@ -132,6 +138,16 @@ def get_invoice_history(
 			"returns": sum(abs(flt(row["grand_total"])) for row in active_rows if row["is_return"]),
 			"net_sales": net_sales,
 			"outstanding": sum(max(flt(row["outstanding_amount"]), 0) for row in active_rows),
+			"credit_sales": sum(
+				flt(row["grand_total"])
+				for row in active_rows
+				if row.get("vunapos_credit_sale") and not row["is_return"]
+			),
+			"credit_outstanding": sum(
+				max(flt(row["outstanding_amount"]), 0)
+				for row in active_rows
+				if row.get("vunapos_credit_sale") and not row["is_return"]
+			),
 		},
 	}
 

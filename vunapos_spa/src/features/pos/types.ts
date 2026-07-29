@@ -6,11 +6,32 @@ export type ModeOfPaymentDTO = {
 	requires_reference?: boolean;
 };
 
+export type POSProfileOptionDTO = {
+	name: string;
+	company?: string;
+	warehouse?: string;
+	currency?: string;
+	modes_of_payment?: ModeOfPaymentDTO[];
+};
+
 export type CustomerDTO = {
 	customer: string;
 	customer_name: string;
 	mobile_no?: string | null;
 	email_id?: string | null;
+	customer_group?: string | null;
+	default_price_list?: string | null;
+};
+
+export type CustomerLoyaltyDTO = {
+	customer: string;
+	enrolled: boolean;
+	program?: string | null;
+	tier?: string | null;
+	points: number;
+	conversion_factor: number;
+	redemption_value: number;
+	currency?: string;
 };
 
 export type CustomerDirectoryRowDTO = CustomerDTO & {
@@ -104,6 +125,8 @@ export type POSClosingPreviewDTO = {
 		customer_advances: number;
 		reconciled_existing_credits: number;
 		cash_received: number;
+		credit_sales: number;
+		credit_outstanding: number;
 	};
 	payments: POSClosingPaymentDTO[];
 	session?: POSSessionDTO;
@@ -117,15 +140,20 @@ export type BootstrapData = {
 	company?: string;
 	warehouse?: string;
 	price_list?: string;
+	allow_price_list_switching?: boolean;
+	allowed_price_lists?: Array<{ name: string; currency?: string }>;
 	currency?: string;
 	currency_precision?: number;
 	disable_rounded_total?: boolean;
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_credit_sales?: boolean;
+	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	item_prices_include_tax?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -137,6 +165,7 @@ export type BootstrapData = {
 export type ItemDTO = {
 	item_code: string;
 	item_name: string;
+	modified?: string;
 	item_group?: string;
 	description?: string;
 	image?: string | null;
@@ -145,6 +174,14 @@ export type ItemDTO = {
 	uom?: string;
 	rate?: number;
 	price_list_rate?: number;
+	pricing_rule?: {
+		rate: number;
+		discount_percentage: number;
+		pricing_rules: string[];
+		preview_qty: number;
+		kind?: "price" | "product";
+		free_items?: Array<{ item_code: string; item_name?: string; qty: number; uom?: string }>;
+	};
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
@@ -152,6 +189,17 @@ export type ItemDTO = {
 	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	item_tax_template?: string | null;
+	item_tax?: {
+		template: string;
+		tax_rate: number;
+		inclusive_tax_rate: number;
+		exclusive_tax_rate: number;
+		inclusive: boolean;
+		net_rate: number;
+		tax_amount: number;
+		gross_rate: number;
+		accounts: Array<{ account_head: string; rate: number; included_in_print_rate: boolean }>;
+	};
 };
 
 export type BatchAllocationDTO = {
@@ -210,6 +258,7 @@ export type InvoiceItemDTO = {
 	discount_percentage?: number;
 	discount_amount?: number;
 	amount: number;
+	is_free_item?: boolean;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
@@ -221,9 +270,11 @@ export type InvoiceItemDTO = {
 	batch_allocations?: BatchAllocationDTO[];
 	serial_allocations?: SerialAllocationDTO[];
 	item_tax_template?: string | null;
+	item_tax?: ItemDTO["item_tax"];
 	barcode?: string | null;
 	item_note?: string | null;
 	pricing_rules?: string | null;
+	catalogue_pricing_rule?: ItemDTO["pricing_rule"];
 	pricing_override_audit?: string | null;
 	pricing_override_by?: string | null;
 	pricing_override?: PricingOverrideDTO;
@@ -245,11 +296,19 @@ export type InvoiceDTO = {
 	docstatus: 0 | 1 | 2;
 	is_local?: boolean;
 	is_held?: boolean;
+	is_credit_sale?: boolean;
 	source_invoice_doctype?: string;
 	source_invoice_name?: string;
 	customer?: string;
 	customer_name?: string;
+	selling_price_list?: string;
+	price_list_currency?: string;
+	redeem_loyalty_points?: boolean;
+	loyalty_program?: string | null;
+	loyalty_points?: number;
+	loyalty_amount?: number;
 	posting_date?: string;
+	due_date?: string;
 	modified?: string;
 	items: InvoiceItemDTO[];
 	taxes?: TaxDTO[];

@@ -4,16 +4,23 @@ import { Pause, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, CustomerLoyaltyDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
+import { CustomerLoyaltyCard } from "./CustomerLoyaltyCard";
 
 type CartPanelProps = {
+	allowPriceListSwitching?: boolean;
+	allowedPriceLists?: Array<{ name: string; currency?: string }>;
 	allowDiscountChange?: boolean;
 	allowRateChange?: boolean;
 	className?: string;
 	currency?: string;
+	customerLoyalty?: CustomerLoyaltyDTO | null;
+	customerLoyaltyError?: string | null;
+	isCustomerLoyaltyLoading?: boolean;
+	defaultPriceList?: string;
 	onCheckout: () => void;
 	onClearCustomer: () => void;
 	onClearCart: () => void;
@@ -21,6 +28,7 @@ type CartPanelProps = {
 	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
+	onSelectPriceList: (priceList?: string) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	onUpdateNote: (rowName: string, note: string) => Promise<void>;
@@ -29,13 +37,20 @@ type CartPanelProps = {
 	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
+	selectedPriceList?: string;
 };
 
 export function CartPanel({
 	allowDiscountChange,
 	allowRateChange,
+	allowPriceListSwitching,
+	allowedPriceLists = [],
 	className,
 	currency,
+	customerLoyalty,
+	customerLoyaltyError,
+	isCustomerLoyaltyLoading,
+	defaultPriceList,
 	onCheckout,
 	onClearCustomer,
 	onClearCart,
@@ -43,6 +58,7 @@ export function CartPanel({
 	onLoadBatches,
 	onRemoveItem,
 	onSelectCustomer,
+	onSelectPriceList,
 	onUpdateQty,
 	onUpdatePricing,
 	onUpdateNote,
@@ -51,6 +67,7 @@ export function CartPanel({
 	onUpdateSerialAllocations,
 	isOnline,
 	warehouse,
+	selectedPriceList,
 }: CartPanelProps) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isMutating = useCartStore((s) => s.isMutating);
@@ -71,6 +88,28 @@ export function CartPanel({
 					onClear={onClearCustomer}
 					onSelect={onSelectCustomer}
 				/>
+				<CustomerLoyaltyCard
+					currency={currency}
+					data={customerLoyalty}
+					error={customerLoyaltyError}
+					isLoading={isCustomerLoyaltyLoading}
+				/>
+				{allowPriceListSwitching && allowedPriceLists.length ? (
+					<select
+						aria-label="Price list for this sale"
+						className="mt-2 h-10 w-full rounded-md border border-outline-variant bg-surface px-3 text-sm text-on-surface outline-none focus:border-primary"
+						disabled={isMutating}
+						value={selectedPriceList || defaultPriceList || ""}
+						onChange={(event) => onSelectPriceList(
+							event.target.value === defaultPriceList ? undefined : event.target.value || undefined,
+						)}
+					>
+						{defaultPriceList ? <option value={defaultPriceList}>{defaultPriceList} (Default)</option> : null}
+						{allowedPriceLists.filter((priceList) => priceList.name !== defaultPriceList).map((priceList) => (
+							<option key={priceList.name} value={priceList.name}>{priceList.name}</option>
+						))}
+					</select>
+				) : null}
 			</div>
 
 			<div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -108,7 +147,7 @@ export function CartPanel({
 			</div>
 
 			<div className="mt-4 shrink-0 border-t border-outline-variant bg-surface pt-4">
-				<div className="space-y-2 text-sm">
+				<div className="space-y-1.5 text-xs">
 					<div className="flex justify-between">
 						<span className="text-on-surface-variant">Subtotal</span>
 						<span className="font-medium">{formatCurrency(invoice?.totals?.net_total, currency)}</span>
@@ -116,7 +155,7 @@ export function CartPanel({
 					{taxes.map((tax, index) => (
 						<div
 							key={`${tax.account_head || tax.description || "tax"}-${index}`}
-							className="flex items-start justify-between gap-3 text-xs"
+							className="flex items-start justify-between gap-3 text-[11px]"
 						>
 							<span className="min-w-0 text-on-surface-variant">
 								<span className="truncate">{tax.description || tax.account_head || "Tax"}</span>
@@ -134,12 +173,12 @@ export function CartPanel({
 						<span className="text-on-surface-variant">Total taxes and charges</span>
 						<span className="font-medium">{formatCurrency(invoice?.totals?.total_taxes_and_charges, currency)}</span>
 					</div>
-					<div className="flex justify-between text-base">
+					<div className="flex justify-between text-sm">
 						<span className="font-semibold text-on-surface">Grand total</span>
 						<span className="font-semibold text-on-surface">{formatCurrency(invoice?.totals?.grand_total, currency)}</span>
 					</div>
 					{showRoundedTotal ? (
-						<div className="flex justify-between text-base">
+						<div className="flex justify-between text-sm">
 							<span className="font-semibold text-on-surface">Rounded total</span>
 							<span className="font-semibold text-on-surface">{formatCurrency(total, currency)}</span>
 						</div>

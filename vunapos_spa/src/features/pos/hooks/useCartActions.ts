@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { useCartApi } from "./useCartApi";
 import { useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, HeldInvoiceDTO, ItemDTO, PaymentInput, PricingOverrideDTO, SerialAllocationDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, HeldInvoiceDTO, ItemDTO, PaymentInput, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 
 // Binds useCartApi() (the frappe-react-sdk call functions, must be created inside a
 // component) to cartStore's stable action references, exposing today's call surface
@@ -21,6 +21,10 @@ export function useCartActions() {
 	const listHeldAction = useCartStore((s) => s.listHeld);
 	const clearCartAction = useCartStore((s) => s.clearCart);
 	const validateCartAction = useCartStore((s) => s.validateCart);
+	const previewLoyaltyRedemptionAction = useCartStore((s) => s.previewLoyaltyRedemption);
+	const refreshCartConfigurationAction = useCartStore((s) => s.refreshCartConfiguration);
+	const refreshCustomerPricingAction = useCartStore((s) => s.refreshCustomerPricing);
+	const refreshPriceListPricingAction = useCartStore((s) => s.refreshPriceListPricing);
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
@@ -44,12 +48,22 @@ export function useCartActions() {
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),
+			previewLoyaltyRedemption: (loyaltyPoints: number) => previewLoyaltyRedemptionAction(loyaltyPoints, api),
+			refreshCartConfiguration: () => refreshCartConfigurationAction(api),
+			refreshCustomerPricing: (customer: CustomerDTO | null | undefined) =>
+				refreshCustomerPricingAction(customer, api),
+			refreshPriceListPricing: (priceList?: string) => refreshPriceListPricingAction(priceList, api),
 			submitCart: (
 				payments: PaymentInput[],
 				printFormat: string | null | undefined,
 				idempotencyKey?: string,
 				isOnline = false,
-			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline),
+				isCreditSale = false,
+				dueDate?: string,
+				loyaltyPoints?: number,
+			) => submitCartAction(
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints,
+			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
 		}),
@@ -67,6 +81,10 @@ export function useCartActions() {
 			listHeldAction,
 			clearCartAction,
 			validateCartAction,
+			previewLoyaltyRedemptionAction,
+			refreshCartConfigurationAction,
+			refreshCustomerPricingAction,
+			refreshPriceListPricingAction,
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,

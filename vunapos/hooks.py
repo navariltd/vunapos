@@ -11,15 +11,25 @@ app_license = "agpl-3.0"
 required_apps = ["frappe/erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "vunapos",
-# 		"logo": "/assets/vunapos/logo.png",
-# 		"title": "VunaPOS",
-# 		"route": "/vunapos",
-# 		"has_permission": "vunapos.api.permission.has_app_permission"
-# 	}
-# ]
+app_logo_url = "/assets/vunapos/logo.png"
+app_icon_title = "VunaPOS"
+
+add_to_apps_screen = [
+	{
+		"name": app_name,
+		"logo": app_logo_url,
+		"title": app_title,
+		"route": "/desk/vunapos",
+		"has_permission": "vunapos.permissions.has_app_permission",
+	}
+]
+
+fixtures = [
+	{
+		"doctype": "Custom HTML Block",
+		"filters": [["name", "=", "VunaPOS Launcher"]],
+	}
+]
 
 # Includes in <head>
 # ------------------
@@ -43,7 +53,7 @@ required_apps = ["frappe/erpnext"]
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {"POS Profile": "public/js/pos_profile.js"}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -139,13 +149,24 @@ after_migrate = "vunapos.setup.utils.ensure_vunapos_custom_fields"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	doctype: {
+		"on_update": "vunapos.realtime.publish_configuration_change",
+		"on_trash": "vunapos.realtime.publish_configuration_change",
+	}
+	for doctype in (
+		"POS Profile",
+		"POS Settings",
+		"Accounts Settings",
+		"Sales Taxes and Charges Template",
+		"Item Tax Template",
+		"Item",
+		"Item Price",
+		"Price List",
+		"Pricing Rule",
+		"Mode of Payment",
+	)
+}
 
 # Scheduled Tasks
 # ---------------
@@ -183,6 +204,7 @@ before_tests = "vunapos.setup.utils.before_tests"
 extend_doctype_class = {
 	"POS Closing Entry": "vunapos.overrides.pos_closing_entry.VunaPOSClosingEntryMixin",
 	"POS Opening Entry": "vunapos.overrides.pos_opening_entry.VunaPOSOpeningEntryMixin",
+	"POS Invoice": "vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
 }
 
 # Overriding Methods

@@ -53,6 +53,12 @@ export function navigateToPosPage(page: POSPage) {
 	useNavigationStore.getState().setActivePage(page);
 }
 
+export function replacePosPage(page: POSPage) {
+	const path = getPosPagePath(page);
+	window.history.replaceState({ vunaposPage: page }, "", path);
+	useNavigationStore.getState().setActivePage(page);
+}
+
 export function navigateToCustomer(customer: string) {
 	const path = `/vunapos/customers/${encodeURIComponent(customer)}`;
 	window.history.pushState({ vunaposPage: "Customers", customer }, "", path);

@@ -3,12 +3,11 @@ from frappe import _
 
 
 class VunaPOSOpeningEntryMixin:
-	"""Scope open POS sessions to the cashier and POS Profile pair."""
+	"""Allow only one open POS shift per cashier across all profiles."""
 
 	def check_open_pos_exists(self):
 		filters = {
 			"user": self.user,
-			"pos_profile": self.pos_profile,
 			"status": "Open",
 			"docstatus": 1,
 		}
@@ -19,12 +18,11 @@ class VunaPOSOpeningEntryMixin:
 			frappe.throw(
 				title=_("POS Opening Entry Exists"),
 				msg=_(
-					"Cashier {0} already has an open session for POS Profile {1}. Close or cancel it before opening another."
-				).format(frappe.bold(self.user), frappe.bold(self.pos_profile)),
+					"Cashier {0} already has an open POS shift. Close or cancel it before opening another."
+				).format(frappe.bold(self.user)),
 			)
 
 	def check_user_already_assigned(self):
-		# ERPNext normally prevents a cashier from having any other open POS
-		# session. VunaPOS uses (cashier, profile) as the session identity, so the
-		# composite duplicate check above is the complete constraint.
+		# The global cashier constraint is enforced by check_open_pos_exists with
+		# VunaPOS's submitted/open filters and clearer error message.
 		return

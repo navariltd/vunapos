@@ -1,0 +1,64 @@
+{
+ "app": "vunapos",
+ "creation": "2026-07-29 14:33:12.893810",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "idx": 1,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "home",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Home",
+   "link_to": "VunaPOS",
+   "link_type": "Workspace",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "user",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "POS Profile",
+   "link_to": "POS Profile",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "lock-keyhole-open",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "POS Opening Entry",
+   "link_to": "POS Opening Entry",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "lock-keyhole",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "POS Closing Entry",
+   "link_to": "POS Closing Entry",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-29 17:06:19.041232",
+ "modified_by": "Administrator",
+ "module": "Accounts",
+ "name": "VunaPOS",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "VunaPOS"
+}

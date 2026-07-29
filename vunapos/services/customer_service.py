@@ -58,6 +58,44 @@ def create_customer(customer_name, mobile_no=None, email_id=None):
 	return customer_to_dict(customer)
 
 
+def get_customer_loyalty(pos_profile=None, customer=None):
+	"""Return the customer's live ERPNext loyalty ledger balance for the active company."""
+	profile = resolve_pos_profile(pos_profile)
+	if not customer:
+		frappe.throw(_("Customer is required"))
+	require_read("Customer", customer)
+	loyalty_program = frappe.db.get_value("Customer", customer, "loyalty_program")
+	if not loyalty_program:
+		return {
+			"customer": customer,
+			"enrolled": False,
+			"program": None,
+			"tier": None,
+			"points": 0.0,
+			"conversion_factor": 0.0,
+			"redemption_value": 0.0,
+			"currency": profile.currency,
+		}
+
+	details = get_loyalty_program_details_with_points(
+		customer=customer,
+		loyalty_program=loyalty_program,
+		company=profile.company,
+	)
+	points = max(flt(details.get("loyalty_points")), 0)
+	conversion_factor = max(flt(details.get("conversion_factor")), 0)
+	return {
+		"customer": customer,
+		"enrolled": True,
+		"program": details.get("loyalty_program") or loyalty_program,
+		"tier": details.get("tier_name"),
+		"points": points,
+		"conversion_factor": conversion_factor,
+		"redemption_value": points * conversion_factor,
+		"currency": profile.currency,
+	}
+
+
 def get_customer_directory(
 	pos_profile=None,
 	query=None,

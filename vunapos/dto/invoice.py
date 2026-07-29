@@ -5,6 +5,11 @@ def _value(doc, fieldname, default=None):
 	return getattr(doc, fieldname, default) if hasattr(doc, fieldname) else doc.get(fieldname, default)
 
 
+def _date_value(doc, fieldname):
+	value = _value(doc, fieldname)
+	return str(value) if value else None
+
+
 def _batch_allocations(row):
 	if getattr(row, "_batch_allocations", None):
 		return row._batch_allocations
@@ -77,9 +82,17 @@ def invoice_to_dict(doc):
 		"docstatus": doc.docstatus,
 		"modified": _value(doc, "modified"),
 		"is_held": bool(_value(doc, "vunapos_held", 0)),
+		"is_credit_sale": bool(_value(doc, "vunapos_credit_sale", 0)),
 		"customer": _value(doc, "customer"),
 		"customer_name": _value(doc, "customer_name"),
+		"selling_price_list": _value(doc, "selling_price_list"),
+		"price_list_currency": _value(doc, "price_list_currency"),
+		"redeem_loyalty_points": bool(_value(doc, "redeem_loyalty_points", 0)),
+		"loyalty_program": _value(doc, "loyalty_program"),
+		"loyalty_points": _value(doc, "loyalty_points", 0),
+		"loyalty_amount": _value(doc, "loyalty_amount", 0),
 		"posting_date": _value(doc, "posting_date"),
+		"due_date": _date_value(doc, "due_date"),
 		"items": [
 			{
 				"row_name": row.name,
@@ -96,6 +109,7 @@ def invoice_to_dict(doc):
 				"discount_percentage": row.get("discount_percentage"),
 				"discount_amount": row.get("discount_amount"),
 				"amount": row.amount,
+				"is_free_item": bool(row.get("is_free_item")),
 				"warehouse": row.get("warehouse"),
 				"actual_qty": row.get("actual_qty"),
 				"is_stock_item": (item_tracking.get(row.item_code) or {}).get("is_stock_item"),

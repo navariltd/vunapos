@@ -65,12 +65,10 @@ export function CartItemRow({
 	};
 
 	const description = plainDescription(item.description);
-	const isStockItem = item.is_stock_item === undefined ? true : Boolean(item.is_stock_item);
 	const isBatchTracked = Boolean(item.has_batch_no || item.batch_no || item.batch_allocations?.length);
 	const isSerialTracked = Boolean(item.has_serial_no || item.serial_and_batch_bundle);
 	const itemWarehouse = item.warehouse || warehouse || "";
-	const stockQuantity = item.qty * Number(item.conversion_factor || 1);
-	const projectedQuantity = item.actual_qty == null ? null : Number(item.actual_qty) - stockQuantity;
+	const itemDisabled = Boolean(disabled || item.is_free_item);
 
 	useEffect(() => {
 		if (!expanded || (!batchExpanded && !serialExpanded) || (!isBatchTracked && !isSerialTracked) || !itemWarehouse || batchData) return;
@@ -87,35 +85,35 @@ export function CartItemRow({
 	}, [batchData, batchExpanded, serialExpanded, expanded, isBatchTracked, isOnline, isSerialTracked, item.item_code, itemWarehouse, onLoadBatches]);
 
 	return (
-		<article className="overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
-			<div className="p-3">
+		<article className={`overflow-hidden rounded-md border bg-surface-container-low transition-colors ${expanded ? "border-primary shadow-sm" : "border-outline-variant"}`}>
+			<div className={expanded ? "bg-surface-container p-3" : "p-3"}>
 				<div className="flex items-start justify-between gap-3">
 					<button
 						type="button"
 						className="flex min-w-0 flex-1 cursor-pointer items-start justify-between gap-3 text-left"
-						onClick={() => onToggle(item.row_name)}
+						onClick={() => { if (!item.is_free_item) onToggle(item.row_name); }}
 						aria-expanded={expanded}
 						aria-controls={`cart-item-details-${item.row_name}`}
 					>
 						<span className="min-w-0">
-							<span className="block truncate text-sm font-semibold text-on-surface">{item.item_name}</span>
+							<span className="flex items-center gap-2"><span className="block truncate text-sm font-semibold text-on-surface">{item.item_name}</span>{item.is_free_item ? <span className="rounded-full bg-primary-container px-2 py-0.5 text-[10px] font-semibold uppercase text-on-primary-container">Free item</span> : null}</span>
 							<span className="block text-xs text-on-surface-variant">{item.item_code}</span>
 						</span>
 						<ChevronDown className={`mt-1 size-4 shrink-0 text-on-surface-variant transition-transform ${expanded ? "rotate-180" : ""}`} />
 					</button>
-					<button type="button" className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50" disabled={disabled} onClick={() => onRemove(item.row_name)} aria-label={`Remove ${item.item_name}`}>
+					<button type="button" className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50" disabled={itemDisabled} onClick={() => onRemove(item.row_name)} aria-label={`Remove ${item.item_name}`}>
 						<Trash2 className="size-4" />
 					</button>
 				</div>
 				<div className="mt-3 flex items-center justify-between gap-3">
 					<div className="flex items-center overflow-hidden rounded-md border border-outline-variant bg-surface">
-						<button type="button" disabled={disabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
 							<Minus className="size-4" />
 						</button>
 						<input
 							aria-label={`${item.item_name} quantity`}
 							className="h-10 w-14 border-x border-outline-variant bg-surface px-1 text-center text-sm font-semibold outline-none focus:border-primary"
-							disabled={disabled}
+							disabled={itemDisabled}
 							inputMode="decimal"
 							min="0.000001"
 							step="any"
@@ -128,7 +126,7 @@ export function CartItemRow({
 								if (event.key === "Escape") setQuantity(String(item.qty));
 							}}
 						/>
-						<button type="button" disabled={disabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
 							<Plus className="size-4" />
 						</button>
 					</div>
@@ -139,43 +137,31 @@ export function CartItemRow({
 				</div>
 			</div>
 
-			{expanded ? (
-				<div id={`cart-item-details-${item.row_name}`} className="border-t border-outline-variant bg-surface p-3">
-					{description ? <p className="mb-4 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
+			{expanded && !item.is_free_item ? (
+				<div id={`cart-item-details-${item.row_name}`} className="space-y-4 border-t border-primary bg-surface-container-low p-4">
+					{description ? <p className="rounded-md bg-surface px-3 py-2 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
 
 					<PricingEditor
 						key={`${item.uom}-${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
 						allowDiscountChange={Boolean(allowDiscountChange)}
 						allowRateChange={Boolean(allowRateChange)}
 						currency={currency}
-						disabled={Boolean(disabled)}
+						disabled={itemDisabled}
 						item={item}
 						onUpdate={(override) => onUpdatePricing(item.row_name, override)}
 					/>
 					{item.pricing_override ? <div className="mt-3 rounded-md border border-tertiary bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container"><span className="font-semibold">Manual price override:</span> {pricingOverrideLabel(item.pricing_override, currency)}{item.pricing_override_by ? ` · ${item.pricing_override_by}` : " · current cashier"}</div> : item.pricing_rules ? <div className="mt-3 rounded-md bg-secondary-container px-3 py-2 text-xs text-on-secondary-container">Promotion or pricing rule applied: {item.pricing_rules}</div> : null}
 
-					<div className="mt-4 grid gap-4 sm:grid-cols-2">
-						<label><span className="text-xs font-medium text-on-surface-variant">UOM</span><select className="mt-1 h-9 w-full rounded-md border border-outline-variant bg-surface px-2 text-sm" disabled={disabled || (item.uoms?.length || 0) < 2} value={item.uom || item.stock_uom || ""} onChange={(event) => { const selected = item.uoms?.find((row) => row.uom === event.target.value); if (selected) void onUpdateUom(item.row_name, selected.uom, selected.conversion_factor); }}>{(item.uoms?.length ? item.uoms : [{ uom: item.uom || item.stock_uom || "", conversion_factor: 1 }]).map((row) => <option key={row.uom} value={row.uom}>{row.uom} ({row.conversion_factor} {item.stock_uom})</option>)}</select></label>
-						<Detail label="Line amount" value={formatCurrency(item.amount, currency)} strong />
-						<Detail label="Warehouse" value={itemWarehouse || "-"} />
-						<Detail label="Available quantity" value={item.actual_qty == null ? "Not available" : `${item.actual_qty} ${item.stock_uom || item.uom || ""}`} />
-						<Detail label="Projected after sale" value={projectedQuantity == null ? "Not available" : `${projectedQuantity} ${item.stock_uom || item.uom || ""}`} warning={projectedQuantity != null && projectedQuantity <= 0} />
-						<Detail label="Tax template" value={item.item_tax_template || "No item tax template"} />
-						<Detail label="Barcode" value={item.barcode || "No barcode"} />
-					</div>
+					<label className="flex items-center justify-between gap-5 rounded-md border border-outline-variant bg-surface p-3">
+						<span className="shrink-0 text-xs font-medium text-on-surface-variant">UOM</span>
+						<select className="h-[34px] min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-[13px]" disabled={disabled || (item.uoms?.length || 0) < 2} value={item.uom || item.stock_uom || ""} onChange={(event) => { const selected = item.uoms?.find((row) => row.uom === event.target.value); if (selected) void onUpdateUom(item.row_name, selected.uom, selected.conversion_factor); }}>{(item.uoms?.length ? item.uoms : [{ uom: item.uom || item.stock_uom || "", conversion_factor: 1 }]).map((row) => <option key={row.uom} value={row.uom}>{row.uom} ({row.conversion_factor} {item.stock_uom})</option>)}</select>
+					</label>
 
 					<ItemNoteEditor key={item.item_note || "empty-note"} disabled={Boolean(disabled)} item={item} onSave={(note) => onUpdateNote(item.row_name, note)} />
 
-					<div className="mt-4 flex flex-wrap gap-2">
-						<Indicator active={isStockItem} label={isStockItem ? "Stock item" : "Non-stock item"} />
-						{isBatchTracked ? <Indicator active label="Batch tracked" /> : null}
-						{isSerialTracked ? <Indicator active label="Serial tracked" /> : null}
-						{item.allow_negative_stock ? <Indicator active label="Negative stock allowed" /> : null}
-					</div>
-
-					{isSerialTracked ? <div className="mt-4 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low"><button type="button" className="flex w-full items-center justify-between p-3 text-left" onClick={() => setSerialExpanded((value) => !value)}><span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Serial numbers</span><span className="text-xs text-on-surface-variant">{item.serial_allocations?.length || 0} of {item.qty * Number(item.conversion_factor || 1)} selected</span></span><ChevronDown className={`size-4 transition-transform ${serialExpanded ? "rotate-180" : ""}`} /></button>{serialExpanded ? <SerialAllocationEditor data={batchData} disabled={Boolean(disabled)} item={item} onSave={(rows) => onUpdateSerialAllocations(item.row_name, rows)} /> : null}</div> : null}
+					{isSerialTracked ? <div className="overflow-hidden rounded-md border border-outline-variant bg-surface"><button type="button" className="flex w-full items-center justify-between p-3 text-left hover:bg-surface-container" onClick={() => setSerialExpanded((value) => !value)}><span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Serial numbers</span><span className="text-xs text-on-surface-variant">{item.serial_allocations?.length || 0} of {item.qty * Number(item.conversion_factor || 1)} selected</span></span><ChevronDown className={`size-4 transition-transform ${serialExpanded ? "rotate-180" : ""}`} /></button>{serialExpanded ? <SerialAllocationEditor data={batchData} disabled={Boolean(disabled)} item={item} onSave={(rows) => onUpdateSerialAllocations(item.row_name, rows)} /> : null}</div> : null}
 					{isBatchTracked && !isSerialTracked ? (
-						<div className="mt-4 overflow-hidden rounded-md border border-outline-variant bg-surface-container-low">
+						<div className="overflow-hidden rounded-md border border-outline-variant bg-surface">
 							<button type="button" className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-surface-container" onClick={() => setBatchExpanded((value) => !value)} aria-expanded={batchExpanded}>
 								<span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Batch allocation</span><span className="mt-1 block text-xs text-on-surface-variant">{item.batch_allocations?.length ? `${item.batch_allocations.length} batch${item.batch_allocations.length === 1 ? "" : "es"} selected` : "Automatic allocation"}</span></span>
 								<ChevronDown className={`size-4 text-on-surface-variant transition-transform ${batchExpanded ? "rotate-180" : ""}`} />
@@ -210,11 +196,12 @@ function pricingOverrideLabel(override: PricingOverrideDTO, currency?: string) {
 function ItemNoteEditor({ disabled, item, onSave }: { disabled: boolean; item: InvoiceItemDTO; onSave: (note: string) => Promise<void> }) {
 	const [note, setNote] = useState(item.item_note || "");
 	const [error, setError] = useState<string | null>(null);
+	const [expanded, setExpanded] = useState(false);
 	const save = async () => {
 		if (note.trim() === (item.item_note || "")) return;
 		try { setError(null); await onSave(note); } catch (saveError) { setError(saveError instanceof Error ? saveError.message : "Failed to save item note"); }
 	};
-	return <label className="mt-4 block"><span className="text-xs font-medium text-on-surface-variant">Item note</span><textarea className="mt-1 min-h-20 w-full resize-y rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary" disabled={disabled} maxLength={500} placeholder="Add packing, handling, or cashier notes…" value={note} onChange={(event) => setNote(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") event.currentTarget.blur(); }} /><span className="mt-1 flex justify-between text-xs text-on-surface-variant"><span>{error ? <span className="text-error">{error}</span> : "Ctrl/⌘ + Enter to save"}</span><span>{note.length}/500</span></span></label>;
+	return <div className="overflow-hidden rounded-md border border-outline-variant bg-surface"><button type="button" className="flex w-full items-center justify-between gap-3 p-3 text-left hover:bg-surface-container" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}><span><span className="block text-xs font-medium uppercase tracking-wide text-on-surface-variant">Item note</span><span className="mt-1 block max-w-72 truncate text-xs text-on-surface-variant">{note.trim() || "No note added"}</span></span><ChevronDown className={`size-4 shrink-0 text-on-surface-variant transition-transform ${expanded ? "rotate-180" : ""}`} /></button>{expanded ? <label className="block border-t border-outline-variant p-3"><textarea className="min-h-20 w-full resize-y rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary" disabled={disabled} maxLength={500} placeholder="Add packing, handling, or cashier notes…" value={note} onChange={(event) => setNote(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === "Enter") event.currentTarget.blur(); }} /><span className="mt-1 flex justify-between text-xs text-on-surface-variant"><span>{error ? <span className="text-error">{error}</span> : "Ctrl/⌘ + Enter to save"}</span><span>{note.length}/500</span></span></label> : null}</div>;
 }
 
 function SerialAllocationEditor({ data, disabled, item, onSave }: { data: ItemBatchesDTO | null; disabled: boolean; item: InvoiceItemDTO; onSave: (rows: SerialAllocationDTO[]) => Promise<void> }) {
@@ -259,6 +246,15 @@ function PricingEditor({ allowDiscountChange, allowRateChange, currency, disable
 	const [discountAmount, setDiscountAmount] = useState(String(item.discount_amount || 0));
 	const [error, setError] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
+	const taxRate = Number(item.item_tax?.tax_rate || 0);
+	const inclusiveTaxRate = Number(item.item_tax?.inclusive_tax_rate || 0);
+	const exclusiveTaxRate = Number(item.item_tax?.exclusive_tax_rate || 0);
+	const taxInclusive = inclusiveTaxRate > 0;
+	const mixedTaxTreatment = inclusiveTaxRate > 0 && exclusiveTaxRate > 0;
+	const numericRate = Number(rate || 0);
+	const baseRate = taxInclusive ? numericRate / (1 + inclusiveTaxRate / 100) : numericRate;
+	const inclusiveRate = baseRate * (1 + taxRate / 100);
+	const taxPerUnit = inclusiveRate - baseRate;
 
 	const apply = async (type: PricingOverrideDTO["type"], rawValue: string) => {
 		const value = Number(rawValue);
@@ -305,16 +301,13 @@ function PricingEditor({ allowDiscountChange, allowRateChange, currency, disable
 	};
 
 	return (
-		<div className="-mx-3 border-y border-outline-variant bg-surface-container-low p-3">
-			<div className="flex items-center justify-between gap-3">
-				<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Rate and discount</p>
-				<Button variant="ghost" size="sm" className={item.pricing_override ? "" : "invisible"} disabled={disabled || saving || !item.pricing_override} onClick={() => void reset()}>Reset</Button>
+		<div className="rounded-md border border-outline-variant bg-surface p-3">
+			<div className={taxRate > 0 ? "grid grid-cols-2 gap-3" : ""}>
+				<PriceInput label={mixedTaxTreatment ? "Selling rate (partly incl. tax)" : taxInclusive ? "Selling rate (incl. tax)" : taxRate > 0 ? "Selling rate (excl. tax)" : "Selling rate"} value={rate} readOnly={!allowRateChange || disabled} onChange={setRate} onApply={() => apply("rate", rate)} onReset={item.pricing_override ? () => void reset() : undefined} resetDisabled={disabled || saving} />
+				{taxRate > 0 ? <ReadOnlyPrice label={mixedTaxTreatment || !taxInclusive ? "Rate (incl. tax)" : "Base rate"} value={mixedTaxTreatment || !taxInclusive ? inclusiveRate : baseRate} currency={currency} /> : null}
 			</div>
-			<div className="mt-3 grid gap-3 sm:grid-cols-2">
-				<PriceInput label="Selling rate" value={rate} readOnly={!allowRateChange || disabled} onChange={setRate} onApply={() => apply("rate", rate)} />
-				<div><p className="text-xs text-on-surface-variant">Price-list rate</p><div className="mt-1 flex h-9 items-center justify-end rounded-md border border-outline-variant bg-surface-container px-2 text-sm text-on-surface-variant">{formatCurrency(priceListRate, currency)}</div></div>
-			</div>
-			<div className="mt-3 grid gap-3 sm:grid-cols-2">
+			{taxRate > 0 ? <div className="mt-3 grid grid-cols-2 gap-3"><ReadOnlyValue label="Tax rate" value={`${taxRate}%`} /><ReadOnlyPrice label="Tax per unit" value={taxPerUnit} currency={currency} /></div> : null}
+			<div className="mt-3 grid grid-cols-2 gap-3">
 				<PriceInput label="Discount %" value={discountPercentage} readOnly={!allowDiscountChange || disabled} max={100} onChange={changeDiscountPercentage} onApply={() => apply("discount_percentage", discountPercentage)} />
 				<PriceInput label="Discount amount" value={discountAmount} readOnly={!allowDiscountChange || disabled} onChange={changeDiscountAmount} onApply={() => apply("discount_amount", discountAmount)} />
 			</div>
@@ -323,8 +316,16 @@ function PricingEditor({ allowDiscountChange, allowRateChange, currency, disable
 	);
 }
 
-function PriceInput({ label, max, onApply, onChange, readOnly, value }: { label: string; max?: number; onApply: () => void; onChange: (value: string) => void; readOnly?: boolean; value: string }) {
-	return <label className="block"><span className="text-xs text-on-surface-variant">{label}</span><input className={`mt-1 h-9 w-full rounded-md border border-outline-variant px-2 text-right text-sm outline-none ${readOnly ? "bg-surface-container text-on-surface-variant" : "bg-surface focus:border-primary"}`} readOnly={readOnly} inputMode="decimal" min="0" max={max} step="any" type="number" value={value} onChange={(event) => onChange(event.target.value)} onBlur={() => { if (!readOnly && value !== "") onApply(); }} onKeyDown={(event) => { if (event.key === "Enter" && !readOnly) event.currentTarget.blur(); }} /></label>;
+function ReadOnlyPrice({ currency, label, value }: { currency?: string; label: string; value: number }) {
+	return <ReadOnlyValue label={label} value={formatCurrency(value, currency)} />;
+}
+
+function ReadOnlyValue({ label, value }: { label: string; value: string }) {
+	return <div><span className="text-xs text-on-surface-variant">{label}</span><div className="mt-1 flex h-[34px] items-center justify-end rounded-md border border-outline-variant bg-surface-container px-2 text-[13px] text-on-surface-variant">{value}</div></div>;
+}
+
+function PriceInput({ label, max, onApply, onChange, onReset, readOnly, resetDisabled, value }: { label: string; max?: number; onApply: () => void; onChange: (value: string) => void; onReset?: () => void; readOnly?: boolean; resetDisabled?: boolean; value: string }) {
+	return <div><div className="flex items-center justify-between gap-2"><span className="text-xs text-on-surface-variant">{label}</span>{onReset ? <button type="button" className="text-xs font-medium text-primary hover:underline disabled:opacity-50" disabled={resetDisabled} onClick={onReset}>Reset</button> : null}</div><input aria-label={label} className={`mt-1 h-[34px] w-full rounded-md border border-outline-variant px-2 text-right text-[13px] outline-none ${readOnly ? "bg-surface-container text-on-surface-variant" : "bg-surface focus:border-primary"}`} readOnly={readOnly} inputMode="decimal" min="0" max={max} step="any" type="number" value={value} onChange={(event) => onChange(event.target.value)} onBlur={() => { if (!readOnly && value !== "") onApply(); }} onKeyDown={(event) => { if (event.key === "Enter" && !readOnly) event.currentTarget.blur(); }} /></div>;
 }
 
 function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onReload, onSave }: {
@@ -432,17 +433,4 @@ function BatchAllocationEditor({ batchData, disabled, error, isOnline, item, onR
 			) : null}
 		</div>
 	);
-}
-
-function Detail({ label, value, strong = false, warning = false }: { label: string; value: string; strong?: boolean; warning?: boolean }) {
-	return (
-		<div>
-			<p className="text-xs font-medium text-on-surface-variant">{label}</p>
-			<p className={`mt-1 text-sm ${strong ? "font-semibold" : "font-medium"} ${warning ? "text-error" : "text-on-surface"}`}>{value}</p>
-		</div>
-	);
-}
-
-function Indicator({ active, label }: { active: boolean; label: string }) {
-	return <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${active ? "bg-secondary-container text-on-secondary-container" : "bg-surface-container text-on-surface-variant"}`}>{label}</span>;
 }

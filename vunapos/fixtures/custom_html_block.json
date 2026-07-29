@@ -1,0 +1,13 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Custom HTML Block",
+  "html": "<a class=\"vunapos-launcher\" href=\"/vunapos\" aria-label=\"Open VunaPOS\">\n  <img class=\"vunapos-launcher__logo\" src=\"/assets/vunapos/vunapos/vuna-192x192.png\" alt=\"\" />\n  <span class=\"vunapos-launcher__copy\">\n    <strong>Open VunaPOS</strong>\n    <small>Start selling from this terminal</small>\n  </span>\n  <span class=\"vunapos-launcher__arrow\" aria-hidden=\"true\">&#8594;</span>\n</a>",
+  "modified": "2026-07-29 00:00:00",
+  "name": "VunaPOS Launcher",
+  "private": 0,
+  "roles": [],
+  "script": "",
+  "style": ".vunapos-launcher {\n  align-items: center;\n  background: linear-gradient(135deg, var(--card-bg), var(--control-bg));\n  border: 1px solid var(--border-color);\n  border-radius: 12px;\n  color: var(--text-color);\n  display: flex;\n  gap: 14px;\n  min-height: 88px;\n  padding: 16px;\n  text-decoration: none;\n  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;\n}\n\n.vunapos-launcher:hover {\n  border-color: var(--primary);\n  box-shadow: var(--shadow-sm);\n  color: var(--text-color);\n  text-decoration: none;\n  transform: translateY(-1px);\n}\n\n.vunapos-launcher__logo {\n  border-radius: 12px;\n  height: 52px;\n  object-fit: contain;\n  width: 52px;\n}\n\n.vunapos-launcher__copy {\n  display: flex;\n  flex: 1;\n  flex-direction: column;\n  gap: 3px;\n}\n\n.vunapos-launcher__copy strong {\n  font-size: 15px;\n}\n\n.vunapos-launcher__copy small {\n  color: var(--text-muted);\n  font-size: 12px;\n}\n\n.vunapos-launcher__arrow {\n  color: var(--primary);\n  font-size: 22px;\n}"
+ }
+]

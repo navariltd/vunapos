@@ -4,6 +4,7 @@ import type {
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
+	CustomerLoyaltyDTO,
 	HeldInvoiceDTO,
 	ItemBatchesDTO,
 	InvoiceDTO,
@@ -43,6 +44,7 @@ export class VunaApiError extends Error {
 
 export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
+	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
 	searchItems: "vunapos.api.item.search_items",
 	getItemDetails: "vunapos.api.item.get_item_details",
 	getItemBatches: "vunapos.api.batch.get_item_batches",
@@ -50,6 +52,7 @@ export const vunaMethods = {
 	searchCustomers: "vunapos.api.customer.search_customers",
 	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
 	getCustomerDetails: "vunapos.api.customer.get_customer_details",
+	getCustomerLoyalty: "vunapos.api.customer.get_customer_loyalty",
 	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
 	getReconciliationCandidates: "vunapos.api.payment.get_reconciliation_candidates",
 	getPaymentHistory: "vunapos.api.payment.get_payment_history",
@@ -129,14 +132,14 @@ export function closePosSession(
 
 export function searchItems(
 	call: FrappeCall,
-	params: { query?: string; pos_profile?: string; customer?: string; limit?: number },
+	params: { query?: string; pos_profile?: string; customer?: string; price_list?: string; limit?: number },
 ) {
 	return callAndUnwrap<ItemDTO[]>(call, params);
 }
 
 export function getItemDetails(
 	call: FrappeCall,
-	params: { item_code: string; pos_profile?: string; customer?: string },
+	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
 ) {
 	return callAndUnwrap<ItemDTO>(call, params);
 }
@@ -181,6 +184,10 @@ export function getCustomerDetails(call: FrappeCall, params: { pos_profile?: str
 	return callAndUnwrap<CustomerDetailsDTO>(call, params);
 }
 
+export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
+	return callAndUnwrap<CustomerLoyaltyDTO>(call, params);
+}
+
 export function createCustomer(
 	call: FrappeCall,
 	params: { customer_name: string; mobile_no?: string; email_id?: string },
@@ -199,6 +206,8 @@ export function previewInvoice(
 		customer?: string;
 		items: { item_code: string; qty: number; item_tax_template?: string; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		invoice_doctype?: string;
+		price_list?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -234,7 +243,14 @@ export function removeItem(
 
 export function submitInvoice(
 	call: FrappeCall,
-	params: { invoice_doctype: string; invoice_name: string; payments?: PaymentInput[] },
+	params: {
+		invoice_doctype: string;
+		invoice_name: string;
+		payments?: PaymentInput[];
+		is_credit_sale?: boolean;
+		due_date?: string;
+		loyalty_points?: number;
+	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
@@ -249,6 +265,9 @@ export function checkoutInvoice(
 		invoice_name: string;
 		payments?: PaymentInput[];
 		idempotency_key?: string;
+		is_credit_sale?: boolean;
+		due_date?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -273,9 +292,13 @@ export function createAndSubmitInvoice(
 	params: {
 		pos_profile?: string;
 		customer?: string;
+		price_list?: string;
+		loyalty_points?: number;
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
+		is_credit_sale?: boolean;
+		due_date?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -290,6 +313,8 @@ export function createInvoiceFromCart(
 	params: {
 		pos_profile?: string;
 		customer?: string;
+		price_list?: string;
+		loyalty_points?: number;
 		items: CartItemInput[];
 	},
 ) {
@@ -333,6 +358,8 @@ export function updateInvoiceFromCart(
 		invoice_doctype: string;
 		invoice_name: string;
 		customer?: string;
+		price_list?: string;
+		loyalty_points?: number;
 		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 	},
 ) {

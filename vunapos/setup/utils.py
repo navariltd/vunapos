@@ -7,6 +7,53 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"POS Profile": [
+				{
+					"fieldname": "vunapos_allow_price_list_switching",
+					"label": "Allow Price List Switching",
+					"fieldtype": "Check",
+					"insert_after": "selling_price_list",
+					"description": "Allow cashiers to select an approved selling price list for one VunaPOS sale.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_allowed_price_lists",
+					"label": "Allowed Price Lists",
+					"fieldtype": "Table",
+					"options": "VunaPOS Allowed Price List",
+					"insert_after": "vunapos_allow_price_list_switching",
+					"depends_on": "eval:doc.vunapos_allow_price_list_switching",
+				},
+				{
+					"fieldname": "vunapos_allow_credit_sales",
+					"label": "Allow Credit Sales",
+					"fieldtype": "Check",
+					"insert_after": "allow_partial_payment",
+					"description": "Allow VunaPOS invoices to be submitted with an unpaid customer balance.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_default_sale_type",
+					"label": "Default Sale Type",
+					"fieldtype": "Select",
+					"options": "Cash Sale\nCredit Sale",
+					"insert_after": "vunapos_allow_credit_sales",
+					"description": "Choose whether VunaPOS checkout starts as a cash or credit sale.",
+					"default": "Cash Sale",
+					"depends_on": "eval:doc.vunapos_allow_credit_sales",
+				},
+				{
+					"fieldname": "vunapos_item_prices_include_tax",
+					"label": "Item Prices Include Tax",
+					"fieldtype": "Check",
+					"insert_after": "taxes_and_charges",
+					"description": (
+						"Treat prices for items with an Item Tax Template as tax-inclusive in VunaPOS. "
+						"Leave unchecked to add item taxes on top of the listed price."
+					),
+					"default": "0",
+				},
+			],
 			"Sales Invoice Item": [
 				{
 					"fieldname": "vunapos_item_note",
@@ -73,10 +120,19 @@ def ensure_vunapos_custom_fields():
 					"allow_on_submit": 1,
 				},
 				{
+					"fieldname": "vunapos_credit_sale",
+					"label": "VunaPOS Credit Sale",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_held",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
 					"fieldname": "vunapos_idempotency_key",
 					"label": "VunaPOS Idempotency Key",
 					"fieldtype": "Data",
-					"insert_after": "vunapos_held",
+					"insert_after": "vunapos_credit_sale",
 					"hidden": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
@@ -139,10 +195,19 @@ def ensure_vunapos_custom_fields():
 					"allow_on_submit": 1,
 				},
 				{
+					"fieldname": "vunapos_credit_sale",
+					"label": "VunaPOS Credit Sale",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_held",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
 					"fieldname": "vunapos_idempotency_key",
 					"label": "VunaPOS Idempotency Key",
 					"fieldtype": "Data",
-					"insert_after": "vunapos_held",
+					"insert_after": "vunapos_credit_sale",
 					"hidden": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,

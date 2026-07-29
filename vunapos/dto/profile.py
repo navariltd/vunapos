@@ -1,6 +1,8 @@
 import frappe
 from erpnext.accounts.utils import get_currency_precision
 
+from vunapos.services.price_list_service import get_permitted_price_lists
+
 
 def profile_to_dict(profile, invoice_mode):
 	def payment_mode(row):
@@ -19,11 +21,18 @@ def profile_to_dict(profile, invoice_mode):
 			),
 		}
 
+	allow_credit_sales = bool(profile.get("vunapos_allow_credit_sales"))
+	default_sale_type = profile.get("vunapos_default_sale_type") or "Cash Sale"
+	if not allow_credit_sales or default_sale_type != "Credit Sale":
+		default_sale_type = "Cash Sale"
+
 	return {
 		"name": profile.name,
 		"company": profile.company,
 		"warehouse": profile.warehouse,
 		"price_list": profile.selling_price_list,
+		"allow_price_list_switching": bool(profile.get("vunapos_allow_price_list_switching")),
+		"allowed_price_lists": get_permitted_price_lists(profile),
 		"currency": profile.currency,
 		"currency_precision": get_currency_precision(),
 		"disable_rounded_total": bool(profile.get("disable_rounded_total")),
@@ -32,9 +41,12 @@ def profile_to_dict(profile, invoice_mode):
 		),
 		"rounding_method": frappe.get_system_settings("rounding_method") or "Banker's Rounding (legacy)",
 		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
+		"allow_credit_sales": allow_credit_sales,
+		"default_sale_type": default_sale_type,
 		"allow_rate_change": bool(profile.get("allow_rate_change")),
 		"allow_discount_change": bool(profile.get("allow_discount_change")),
 		"hide_images": bool(profile.get("hide_images")),
+		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
 		"default_customer": profile.customer,
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

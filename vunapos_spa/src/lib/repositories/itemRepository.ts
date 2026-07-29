@@ -2,6 +2,11 @@ import { db } from "../db";
 import type { CachedItem } from "../types";
 
 export const itemRepository = {
+	async replaceAll(items: Array<Omit<CachedItem, "modified"> & { modified?: string }>): Promise<void> {
+		await db.items.clear();
+		await db.items.bulkPut(items.map((item) => ({ ...item, modified: item.modified || "" })));
+	},
+
 	async getAll(): Promise<CachedItem[]> {
 		return db.items.toArray();
 	},

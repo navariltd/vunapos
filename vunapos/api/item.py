@@ -10,21 +10,38 @@ def search_items(
 	query: str | None = None,
 	pos_profile: str | None = None,
 	customer: str | None = None,
+	price_list: str | None = None,
 	limit: int | None = None,
 ):
 	try:
 		return success(
-			search_items_service(query=query, pos_profile=pos_profile, customer=customer, limit=limit)
+			search_items_service(
+				query=query,
+				pos_profile=pos_profile,
+				customer=customer,
+				price_list=price_list,
+				limit=limit,
+			)
 		)
 	except Exception as exc:
 		return failure(str(exc), code=exc.__class__.__name__)
 
 
 @frappe.whitelist()
-def get_item_details(item_code: str, pos_profile: str | None = None, customer: str | None = None):
+def get_item_details(
+	item_code: str,
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	price_list: str | None = None,
+):
 	try:
 		return success(
-			get_item_details_for_pos(item_code=item_code, pos_profile=pos_profile, customer=customer)
+			get_item_details_for_pos(
+				item_code=item_code,
+				pos_profile=pos_profile,
+				customer=customer,
+				price_list=price_list,
+			)
 		)
 	except Exception as exc:
 		return failure(str(exc), code=exc.__class__.__name__)
