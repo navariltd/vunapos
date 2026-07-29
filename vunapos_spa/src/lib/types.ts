@@ -11,6 +11,12 @@ export type CachedItem = {
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
 	price_list_rate?: number | null;
+	pricing_rule?: {
+		rate: number;
+		discount_percentage: number;
+		pricing_rules: string[];
+		preview_qty: number;
+	};
 	actual_qty?: number | null;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;

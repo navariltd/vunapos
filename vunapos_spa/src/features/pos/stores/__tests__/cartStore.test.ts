@@ -214,6 +214,45 @@ describe("updateCartItemQty", () => {
 	});
 });
 
+describe("catalogue pricing rule preview", () => {
+	it("uses the quantity-one promotional rate without creating a manual override", async () => {
+		await useCartStore.getState().addCartItem(makeItem({
+			rate: 90,
+			price_list_rate: 100,
+			pricing_rule: {
+				rate: 90,
+				discount_percentage: 10,
+				pricing_rules: ["RULE-10"],
+				preview_qty: 1,
+			},
+		}), makeApi());
+
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			rate: 90,
+			price_list_rate: 100,
+			pricing_override: undefined,
+		});
+	});
+
+	it("stops assuming a quantity-one rule after quantity changes", async () => {
+		await useCartStore.getState().addCartItem(makeItem({
+			rate: 90,
+			price_list_rate: 100,
+			pricing_rule: {
+				rate: 90,
+				discount_percentage: 10,
+				pricing_rules: ["RULE-10"],
+				preview_qty: 1,
+			},
+		}), makeApi());
+		const rowName = useCartStore.getState().invoice!.items[0].row_name;
+
+		await useCartStore.getState().updateCartItemQty(rowName, 2, makeApi());
+
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({ rate: 100, amount: 200 });
+	});
+});
+
 describe("updateCartItemPricing", () => {
 	it("replaces the previous discount using the original price-list rate", async () => {
 		await db.profile.put({

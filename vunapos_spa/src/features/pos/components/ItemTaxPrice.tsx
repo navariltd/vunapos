@@ -26,21 +26,25 @@ export function ItemTaxLabel({ item, reserveSpace = false }: { item: ItemDTO; re
 export function ItemTaxPrice({ currency, item, align = "left" }: ItemTaxPriceProps) {
 	const tax = item.item_tax;
 	const alignment = align === "right" ? "text-right" : "text-left";
-	if (!tax || tax.tax_rate <= 0) {
-		return <p className={`text-sm font-semibold text-on-surface ${alignment}`}>{formatCurrency(item.rate, currency)}</p>;
-	}
-
-	if (tax.inclusive) {
-		return (
-			<div className={alignment} title={tax.template}>
-				<p className="text-sm font-semibold text-on-surface">{formatCurrency(tax.gross_rate, currency)}</p>
-			</div>
-		);
-	}
-
-	return (
-		<div className={alignment} title={tax.template}>
-			<p className="text-sm font-semibold text-on-surface">{formatCurrency(tax.gross_rate, currency)}</p>
+	const effectiveRate = tax?.tax_rate ? tax.gross_rate : Number(item.rate || 0);
+	const originalRate = Number(item.price_list_rate ?? item.rate ?? 0);
+	const originalDisplayRate = Number(item.rate || 0) > 0
+		? effectiveRate * (originalRate / Number(item.rate))
+		: originalRate;
+	const hasPricingDiscount = Boolean(item.pricing_rule && originalDisplayRate > effectiveRate);
+	const price = (
+		<div className={alignment} title={item.pricing_rule?.pricing_rules.join(", ") || tax?.template}>
+			{hasPricingDiscount ? (
+				<p className="text-xs text-on-surface-variant line-through">{formatCurrency(originalDisplayRate, currency)}</p>
+			) : null}
+			<p className="text-sm font-semibold text-on-surface">{formatCurrency(effectiveRate, currency)}</p>
+			{hasPricingDiscount ? (
+				<p className="text-xs font-medium text-primary">{item.pricing_rule?.discount_percentage}% off</p>
+			) : null}
 		</div>
 	);
+	if (!tax || tax.tax_rate <= 0) {
+		return price;
+	}
+	return price;
 }

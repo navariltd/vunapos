@@ -281,6 +281,7 @@ function assembledToInvoiceDTO(
 				barcode: meta?.barcode,
 				item_note: meta?.item_note,
 				pricing_rules: meta?.pricing_rules,
+				catalogue_pricing_rule: meta?.catalogue_pricing_rule,
 				pricing_override_audit: meta?.pricing_override_audit,
 				pricing_override_by: meta?.pricing_override_by,
 				pricing_override: item.pricing_override ?? meta?.pricing_override,
@@ -331,9 +332,14 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	);
 	// Every override replaces the previous one. Never use the already-discounted
 	// selling rate as the base or sequential edits will compound discounts.
-	const rateByCode = new Map(
-		items.map((row) => [row.item_code, Number(row.price_list_rate ?? row.rate ?? 0)]),
-	);
+	const rateByCode = new Map(items.map((row) => [
+		row.item_code,
+		Number(
+			row.catalogue_pricing_rule?.preview_qty === row.qty
+				? row.catalogue_pricing_rule.rate
+				: row.price_list_rate ?? row.rate ?? 0,
+		),
+	]));
 	return assembleInvoice({
 		cart: items.map((row) => ({
 			item_code: row.item_code,
@@ -386,6 +392,7 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		barcode: item.barcode,
 		item_tax_template: item.item_tax_template,
 		item_tax: item.item_tax,
+		catalogue_pricing_rule: item.pricing_rule,
 	};
 }
 

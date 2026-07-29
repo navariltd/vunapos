@@ -1,4 +1,5 @@
 import frappe
+from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from erpnext.accounts.utils import get_currency_precision
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
 	get_sre_reserved_qty_for_item_and_warehouse,
@@ -248,22 +249,106 @@ def _to_item_payload_from_row(
 	item_tax_template_map=None,
 	item_tax_summary_map=None,
 	uom_map=None,
+	pricing_rule_map=None,
 ):
-	rate = rate_map.get(item.name)
-	if rate is None:
-		rate = flt(item.standard_rate)
+	price_list_rate = rate_map.get(item.name)
+	if price_list_rate is None:
+		price_list_rate = flt(item.standard_rate)
+	pricing_rule = (pricing_rule_map or {}).get(item.name)
+	rate = flt(pricing_rule.get("rate")) if pricing_rule else price_list_rate
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
 
 	item_tax_template = (item_tax_template_map or {}).get(item.name)
 	return item_to_dict(
 		item,
 		rate=rate,
+		price_list_rate=price_list_rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
 		item_tax_template=item_tax_template,
 		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
 		uoms=(uom_map or {}).get(item.name, []),
+		pricing_rule=pricing_rule,
 	)
+
+
+def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_list):
+	if not items:
+		return {}
+
+	pricing_items = []
+	for item in items:
+		price_list_rate = flt(rate_map.get(item.name, item.standard_rate))
+		pricing_items.append(
+			{
+				"doctype": "Sales Invoice Item",
+				"name": f"catalogue-{item.name}",
+				"child_docname": f"catalogue-{item.name}",
+				"item_code": item.name,
+				"item_group": item.item_group,
+				"brand": item.get("brand"),
+				"qty": 1,
+				"stock_qty": 1,
+				"uom": item.stock_uom,
+				"stock_uom": item.stock_uom,
+				"parenttype": "Sales Invoice",
+				"parent": "",
+				"warehouse": profile.warehouse,
+				"price_list_rate": price_list_rate,
+				"rate": price_list_rate,
+				"conversion_factor": 1,
+			}
+		)
+
+	results = apply_pricing_rule(
+		{
+			"items": pricing_items,
+			"customer": customer,
+			"currency": profile.currency,
+			"conversion_rate": 1,
+			"price_list": price_list,
+			"price_list_currency": profile.currency,
+			"plc_conversion_rate": 1,
+			"company": profile.company,
+			"transaction_date": today(),
+			"ignore_pricing_rule": 0,
+			"doctype": "Sales Invoice",
+			"name": "",
+			"update_stock": 1,
+			"pos_profile": profile.name,
+		}
+	)
+
+	precision = get_currency_precision()
+	pricing_rule_map = {}
+	for item, result in zip(items, results, strict=True):
+		if not result.get("has_pricing_rule") or result.get("price_or_product_discount") != "Price":
+			continue
+		original_rate = flt(rate_map.get(item.name, item.standard_rate), precision)
+		rule_rate = flt(result.get("price_list_rate") or original_rate, precision)
+		margin = flt(result.get("margin_rate_or_amount"))
+		if result.get("margin_type") == "Percentage":
+			rate_with_margin = rule_rate * (1 + margin / 100)
+		elif result.get("margin_type") == "Amount":
+			rate_with_margin = rule_rate + margin
+		else:
+			rate_with_margin = rule_rate
+		discount_amount = flt(result.get("discount_amount"))
+		if not discount_amount and result.get("discount_percentage"):
+			discount_amount = rate_with_margin * flt(result.discount_percentage) / 100
+		effective_rate = flt(rate_with_margin - discount_amount, precision)
+		if effective_rate == original_rate:
+			continue
+		pricing_rule_map[item.name] = {
+			"rate": effective_rate,
+			"discount_percentage": flt(
+				(original_rate - effective_rate) / original_rate * 100 if original_rate else 0,
+				2,
+			),
+			"pricing_rules": frappe.parse_json(result.get("pricing_rules") or "[]"),
+			"preview_qty": 1,
+		}
+	return pricing_rule_map
 
 
 def _get_uom_map(item_codes, uom_rate_map=None):
@@ -332,6 +417,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			"item_code",
 			"item_name",
 			"item_group",
+			"brand",
 			"description",
 			"image",
 			"stock_uom",
@@ -387,6 +473,13 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
 	uom_map = _get_uom_map(item_codes, uom_rate_map)
+	pricing_rule_map = _get_catalogue_pricing_rule_map(
+		[item_by_code[item_code] for item_code in item_codes],
+		rate_map,
+		profile,
+		customer,
+		price_list,
+	)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
 
@@ -399,6 +492,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			item_tax_template_map,
 			item_tax_summary_map,
 			uom_map,
+			pricing_rule_map,
 		)
 		for item_code in item_codes
 	]

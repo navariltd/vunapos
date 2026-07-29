@@ -174,6 +174,12 @@ export type ItemDTO = {
 	uom?: string;
 	rate?: number;
 	price_list_rate?: number;
+	pricing_rule?: {
+		rate: number;
+		discount_percentage: number;
+		pricing_rules: string[];
+		preview_qty: number;
+	};
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;
@@ -265,6 +271,7 @@ export type InvoiceItemDTO = {
 	barcode?: string | null;
 	item_note?: string | null;
 	pricing_rules?: string | null;
+	catalogue_pricing_rule?: ItemDTO["pricing_rule"];
 	pricing_override_audit?: string | null;
 	pricing_override_by?: string | null;
 	pricing_override?: PricingOverrideDTO;
