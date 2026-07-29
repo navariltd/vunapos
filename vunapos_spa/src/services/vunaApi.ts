@@ -4,6 +4,7 @@ import type {
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
+	CustomerLoyaltyDTO,
 	HeldInvoiceDTO,
 	ItemBatchesDTO,
 	InvoiceDTO,
@@ -51,6 +52,7 @@ export const vunaMethods = {
 	searchCustomers: "vunapos.api.customer.search_customers",
 	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
 	getCustomerDetails: "vunapos.api.customer.get_customer_details",
+	getCustomerLoyalty: "vunapos.api.customer.get_customer_loyalty",
 	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
 	getReconciliationCandidates: "vunapos.api.payment.get_reconciliation_candidates",
 	getPaymentHistory: "vunapos.api.payment.get_payment_history",
@@ -180,6 +182,10 @@ export function getCustomerDirectory(call: FrappeCall, params: {
 
 export function getCustomerDetails(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
 	return callAndUnwrap<CustomerDetailsDTO>(call, params);
+}
+
+export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
+	return callAndUnwrap<CustomerLoyaltyDTO>(call, params);
 }
 
 export function createCustomer(

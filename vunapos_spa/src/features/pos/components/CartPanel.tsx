@@ -4,10 +4,11 @@ import { Pause, Trash2 } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
 import { getActiveCustomer, useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, CustomerDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, CustomerLoyaltyDTO, ItemBatchesDTO, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
+import { CustomerLoyaltyCard } from "./CustomerLoyaltyCard";
 
 type CartPanelProps = {
 	allowPriceListSwitching?: boolean;
@@ -16,6 +17,9 @@ type CartPanelProps = {
 	allowRateChange?: boolean;
 	className?: string;
 	currency?: string;
+	customerLoyalty?: CustomerLoyaltyDTO | null;
+	customerLoyaltyError?: string | null;
+	isCustomerLoyaltyLoading?: boolean;
 	defaultPriceList?: string;
 	onCheckout: () => void;
 	onClearCustomer: () => void;
@@ -43,6 +47,9 @@ export function CartPanel({
 	allowedPriceLists = [],
 	className,
 	currency,
+	customerLoyalty,
+	customerLoyaltyError,
+	isCustomerLoyaltyLoading,
 	defaultPriceList,
 	onCheckout,
 	onClearCustomer,
@@ -80,6 +87,12 @@ export function CartPanel({
 					selectedCustomer={selectedCustomer}
 					onClear={onClearCustomer}
 					onSelect={onSelectCustomer}
+				/>
+				<CustomerLoyaltyCard
+					currency={currency}
+					data={customerLoyalty}
+					error={customerLoyaltyError}
+					isLoading={isCustomerLoyaltyLoading}
 				/>
 				{allowPriceListSwitching && allowedPriceLists.length ? (
 					<select

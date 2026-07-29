@@ -22,6 +22,7 @@ import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
 import { useConfigurationRealtime } from "./hooks/useConfigurationRealtime";
+import { useCustomerLoyalty } from "./hooks/useCustomerLoyalty";
 import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 import { hydrate } from "../../lib/cacheEngine";
@@ -106,6 +107,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
 	const cartActions = useCartActions();
 	const { isReachable } = useConnectivity();
+	const customerLoyalty = useCustomerLoyalty(
+		activeCustomer?.customer,
+		bootstrap.data?.pos_profile,
+		isReachable && navigator.onLine !== false,
+	);
 	const handleSelectCustomer = async (
 		customer: Parameters<typeof setSelectedCustomer>[0],
 		reportError = true,
@@ -415,6 +421,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						allowDiscountChange={bootstrap.data?.allow_discount_change}
 						allowRateChange={bootstrap.data?.allow_rate_change}
 						currency={bootstrap.data?.currency}
+						customerLoyalty={customerLoyalty.data}
+						customerLoyaltyError={customerLoyalty.error}
+						isCustomerLoyaltyLoading={customerLoyalty.isLoading}
 						defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
 							? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 						warehouse={bootstrap.data?.warehouse}
@@ -482,6 +491,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							allowDiscountChange={bootstrap.data?.allow_discount_change}
 							allowRateChange={bootstrap.data?.allow_rate_change}
 							currency={bootstrap.data?.currency}
+							customerLoyalty={customerLoyalty.data}
+							customerLoyaltyError={customerLoyalty.error}
+							isCustomerLoyaltyLoading={customerLoyalty.isLoading}
 							defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
 								? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 							warehouse={bootstrap.data?.warehouse}

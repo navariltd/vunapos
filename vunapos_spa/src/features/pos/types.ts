@@ -23,6 +23,17 @@ export type CustomerDTO = {
 	default_price_list?: string | null;
 };
 
+export type CustomerLoyaltyDTO = {
+	customer: string;
+	enrolled: boolean;
+	program?: string | null;
+	tier?: string | null;
+	points: number;
+	conversion_factor: number;
+	redemption_value: number;
+	currency?: string;
+};
+
 export type CustomerDirectoryRowDTO = CustomerDTO & {
 	customer_type?: string | null;
 	customer_group?: string | null;
