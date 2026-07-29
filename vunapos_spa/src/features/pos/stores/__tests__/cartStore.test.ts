@@ -5,6 +5,38 @@ import { META_KEYS } from "../../../../lib/repositories/metaRepository";
 import type { CustomerDTO, HeldInvoiceDTO, InvoiceDTO, ItemDTO } from "../../types";
 import { getActiveCustomer, useCartStore, type CartApi } from "../cartStore";
 
+const previewCart = vi.fn().mockImplementation(async (params: { customer?: string; items: string }) => {
+	const items = JSON.parse(params.items) as Array<{
+		item_code: string;
+		qty: number;
+		batch_allocations?: Array<{ batch_no: string; qty: number }>;
+		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
+		item_note?: string | null;
+	}>;
+	const rows = items.map((item, index) => ({
+		row_name: `server-row-${index}`,
+		item_code: item.item_code,
+		item_name: item.item_code === "ITEM-1" ? "Widget" : item.item_code,
+		qty: item.qty,
+		rate: 100,
+		price_list_rate: 100,
+		amount: item.qty * 100,
+		batch_allocations: item.batch_allocations,
+		serial_allocations: item.serial_allocations,
+		item_note: item.item_note,
+	}));
+	const total = rows.reduce((sum, item) => sum + item.amount, 0);
+	return {
+		doctype: "Sales Invoice",
+		name: "Not invoiced yet",
+		docstatus: 0,
+		customer: params.customer,
+		items: rows,
+		taxes: [],
+		totals: { net_total: total, total_taxes_and_charges: 0, grand_total: total, rounded_total: total },
+	};
+});
+
 function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	const reject = vi.fn().mockRejectedValue(new Error("unexpected API call in this test"));
 	return {
@@ -16,7 +48,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 		removeItem: reject,
 		clearInvoice: reject,
 		createInvoiceFromCart: reject,
-		previewInvoice: reject,
+		previewInvoice: previewCart,
 		createAndSubmitInvoice: reject,
 		checkoutInvoice: reject,
 		holdInvoice: reject,
@@ -41,6 +73,7 @@ function makeItem(overrides: Partial<ItemDTO> = {}): ItemDTO {
 const CUSTOMER: CustomerDTO = { customer: "CUST-1", customer_name: "Test Customer" };
 
 beforeEach(async () => {
+	previewCart.mockClear();
 	await Promise.all([
 		db.items.clear(),
 		db.taxTemplates.clear(),
@@ -250,6 +283,54 @@ describe("catalogue pricing rule preview", () => {
 		await useCartStore.getState().updateCartItemQty(rowName, 2, makeApi());
 
 		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({ rate: 100, amount: 200 });
+	});
+});
+
+describe("live cart pricing rules", () => {
+	it("reprices the complete cart on the server when quantity crosses a rule threshold", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		const previewInvoice = vi.fn().mockImplementation(async (params: { items: string }) => {
+			const [item] = JSON.parse(params.items) as Array<{ item_code: string; qty: number }>;
+			const rate = item.qty >= 5 ? 80 : 100;
+			return {
+				doctype: "Sales Invoice",
+				name: "Not invoiced yet",
+				docstatus: 0,
+				customer: "CUST-1",
+				items: [{
+					row_name: "server-row",
+					item_code: item.item_code,
+					item_name: "Widget",
+					qty: item.qty,
+					rate,
+					price_list_rate: 100,
+					discount_percentage: item.qty >= 5 ? 20 : 0,
+					pricing_rules: item.qty >= 5 ? '["BULK-20"]' : null,
+					amount: item.qty * rate,
+				}],
+				taxes: [],
+				totals: {
+					net_total: item.qty * rate,
+					total_taxes_and_charges: 0,
+					grand_total: item.qty * rate,
+					rounded_total: item.qty * rate,
+				},
+			};
+		});
+		const api = makeApi({ previewInvoice });
+
+		await useCartStore.getState().addCartItem(makeItem(), api);
+		const rowName = useCartStore.getState().invoice!.items[0].row_name;
+		await useCartStore.getState().updateCartItemQty(rowName, 5, api);
+
+		expect(previewInvoice).toHaveBeenCalledTimes(2);
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			qty: 5,
+			rate: 80,
+			discount_percentage: 20,
+			pricing_rules: '["BULK-20"]',
+		});
+		expect(useCartStore.getState().invoice?.totals.grand_total).toBe(400);
 	});
 });
 

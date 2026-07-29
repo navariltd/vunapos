@@ -598,6 +598,28 @@ export const useCartStore = create<CartStore>((set, get) => {
 		return localizePreviewInvoice(preview, items, getActiveCustomer(get()), sourceInvoice);
 	}
 
+	async function previewCartWithPricingRules(
+		items: InvoiceItemDTO[],
+		currentInvoice: InvoiceDTO | null | undefined,
+		api: CartApi,
+	): Promise<InvoiceDTO> {
+		const selectedCustomer = getActiveCustomer(get());
+		const customer = selectedCustomer?.customer || currentInvoice?.customer;
+		if (!customer) {
+			return previewLocalCart(items, currentInvoice);
+		}
+		const sourceInvoice = getLocalCartSource(currentInvoice);
+		const authoritative = await previewInvoice(api.previewInvoice, {
+			pos_profile: get().posProfile,
+			customer,
+			invoice_doctype: sourceInvoice?.doctype || currentInvoice?.doctype,
+			price_list: get().selectedPriceList || currentInvoice?.selling_price_list,
+			items: items.map(cartItemPayload),
+			loyalty_points: currentInvoice?.loyalty_points || undefined,
+		});
+		return localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
+	}
+
 	async function syncLocalCartToSource(cart: InvoiceDTO, api: CartApi) {
 		if (!cart.source_invoice_doctype || !cart.source_invoice_name) {
 			return null;
@@ -662,7 +684,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 							return row;
 						})
 					: [...currentItems, itemToCartRow(item)];
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -699,7 +721,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -741,7 +763,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				throw new Error("Discount changes are not allowed for this POS Profile.");
 			}
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -766,7 +788,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
 			);
 			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
 				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
@@ -790,7 +812,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					pricing_override: undefined, batch_allocations: [], serial_allocations: [] };
 			});
 			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewLocalCart(nextItems, invoice))
+				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
 				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
@@ -811,7 +833,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				const optimisticInvoice = { ...invoice, items: nextItems };
 				set({ invoice: optimisticInvoice });
 				try {
-					const updated = await runMutation(() => previewLocalCart(nextItems, optimisticInvoice));
+					const updated = await runMutation(() => previewCartWithPricingRules(nextItems, optimisticInvoice, api));
 					if (get().invoice === optimisticInvoice) set({ invoice: updated });
 				} catch (error) {
 					if (get().invoice === optimisticInvoice) set({ invoice });
@@ -835,7 +857,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			);
 			validateManualBatchAllocations(nextItems);
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -875,7 +897,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewLocalCart(nextItems, invoice));
+				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;
 			}
@@ -1017,7 +1039,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				// A cashier may build a cart before choosing a customer. Configuration
 				// refreshes must still work, so recalculate that cart from the freshly
 				// hydrated catalogue and defer customer validation until checkout.
-				const refreshed = await runMutation(() => previewLocalCart(refreshedItems, invoice));
+				const refreshed = await runMutation(() => previewCartWithPricingRules(refreshedItems, invoice, api));
 				set({ invoice: refreshed });
 				return refreshed;
 			}

@@ -104,6 +104,43 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"][0]["rate"], 80)
 
+	def test_preview_reprices_cart_when_quantity_crosses_pricing_rule_threshold(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_item()
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Cart Quantity Discount",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Discount Percentage",
+				"discount_percentage": 20,
+				"min_qty": 5,
+				"priority": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		below_threshold = preview_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 1}],
+		)
+		qualified = preview_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 5}],
+		)
+
+		self.assertTrue(below_threshold["ok"], below_threshold)
+		self.assertTrue(qualified["ok"], qualified)
+		self.assertEqual(below_threshold["data"]["items"][0]["rate"], 100)
+		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
+		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
+
 	def test_manual_discount_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
