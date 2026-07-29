@@ -11,15 +11,25 @@ app_license = "agpl-3.0"
 required_apps = ["frappe/erpnext"]
 
 # Each item in the list will be shown as an app in the apps page
-# add_to_apps_screen = [
-# 	{
-# 		"name": "vunapos",
-# 		"logo": "/assets/vunapos/logo.png",
-# 		"title": "VunaPOS",
-# 		"route": "/vunapos",
-# 		"has_permission": "vunapos.api.permission.has_app_permission"
-# 	}
-# ]
+app_logo_url = "/assets/vunapos/logo.png"
+app_icon_title = "VunaPOS"
+
+add_to_apps_screen = [
+	{
+		"name": app_name,
+		"logo": app_logo_url,
+		"title": app_title,
+		"route": "/desk/vunapos",
+		"has_permission": "vunapos.permissions.has_app_permission",
+	}
+]
+
+fixtures = [
+	{
+		"doctype": "Custom HTML Block",
+		"filters": [["name", "=", "VunaPOS Launcher"]],
+	}
+]
 
 # Includes in <head>
 # ------------------
