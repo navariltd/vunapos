@@ -9,6 +9,7 @@ from vunapos.api.sales import (
 	add_item,
 	checkout_invoice,
 	clear_invoice,
+	create_and_submit_invoice,
 	create_invoice,
 	create_invoice_from_cart,
 	hold_invoice,
@@ -877,6 +878,28 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(first["ok"], first)
 		self.assertTrue(second["ok"], second)
 		self.assertEqual(second["data"]["name"], first["data"]["name"])
+		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_idempotency_key": key}), 1)
+
+	def test_direct_checkout_resumes_draft_with_same_idempotency_key(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		key = "resume-draft-checkout-key"
+		frappe.db.set_value("Sales Invoice", invoice["name"], "vunapos_idempotency_key", key)
+
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			customer=invoice["customer"],
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": amount}],
+			idempotency_key=key,
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["name"], invoice["name"])
 		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_idempotency_key": key}), 1)
 
 	def test_hold_list_restore_and_clear_invoice(self):

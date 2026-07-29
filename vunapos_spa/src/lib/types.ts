@@ -125,6 +125,11 @@ export type CachedProfile = {
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;
 	invoice_mode?: string;
+	background_submission?: {
+		enabled: boolean;
+		max_attempts: number;
+		processing_timeout_minutes: number;
+	};
 	taxes_and_charges?: string | null;
 };
 

@@ -22,6 +22,10 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
+from vunapos.services.checkout_queue_service import (
+	find_invoice_by_idempotency_key,
+	get_queue_limits,
+)
 from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
 	get_invoice_mode,
@@ -191,23 +195,11 @@ def _load_checkout_invoice(invoice_doctype, invoice_name):
 
 
 def _find_submitted_invoice_by_idempotency_key(idempotency_key):
-	if not idempotency_key:
+	doc = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
+	if not doc or doc.docstatus != 1:
 		return None
-
-	for doctype in SUPPORTED_INVOICE_DOCTYPES:
-		if not frappe.db.table_exists(doctype) or not _has_field(doctype, IDEMPOTENCY_FIELD):
-			continue
-		filters = {
-			"docstatus": 1,
-			IDEMPOTENCY_FIELD: idempotency_key,
-		}
-		if _has_field(doctype, VUNAPOS_FIELD):
-			filters[VUNAPOS_FIELD] = 1
-		name = frappe.db.get_value(doctype, filters, "name")
-		if name:
-			require_read(doctype, name)
-			return frappe.get_doc(doctype, name)
-	return None
+	require_read(doc.doctype, doc.name)
+	return doc
 
 
 def _payment_rows(payments):
@@ -1301,6 +1293,7 @@ def create_invoice_from_cart(
 	items=None,
 	price_list=None,
 	loyalty_points=None,
+	idempotency_key=None,
 ):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
@@ -1315,6 +1308,8 @@ def create_invoice_from_cart(
 			price_list=price_list,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
+		if idempotency_key:
+			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 
 		_append_cart_items(doc, profile, cart_items)
 		_recalculate(doc)
@@ -1338,13 +1333,31 @@ def create_and_submit_invoice(
 	price_list=None,
 	loyalty_points=None,
 ):
-	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
+	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
-		return invoice_to_dict(existing)
+		require_read(existing.doctype, existing.name)
+		if existing.docstatus == 1:
+			return invoice_to_dict(existing)
+		if existing.docstatus != 0:
+			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
+		return checkout_invoice(
+			existing.doctype,
+			existing.name,
+			payments=payments,
+			idempotency_key=idempotency_key,
+			is_credit_sale=is_credit_sale,
+			due_date=due_date,
+			loyalty_points=loyalty_points,
+		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
 	try:
 		profile = resolve_pos_profile(pos_profile)
+		if get_queue_limits(profile)["enabled"] and not str(idempotency_key or "").strip():
+			_throw(
+				"CHECKOUT_IDEMPOTENCY_REQUIRED",
+				_("An idempotency key is required when background invoice submission is enabled"),
+			)
 		_validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
 		_validate_credit_due_date(is_credit_sale, due_date, nowdate())
 		draft = create_invoice_from_cart(
@@ -1353,6 +1366,7 @@ def create_and_submit_invoice(
 			items=items,
 			price_list=price_list,
 			loyalty_points=loyalty_points,
+			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		return checkout_invoice(

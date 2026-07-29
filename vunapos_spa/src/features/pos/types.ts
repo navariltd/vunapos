@@ -159,6 +159,11 @@ export type BootstrapData = {
 	mode_of_payments?: ModeOfPaymentDTO[];
 	print_format?: string | null;
 	invoice_mode?: "Sales Invoice" | "POS Invoice" | string;
+	background_submission?: {
+		enabled: boolean;
+		max_attempts: number;
+		processing_timeout_minutes: number;
+	};
 	session?: POSSessionDTO;
 };
 

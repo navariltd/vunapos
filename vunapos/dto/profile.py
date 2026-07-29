@@ -1,6 +1,7 @@
 import frappe
 from erpnext.accounts.utils import get_currency_precision
 
+from vunapos.services.checkout_queue_service import get_queue_limits
 from vunapos.services.price_list_service import get_permitted_price_lists
 
 
@@ -25,6 +26,7 @@ def profile_to_dict(profile, invoice_mode):
 	default_sale_type = profile.get("vunapos_default_sale_type") or "Cash Sale"
 	if not allow_credit_sales or default_sale_type != "Credit Sale":
 		default_sale_type = "Cash Sale"
+	queue = get_queue_limits(profile)
 
 	return {
 		"name": profile.name,
@@ -52,4 +54,5 @@ def profile_to_dict(profile, invoice_mode):
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],
 		"print_format": profile.get("print_format"),
 		"invoice_mode": invoice_mode,
+		"background_submission": queue,
 	}
