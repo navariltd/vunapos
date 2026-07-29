@@ -21,6 +21,7 @@ export function useCartActions() {
 	const listHeldAction = useCartStore((s) => s.listHeld);
 	const clearCartAction = useCartStore((s) => s.clearCart);
 	const validateCartAction = useCartStore((s) => s.validateCart);
+	const refreshCartConfigurationAction = useCartStore((s) => s.refreshCartConfiguration);
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
@@ -44,6 +45,7 @@ export function useCartActions() {
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),
+			refreshCartConfiguration: () => refreshCartConfigurationAction(api),
 			submitCart: (
 				payments: PaymentInput[],
 				printFormat: string | null | undefined,
@@ -67,6 +69,7 @@ export function useCartActions() {
 			listHeldAction,
 			clearCartAction,
 			validateCartAction,
+			refreshCartConfigurationAction,
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,

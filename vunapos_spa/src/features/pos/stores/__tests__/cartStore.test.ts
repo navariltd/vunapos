@@ -229,6 +229,83 @@ describe("updateCartItemPricing", () => {
 	});
 });
 
+describe("refreshCartConfiguration", () => {
+	it("recalculates an active cart and replaces stale catalogue metadata", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
+		await db.items.put({
+			item_code: "ITEM-1",
+			item_name: "Widget",
+			rate: 116,
+			actual_qty: 12,
+			item_tax_template: "VAT 16%",
+			item_tax: {
+				template: "VAT 16%",
+				tax_rate: 16,
+				inclusive_tax_rate: 16,
+				exclusive_tax_rate: 0,
+				inclusive: true,
+				net_rate: 100,
+				tax_amount: 16,
+				gross_rate: 116,
+				accounts: [{ account_head: "VAT - TC", rate: 16, included_in_print_rate: true }],
+			},
+			modified: "2026-07-29",
+		});
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			items: [{
+				row_name: "server-row",
+				item_code: "ITEM-1",
+				item_name: "Widget",
+				qty: 1,
+				rate: 116,
+				amount: 116,
+			}],
+			taxes: [{ account_head: "VAT - TC", rate: 16, tax_amount: 16 }],
+			totals: { net_total: 100, total_taxes_and_charges: 16, grand_total: 116, rounded_total: 116 },
+		});
+
+		const refreshed = await useCartStore.getState().refreshCartConfiguration(
+			makeApi({ previewInvoice }),
+		);
+
+		expect(previewInvoice).toHaveBeenCalledOnce();
+		expect(refreshed?.totals.grand_total).toBe(116);
+		expect(refreshed?.items[0]).toMatchObject({
+			rate: 116,
+			actual_qty: 12,
+			item_tax_template: "VAT 16%",
+			item_tax: { inclusive: true, tax_rate: 16 },
+		});
+		expect(useCartStore.getState().invoice).toEqual(refreshed);
+	});
+
+	it("refreshes a customerless cart locally without checkout-grade validation", async () => {
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
+		await db.items.put({
+			item_code: "ITEM-1",
+			item_name: "Widget",
+			rate: 125,
+			price_list_rate: 125,
+			actual_qty: 8,
+			modified: "2026-07-29",
+		});
+		const previewInvoice = vi.fn();
+
+		const refreshed = await useCartStore.getState().refreshCartConfiguration(
+			makeApi({ previewInvoice }),
+		);
+
+		expect(previewInvoice).not.toHaveBeenCalled();
+		expect(refreshed?.items[0]).toMatchObject({ rate: 125, price_list_rate: 125, actual_qty: 8 });
+		expect(refreshed?.totals.grand_total).toBe(125);
+		expect(useCartStore.getState().error).toBeNull();
+	});
+});
+
 describe("clearCart", () => {
 	it("empties a brand-new local cart directly, no API call needed", async () => {
 		await useCartStore.getState().addCartItem(makeItem(), makeApi());

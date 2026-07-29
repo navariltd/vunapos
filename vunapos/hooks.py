@@ -139,13 +139,23 @@ after_migrate = "vunapos.setup.utils.ensure_vunapos_custom_fields"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	doctype: {
+		"on_update": "vunapos.realtime.publish_configuration_change",
+		"on_trash": "vunapos.realtime.publish_configuration_change",
+	}
+	for doctype in (
+		"POS Profile",
+		"POS Settings",
+		"Accounts Settings",
+		"Sales Taxes and Charges Template",
+		"Item Tax Template",
+		"Item",
+		"Item Price",
+		"Price List",
+		"Mode of Payment",
+	)
+}
 
 # Scheduled Tasks
 # ---------------

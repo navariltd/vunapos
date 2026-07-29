@@ -512,6 +512,7 @@ type CartActions = {
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
 	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
@@ -884,6 +885,67 @@ export const useCartStore = create<CartStore>((set, get) => {
 			);
 			set({ invoice: validated });
 			return validated;
+		},
+
+		refreshCartConfiguration: async (api) => {
+			const invoice = get().invoice;
+			if (!invoice?.items.length) return null;
+			const catalogueItems = await Promise.all(
+				invoice.items.map((item) => itemRepository.getByCode(item.item_code)),
+			);
+			const refreshedItems = invoice.items.map((item, index) => {
+				const catalogueItem = catalogueItems[index];
+				if (!catalogueItem) return item;
+				const conversionFactor = Number(item.conversion_factor || 1);
+				const configuredUomRate = catalogueItem.uoms?.find((row) => row.uom === item.uom)?.rate;
+				const stockRate = Number(catalogueItem.price_list_rate ?? catalogueItem.rate ?? item.price_list_rate ?? item.rate);
+				const priceListRate = configuredUomRate == null
+					? stockRate * conversionFactor
+					: Number(configuredUomRate);
+				return {
+					...item,
+					rate: priceListRate,
+					price_list_rate: priceListRate,
+					actual_qty: catalogueItem.actual_qty ?? undefined,
+					allow_negative_stock: catalogueItem.allow_negative_stock,
+					has_batch_no: catalogueItem.has_batch_no,
+					has_serial_no: catalogueItem.has_serial_no,
+					item_tax_template: catalogueItem.item_tax_template,
+					item_tax: catalogueItem.item_tax ?? undefined,
+					uoms: catalogueItem.uoms,
+				};
+			});
+			const selectedCustomer = getActiveCustomer(get());
+			const customer = selectedCustomer?.customer || invoice.customer;
+			if (!customer) {
+				// A cashier may build a cart before choosing a customer. Configuration
+				// refreshes must still work, so recalculate that cart from the freshly
+				// hydrated catalogue and defer customer validation until checkout.
+				const refreshed = await runMutation(() => previewLocalCart(refreshedItems, invoice));
+				set({ invoice: refreshed });
+				return refreshed;
+			}
+
+			const validated = await get().validateCart(api);
+			if (!validated) return null;
+			const refreshed = {
+				...validated,
+				items: validated.items.map((item, index) => {
+					const catalogueItem = catalogueItems[index];
+					return catalogueItem ? {
+						...item,
+						actual_qty: catalogueItem.actual_qty ?? undefined,
+						allow_negative_stock: catalogueItem.allow_negative_stock,
+						has_batch_no: catalogueItem.has_batch_no,
+						has_serial_no: catalogueItem.has_serial_no,
+						item_tax_template: catalogueItem.item_tax_template,
+						item_tax: catalogueItem.item_tax ?? undefined,
+						uoms: catalogueItem.uoms,
+					} : item;
+				}),
+			};
+			set({ invoice: refreshed });
+			return refreshed;
 		},
 
 		submitCart: async (payments, printFormat, idempotencyKey, api, isOnline = false) => {

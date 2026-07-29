@@ -1,12 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import commonSiteConfig from "../../../sites/common_site_config.json" with { type: "json" };
 
 import proxyOptions from "./proxyOptions";
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
 	plugins: [react(), tailwindcss()],
+	define: {
+		__FRAPPE_DEV_SITE__: JSON.stringify(command === "serve" ? commonSiteConfig.default_site || "" : ""),
+	},
 	server: {
 		port: 8080,
 		host: "0.0.0.0",
@@ -17,4 +21,4 @@ export default defineConfig({
 		emptyOutDir: true,
 		target: "es2015",
 	},
-});
+}));

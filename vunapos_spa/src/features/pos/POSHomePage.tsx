@@ -21,8 +21,10 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
+import { useConfigurationRealtime } from "./hooks/useConfigurationRealtime";
 import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
+import { hydrate } from "../../lib/cacheEngine";
 
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
@@ -105,6 +107,27 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const { isReachable } = useConnectivity();
 
 	const error = pageError || bootstrap.error || items.error;
+
+	useConfigurationRealtime(async (event) => {
+		if (!isReachable || navigator.onLine === false) return;
+		try {
+			await hydrate(bootstrap.data?.pos_profile);
+			if (useCartStore.getState().invoice?.items.length) {
+				await cartActions.refreshCartConfiguration();
+			}
+			showToast({
+				type: "info",
+				message: `${event.doctype || "POS"} configuration updated.`,
+			});
+		} catch (refreshError) {
+			showToast({
+				type: "error",
+				message: refreshError instanceof Error
+					? `Configuration changed, but VunaPOS could not refresh: ${refreshError.message}`
+					: "Configuration changed, but VunaPOS could not refresh.",
+			});
+		}
+	});
 
 	useEffect(() => {
 		if (cartError) showToast({ type: "error", message: cartError });
@@ -454,6 +477,15 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-outline-variant bg-surface-container-low px-4 py-3 text-sm text-on-surface shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
 					Invoice {toast.invoice.name} held as draft.
+				</div>
+			) : null}
+
+			{toast?.type === "info" ? (
+				<div
+					role="status"
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-primary bg-primary-container px-4 py-3 text-sm text-on-primary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
+				>
+					{toast.message}
 				</div>
 			) : null}
 
