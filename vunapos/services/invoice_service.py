@@ -1,5 +1,6 @@
 import json
 import math
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import frappe
@@ -9,7 +10,7 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.utils import cstr, flt, get_datetime, now_datetime, nowdate
+from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
@@ -32,6 +33,7 @@ SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
 HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
+CREDIT_SALE_FIELD = "vunapos_credit_sale"
 OPENING_ENTRY_FIELD = "vunapos_opening_entry"
 SESSION_CASHIER_FIELD = "vunapos_session_cashier"
 SESSION_VERIFIED_AT_FIELD = "vunapos_session_verified_at"
@@ -232,9 +234,54 @@ def _payment_mode_type(mode_of_payment):
 	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
 
 
-def validate_payment_rows(doc, payments=None, profile=None):
+def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
+	is_credit_sale = bool(cint(is_credit_sale))
+	if not is_credit_sale:
+		return False
+	if not profile or not profile.get("vunapos_allow_credit_sales"):
+		_throw("CREDIT_SALES_NOT_ALLOWED", _("Credit sales are not allowed for this POS Profile"))
+	if not customer:
+		_throw("CREDIT_CUSTOMER_REQUIRED", _("Select a customer before completing a credit sale"))
+	return True
+
+
+def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
+	if not is_credit_sale:
+		return None
+	if not due_date:
+		_throw("CREDIT_DUE_DATE_REQUIRED", _("Select a payment due date for this credit sale"))
+	try:
+		parsed_due_date = due_date if isinstance(due_date, date) else date.fromisoformat(str(due_date))
+	except (TypeError, ValueError):
+		_throw("CREDIT_DUE_DATE_INVALID", _("Enter a valid payment due date"))
+	posting_date = getdate(posting_date or nowdate())
+	if parsed_due_date < posting_date:
+		_throw(
+			"CREDIT_DUE_DATE_INVALID",
+			_("Payment due date cannot be before the invoice posting date"),
+		)
+	return parsed_due_date
+
+
+def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
+	_set_if_has_field(doc, CREDIT_SALE_FIELD, is_credit_sale)
+	if is_credit_sale:
+		_set_if_has_field(
+			doc,
+			"due_date",
+			_validate_credit_due_date(True, due_date, doc.get("posting_date")),
+		)
+	return doc
+
+
+def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
+	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	rows = _payment_rows(payments)
-	if not isinstance(rows, list) or not rows:
+	if not isinstance(rows, list):
+		_throw("NO_PAYMENT_ROWS", _("Payment rows must be a list"))
+	if not rows and is_credit_sale:
+		return []
+	if not rows:
 		_throw("NO_PAYMENT_ROWS", _("At least one payment row is required"))
 
 	valid_modes = _valid_payment_modes(profile) if profile else set()
@@ -297,7 +344,7 @@ def validate_payment_rows(doc, payments=None, profile=None):
 			_("Electronic payments cannot exceed the invoice total"),
 			{"expected_total": expected_total, "non_cash_total": non_cash_total, "precision": precision},
 		)
-	if paid_total < expected_total and not allow_partial_payment:
+	if paid_total < expected_total and not (allow_partial_payment or is_credit_sale):
 		_throw(
 			"PAYMENT_TOTAL_MISMATCH",
 			_("Payment total must cover the invoice total"),
@@ -1069,12 +1116,32 @@ def remove_item(invoice_doctype, invoice_name, row_name):
 	return invoice_to_dict(doc)
 
 
-def set_payment_rows(doc, payments=None):
+def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 	if not _has_field(doc.doctype, "payments"):
 		return doc
 
 	doc.set("payments", [])
-	for payment in _payment_rows(payments):
+	payment_rows = _payment_rows(payments)
+	if is_credit_sale and not payment_rows:
+		# ERPNext validates POS documents before it discards zero-value payment rows.
+		# Supply the profile default transiently so a fully unpaid credit sale remains
+		# a native POS invoice while recording no collection.
+		configured_modes = list(profile.get("payments", [])) if profile else []
+		default_mode = next((row for row in configured_modes if row.get("default")), None)
+		default_mode = default_mode or (configured_modes[0] if configured_modes else None)
+		if not default_mode:
+			_throw(
+				"NO_PAYMENT_MODES",
+				_("Configure at least one Mode of Payment on this POS Profile for credit sales"),
+			)
+		payment_rows = [
+			{
+				"mode_of_payment": default_mode.mode_of_payment,
+				"amount": 0,
+				"default": default_mode.get("default"),
+			}
+		]
+	for payment in payment_rows:
 		doc.append(
 			"payments",
 			{
@@ -1086,9 +1153,10 @@ def set_payment_rows(doc, payments=None):
 	return doc
 
 
-def submit_invoice(invoice_doctype, invoice_name, payments=None):
+def submit_invoice(invoice_doctype, invoice_name, payments=None, is_credit_sale=False, due_date=None):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
@@ -1097,8 +1165,9 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile)
-	set_payment_rows(doc, payment_rows)
+	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
+	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()
@@ -1108,7 +1177,14 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None):
 	return invoice_to_dict(doc)
 
 
-def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_key=None):
+def checkout_invoice(
+	invoice_doctype,
+	invoice_name,
+	payments=None,
+	idempotency_key=None,
+	is_credit_sale=False,
+	due_date=None,
+):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
 		return invoice_to_dict(existing)
@@ -1124,6 +1200,7 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 		_throw("EMPTY_INVOICE", _("Add at least one item before checkout"))
 
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
@@ -1132,8 +1209,9 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile)
-	set_payment_rows(doc, payment_rows)
+	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
+	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1168,7 +1246,13 @@ def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
 
 
 def create_and_submit_invoice(
-	pos_profile=None, customer=None, items=None, payments=None, idempotency_key=None
+	pos_profile=None,
+	customer=None,
+	items=None,
+	payments=None,
+	idempotency_key=None,
+	is_credit_sale=False,
+	due_date=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1176,13 +1260,18 @@ def create_and_submit_invoice(
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
 	try:
-		draft = create_invoice_from_cart(pos_profile=pos_profile, customer=customer, items=items)
+		profile = resolve_pos_profile(pos_profile)
+		_validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
+		_validate_credit_due_date(is_credit_sale, due_date, nowdate())
+		draft = create_invoice_from_cart(pos_profile=profile.name, customer=customer, items=items)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		return checkout_invoice(
 			doc.doctype,
 			doc.name,
 			payments=payments,
 			idempotency_key=idempotency_key,
+			is_credit_sale=is_credit_sale,
+			due_date=due_date,
 		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)

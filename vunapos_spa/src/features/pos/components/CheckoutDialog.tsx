@@ -19,15 +19,17 @@ import type { ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
+	allowCreditSales?: boolean;
 	allowPartialPayment?: boolean;
 	currency?: string;
 	currencyPrecision?: number;
+	defaultSaleType?: "Cash Sale" | "Credit Sale";
 	error?: string | null;
 	isOpen: boolean;
 	modesOfPayment: ModeOfPaymentDTO[];
 	onClear: () => void;
 	onClose: () => void;
-	onConfirm: (payments: PaymentInput[], idempotencyKey: string) => void;
+	onConfirm: (payments: PaymentInput[], idempotencyKey: string, isCreditSale: boolean, dueDate?: string) => void;
 	onHold: () => void;
 };
 
@@ -38,10 +40,20 @@ function createIdempotencyKey() {
 	return `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function todayInputValue() {
+	const today = new Date();
+	const year = today.getFullYear();
+	const month = String(today.getMonth() + 1).padStart(2, "0");
+	const day = String(today.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
 export function CheckoutDialog({
+	allowCreditSales,
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	defaultSaleType,
 	error,
 	isOpen,
 	modesOfPayment,
@@ -56,9 +68,12 @@ export function CheckoutDialog({
 
 	return (
 		<CheckoutDialogContent
+			key={allowCreditSales ? "credit-enabled" : "credit-disabled"}
+			allowCreditSales={allowCreditSales}
 			allowPartialPayment={allowPartialPayment}
 			currency={currency}
 			currencyPrecision={currencyPrecision}
+			defaultSaleType={defaultSaleType}
 			error={error}
 			modesOfPayment={modesOfPayment}
 			onClear={onClear}
@@ -70,9 +85,11 @@ export function CheckoutDialog({
 }
 
 function CheckoutDialogContent({
+	allowCreditSales,
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	defaultSaleType,
 	error,
 	modesOfPayment,
 	onClear,
@@ -90,17 +107,30 @@ function CheckoutDialogContent({
 	);
 	const totalMinor = totalToMinorUnits(total, precision);
 	const [amounts, setAmounts] = useState(() =>
-		createInitialPaymentAmounts(availableModes, totalMinor, precision),
+		allowCreditSales && defaultSaleType === "Credit Sale"
+			? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
+			: createInitialPaymentAmounts(availableModes, totalMinor, precision),
 	);
+	const [isCreditSale, setIsCreditSale] = useState(
+		Boolean(allowCreditSales && (invoice?.is_credit_sale || defaultSaleType === "Credit Sale")),
+	);
+	const today = useMemo(() => todayInputValue(), []);
+	const [dueDate, setDueDate] = useState(invoice?.due_date || today);
 	const idempotencyKey = useRef(createIdempotencyKey());
 	const allocation = calculatePaymentAllocation(availableModes, amounts, totalMinor, precision);
 	const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
-	const isPayable =
-		availableModes.length > 0 &&
-		canCompletePaymentAllocation(allocation, totalMinor, Boolean(allowPartialPayment));
+	const isPayable = availableModes.length > 0 && (!isCreditSale || dueDate >= today) && (
+		isCreditSale
+			? !allocation.hasInvalidAmount && !hasNonCashOverpayment
+			: canCompletePaymentAllocation(allocation, totalMinor, Boolean(allowPartialPayment))
+	);
 	const scale = currencyScale(precision);
 	const isOverpaid = allocation.remainingMinor < 0;
-	const balanceLabel = isOverpaid ? "Change" : allocation.remainingMinor > 0 && allowPartialPayment ? "Outstanding" : "Remaining";
+	const balanceLabel = isOverpaid
+		? "Change"
+		: isCreditSale || (allocation.remainingMinor > 0 && allowPartialPayment)
+			? "Outstanding"
+			: "Remaining";
 	const balanceMinor = Math.abs(allocation.remainingMinor);
 	const paymentStatus = allocation.hasInvalidAmount
 		? "Invalid allocation"
@@ -108,9 +138,13 @@ function CheckoutDialogContent({
 			? "Change due"
 			: allocation.remainingMinor === 0
 				? "Fully paid"
-				: allowPartialPayment && allocation.allocatedMinor > 0
-					? "Partial payment"
-					: "Payment incomplete";
+				: isCreditSale && allocation.allocatedMinor > 0
+					? "Deposit + credit"
+					: isCreditSale
+						? "Credit sale"
+						: allowPartialPayment && allocation.allocatedMinor > 0
+							? "Partial payment"
+							: "Payment incomplete";
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-2 sm:p-4">
@@ -129,6 +163,44 @@ function CheckoutDialogContent({
 				<div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
 					<div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-2 lg:divide-x lg:divide-outline-variant">
 					<section className="flex min-h-0 flex-col p-4 sm:p-6">
+						{allowCreditSales ? (
+							<div className="mb-5 grid grid-cols-2 rounded-lg bg-surface-container p-1" role="group" aria-label="Sale type">
+								{([false, true] as const).map((credit) => (
+									<button
+										type="button"
+										key={String(credit)}
+										aria-pressed={isCreditSale === credit}
+										className={`rounded-md px-3 py-2 text-sm font-medium ${isCreditSale === credit ? "bg-surface text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+										onClick={() => {
+											setIsCreditSale(credit);
+											setAmounts(
+												credit
+													? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
+													: createInitialPaymentAmounts(availableModes, totalMinor, precision),
+											);
+										}}
+									>
+										{credit ? "Credit Sale" : "Cash Sale"}
+									</button>
+								))}
+							</div>
+						) : null}
+						{isCreditSale ? (
+							<label className="mb-5 block text-sm font-medium text-on-surface">
+								Payment due date
+								<input
+									type="date"
+									min={today}
+									required
+									value={dueDate}
+									onChange={(event) => setDueDate(event.target.value)}
+									className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+								/>
+								<span className="mt-1 block text-xs font-normal text-on-surface-variant">
+									The unpaid balance becomes due on this date.
+								</span>
+							</label>
+						) : null}
 						<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Amount due</p>
 						<p className="mt-1 text-3xl font-semibold text-on-surface">{formatCurrency(total, currency, precision)}</p>
 						<div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
@@ -185,7 +257,7 @@ function CheckoutDialogContent({
 						</div>
 						<div className="mt-5 grid gap-3 sm:grid-cols-3">
 							<PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / scale, currency, precision)} />
-							<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment)} />
+							<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment && !isCreditSale)} />
 							<PaymentSummary label="Status" value={paymentStatus} invalid={!isPayable} compact />
 						</div>
 					{allocation.hasInvalidAmount ? (
@@ -198,7 +270,11 @@ function CheckoutDialogContent({
 							<AlertCircle className="size-4 shrink-0" /> Electronic payments cannot exceed the amount due.
 						</div>
 					) : null}
-					{allocation.remainingMinor > 0 && allowPartialPayment ? (
+					{allocation.remainingMinor > 0 && isCreditSale ? (
+						<p className="text-sm text-on-surface-variant">
+							The outstanding balance will remain on the customer's account. Add a payment above only when taking a deposit.
+						</p>
+					) : allocation.remainingMinor > 0 && allowPartialPayment ? (
 						<p className="text-sm text-on-surface-variant">
 							Partial payment is enabled.
 						</p>
@@ -223,10 +299,15 @@ function CheckoutDialogContent({
 					<Button
 						disabled={!isPayable || isSubmitting}
 						onClick={() =>
-							onConfirm(buildPaymentInputs(availableModes, amounts, precision), idempotencyKey.current)
+							onConfirm(
+								buildPaymentInputs(availableModes, amounts, precision),
+								idempotencyKey.current,
+								isCreditSale,
+								isCreditSale ? dueDate : undefined,
+							)
 						}
 					>
-						{isSubmitting ? "Submitting..." : "Complete sale"}
+						{isSubmitting ? "Submitting..." : isCreditSale ? "Complete credit sale" : "Complete sale"}
 					</Button>
 				</div>
 			</div>

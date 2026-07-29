@@ -5,6 +5,11 @@ def _value(doc, fieldname, default=None):
 	return getattr(doc, fieldname, default) if hasattr(doc, fieldname) else doc.get(fieldname, default)
 
 
+def _date_value(doc, fieldname):
+	value = _value(doc, fieldname)
+	return str(value) if value else None
+
+
 def _batch_allocations(row):
 	if getattr(row, "_batch_allocations", None):
 		return row._batch_allocations
@@ -77,9 +82,11 @@ def invoice_to_dict(doc):
 		"docstatus": doc.docstatus,
 		"modified": _value(doc, "modified"),
 		"is_held": bool(_value(doc, "vunapos_held", 0)),
+		"is_credit_sale": bool(_value(doc, "vunapos_credit_sale", 0)),
 		"customer": _value(doc, "customer"),
 		"customer_name": _value(doc, "customer_name"),
 		"posting_date": _value(doc, "posting_date"),
+		"due_date": _date_value(doc, "due_date"),
 		"items": [
 			{
 				"row_name": row.name,

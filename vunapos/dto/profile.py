@@ -19,6 +19,11 @@ def profile_to_dict(profile, invoice_mode):
 			),
 		}
 
+	allow_credit_sales = bool(profile.get("vunapos_allow_credit_sales"))
+	default_sale_type = profile.get("vunapos_default_sale_type") or "Cash Sale"
+	if not allow_credit_sales or default_sale_type != "Credit Sale":
+		default_sale_type = "Cash Sale"
+
 	return {
 		"name": profile.name,
 		"company": profile.company,
@@ -32,6 +37,8 @@ def profile_to_dict(profile, invoice_mode):
 		),
 		"rounding_method": frappe.get_system_settings("rounding_method") or "Banker's Rounding (legacy)",
 		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
+		"allow_credit_sales": allow_credit_sales,
+		"default_sale_type": default_sale_type,
 		"allow_rate_change": bool(profile.get("allow_rate_change")),
 		"allow_discount_change": bool(profile.get("allow_discount_change")),
 		"hide_images": bool(profile.get("hide_images")),

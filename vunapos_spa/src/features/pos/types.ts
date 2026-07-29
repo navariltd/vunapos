@@ -123,6 +123,8 @@ export type BootstrapData = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_credit_sales?: boolean;
+	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
@@ -138,6 +140,7 @@ export type BootstrapData = {
 export type ItemDTO = {
 	item_code: string;
 	item_name: string;
+	modified?: string;
 	item_group?: string;
 	description?: string;
 	image?: string | null;
@@ -162,6 +165,7 @@ export type ItemDTO = {
 		net_rate: number;
 		tax_amount: number;
 		gross_rate: number;
+		accounts: Array<{ account_head: string; rate: number; included_in_print_rate: boolean }>;
 	};
 };
 
@@ -257,11 +261,13 @@ export type InvoiceDTO = {
 	docstatus: 0 | 1 | 2;
 	is_local?: boolean;
 	is_held?: boolean;
+	is_credit_sale?: boolean;
 	source_invoice_doctype?: string;
 	source_invoice_name?: string;
 	customer?: string;
 	customer_name?: string;
 	posting_date?: string;
+	due_date?: string;
 	modified?: string;
 	items: InvoiceItemDTO[];
 	taxes?: TaxDTO[];

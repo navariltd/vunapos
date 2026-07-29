@@ -105,6 +105,8 @@ export type CachedProfile = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	allow_credit_sales?: boolean;
+	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;

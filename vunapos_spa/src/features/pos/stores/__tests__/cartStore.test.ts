@@ -10,6 +10,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	return {
 		addItem: reject,
 		getItemDetails: reject,
+		searchItems: reject,
 		getItemBatches: reject,
 		updateItem: reject,
 		removeItem: reject,
@@ -139,6 +140,34 @@ describe("updateCartItemQty", () => {
 		await useCartStore.getState().updateCartItemQty(rowName, 0, makeApi());
 
 		expect(useCartStore.getState().invoice).toBeNull();
+	});
+
+	it("clears stale serial and batch allocations when quantity changes", async () => {
+		await useCartStore.getState().addCartItem(
+			makeItem({ has_batch_no: 1, has_serial_no: 1, actual_qty: 5 }),
+			makeApi(),
+		);
+		const invoice = useCartStore.getState().invoice!;
+		useCartStore.setState({
+			invoice: {
+				...invoice,
+				items: [{
+					...invoice.items[0],
+					serial_and_batch_bundle: "SABB-OLD",
+					batch_allocations: [{ batch_no: "BATCH-1", qty: 1 }],
+					serial_allocations: [{ serial_no: "SERIAL-1", batch_no: "BATCH-1" }],
+				}],
+			},
+		});
+
+		await useCartStore.getState().updateCartItemQty(invoice.items[0].row_name, 2, makeApi());
+
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			qty: 2,
+			serial_and_batch_bundle: null,
+			batch_allocations: [],
+			serial_allocations: [],
+		});
 	});
 
 	// Bug report: an item-level tax vanished after a qty change. Root cause:
@@ -306,6 +335,87 @@ describe("refreshCartConfiguration", () => {
 	});
 });
 
+describe("refreshCustomerPricing", () => {
+	it("refreshes the catalogue and active cart for the selected customer's price list", async () => {
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
+		const selected = { customer: "MWENDWA", customer_name: "Mwendwa" };
+		useCartStore.getState().setSelectedCustomer(selected);
+		const searchItems = vi.fn().mockResolvedValue([makeItem({ rate: 75, price_list_rate: 75 })]);
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			customer: selected.customer,
+			customer_name: selected.customer_name,
+			items: [{
+				...useCartStore.getState().invoice!.items[0],
+				rate: 75,
+				price_list_rate: 75,
+				amount: 75,
+			}],
+			totals: { net_total: 75, grand_total: 75, rounded_total: 75 },
+		});
+
+		await useCartStore.getState().refreshCustomerPricing(selected, makeApi({ searchItems, previewInvoice }));
+
+		expect(searchItems).toHaveBeenCalledWith({
+			pos_profile: "Profile-1",
+			customer: "MWENDWA",
+			limit: 100000,
+		});
+		expect((await db.items.get("ITEM-1"))?.rate).toBe(75);
+		expect(useCartStore.getState().invoice?.items[0].rate).toBe(75);
+		expect(useCartStore.getState().invoice?.customer).toBe("MWENDWA");
+	});
+});
+
+describe("validateCart", () => {
+	it("repairs a stale partial serial selection before requesting automatic allocation", async () => {
+		useCartStore.setState({
+			defaultCustomer: CUSTOMER,
+			invoice: {
+				doctype: "VunaPOS Cart",
+				name: "Not invoiced yet",
+				docstatus: 0,
+				is_local: true,
+				items: [{
+					row_name: "row-1",
+					item_code: "SERIAL-BATCH-1",
+					item_name: "Batched and Serialed 1",
+					qty: 2,
+					rate: 100,
+					amount: 200,
+					has_batch_no: 1,
+					has_serial_no: 1,
+					serial_allocations: [{ serial_no: "SERIAL-1", batch_no: "BATCH-1" }],
+				}],
+				totals: { grand_total: 200, rounded_total: 200 },
+			},
+		});
+		const previewInvoice = vi.fn().mockImplementation(async (params: { items: string }) => {
+			const submittedItems = JSON.parse(params.items);
+			expect(submittedItems[0].serial_allocations).toEqual([]);
+			return {
+				doctype: "Sales Invoice",
+				name: "Not invoiced yet",
+				docstatus: 0,
+				items: [{
+					...useCartStore.getState().invoice!.items[0],
+					serial_allocations: [
+						{ serial_no: "SERIAL-1", batch_no: "BATCH-1" },
+						{ serial_no: "SERIAL-2", batch_no: "BATCH-1" },
+					],
+				}],
+				totals: { grand_total: 200, rounded_total: 200 },
+			};
+		});
+
+		const validated = await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(validated?.items[0].serial_allocations).toHaveLength(2);
+	});
+});
+
 describe("clearCart", () => {
 	it("empties a brand-new local cart directly, no API call needed", async () => {
 		await useCartStore.getState().addCartItem(makeItem(), makeApi());
@@ -427,6 +537,27 @@ describe("submitCart", () => {
 		expect(useCartStore.getState().invoice).toBeNull();
 		expect((await db.items.get("ITEM-1"))?.actual_qty).toBe(4);
 		expect(createAndSubmitInvoice).toHaveBeenCalledWith(expect.objectContaining({ idempotency_key: "idem-1" }));
+	});
+
+	it("passes the selected credit-sale state to direct server checkout", async () => {
+		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice", name: "ACC-SINV-CREDIT-1", docstatus: 1, items: [], totals: {},
+		});
+
+		await useCartStore.getState().submitCart(
+			[], null, "idem-credit", makeApi({
+				getItemDetails: vi.fn().mockResolvedValue(makeItem()),
+				createAndSubmitInvoice,
+				renderInvoice: vi.fn().mockRejectedValue(new Error("no print")),
+			}), true, true, "2026-08-28",
+		);
+
+		expect(createAndSubmitInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			idempotency_key: "idem-credit",
+			is_credit_sale: true,
+			due_date: "2026-08-28",
+			payments: "[]",
+		}));
 	});
 
 	it("preserves the cart when direct server submission fails", async () => {

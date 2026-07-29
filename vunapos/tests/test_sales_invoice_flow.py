@@ -40,6 +40,11 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.db.set_value("POS Profile", profile, "allow_partial_payment", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 0, update_modified=False)
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 0, update_modified=False)
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
 		ensure_open_pos_opening_entry(profile)
 
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
@@ -644,6 +649,128 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["totals"]["paid_amount"], amount - 10)
 		self.assertEqual(response["data"]["totals"]["outstanding_amount"], 10)
+
+	def test_checkout_rejects_credit_sale_when_profile_disallows_it(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_SALES_NOT_ALLOWED")
+		self.assertEqual(frappe.db.get_value(invoice["doctype"], invoice["name"], "docstatus"), 0)
+
+	def test_checkout_submits_fully_unpaid_credit_sale(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=nowdate(),
+			idempotency_key="fully-unpaid-credit-sale",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertTrue(response["data"]["is_credit_sale"])
+		self.assertEqual(response["data"]["payments"], [])
+		self.assertEqual(response["data"]["totals"]["paid_amount"], 0)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], amount)
+		self.assertEqual(frappe.db.get_value(invoice["doctype"], invoice["name"], "vunapos_credit_sale"), 1)
+		self.assertEqual(response["data"]["due_date"], nowdate())
+
+	def test_checkout_accepts_credit_sale_deposit_without_partial_payment_setting(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		deposit = amount / 2
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": deposit}],
+			is_credit_sale=True,
+			due_date=add_days(nowdate(), 30),
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertTrue(response["data"]["is_credit_sale"])
+		self.assertEqual(response["data"]["totals"]["paid_amount"], deposit)
+		self.assertEqual(response["data"]["totals"]["outstanding_amount"], amount - deposit)
+		self.assertEqual(response["data"]["due_date"], add_days(nowdate(), 30))
+
+	def test_checkout_credit_sale_requires_due_date(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], ensure_test_item(), 1)["data"]
+
+		response = checkout_invoice(invoice["doctype"], invoice["name"], payments=[], is_credit_sale=True)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_DUE_DATE_REQUIRED")
+
+	def test_checkout_credit_sale_rejects_past_due_date(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], ensure_test_item(), 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=add_days(nowdate(), -1),
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_DUE_DATE_INVALID")
+
+	def test_checkout_credit_sale_requires_customer(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 1, update_modified=False)
+		frappe.clear_cache(doctype="POS Profile")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		frappe.db.set_value(invoice["doctype"], invoice["name"], "customer", None, update_modified=False)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CREDIT_CUSTOMER_REQUIRED")
 
 	def test_checkout_requires_current_open_session(self):
 		profile = ensure_test_pos_profile()

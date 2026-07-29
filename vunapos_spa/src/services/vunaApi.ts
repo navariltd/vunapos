@@ -234,7 +234,13 @@ export function removeItem(
 
 export function submitInvoice(
 	call: FrappeCall,
-	params: { invoice_doctype: string; invoice_name: string; payments?: PaymentInput[] },
+	params: {
+		invoice_doctype: string;
+		invoice_name: string;
+		payments?: PaymentInput[];
+		is_credit_sale?: boolean;
+		due_date?: string;
+	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
@@ -249,6 +255,8 @@ export function checkoutInvoice(
 		invoice_name: string;
 		payments?: PaymentInput[];
 		idempotency_key?: string;
+		is_credit_sale?: boolean;
+		due_date?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -276,6 +284,8 @@ export function createAndSubmitInvoice(
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
+		is_credit_sale?: boolean;
+		due_date?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {

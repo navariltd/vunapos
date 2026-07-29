@@ -25,6 +25,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	searchItems,
 	holdInvoice,
 	listHeldInvoices,
 	previewInvoice,
@@ -42,6 +43,7 @@ import {
 export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
+	searchItems: FrappeCall;
 	getItemBatches: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
@@ -130,6 +132,26 @@ function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 			throw new Error(`Batch allocation for ${item.item_name} must equal the quantity of ${stockQty} stock units.`);
 		}
 	}
+}
+
+function clearIncompleteSerialAllocation(item: InvoiceItemDTO): InvoiceItemDTO {
+	if (!item.has_serial_no || !item.serial_allocations?.length) return item;
+	const required = item.qty * Number(item.conversion_factor || 1);
+	const uniqueSerials = new Set(item.serial_allocations.map((row) => row.serial_no));
+	if (
+		Number.isInteger(required)
+		&& item.serial_allocations.length === required
+		&& uniqueSerials.size === required
+	) {
+		return item;
+	}
+	return {
+		...item,
+		batch_no: null,
+		serial_and_batch_bundle: null,
+		batch_allocations: [],
+		serial_allocations: [],
+	};
 }
 
 // Converts a held draft being restored into the local-cart shape for editing. Must NOT
@@ -372,6 +394,15 @@ function updateLocalQty(row: InvoiceItemDTO, qty: number): InvoiceItemDTO {
 		...row,
 		qty,
 		amount: Number(row.rate || 0) * qty,
+		...(qty !== row.qty ? {
+			// Batch and serial allocations describe an exact stock quantity. Once that
+			// quantity changes, retaining an old partial selection prevents the server
+			// from applying its configured automatic outward allocation.
+			batch_no: null,
+			serial_and_batch_bundle: null,
+			batch_allocations: [],
+			serial_allocations: [],
+		} : {}),
 	};
 }
 
@@ -513,12 +544,15 @@ type CartActions = {
 	clearCart: (api: CartApi) => Promise<void>;
 	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
+	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
 		idempotencyKey: string | undefined,
 		api: CartApi,
 		isOnline?: boolean,
+		isCreditSale?: boolean,
+		dueDate?: string,
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -869,17 +903,18 @@ export const useCartStore = create<CartStore>((set, get) => {
 		validateCart: async (api) => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) return null;
+			const items = invoice.items.map(clearIncompleteSerialAllocation);
 			const selectedCustomer = getActiveCustomer(get());
 			const sourceInvoice = getLocalCartSource(invoice);
 			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
 				pos_profile: get().posProfile,
 				customer: selectedCustomer?.customer || invoice.customer,
 				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
-				items: invoice.items.map(cartItemPayload),
+				items: items.map(cartItemPayload),
 			}));
 			const validated = localizePreviewInvoice(
 				authoritative,
-				invoice.items,
+				items,
 				selectedCustomer,
 				sourceInvoice,
 			);
@@ -948,7 +983,30 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return refreshed;
 		},
 
-		submitCart: async (payments, printFormat, idempotencyKey, api, isOnline = false) => {
+		refreshCustomerPricing: async (customer, api) => {
+			const requestedCustomer = (customer === undefined ? get().defaultCustomer : customer)?.customer;
+			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
+				pos_profile: get().posProfile,
+				customer: requestedCustomer,
+				limit: 100000,
+			}));
+			// Ignore a response that completed after the cashier selected another customer.
+			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
+			await itemRepository.replaceAll(pricedItems);
+			useRuntimeCacheStore.getState().touch();
+			if (!get().invoice?.items.length) return null;
+			return get().validateCart(api);
+		},
+
+		submitCart: async (
+			payments,
+			printFormat,
+			idempotencyKey,
+			api,
+			isOnline = false,
+			isCreditSale = false,
+			dueDate,
+		) => {
 			if (!isOnline) {
 				throw new Error("VunaPOS is online-only. Reconnect before completing this sale.");
 			}
@@ -983,6 +1041,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 						items: invoice.items.map(cartItemPayload),
 						payments,
 						idempotency_key: idempotencyKey,
+						is_credit_sale: isCreditSale,
+						due_date: dueDate,
 					}),
 				);
 				await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);
@@ -1011,6 +1071,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 							invoice_name: updatedInvoice?.name || invoice.source_invoice_name || "",
 							payments,
 							idempotency_key: idempotencyKey,
+							is_credit_sale: isCreditSale,
+							due_date: dueDate,
 						}),
 					);
 				}
@@ -1020,6 +1082,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 					payments,
 					idempotency_key: idempotencyKey,
+					is_credit_sale: isCreditSale,
+					due_date: dueDate,
 				});
 			});
 			await refreshSoldItemStock(invoice.items, get().posProfile, selectedCustomer?.customer, api);

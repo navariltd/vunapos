@@ -2,7 +2,7 @@ import { useMemo } from "react";
 
 import { useCartApi } from "./useCartApi";
 import { useCartStore } from "../stores/cartStore";
-import type { BatchAllocationDTO, HeldInvoiceDTO, ItemDTO, PaymentInput, PricingOverrideDTO, SerialAllocationDTO } from "../types";
+import type { BatchAllocationDTO, CustomerDTO, HeldInvoiceDTO, ItemDTO, PaymentInput, PricingOverrideDTO, SerialAllocationDTO } from "../types";
 
 // Binds useCartApi() (the frappe-react-sdk call functions, must be created inside a
 // component) to cartStore's stable action references, exposing today's call surface
@@ -22,6 +22,7 @@ export function useCartActions() {
 	const clearCartAction = useCartStore((s) => s.clearCart);
 	const validateCartAction = useCartStore((s) => s.validateCart);
 	const refreshCartConfigurationAction = useCartStore((s) => s.refreshCartConfiguration);
+	const refreshCustomerPricingAction = useCartStore((s) => s.refreshCustomerPricing);
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
@@ -46,12 +47,16 @@ export function useCartActions() {
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),
 			refreshCartConfiguration: () => refreshCartConfigurationAction(api),
+			refreshCustomerPricing: (customer: CustomerDTO | null | undefined) =>
+				refreshCustomerPricingAction(customer, api),
 			submitCart: (
 				payments: PaymentInput[],
 				printFormat: string | null | undefined,
 				idempotencyKey?: string,
 				isOnline = false,
-			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline),
+				isCreditSale = false,
+				dueDate?: string,
+			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
 		}),
@@ -70,6 +75,7 @@ export function useCartActions() {
 			clearCartAction,
 			validateCartAction,
 			refreshCartConfigurationAction,
+			refreshCustomerPricingAction,
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,

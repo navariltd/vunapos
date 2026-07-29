@@ -54,7 +54,14 @@ def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype
 
 
 @frappe.whitelist()
-def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_key=None):
+def checkout_invoice(
+	invoice_doctype: str,
+	invoice_name: str,
+	payments: list | str | None = None,
+	idempotency_key: str | None = None,
+	is_credit_sale: bool | int | str = False,
+	due_date: str | None = None,
+):
 	try:
 		return success(
 			checkout_invoice_service(
@@ -62,6 +69,8 @@ def checkout_invoice(invoice_doctype, invoice_name, payments=None, idempotency_k
 				invoice_name=invoice_name,
 				payments=payments,
 				idempotency_key=idempotency_key,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
 			)
 		)
 	except Exception as exc:
@@ -191,13 +200,21 @@ def remove_item(invoice_doctype, invoice_name, row_name):
 
 
 @frappe.whitelist()
-def submit_invoice(invoice_doctype, invoice_name, payments=None):
+def submit_invoice(
+	invoice_doctype: str,
+	invoice_name: str,
+	payments: list | str | None = None,
+	is_credit_sale: bool | int | str = False,
+	due_date: str | None = None,
+):
 	try:
 		return success(
 			submit_invoice_service(
 				invoice_doctype=invoice_doctype,
 				invoice_name=invoice_name,
 				payments=payments,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
 			)
 		)
 	except Exception as exc:
@@ -211,6 +228,8 @@ def create_and_submit_invoice(
 	items: list | str | None = None,
 	payments: list | str | None = None,
 	idempotency_key: str | None = None,
+	is_credit_sale: bool | int | str = False,
+	due_date: str | None = None,
 ):
 	try:
 		return success(
@@ -220,6 +239,8 @@ def create_and_submit_invoice(
 				items=items,
 				payments=payments,
 				idempotency_key=idempotency_key,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
 			)
 		)
 	except Exception as exc:

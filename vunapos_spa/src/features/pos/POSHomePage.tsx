@@ -105,6 +105,25 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
 	const cartActions = useCartActions();
 	const { isReachable } = useConnectivity();
+	const handleSelectCustomer = async (
+		customer: Parameters<typeof setSelectedCustomer>[0],
+		reportError = true,
+	) => {
+		setSelectedCustomer(customer);
+		if (!isReachable || navigator.onLine === false) return;
+		try {
+			await cartActions.refreshCustomerPricing(customer);
+		} catch (pricingError) {
+			if (reportError) {
+				showToast({
+					type: "error",
+					message: pricingError instanceof Error
+						? `Customer selected, but prices could not be refreshed: ${pricingError.message}`
+						: "Customer selected, but prices could not be refreshed.",
+				});
+			}
+		}
+	};
 
 	const error = pageError || bootstrap.error || items.error;
 
@@ -217,7 +236,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			const heldInvoice = await cartActions.holdCart();
 			if (heldInvoice) {
 				showToast({ type: "held", invoice: heldInvoice });
-				setSelectedCustomer(undefined);
+				void handleSelectCustomer(undefined, false);
 				setIsCartOpen(false);
 				return true;
 			}
@@ -254,14 +273,15 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		clearToast();
 		try {
 			const restoredInvoice = await cartActions.restoreHeldInvoice(heldInvoice);
-			setSelectedCustomer(
-				restoredInvoice.customer
+		void handleSelectCustomer(
+			restoredInvoice.customer
 					? {
 							customer: restoredInvoice.customer,
 							customer_name: restoredInvoice.customer_name || restoredInvoice.customer,
 						}
 					: null,
-			);
+			false,
+		);
 			setActivePage("Home");
 			setIsCartOpen(true);
 		} catch (err) {
@@ -269,7 +289,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		}
 	};
 
-	const handleCheckout = async (payments: PaymentInput[], idempotencyKey: string) => {
+	const handleCheckout = async (
+		payments: PaymentInput[],
+		idempotencyKey: string,
+		isCreditSale: boolean,
+		dueDate?: string,
+	) => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
 			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before completing this sale." });
@@ -281,9 +306,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				bootstrap.data?.print_format,
 				idempotencyKey,
 				true,
+				isCreditSale,
+				dueDate,
 			);
 			setIsCheckoutOpen(false);
-			setSelectedCustomer(undefined);
+			void handleSelectCustomer(undefined, false);
 			if (result?.invoice) {
 				showToast({ type: "submitted", invoice: result.invoice });
 			} else {
@@ -314,7 +341,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			{activePage === "Invoices" ? (
-				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { setSelectedCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
+				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { void handleSelectCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
 				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
 			) : activePage === "Customers" ? (
@@ -322,7 +349,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					customer={getCustomerFromPath(currentPath) || ""}
 					posProfile={bootstrap.data?.pos_profile}
 					onStartSale={(customer) => {
-						setSelectedCustomer(customer);
+						void handleSelectCustomer(customer);
 						navigateToPosPage("Home");
 					}}
 				/> : <CustomersPage posProfile={bootstrap.data?.pos_profile} defaultCurrency={bootstrap.data?.currency} />
@@ -365,12 +392,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						warehouse={bootstrap.data?.warehouse}
 						isOnline={isReachable && navigator.onLine !== false}
 						onCheckout={handleOpenCheckout}
-						onClearCustomer={() => setSelectedCustomer(null)}
+						onClearCustomer={() => void handleSelectCustomer(null)}
 						onClearCart={() => handleClearCart(false)}
 						onHold={handleHoldCart}
 						onLoadBatches={cartActions.loadItemBatches}
 						onRemoveItem={cartActions.removeCartItem}
-						onSelectCustomer={setSelectedCustomer}
+						onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
 						onUpdateQty={cartActions.updateCartItemQty}
 						onUpdatePricing={cartActions.updateCartItemPricing}
 						onUpdateNote={cartActions.updateCartItemNote}
@@ -426,12 +453,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							warehouse={bootstrap.data?.warehouse}
 							isOnline={isReachable && navigator.onLine !== false}
 							onCheckout={handleOpenCheckout}
-							onClearCustomer={() => setSelectedCustomer(null)}
+							onClearCustomer={() => void handleSelectCustomer(null)}
 							onClearCart={() => handleClearCart(false)}
 							onHold={handleHoldCart}
 							onLoadBatches={cartActions.loadItemBatches}
 							onRemoveItem={cartActions.removeCartItem}
-							onSelectCustomer={setSelectedCustomer}
+							onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
 							onUpdateQty={cartActions.updateCartItemQty}
 							onUpdatePricing={cartActions.updateCartItemPricing}
 							onUpdateNote={cartActions.updateCartItemNote}
@@ -444,9 +471,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			) : null}
 
 			<CheckoutDialog
+				allowCreditSales={bootstrap.data?.allow_credit_sales}
 				allowPartialPayment={bootstrap.data?.allow_partial_payment}
 				currency={bootstrap.data?.currency}
 				currencyPrecision={bootstrap.data?.currency_precision}
+				defaultSaleType={bootstrap.data?.default_sale_type}
 				error={pageError}
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
