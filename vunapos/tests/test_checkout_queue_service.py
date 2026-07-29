@@ -10,6 +10,7 @@ from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_QUEUED,
 	QUEUE_STATUS_REQUIRES_REVIEW,
 	QUEUE_STATUS_SUBMITTED,
+	_get_worker_profile,
 	cancel_queued_invoice,
 	enqueue_invoice_submission,
 	get_queue_limits,
@@ -123,12 +124,12 @@ class TestCheckoutQueueService(TestCase):
 	@patch("frappe.db.rollback")
 	@patch("frappe.db.commit")
 	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
-	@patch("vunapos.services.profile_service.resolve_pos_profile")
+	@patch("vunapos.services.checkout_queue_service._get_worker_profile")
 	@patch("frappe.get_doc")
 	def test_worker_records_failure_without_discarding_the_draft(
 		self,
 		get_doc,
-		resolve_profile,
+		get_worker_profile,
 		validate_reservations,
 		commit,
 		rollback,
@@ -138,7 +139,7 @@ class TestCheckoutQueueService(TestCase):
 		doc.save = Mock()
 		doc.submit = Mock()
 		get_doc.return_value = doc
-		resolve_profile.return_value = frappe._dict(
+		get_worker_profile.return_value = frappe._dict(
 			vunapos_enable_background_submission=1,
 			vunapos_queue_max_attempts=3,
 		)
@@ -157,12 +158,12 @@ class TestCheckoutQueueService(TestCase):
 	@patch("vunapos.services.checkout_queue_service._publish_queue_update")
 	@patch("frappe.db.commit")
 	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
-	@patch("vunapos.services.profile_service.resolve_pos_profile")
+	@patch("vunapos.services.checkout_queue_service._get_worker_profile")
 	@patch("frappe.get_doc")
 	def test_worker_publishes_processing_and_submitted_updates(
 		self,
 		get_doc,
-		resolve_profile,
+		get_worker_profile,
 		validate_reservations,
 		commit,
 		publish_update,
@@ -171,7 +172,7 @@ class TestCheckoutQueueService(TestCase):
 		doc.save = Mock()
 		doc.submit = Mock(side_effect=lambda: setattr(doc, "docstatus", 1))
 		get_doc.return_value = doc
-		resolve_profile.return_value = frappe._dict(
+		get_worker_profile.return_value = frappe._dict(
 			vunapos_enable_background_submission=1,
 			vunapos_queue_max_attempts=3,
 		)
@@ -230,6 +231,7 @@ class TestCheckoutQueueService(TestCase):
 			frappe._dict(
 				name="ACC-SINV-STALE-1",
 				pos_profile="Counter 1",
+				vunapos_queue_status=QUEUE_STATUS_PROCESSING,
 				vunapos_queue_started_at=frappe.utils.add_days(frappe.utils.now_datetime(), -1),
 			)
 		]
@@ -246,3 +248,63 @@ class TestCheckoutQueueService(TestCase):
 
 		self.assertEqual(doc.vunapos_queue_status, QUEUE_STATUS_QUEUED)
 		enqueue_job.assert_called_once_with(doc)
+
+	@patch("vunapos.services.checkout_queue_service._enqueue_submission_job")
+	@patch("frappe.get_cached_doc")
+	@patch("frappe.get_doc")
+	@patch("frappe.get_all")
+	def test_stale_queued_invoice_is_enqueued_again(self, get_all, get_doc, get_profile, enqueue_job):
+		get_all.return_value = [
+			frappe._dict(
+				name="ACC-SINV-QUEUED-STALE-1",
+				pos_profile="Counter 1",
+				vunapos_queue_status=QUEUE_STATUS_QUEUED,
+				vunapos_queue_created_at=frappe.utils.add_days(frappe.utils.now_datetime(), -1),
+			)
+		]
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+		get_doc.return_value = doc
+		get_profile.return_value = frappe._dict(
+			vunapos_enable_background_submission=1,
+			vunapos_queue_processing_timeout_minutes=5,
+		)
+
+		recover_stale_checkout_jobs()
+
+		enqueue_job.assert_called_once_with(doc)
+
+	@patch("frappe.db.exists", return_value=True)
+	@patch("frappe.get_cached_doc")
+	def test_worker_profile_uses_invoice_provenance_not_worker_assignment(self, get_profile, exists):
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+		doc.company = "Vuna Company"
+		doc.pos_profile = "Counter 1"
+		doc.vunapos_session_cashier = "cashier@example.com"
+		doc.vunapos_opening_entry = "POS-OPE-0001"
+		profile = frappe._dict(name="Counter 1", company="Vuna Company")
+		get_profile.return_value = profile
+
+		self.assertIs(_get_worker_profile(doc), profile)
+		exists.assert_called_once_with(
+			"POS Opening Entry",
+			{
+				"name": "POS-OPE-0001",
+				"pos_profile": "Counter 1",
+				"user": "cashier@example.com",
+				"docstatus": 1,
+			},
+		)
+
+	@patch("frappe.db.exists", return_value=False)
+	@patch("frappe.get_cached_doc", return_value=frappe._dict(name="Counter 1", company="Vuna Company"))
+	def test_worker_rejects_an_invalid_opening_entry(self, _get_profile, _exists):
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+		doc.company = "Vuna Company"
+		doc.pos_profile = "Counter 1"
+		doc.vunapos_session_cashier = "cashier@example.com"
+		doc.vunapos_opening_entry = "POS-OPE-INVALID"
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			_get_worker_profile(doc)
+
+		self.assertEqual(context.exception.vuna_error_code, "QUEUE_PROVENANCE_INVALID")

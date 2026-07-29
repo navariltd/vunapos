@@ -185,6 +185,40 @@ def _publish_queue_update(doc) -> None:
 	publish_checkout_queue_change(doc)
 
 
+def _get_worker_profile(doc):
+	"""Validate queue provenance without treating the background worker as the cashier."""
+	if (
+		not doc.get("pos_profile")
+		or not doc.get("vunapos_session_cashier")
+		or not doc.get("vunapos_opening_entry")
+	):
+		_queue_error(
+			"QUEUE_PROVENANCE_INVALID",
+			_("Queued invoice {0} is missing its POS session provenance").format(doc.name),
+		)
+	profile = frappe.get_cached_doc("POS Profile", doc.pos_profile)
+	if doc.get("company") != profile.company:
+		_queue_error(
+			"QUEUE_PROVENANCE_INVALID",
+			_("Queued invoice {0} does not belong to the POS Profile company").format(doc.name),
+		)
+	opening_exists = frappe.db.exists(
+		"POS Opening Entry",
+		{
+			"name": doc.vunapos_opening_entry,
+			"pos_profile": profile.name,
+			"user": doc.vunapos_session_cashier,
+			"docstatus": 1,
+		},
+	)
+	if not opening_exists:
+		_queue_error(
+			"QUEUE_PROVENANCE_INVALID",
+			_("Queued invoice {0} is not linked to a valid cashier opening entry").format(doc.name),
+		)
+	return profile
+
+
 def enqueue_invoice_submission(doc) -> None:
 	"""Persist the queued state and enqueue only after the draft transaction commits."""
 	status = normalize_queue_status(doc.get("vunapos_queue_status"))
@@ -309,16 +343,33 @@ def cancel_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
 
 
 def recover_stale_checkout_jobs() -> None:
-	"""Requeue workers that died while an invoice remained in Processing."""
+	"""Restore queued jobs lost before pickup and processing jobs abandoned by a worker."""
 	for row in frappe.get_all(
 		"Sales Invoice",
-		filters={"docstatus": 0, "vunapos_invoice": 1, "vunapos_queue_status": QUEUE_STATUS_PROCESSING},
-		fields=["name", "pos_profile", "vunapos_queue_started_at"],
+		filters={
+			"docstatus": 0,
+			"vunapos_invoice": 1,
+			"vunapos_queue_status": ["in", [QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING]],
+		},
+		fields=[
+			"name",
+			"pos_profile",
+			"vunapos_queue_status",
+			"vunapos_queue_created_at",
+			"vunapos_queue_started_at",
+		],
 		limit_page_length=1000,
 	):
 		profile = frappe.get_cached_doc("POS Profile", row.pos_profile)
 		limits = get_queue_limits(profile)
 		cutoff = add_to_date(now_datetime(), minutes=-limits["processing_timeout_minutes"])
+		if row.vunapos_queue_status == QUEUE_STATUS_QUEUED:
+			if row.vunapos_queue_created_at and row.vunapos_queue_created_at > cutoff:
+				continue
+			doc = frappe.get_doc("Sales Invoice", row.name, for_update=True)
+			if doc.get("vunapos_queue_status") == QUEUE_STATUS_QUEUED:
+				_enqueue_submission_job(doc)
+			continue
 		if row.vunapos_queue_started_at and row.vunapos_queue_started_at > cutoff:
 			continue
 		doc = frappe.get_doc("Sales Invoice", row.name, for_update=True)
@@ -338,7 +389,6 @@ def recover_stale_checkout_jobs() -> None:
 
 def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 	"""Submit one already validated and reserved draft invoice."""
-	from vunapos.services.profile_service import resolve_pos_profile
 	from vunapos.services.stock_reservation_service import validate_invoice_stock_reservations
 
 	doc = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
@@ -350,7 +400,7 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 			_("Invoice {0} is not ready for background submission").format(doc.name),
 		)
 
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = _get_worker_profile(doc)
 	limits = get_queue_limits(profile)
 	transition_invoice_queue(doc, QUEUE_STATUS_PROCESSING)
 	doc.save(ignore_permissions=True)
