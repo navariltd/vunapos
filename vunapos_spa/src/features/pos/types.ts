@@ -19,6 +19,8 @@ export type CustomerDTO = {
 	customer_name: string;
 	mobile_no?: string | null;
 	email_id?: string | null;
+	customer_group?: string | null;
+	default_price_list?: string | null;
 };
 
 export type CustomerDirectoryRowDTO = CustomerDTO & {
@@ -127,6 +129,8 @@ export type BootstrapData = {
 	company?: string;
 	warehouse?: string;
 	price_list?: string;
+	allow_price_list_switching?: boolean;
+	allowed_price_lists?: Array<{ name: string; currency?: string }>;
 	currency?: string;
 	currency_precision?: number;
 	disable_rounded_total?: boolean;
@@ -276,6 +280,8 @@ export type InvoiceDTO = {
 	source_invoice_name?: string;
 	customer?: string;
 	customer_name?: string;
+	selling_price_list?: string;
+	price_list_currency?: string;
 	posting_date?: string;
 	due_date?: string;
 	modified?: string;

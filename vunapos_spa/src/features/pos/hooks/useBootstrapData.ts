@@ -28,6 +28,8 @@ export function useBootstrapData() {
 			company: profile.company,
 			warehouse: profile.warehouse,
 			price_list: profile.price_list,
+			allow_price_list_switching: profile.allow_price_list_switching,
+			allowed_price_lists: profile.allowed_price_lists,
 			currency: profile.currency,
 			currency_precision: profile.currency_precision,
 			disable_rounded_total: profile.disable_rounded_total,

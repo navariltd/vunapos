@@ -11,6 +11,7 @@ from frappe.utils import cint, flt, today
 from pypika import Order
 
 from vunapos.dto.item import item_to_dict
+from vunapos.services.price_list_service import get_default_price_list, resolve_price_list
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.utils.permissions import require_read
 
@@ -31,8 +32,8 @@ def _get_actual_qty(item_code, warehouse):
 	return max(stock_balance - reserved_stock, 0)
 
 
-def _get_rate(item_code, profile):
-	price_list = get_priority_price_list(customer=profile.customer, pos_profile=profile)
+def _get_rate(item_code, profile, price_list=None):
+	price_list = price_list or get_priority_price_list(customer=profile.customer, pos_profile=profile)
 	ctx = frappe._dict(
 		{
 			"doctype": "Sales Invoice",
@@ -52,10 +53,10 @@ def _get_rate(item_code, profile):
 	return flt(details.get("price_list_rate") or details.get("rate") or 0)
 
 
-def _to_item_payload(item_code, profile, barcode=None):
+def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
-	price_list = get_priority_price_list(customer=profile.customer, pos_profile=profile)
+	price_list = price_list or get_priority_price_list(customer=profile.customer, pos_profile=profile)
 	uom_rates = _get_uom_rate_map([item_code], price_list, profile.customer)
 	uoms = []
 	for row in item.get("uoms", []):
@@ -74,7 +75,7 @@ def _to_item_payload(item_code, profile, barcode=None):
 		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
-	rate = _get_rate(item.item_code, profile)
+	rate = _get_rate(item.item_code, profile, price_list)
 	return item_to_dict(
 		item,
 		rate=rate,
@@ -281,35 +282,13 @@ def _get_uom_map(item_codes, uom_rate_map=None):
 
 
 def get_priority_price_list(customer=None, pos_profile=None):
-	if customer:
-		customer_details = frappe.db.get_value(
-			"Customer",
-			customer,
-			["default_price_list", "customer_group"],
-			as_dict=True,
-		)
-		if customer_details:
-			if customer_details.get("default_price_list"):
-				return customer_details.default_price_list
-			if customer_details.get("customer_group"):
-				group_price_list = frappe.db.get_value(
-					"Customer Group",
-					customer_details.customer_group,
-					"default_price_list",
-				)
-				if group_price_list:
-					return group_price_list
-
-	if pos_profile and pos_profile.get("selling_price_list"):
-		return pos_profile.selling_price_list
-
-	return frappe.db.get_single_value("Selling Settings", "selling_price_list")
+	return get_default_price_list(customer=customer, pos_profile=pos_profile)
 
 
-def search_items(query=None, pos_profile=None, customer=None, limit=None, since=None):
+def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
-	price_list = get_priority_price_list(customer=customer, pos_profile=profile)
+	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
 	limit = cint(limit)
 	query = (query or "").strip()
 
@@ -425,10 +404,15 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 	]
 
 
-def get_item_details_for_pos(item_code, pos_profile=None, customer=None):
+def get_item_details_for_pos(item_code, pos_profile=None, customer=None, price_list=None):
 	profile = resolve_pos_profile(pos_profile)
 	if customer:
 		profile.customer = customer
+	price_list = resolve_price_list(
+		profile,
+		customer=profile.customer,
+		requested_price_list=price_list,
+	)
 	if not frappe.db.exists("Item", item_code):
 		frappe.throw(_("Item {0} does not exist").format(item_code))
-	return _to_item_payload(item_code, profile)
+	return _to_item_payload(item_code, profile, price_list=price_list)

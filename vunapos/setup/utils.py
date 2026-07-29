@@ -9,6 +9,22 @@ def ensure_vunapos_custom_fields():
 		{
 			"POS Profile": [
 				{
+					"fieldname": "vunapos_allow_price_list_switching",
+					"label": "Allow Price List Switching",
+					"fieldtype": "Check",
+					"insert_after": "selling_price_list",
+					"description": "Allow cashiers to select an approved selling price list for one VunaPOS sale.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_allowed_price_lists",
+					"label": "Allowed Price Lists",
+					"fieldtype": "Table",
+					"options": "VunaPOS Allowed Price List",
+					"insert_after": "vunapos_allow_price_list_switching",
+					"depends_on": "eval:doc.vunapos_allow_price_list_switching",
+				},
+				{
 					"fieldname": "vunapos_allow_credit_sales",
 					"label": "Allow Credit Sales",
 					"fieldtype": "Check",

@@ -130,14 +130,14 @@ export function closePosSession(
 
 export function searchItems(
 	call: FrappeCall,
-	params: { query?: string; pos_profile?: string; customer?: string; limit?: number },
+	params: { query?: string; pos_profile?: string; customer?: string; price_list?: string; limit?: number },
 ) {
 	return callAndUnwrap<ItemDTO[]>(call, params);
 }
 
 export function getItemDetails(
 	call: FrappeCall,
-	params: { item_code: string; pos_profile?: string; customer?: string },
+	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
 ) {
 	return callAndUnwrap<ItemDTO>(call, params);
 }
@@ -200,6 +200,7 @@ export function previewInvoice(
 		customer?: string;
 		items: { item_code: string; qty: number; item_tax_template?: string; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		invoice_doctype?: string;
+		price_list?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -282,6 +283,7 @@ export function createAndSubmitInvoice(
 	params: {
 		pos_profile?: string;
 		customer?: string;
+		price_list?: string;
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
@@ -301,6 +303,7 @@ export function createInvoiceFromCart(
 	params: {
 		pos_profile?: string;
 		customer?: string;
+		price_list?: string;
 		items: CartItemInput[];
 	},
 ) {
@@ -344,6 +347,7 @@ export function updateInvoiceFromCart(
 		invoice_doctype: string;
 		invoice_name: string;
 		customer?: string;
+		price_list?: string;
 		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 	},
 ) {

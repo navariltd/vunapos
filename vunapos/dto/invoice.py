@@ -85,6 +85,8 @@ def invoice_to_dict(doc):
 		"is_credit_sale": bool(_value(doc, "vunapos_credit_sale", 0)),
 		"customer": _value(doc, "customer"),
 		"customer_name": _value(doc, "customer_name"),
+		"selling_price_list": _value(doc, "selling_price_list"),
+		"price_list_currency": _value(doc, "price_list_currency"),
 		"posting_date": _value(doc, "posting_date"),
 		"due_date": _date_value(doc, "due_date"),
 		"items": [

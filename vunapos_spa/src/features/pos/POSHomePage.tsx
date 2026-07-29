@@ -95,6 +95,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const items = useItemSearch(itemSearchQuery);
 	const cartInvoice = useCartStore((s) => s.invoice);
+	const selectedPriceList = useCartStore((s) => s.selectedPriceList);
 	const activeCustomer = useCartStore(getActiveCustomer);
 	const heldInvoicesView = useHeldInvoicesView();
 	const cartIsMutating = useCartStore((s) => s.isMutating);
@@ -124,6 +125,20 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			}
 		}
 	};
+	const handleSelectPriceList = async (priceList?: string) => {
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "Connect to the server before changing the price list." });
+			return;
+		}
+		try {
+			await cartActions.refreshPriceListPricing(priceList);
+		} catch (pricingError) {
+			showToast({
+				type: "error",
+				message: pricingError instanceof Error ? pricingError.message : "Price list could not be changed.",
+			});
+		}
+	};
 
 	const error = pageError || bootstrap.error || items.error;
 
@@ -131,7 +146,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		if (!isReachable || navigator.onLine === false) return;
 		try {
 			await hydrate(bootstrap.data?.pos_profile);
-			if (useCartStore.getState().invoice?.items.length) {
+			const cartState = useCartStore.getState();
+			if (cartState.selectedPriceList) {
+				try {
+					await cartActions.refreshPriceListPricing(cartState.selectedPriceList);
+				} catch {
+					// The profile change may have revoked the selected list. Reprice the
+					// current cart using its customer/profile default without losing it.
+					await cartActions.refreshPriceListPricing(undefined);
+				}
+			} else if (cartState.invoice?.items.length) {
 				await cartActions.refreshCartConfiguration();
 			}
 			showToast({
@@ -385,10 +409,14 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 					</section>
 					<CartPanel
+						allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
+						allowedPriceLists={bootstrap.data?.allowed_price_lists}
 						className="hidden xl:flex"
 						allowDiscountChange={bootstrap.data?.allow_discount_change}
 						allowRateChange={bootstrap.data?.allow_rate_change}
 						currency={bootstrap.data?.currency}
+						defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
+							? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 						warehouse={bootstrap.data?.warehouse}
 						isOnline={isReachable && navigator.onLine !== false}
 						onCheckout={handleOpenCheckout}
@@ -398,6 +426,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onLoadBatches={cartActions.loadItemBatches}
 						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+						onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+						selectedPriceList={selectedPriceList}
 						onUpdateQty={cartActions.updateCartItemQty}
 						onUpdatePricing={cartActions.updateCartItemPricing}
 						onUpdateNote={cartActions.updateCartItemNote}
@@ -446,10 +476,14 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							</button>
 						</div>
 						<CartPanel
+							allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
+							allowedPriceLists={bootstrap.data?.allowed_price_lists}
 							className="flex-1 border-0"
 							allowDiscountChange={bootstrap.data?.allow_discount_change}
 							allowRateChange={bootstrap.data?.allow_rate_change}
 							currency={bootstrap.data?.currency}
+							defaultPriceList={activeCustomer?.default_price_list || (!selectedPriceList
+								? cartInvoice?.selling_price_list : undefined) || bootstrap.data?.price_list}
 							warehouse={bootstrap.data?.warehouse}
 							isOnline={isReachable && navigator.onLine !== false}
 							onCheckout={handleOpenCheckout}
@@ -459,6 +493,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							onLoadBatches={cartActions.loadItemBatches}
 							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+							onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+							selectedPriceList={selectedPriceList}
 							onUpdateQty={cartActions.updateCartItemQty}
 							onUpdatePricing={cartActions.updateCartItemPricing}
 							onUpdateNote={cartActions.updateCartItemNote}

@@ -71,6 +71,7 @@ beforeEach(async () => {
 		posProfile: "Profile-1",
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
+		selectedPriceList: undefined,
 	});
 });
 
@@ -366,6 +367,43 @@ describe("refreshCustomerPricing", () => {
 		expect((await db.items.get("ITEM-1"))?.rate).toBe(75);
 		expect(useCartStore.getState().invoice?.items[0].rate).toBe(75);
 		expect(useCartStore.getState().invoice?.customer).toBe("MWENDWA");
+	});
+});
+
+describe("refreshPriceListPricing", () => {
+	it("reprices the catalogue and current cart using the manually selected list", async () => {
+		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
+		const searchItems = vi.fn().mockResolvedValue([makeItem({ rate: 80, price_list_rate: 80 })]);
+		const previewInvoice = vi.fn().mockResolvedValue({
+			...useCartStore.getState().invoice!,
+			selling_price_list: "Wholesale",
+			items: [{ ...useCartStore.getState().invoice!.items[0], rate: 80, price_list_rate: 80, amount: 80 }],
+			totals: { net_total: 80, grand_total: 80, rounded_total: 80 },
+		});
+
+		await useCartStore.getState().refreshPriceListPricing(
+			"Wholesale",
+			makeApi({ searchItems, previewInvoice }),
+		);
+
+		expect(searchItems).toHaveBeenCalledWith({
+			pos_profile: "Profile-1",
+			customer: undefined,
+			price_list: "Wholesale",
+			limit: 100000,
+		});
+		expect(useCartStore.getState().selectedPriceList).toBe("Wholesale");
+		expect(useCartStore.getState().invoice?.selling_price_list).toBe("Wholesale");
+		expect((await db.items.get("ITEM-1"))?.rate).toBe(80);
+	});
+
+	it("customer repricing clears a manual price-list selection", async () => {
+		useCartStore.setState({ selectedPriceList: "Wholesale" });
+		const searchItems = vi.fn().mockResolvedValue([]);
+
+		await useCartStore.getState().refreshCustomerPricing(null, makeApi({ searchItems }));
+
+		expect(useCartStore.getState().selectedPriceList).toBeUndefined();
 	});
 });
 

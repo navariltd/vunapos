@@ -55,6 +55,8 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertTrue(response["data"]["company"])
 		self.assertTrue(response["data"]["warehouse"])
 		self.assertTrue(response["data"]["price_list"])
+		self.assertIsInstance(response["data"]["allow_price_list_switching"], bool)
+		self.assertIsInstance(response["data"]["allowed_price_lists"], list)
 		self.assertTrue(response["data"]["modes_of_payment"])
 		self.assertIsInstance(response["data"]["currency_precision"], int)
 		self.assertGreaterEqual(response["data"]["currency_precision"], 0)

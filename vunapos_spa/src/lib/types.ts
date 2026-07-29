@@ -99,6 +99,8 @@ export type CachedProfile = {
 	company?: string;
 	warehouse?: string;
 	price_list?: string;
+	allow_price_list_switching?: boolean;
+	allowed_price_lists?: Array<{ name: string; currency?: string }>;
 	currency?: string;
 	currency_precision?: number;
 	disable_rounded_total?: boolean;

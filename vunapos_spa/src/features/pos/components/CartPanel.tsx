@@ -10,10 +10,13 @@ import { CartItemRow } from "./CartItemRow";
 import { CustomerSelector } from "./CustomerSelector";
 
 type CartPanelProps = {
+	allowPriceListSwitching?: boolean;
+	allowedPriceLists?: Array<{ name: string; currency?: string }>;
 	allowDiscountChange?: boolean;
 	allowRateChange?: boolean;
 	className?: string;
 	currency?: string;
+	defaultPriceList?: string;
 	onCheckout: () => void;
 	onClearCustomer: () => void;
 	onClearCart: () => void;
@@ -21,6 +24,7 @@ type CartPanelProps = {
 	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
+	onSelectPriceList: (priceList?: string) => void;
 	onUpdateQty: (rowName: string, qty: number) => void;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	onUpdateNote: (rowName: string, note: string) => Promise<void>;
@@ -29,13 +33,17 @@ type CartPanelProps = {
 	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
 	warehouse?: string;
+	selectedPriceList?: string;
 };
 
 export function CartPanel({
 	allowDiscountChange,
 	allowRateChange,
+	allowPriceListSwitching,
+	allowedPriceLists = [],
 	className,
 	currency,
+	defaultPriceList,
 	onCheckout,
 	onClearCustomer,
 	onClearCart,
@@ -43,6 +51,7 @@ export function CartPanel({
 	onLoadBatches,
 	onRemoveItem,
 	onSelectCustomer,
+	onSelectPriceList,
 	onUpdateQty,
 	onUpdatePricing,
 	onUpdateNote,
@@ -51,6 +60,7 @@ export function CartPanel({
 	onUpdateSerialAllocations,
 	isOnline,
 	warehouse,
+	selectedPriceList,
 }: CartPanelProps) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isMutating = useCartStore((s) => s.isMutating);
@@ -71,6 +81,22 @@ export function CartPanel({
 					onClear={onClearCustomer}
 					onSelect={onSelectCustomer}
 				/>
+				{allowPriceListSwitching && allowedPriceLists.length ? (
+					<select
+						aria-label="Price list for this sale"
+						className="mt-2 h-10 w-full rounded-md border border-outline-variant bg-surface px-3 text-sm text-on-surface outline-none focus:border-primary"
+						disabled={isMutating}
+						value={selectedPriceList || defaultPriceList || ""}
+						onChange={(event) => onSelectPriceList(
+							event.target.value === defaultPriceList ? undefined : event.target.value || undefined,
+						)}
+					>
+						{defaultPriceList ? <option value={defaultPriceList}>{defaultPriceList} (Default)</option> : null}
+						{allowedPriceLists.filter((priceList) => priceList.name !== defaultPriceList).map((priceList) => (
+							<option key={priceList.name} value={priceList.name}>{priceList.name}</option>
+						))}
+					</select>
+				) : null}
 			</div>
 
 			<div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">

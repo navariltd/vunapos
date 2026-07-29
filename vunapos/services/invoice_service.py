@@ -21,7 +21,7 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
-from vunapos.services.item_service import get_priority_price_list
+from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
 	get_invoice_mode,
 	require_open_pos_session,
@@ -120,8 +120,12 @@ def _ensure_controller_item_attrs(doc):
 			item.pick_list_item = None
 
 
-def _sync_profile_pricing_fields(doc, profile):
-	price_list = get_priority_price_list(customer=doc.get("customer"), pos_profile=profile)
+def _sync_profile_pricing_fields(doc, profile, requested_price_list=None):
+	price_list = resolve_price_list(
+		profile,
+		customer=doc.get("customer"),
+		requested_price_list=requested_price_list,
+	)
 	_set_if_has_field(doc, "selling_price_list", price_list)
 	_set_if_has_field(doc, "currency", profile.currency)
 	_set_if_has_field(doc, "taxes_and_charges", profile.get("taxes_and_charges"))
@@ -156,7 +160,7 @@ def _save_invoice(doc):
 	if doc.get("items"):
 		if doc.get("pos_profile"):
 			profile = resolve_pos_profile(doc.get("pos_profile"))
-			_sync_profile_pricing_fields(doc, profile)
+			_sync_profile_pricing_fields(doc, profile, doc.get("selling_price_list"))
 			_sync_invoice_item_pricing(doc, profile)
 		_recalculate(doc)
 	doc.flags.ignore_mandatory = not bool(doc.get("items"))
@@ -788,7 +792,7 @@ def _resolve_invoice_doctype(invoice_doctype=None):
 	return invoice_doctype
 
 
-def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None):
+def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, price_list=None):
 	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
@@ -804,7 +808,7 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None):
 	_set_if_has_field(doc, "update_stock", 1)
 	_set_if_has_field(doc, "pos_profile", profile.name)
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
-	_sync_profile_pricing_fields(doc, profile)
+	_sync_profile_pricing_fields(doc, profile, price_list)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
@@ -925,23 +929,27 @@ def _validate_existing_pricing_permissions(doc, profile):
 			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
 
 
-def create_draft_invoice(pos_profile=None, customer=None):
+def create_draft_invoice(pos_profile=None, customer=None, price_list=None):
 	invoice_doctype = _resolve_invoice_doctype()
 	require_create(invoice_doctype)
 	doc, _profile = _build_invoice_doc(
-		pos_profile=pos_profile, customer=customer, invoice_doctype=invoice_doctype
+		pos_profile=pos_profile,
+		customer=customer,
+		invoice_doctype=invoice_doctype,
+		price_list=price_list,
 	)
 	doc.insert(ignore_mandatory=True)
 	return invoice_to_dict(doc)
 
 
-def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype=None):
+def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype=None, price_list=None):
 	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
 	require_create(invoice_doctype)
 	doc, profile = _build_invoice_doc(
 		pos_profile=pos_profile,
 		customer=customer,
 		invoice_doctype=invoice_doctype,
+		price_list=price_list,
 	)
 	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
@@ -989,7 +997,7 @@ def clear_invoice(invoice_doctype, invoice_name):
 	return invoice_to_dict(doc)
 
 
-def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items=None):
+def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items=None, price_list=None):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	cart_items = _cart_item_rows(items)
@@ -997,7 +1005,7 @@ def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items
 
 	if customer:
 		doc.customer = customer
-	_sync_profile_pricing_fields(doc, profile)
+	_sync_profile_pricing_fields(doc, profile, price_list)
 	doc.set("items", [])
 	if _has_field(doc.doctype, "taxes"):
 		doc.set("taxes", [])
@@ -1225,7 +1233,7 @@ def checkout_invoice(
 	return invoice_to_dict(doc)
 
 
-def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
+def create_invoice_from_cart(pos_profile=None, customer=None, items=None, price_list=None):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
 	try:
@@ -1233,7 +1241,11 @@ def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
 		cart_items = _cart_item_rows(items)
 		validate_cart_items(cart_items, profile)
 
-		draft = create_draft_invoice(pos_profile=profile.name, customer=customer)
+		draft = create_draft_invoice(
+			pos_profile=profile.name,
+			customer=customer,
+			price_list=price_list,
+		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 
 		_append_cart_items(doc, profile, cart_items)
@@ -1253,6 +1265,7 @@ def create_and_submit_invoice(
 	idempotency_key=None,
 	is_credit_sale=False,
 	due_date=None,
+	price_list=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1263,7 +1276,12 @@ def create_and_submit_invoice(
 		profile = resolve_pos_profile(pos_profile)
 		_validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
 		_validate_credit_due_date(is_credit_sale, due_date, nowdate())
-		draft = create_invoice_from_cart(pos_profile=profile.name, customer=customer, items=items)
+		draft = create_invoice_from_cart(
+			pos_profile=profile.name,
+			customer=customer,
+			items=items,
+			price_list=price_list,
+		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		return checkout_invoice(
 			doc.doctype,

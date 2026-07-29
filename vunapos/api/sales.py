@@ -31,15 +31,27 @@ def _failure_from_exception(exc):
 
 
 @frappe.whitelist()
-def create_invoice(pos_profile=None, customer=None):
+def create_invoice(
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	price_list: str | None = None,
+):
 	try:
-		return success(create_draft_invoice(pos_profile=pos_profile, customer=customer))
+		return success(
+			create_draft_invoice(pos_profile=pos_profile, customer=customer, price_list=price_list)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
 
 @frappe.whitelist()
-def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype=None):
+def preview_invoice(
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	items: list | str | None = None,
+	invoice_doctype: str | None = None,
+	price_list: str | None = None,
+):
 	try:
 		return success(
 			preview_invoice_service(
@@ -47,6 +59,7 @@ def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype
 				customer=customer,
 				items=items,
 				invoice_doctype=invoice_doctype,
+				price_list=price_list,
 			)
 		)
 	except Exception as exc:
@@ -232,6 +245,7 @@ def create_and_submit_invoice(
 	idempotency_key: str | None = None,
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
+	price_list: str | None = None,
 ):
 	try:
 		return success(
@@ -243,6 +257,7 @@ def create_and_submit_invoice(
 				idempotency_key=idempotency_key,
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
+				price_list=price_list,
 			)
 		)
 	except Exception as exc:
@@ -263,13 +278,19 @@ def hold_invoice(invoice_doctype, invoice_name):
 
 
 @frappe.whitelist()
-def create_invoice_from_cart(pos_profile=None, customer=None, items=None):
+def create_invoice_from_cart(
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	items: list | str | None = None,
+	price_list: str | None = None,
+):
 	try:
 		return success(
 			create_invoice_from_cart_service(
 				pos_profile=pos_profile,
 				customer=customer,
 				items=items,
+				price_list=price_list,
 			)
 		)
 	except Exception as exc:
@@ -311,7 +332,13 @@ def clear_invoice(invoice_doctype, invoice_name):
 
 
 @frappe.whitelist()
-def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items=None):
+def update_invoice_from_cart(
+	invoice_doctype: str,
+	invoice_name: str,
+	customer: str | None = None,
+	items: list | str | None = None,
+	price_list: str | None = None,
+):
 	try:
 		return success(
 			update_invoice_from_cart_service(
@@ -319,6 +346,7 @@ def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items
 				invoice_name=invoice_name,
 				customer=customer,
 				items=items,
+				price_list=price_list,
 			)
 		)
 	except Exception as exc:

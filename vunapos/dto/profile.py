@@ -1,6 +1,8 @@
 import frappe
 from erpnext.accounts.utils import get_currency_precision
 
+from vunapos.services.price_list_service import get_permitted_price_lists
+
 
 def profile_to_dict(profile, invoice_mode):
 	def payment_mode(row):
@@ -29,6 +31,8 @@ def profile_to_dict(profile, invoice_mode):
 		"company": profile.company,
 		"warehouse": profile.warehouse,
 		"price_list": profile.selling_price_list,
+		"allow_price_list_switching": bool(profile.get("vunapos_allow_price_list_switching")),
+		"allowed_price_lists": get_permitted_price_lists(profile),
 		"currency": profile.currency,
 		"currency_precision": get_currency_precision(),
 		"disable_rounded_total": bool(profile.get("disable_rounded_total")),
