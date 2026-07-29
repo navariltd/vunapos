@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 import frappe
+from erpnext.accounts.doctype.loyalty_program.loyalty_program import validate_loyalty_points
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
 	get_sre_reserved_qty_for_item_and_warehouse,
 )
@@ -216,7 +217,39 @@ def _payment_rows(payments):
 
 
 def _invoice_total_for_payment(doc):
-	return flt(doc.get("rounded_total") or doc.get("grand_total") or 0)
+	return max(
+		flt(doc.get("rounded_total") or doc.get("grand_total") or 0) - flt(doc.get("loyalty_amount")),
+		0,
+	)
+
+
+def _apply_loyalty_redemption(doc, loyalty_points=None):
+	if loyalty_points in (None, "", 0, "0"):
+		_set_if_has_field(doc, "redeem_loyalty_points", 0)
+		_set_if_has_field(doc, "loyalty_points", 0)
+		_set_if_has_field(doc, "loyalty_amount", 0)
+		_set_if_has_field(doc, "loyalty_redemption_account", None)
+		_set_if_has_field(doc, "loyalty_redemption_cost_center", None)
+		return doc
+	if isinstance(loyalty_points, bool):
+		_throw("INVALID_LOYALTY_POINTS", _("Enter a valid whole number of loyalty points"))
+	try:
+		points = Decimal(str(loyalty_points))
+	except (InvalidOperation, TypeError, ValueError):
+		_throw("INVALID_LOYALTY_POINTS", _("Enter a valid whole number of loyalty points"))
+	if not points.is_finite() or points <= 0 or points != points.to_integral_value():
+		_throw("INVALID_LOYALTY_POINTS", _("Loyalty points must be a positive whole number"))
+	if not doc.get("customer") or not frappe.db.get_value("Customer", doc.get("customer"), "loyalty_program"):
+		_throw(
+			"CUSTOMER_NOT_ENROLLED_IN_LOYALTY",
+			_("The selected customer is not enrolled in a Loyalty Program"),
+		)
+
+	_set_if_has_field(doc, "redeem_loyalty_points", 1)
+	_set_if_has_field(doc, "loyalty_points", 0)
+	_set_if_has_field(doc, "loyalty_amount", 0)
+	validate_loyalty_points(doc, int(points))
+	return doc
 
 
 def _currency_precision(doc):
@@ -281,8 +314,12 @@ def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	rows = _payment_rows(payments)
+	precision = _currency_precision(doc)
+	expected_total = flt(_invoice_total_for_payment(doc), precision)
 	if not isinstance(rows, list):
 		_throw("NO_PAYMENT_ROWS", _("Payment rows must be a list"))
+	if not rows and expected_total <= 0:
+		return []
 	if not rows and is_credit_sale:
 		return []
 	if not rows:
@@ -337,8 +374,6 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 			}
 		)
 
-	precision = _currency_precision(doc)
-	expected_total = flt(_invoice_total_for_payment(doc), precision)
 	paid_total = flt(total_paid, precision)
 	non_cash_total = flt(non_cash_paid, precision)
 	allow_partial_payment = bool(profile and profile.get("allow_partial_payment"))
@@ -942,7 +977,14 @@ def create_draft_invoice(pos_profile=None, customer=None, price_list=None):
 	return invoice_to_dict(doc)
 
 
-def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype=None, price_list=None):
+def preview_invoice(
+	pos_profile=None,
+	customer=None,
+	items=None,
+	invoice_doctype=None,
+	price_list=None,
+	loyalty_points=None,
+):
 	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
 	require_create(invoice_doctype)
 	doc, profile = _build_invoice_doc(
@@ -956,6 +998,7 @@ def preview_invoice(pos_profile=None, customer=None, items=None, invoice_doctype
 	validate_cart_items(cart_items, profile)
 	_append_cart_items(doc, profile, cart_items)
 	_recalculate(doc)
+	_apply_loyalty_redemption(doc, loyalty_points)
 	return invoice_to_dict(doc)
 
 
@@ -1161,7 +1204,14 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 	return doc
 
 
-def submit_invoice(invoice_doctype, invoice_name, payments=None, is_credit_sale=False, due_date=None):
+def submit_invoice(
+	invoice_doctype,
+	invoice_name,
+	payments=None,
+	is_credit_sale=False,
+	due_date=None,
+	loyalty_points=None,
+):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1172,6 +1222,7 @@ def submit_invoice(invoice_doctype, invoice_name, payments=None, is_credit_sale=
 	)
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
+	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
@@ -1192,6 +1243,7 @@ def checkout_invoice(
 	idempotency_key=None,
 	is_credit_sale=False,
 	due_date=None,
+	loyalty_points=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1216,6 +1268,7 @@ def checkout_invoice(
 	)
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc)
+	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
@@ -1266,6 +1319,7 @@ def create_and_submit_invoice(
 	is_credit_sale=False,
 	due_date=None,
 	price_list=None,
+	loyalty_points=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1290,6 +1344,7 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
+			loyalty_points=loyalty_points,
 		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)

@@ -293,6 +293,10 @@ export type InvoiceDTO = {
 	customer_name?: string;
 	selling_price_list?: string;
 	price_list_currency?: string;
+	redeem_loyalty_points?: boolean;
+	loyalty_program?: string | null;
+	loyalty_points?: number;
+	loyalty_amount?: number;
 	posting_date?: string;
 	due_date?: string;
 	modified?: string;

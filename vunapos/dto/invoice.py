@@ -87,6 +87,10 @@ def invoice_to_dict(doc):
 		"customer_name": _value(doc, "customer_name"),
 		"selling_price_list": _value(doc, "selling_price_list"),
 		"price_list_currency": _value(doc, "price_list_currency"),
+		"redeem_loyalty_points": bool(_value(doc, "redeem_loyalty_points", 0)),
+		"loyalty_program": _value(doc, "loyalty_program"),
+		"loyalty_points": _value(doc, "loyalty_points", 0),
+		"loyalty_amount": _value(doc, "loyalty_amount", 0),
 		"posting_date": _value(doc, "posting_date"),
 		"due_date": _date_value(doc, "due_date"),
 		"items": [

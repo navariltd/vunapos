@@ -51,6 +51,7 @@ def preview_invoice(
 	items: list | str | None = None,
 	invoice_doctype: str | None = None,
 	price_list: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -60,6 +61,7 @@ def preview_invoice(
 				items=items,
 				invoice_doctype=invoice_doctype,
 				price_list=price_list,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -74,6 +76,7 @@ def checkout_invoice(
 	idempotency_key: str | None = None,
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -84,6 +87,7 @@ def checkout_invoice(
 				idempotency_key=idempotency_key,
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -221,6 +225,7 @@ def submit_invoice(
 	payments: list | str | None = None,
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -230,6 +235,7 @@ def submit_invoice(
 				payments=payments,
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -246,6 +252,7 @@ def create_and_submit_invoice(
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
 	price_list: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -258,6 +265,7 @@ def create_and_submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				price_list=price_list,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:

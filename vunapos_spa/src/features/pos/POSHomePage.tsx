@@ -324,6 +324,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		idempotencyKey: string,
 		isCreditSale: boolean,
 		dueDate?: string,
+		loyaltyPoints?: number,
 	) => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
@@ -338,10 +339,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				true,
 				isCreditSale,
 				dueDate,
+				loyaltyPoints,
 			);
 			setIsCheckoutOpen(false);
 			void handleSelectCustomer(undefined, false);
 			if (result?.invoice) {
+				customerLoyalty.refresh();
 				showToast({ type: "submitted", invoice: result.invoice });
 			} else {
 				clearToast();
@@ -527,6 +530,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				error={pageError}
 				isOpen={isCheckoutOpen}
 				modesOfPayment={paymentModes}
+				customerLoyalty={customerLoyalty.data}
 				onClear={() => {
 					if (handleClearCart(true)) setIsCheckoutOpen(false);
 				}}

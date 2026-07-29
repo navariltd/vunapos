@@ -527,14 +527,26 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def test_payment_validation_accepts_split_at_currency_precision(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
 		doc.precision = lambda _fieldname: 2
+
+	def test_payment_validation_subtracts_loyalty_redemption_from_amount_due(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 25})
+		doc.precision = lambda _fieldname: 2
 		profile = frappe._dict(
-			{
-				"payments": [
-					frappe._dict({"mode_of_payment": "Cash"}),
-					frappe._dict({"mode_of_payment": "M-Pesa"}),
-				]
-			}
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
 		)
+
+		rows = validate_payment_rows(doc, [{"mode_of_payment": "Cash", "amount": 75}], profile)
+
+		self.assertEqual(rows[0]["amount"], 75)
+
+	def test_payment_validation_accepts_no_rows_when_loyalty_covers_total(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 100})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict(
+			{"allow_partial_payment": 0, "payments": [frappe._dict({"mode_of_payment": "Cash"})]}
+		)
+
+		self.assertEqual(validate_payment_rows(doc, [], profile), [])
 
 		rows = validate_payment_rows(
 			doc,

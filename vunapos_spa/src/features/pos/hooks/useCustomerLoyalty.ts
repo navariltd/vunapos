@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
 
 import type { CustomerLoyaltyDTO } from "../types";
@@ -6,6 +6,7 @@ import { getCustomerLoyalty, vunaMethods } from "../../../services/vunaApi";
 
 export function useCustomerLoyalty(customer?: string, posProfile?: string, isOnline = true) {
 	const call = useFrappePostCall(vunaMethods.getCustomerLoyalty);
+	const [revision, setRevision] = useState(0);
 	const requestKey = customer && posProfile && isOnline ? `${posProfile}:${customer}` : null;
 	const [result, setResult] = useState<{
 		key: string;
@@ -30,12 +31,14 @@ export function useCustomerLoyalty(customer?: string, posProfile?: string, isOnl
 			});
 
 		return () => { active = false; };
-	}, [call.call, customer, posProfile, requestKey]);
+	}, [call.call, customer, posProfile, requestKey, revision]);
+	const refresh = useCallback(() => setRevision((current) => current + 1), []);
 
-	if (!requestKey) return { data: null, error: null, isLoading: false };
+	if (!requestKey) return { data: null, error: null, isLoading: false, refresh };
 	return {
 		data: result?.key === requestKey ? result.data : null,
 		error: result?.key === requestKey ? result.error : null,
 		isLoading: result?.key !== requestKey,
+		refresh,
 	};
 }

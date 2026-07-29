@@ -559,6 +559,7 @@ type CartActions = {
 		isOnline?: boolean,
 		isCreditSale?: boolean,
 		dueDate?: string,
+		loyaltyPoints?: number,
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -1054,6 +1055,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			isOnline = false,
 			isCreditSale = false,
 			dueDate,
+			loyaltyPoints,
 		) => {
 			if (!isOnline) {
 				throw new Error("VunaPOS is online-only. Reconnect before completing this sale.");
@@ -1093,6 +1095,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						idempotency_key: idempotencyKey,
 						is_credit_sale: isCreditSale,
 						due_date: dueDate,
+						loyalty_points: loyaltyPoints,
 					}),
 				);
 				await refreshSoldItemStock(
@@ -1127,6 +1130,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 							idempotency_key: idempotencyKey,
 							is_credit_sale: isCreditSale,
 							due_date: dueDate,
+							loyalty_points: loyaltyPoints,
 						}),
 					);
 				}
@@ -1138,6 +1142,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					idempotency_key: idempotencyKey,
 					is_credit_sale: isCreditSale,
 					due_date: dueDate,
+					loyalty_points: loyaltyPoints,
 				});
 			});
 			await refreshSoldItemStock(

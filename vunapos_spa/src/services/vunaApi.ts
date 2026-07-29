@@ -207,6 +207,7 @@ export function previewInvoice(
 		items: { item_code: string; qty: number; item_tax_template?: string; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 		invoice_doctype?: string;
 		price_list?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -248,6 +249,7 @@ export function submitInvoice(
 		payments?: PaymentInput[];
 		is_credit_sale?: boolean;
 		due_date?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -265,6 +267,7 @@ export function checkoutInvoice(
 		idempotency_key?: string;
 		is_credit_sale?: boolean;
 		due_date?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -290,6 +293,7 @@ export function createAndSubmitInvoice(
 		pos_profile?: string;
 		customer?: string;
 		price_list?: string;
+		loyalty_points?: number;
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;

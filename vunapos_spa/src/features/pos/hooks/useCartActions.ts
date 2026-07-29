@@ -58,7 +58,10 @@ export function useCartActions() {
 				isOnline = false,
 				isCreditSale = false,
 				dueDate?: string,
-			) => submitCartAction(payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate),
+				loyaltyPoints?: number,
+			) => submitCartAction(
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints,
+			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
 		}),
