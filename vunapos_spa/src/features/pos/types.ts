@@ -299,6 +299,10 @@ export type InvoiceDTO = {
 	doctype: "Sales Invoice" | "POS Invoice" | string;
 	name: string;
 	docstatus: 0 | 1 | 2;
+	queue_status?: "Queued" | "Processing" | "Submitted" | "Failed" | "Requires Review" | "Cancelled";
+	queue_attempts?: number;
+	queue_error?: string | null;
+	queue_job_id?: string | null;
 	is_local?: boolean;
 	is_held?: boolean;
 	is_credit_sale?: boolean;

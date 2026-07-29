@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 
 import frappe
@@ -153,3 +154,88 @@ def find_invoice_by_idempotency_key(
 		if name:
 			return frappe.get_doc(doctype, name)
 	return None
+
+
+def _queue_job_id(doc) -> str:
+	digest = hashlib.sha256(f"{doc.doctype}:{doc.name}".encode()).hexdigest()[:24]
+	return f"vunapos-invoice-submit-{digest}"
+
+
+def enqueue_invoice_submission(doc) -> None:
+	"""Persist the queued state and enqueue only after the draft transaction commits."""
+	status = normalize_queue_status(doc.get("vunapos_queue_status"))
+	if status in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING, QUEUE_STATUS_SUBMITTED):
+		return
+	if status in (QUEUE_STATUS_FAILED, QUEUE_STATUS_REQUIRES_REVIEW, QUEUE_STATUS_CANCELLED):
+		_queue_error(
+			"QUEUE_RETRY_REQUIRED",
+			_("This invoice requires an explicit retry before it can be queued again"),
+			{"status": status},
+		)
+
+	job_id = _queue_job_id(doc)
+	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED, job_id=job_id)
+	doc.save(ignore_permissions=True)
+	frappe.enqueue(
+		"vunapos.services.checkout_queue_service.process_queued_invoice",
+		queue="short",
+		timeout=300,
+		enqueue_after_commit=True,
+		job_id=job_id,
+		deduplicate=True,
+		invoice_doctype=doc.doctype,
+		invoice_name=doc.name,
+	)
+
+
+def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
+	"""Submit one already validated and reserved draft invoice."""
+	from vunapos.services.profile_service import resolve_pos_profile
+	from vunapos.services.stock_reservation_service import validate_invoice_stock_reservations
+
+	doc = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
+	if doc.docstatus == 1:
+		return {"doctype": doc.doctype, "name": doc.name, "status": QUEUE_STATUS_SUBMITTED}
+	if doc.docstatus != 0 or normalize_queue_status(doc.get("vunapos_queue_status")) != QUEUE_STATUS_QUEUED:
+		_queue_error(
+			"QUEUE_STATE_INVALID",
+			_("Invoice {0} is not ready for background submission").format(doc.name),
+		)
+
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	limits = get_queue_limits(profile)
+	transition_invoice_queue(doc, QUEUE_STATUS_PROCESSING)
+	doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	try:
+		doc = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
+		validate_invoice_stock_reservations(doc)
+		doc.submit()
+		transition_invoice_queue(doc, QUEUE_STATUS_SUBMITTED)
+		doc.save(ignore_permissions=True)
+		frappe.db.commit()
+		return {"doctype": doc.doctype, "name": doc.name, "status": QUEUE_STATUS_SUBMITTED}
+	except Exception as exc:
+		frappe.db.rollback()
+		failed = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
+		if failed.docstatus == 0 and failed.get("vunapos_queue_status") == QUEUE_STATUS_PROCESSING:
+			transition_invoice_queue(failed, QUEUE_STATUS_FAILED, error_message=str(exc))
+			if cint(failed.get("vunapos_queue_attempts")) >= limits["max_attempts"]:
+				transition_invoice_queue(
+					failed,
+					QUEUE_STATUS_REQUIRES_REVIEW,
+					error_message=str(exc),
+				)
+			failed.save(ignore_permissions=True)
+			frappe.db.commit()
+		frappe.log_error(
+			message=frappe.get_traceback(with_context=True),
+			title=f"VunaPOS queued invoice failed: {invoice_name}",
+		)
+		return {
+			"doctype": invoice_doctype,
+			"name": invoice_name,
+			"status": failed.get("vunapos_queue_status"),
+			"error": str(exc)[:MAX_QUEUE_ERROR_LENGTH],
+		}

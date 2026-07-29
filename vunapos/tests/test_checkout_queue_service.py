@@ -1,4 +1,5 @@
 from unittest import TestCase
+from unittest.mock import Mock, patch
 
 import frappe
 
@@ -9,7 +10,9 @@ from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_QUEUED,
 	QUEUE_STATUS_REQUIRES_REVIEW,
 	QUEUE_STATUS_SUBMITTED,
+	enqueue_invoice_submission,
 	get_queue_limits,
+	process_queued_invoice,
 	transition_invoice_queue,
 	validate_queue_transition,
 )
@@ -84,3 +87,66 @@ class TestCheckoutQueueService(TestCase):
 		self.assertTrue(limits["enabled"])
 		self.assertEqual(limits["max_attempts"], 10)
 		self.assertEqual(limits["processing_timeout_minutes"], 120)
+
+	@patch("frappe.enqueue")
+	def test_enqueue_uses_a_deterministic_deduplicated_after_commit_job(self, enqueue):
+		doc = self._invoice()
+		doc.save = Mock()
+
+		enqueue_invoice_submission(doc)
+
+		self.assertEqual(doc.vunapos_queue_status, QUEUE_STATUS_QUEUED)
+		doc.save.assert_called_once_with(ignore_permissions=True)
+		enqueue.assert_called_once_with(
+			"vunapos.services.checkout_queue_service.process_queued_invoice",
+			queue="short",
+			timeout=300,
+			enqueue_after_commit=True,
+			job_id=doc.vunapos_queue_job_id,
+			deduplicate=True,
+			invoice_doctype=doc.doctype,
+			invoice_name=doc.name,
+		)
+
+	@patch("frappe.enqueue")
+	def test_repeated_enqueue_does_not_create_a_second_job(self, enqueue):
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+
+		enqueue_invoice_submission(doc)
+
+		enqueue.assert_not_called()
+
+	@patch("frappe.log_error")
+	@patch("frappe.db.rollback")
+	@patch("frappe.db.commit")
+	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
+	@patch("vunapos.services.profile_service.resolve_pos_profile")
+	@patch("frappe.get_doc")
+	def test_worker_records_failure_without_discarding_the_draft(
+		self,
+		get_doc,
+		resolve_profile,
+		validate_reservations,
+		commit,
+		rollback,
+		log_error,
+	):
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+		doc.save = Mock()
+		doc.submit = Mock()
+		get_doc.return_value = doc
+		resolve_profile.return_value = frappe._dict(
+			vunapos_enable_background_submission=1,
+			vunapos_queue_max_attempts=3,
+		)
+		validate_reservations.side_effect = frappe.ValidationError("reservation changed")
+
+		result = process_queued_invoice(doc.doctype, doc.name)
+
+		self.assertEqual(result["status"], QUEUE_STATUS_FAILED)
+		self.assertEqual(doc.vunapos_queue_status, QUEUE_STATUS_FAILED)
+		self.assertEqual(doc.docstatus, 0)
+		doc.submit.assert_not_called()
+		rollback.assert_called_once()
+		self.assertEqual(commit.call_count, 2)
+		log_error.assert_called_once()

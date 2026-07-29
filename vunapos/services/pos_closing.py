@@ -15,6 +15,33 @@ from frappe.utils import flt, now_datetime
 from vunapos.services.profile_service import get_invoice_mode, get_pos_session, require_open_pos_session
 from vunapos.utils.permissions import require_create, require_read
 
+ACTIVE_QUEUE_STATUSES = ("Queued", "Processing", "Failed", "Requires Review")
+
+
+def _require_checkout_queue_drained(opening_entry):
+	if not frappe.db.table_exists("Sales Invoice") or not frappe.get_meta("Sales Invoice").has_field(
+		"vunapos_queue_status"
+	):
+		return
+	pending = frappe.get_all(
+		"Sales Invoice",
+		filters={
+			"docstatus": 0,
+			"vunapos_invoice": 1,
+			"vunapos_opening_entry": opening_entry.name,
+			"vunapos_queue_status": ["in", ACTIVE_QUEUE_STATUSES],
+		},
+		fields=["name", "vunapos_queue_status"],
+		limit_page_length=20,
+	)
+	if pending:
+		frappe.throw(
+			_("Resolve queued sales before closing this shift: {0}").format(
+				", ".join(f"{row.name} ({row.vunapos_queue_status})" for row in pending)
+			),
+			title=_("Queued Sales Pending"),
+		)
+
 
 def _get_vunapos_invoices(opening_entry, period_end_date):
 	doctype = get_invoice_mode()
@@ -170,6 +197,7 @@ def _populate_vunapos_invoices(closing_entry, opening_entry):
 def _prepare_closing_entry(pos_profile):
 	opening_entry = require_open_pos_session(pos_profile)
 	require_read("POS Opening Entry", opening_entry.name)
+	_require_checkout_queue_drained(opening_entry)
 	closing_entry = make_closing_entry_from_opening(opening_entry)
 	_populate_vunapos_invoices(closing_entry, opening_entry)
 

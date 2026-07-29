@@ -23,6 +23,9 @@ from vunapos.services.batch_service import (
 	validate_serial_allocation,
 )
 from vunapos.services.checkout_queue_service import (
+	QUEUE_STATUS_PROCESSING,
+	QUEUE_STATUS_QUEUED,
+	enqueue_invoice_submission,
 	find_invoice_by_idempotency_key,
 	get_queue_limits,
 )
@@ -185,6 +188,11 @@ def _load_draft_invoice(invoice_doctype, invoice_name):
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus != 0:
 		_throw("INVOICE_ALREADY_SUBMITTED", _("Invoice {0} is not a draft").format(invoice_name))
+	if doc.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
+		_throw(
+			"INVOICE_QUEUE_LOCKED",
+			_("Invoice {0} is already queued for submission").format(invoice_name),
+		)
 	require_write(invoice_doctype, invoice_name)
 	return doc
 
@@ -1264,6 +1272,27 @@ def checkout_invoice(
 	if not doc.get("items"):
 		_throw("EMPTY_INVOICE", _("Add at least one item before checkout"))
 
+	_prepare_invoice_for_checkout(
+		doc,
+		payments=payments,
+		idempotency_key=idempotency_key,
+		is_credit_sale=is_credit_sale,
+		due_date=due_date,
+		loyalty_points=loyalty_points,
+	)
+	doc.submit()
+	return invoice_to_dict(doc)
+
+
+def _prepare_invoice_for_checkout(
+	doc,
+	*,
+	payments=None,
+	idempotency_key=None,
+	is_credit_sale=False,
+	due_date=None,
+	loyalty_points=None,
+):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
@@ -1287,8 +1316,7 @@ def checkout_invoice(
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
 	doc.save()
-	doc.submit()
-	return invoice_to_dict(doc)
+	return doc
 
 
 def create_invoice_from_cart(
@@ -1346,10 +1374,28 @@ def create_and_submit_invoice(
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
 		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
 		if get_queue_limits(existing_profile)["enabled"]:
+			if existing.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
+				return invoice_to_dict(existing)
+			if existing.get("vunapos_queue_status"):
+				_throw(
+					"QUEUE_RETRY_REQUIRED",
+					_("Invoice {0} requires review before it can be retried").format(existing.name),
+					{"status": existing.get("vunapos_queue_status")},
+				)
+			_prepare_invoice_for_checkout(
+				existing,
+				payments=payments,
+				idempotency_key=idempotency_key,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
+				loyalty_points=loyalty_points,
+			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
 			else:
 				create_invoice_stock_reservations(existing)
+			enqueue_invoice_submission(existing)
+			return invoice_to_dict(existing)
 		return checkout_invoice(
 			existing.doctype,
 			existing.name,
@@ -1380,7 +1426,17 @@ def create_and_submit_invoice(
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		if get_queue_limits(profile)["enabled"]:
+			_prepare_invoice_for_checkout(
+				doc,
+				payments=payments,
+				idempotency_key=idempotency_key,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
+				loyalty_points=loyalty_points,
+			)
 			create_invoice_stock_reservations(doc)
+			enqueue_invoice_submission(doc)
+			return invoice_to_dict(doc)
 		return checkout_invoice(
 			doc.doctype,
 			doc.name,
