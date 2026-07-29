@@ -11,6 +11,7 @@ from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_REQUIRES_REVIEW,
 	QUEUE_STATUS_SUBMITTED,
 	_get_worker_profile,
+	audit_checkout_queue_integrity,
 	cancel_queued_invoice,
 	enqueue_invoice_submission,
 	get_queue_limits,
@@ -308,3 +309,48 @@ class TestCheckoutQueueService(TestCase):
 			_get_worker_profile(doc)
 
 		self.assertEqual(context.exception.vuna_error_code, "QUEUE_PROVENANCE_INVALID")
+
+	@patch("frappe.log_error")
+	@patch(
+		"vunapos.services.stock_reservation_service.validate_invoice_stock_reservations",
+		side_effect=frappe.ValidationError("reservation mismatch"),
+	)
+	@patch("frappe.get_doc")
+	@patch("frappe.get_all", side_effect=[[frappe._dict(name="ACC-SINV-BROKEN-1")], []])
+	def test_integrity_audit_reports_active_mismatches(
+		self, _get_all, get_doc, _validate_reservations, log_error
+	):
+		get_doc.return_value = self._invoice(QUEUE_STATUS_FAILED)
+
+		result = audit_checkout_queue_integrity()
+
+		self.assertEqual(result["active_checked"], 1)
+		self.assertEqual(result["integrity_errors"], ["ACC-SINV-BROKEN-1"])
+		self.assertEqual(result["terminal_reservations_released"], [])
+		log_error.assert_called_once()
+
+	@patch(
+		"erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry.cancel_stock_reservation_entries"
+	)
+	@patch("frappe.db.get_value")
+	@patch("frappe.get_doc")
+	@patch("frappe.get_all", side_effect=[[], ["ACC-SINV-SUBMITTED-1"]])
+	def test_integrity_audit_releases_only_terminal_reservation_leaks(
+		self, _get_all, get_doc, get_value, cancel_reservations
+	):
+		get_value.return_value = frappe._dict(
+			vunapos_invoice=1,
+			vunapos_queue_status=QUEUE_STATUS_SUBMITTED,
+		)
+		doc = Mock()
+		get_doc.return_value = doc
+
+		result = audit_checkout_queue_integrity()
+
+		self.assertEqual(result["terminal_reservations_released"], ["ACC-SINV-SUBMITTED-1"])
+		cancel_reservations.assert_called_once_with(
+			voucher_type="Sales Invoice",
+			voucher_no="ACC-SINV-SUBMITTED-1",
+			notify=False,
+		)
+		doc.add_comment.assert_called_once()

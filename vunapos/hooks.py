@@ -174,6 +174,7 @@ doc_events = {
 scheduler_events = {
 	"cron": {
 		"*/5 * * * *": ["vunapos.services.checkout_queue_service.recover_stale_checkout_jobs"],
+		"17 * * * *": ["vunapos.services.checkout_queue_service.audit_checkout_queue_integrity"],
 	},
 }
 

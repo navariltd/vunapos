@@ -42,6 +42,13 @@ DEFAULT_QUEUE_PROCESSING_TIMEOUT_MINUTES = 5
 MAX_QUEUE_ATTEMPTS = 10
 MAX_QUEUE_PROCESSING_TIMEOUT_MINUTES = 120
 MAX_QUEUE_ERROR_LENGTH = 1000
+ACTIVE_QUEUE_STATUSES = (
+	QUEUE_STATUS_QUEUED,
+	QUEUE_STATUS_PROCESSING,
+	QUEUE_STATUS_FAILED,
+	QUEUE_STATUS_REQUIRES_REVIEW,
+)
+TERMINAL_QUEUE_STATUSES = (QUEUE_STATUS_SUBMITTED, QUEUE_STATUS_CANCELLED)
 
 
 def _queue_error(code: str, message: str, meta: dict | None = None) -> None:
@@ -385,6 +392,70 @@ def recover_stale_checkout_jobs() -> None:
 		transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
 		_enqueue_submission_job(doc)
 		_publish_queue_update(doc)
+
+
+def audit_checkout_queue_integrity() -> dict:
+	"""Report active inconsistencies and repair only leaked terminal reservations."""
+	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+		cancel_stock_reservation_entries,
+	)
+
+	from vunapos.services.stock_reservation_service import validate_invoice_stock_reservations
+
+	result = {"active_checked": 0, "integrity_errors": [], "terminal_reservations_released": []}
+	for row in frappe.get_all(
+		"Sales Invoice",
+		filters={
+			"docstatus": 0,
+			"vunapos_invoice": 1,
+			"vunapos_queue_status": ["in", ACTIVE_QUEUE_STATUSES],
+		},
+		fields=["name", "vunapos_queue_status"],
+		limit_page_length=1000,
+	):
+		result["active_checked"] += 1
+		try:
+			validate_invoice_stock_reservations(frappe.get_doc("Sales Invoice", row.name))
+		except Exception:
+			result["integrity_errors"].append(row.name)
+			frappe.log_error(
+				message=frappe.get_traceback(with_context=True),
+				title=f"VunaPOS queue integrity failure: {row.name}",
+			)
+
+	reservation_invoices = set(
+		frappe.get_all(
+			"Stock Reservation Entry",
+			filters={"voucher_type": "Sales Invoice", "docstatus": 1},
+			pluck="voucher_no",
+			limit_page_length=10000,
+		)
+	)
+	for invoice_name in sorted(reservation_invoices):
+		invoice = frappe.db.get_value(
+			"Sales Invoice",
+			invoice_name,
+			["vunapos_invoice", "vunapos_queue_status"],
+			as_dict=True,
+		)
+		if (
+			not invoice
+			or not invoice.vunapos_invoice
+			or invoice.vunapos_queue_status not in TERMINAL_QUEUE_STATUSES
+		):
+			continue
+		cancel_stock_reservation_entries(
+			voucher_type="Sales Invoice",
+			voucher_no=invoice_name,
+			notify=False,
+		)
+		result["terminal_reservations_released"].append(invoice_name)
+		frappe.get_doc("Sales Invoice", invoice_name).add_comment(
+			"Info",
+			_("VunaPOS released a leaked stock reservation during its queue integrity audit"),
+		)
+
+	return result
 
 
 def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
