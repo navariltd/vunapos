@@ -8,7 +8,7 @@ import { usePosSessionStatus } from "../features/pos/hooks/usePosSessionStatus";
 import type { POSProfileOptionDTO } from "../features/pos/types";
 import { getPaymentModes } from "../features/pos/utils";
 import { hydrate } from "../lib/cacheEngine";
-import { getPosPagePath } from "../lib/stores/navigationStore";
+import { replacePosPage } from "../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../services/vunaApi";
 
 type PosOpeningGateProps = {
@@ -18,7 +18,7 @@ type PosOpeningGateProps = {
 export function PosOpeningGate({ children }: PosOpeningGateProps) {
 	const bootstrap = useBootstrapData();
 	const posProfile = bootstrap.data?.pos_profile;
-	const { session, isLoading, error } = usePosSessionStatus(posProfile);
+	const { session, isLoading, error, reload } = usePosSessionStatus(posProfile);
 	const profilesCall = useFrappeGetCall<unknown>(
 		vunaMethods.getPosProfilesForUser,
 		{},
@@ -42,6 +42,13 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 		} finally {
 			setSwitchingProfile(false);
 		}
+	}
+
+	function handleOpeningSuccess() {
+		// Preserve the selected profile and only refresh its live session state.
+		// Reloading the page would let the server resolve another assigned profile.
+		replacePosPage("Home");
+		void reload();
 	}
 
 	if (!posProfile || isLoading) {
@@ -69,7 +76,7 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 				onPosProfileChange={selectProfile}
 				profileSwitching={switchingProfile}
 				modesOfPayment={getPaymentModes(bootstrap.data)}
-				onSuccess={() => window.location.replace(getPosPagePath("Home"))}
+				onSuccess={handleOpeningSuccess}
 			/>
 		);
 	}

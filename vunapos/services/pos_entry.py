@@ -69,14 +69,17 @@ def create_pos_opening_entry(
 		"POS Opening Entry",
 		{
 			"user": user,
-			"pos_profile": pos_profile,
 			"status": "Open",
 			"docstatus": 1,
 		},
 	)
 
 	if existing:
-		frappe.throw(_("An open POS session already exists for profile {0}").format(pos_profile))
+		frappe.throw(
+			_("Cashier {0} already has an open POS shift. Close it before opening another.").format(
+				frappe.bold(user)
+			)
+		)
 
 	balances = validate_opening_balances(profile, opening_balance)
 

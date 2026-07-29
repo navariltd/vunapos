@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
@@ -7,6 +9,40 @@ from vunapos.tests.helpers import ensure_test_pos_profile, set_invoice_mode
 
 
 class TestVunaPOSProfile(IntegrationTestCase):
+	def test_default_profile_prefers_the_cashiers_open_session(self):
+		with (
+			patch(
+				"vunapos.services.profile_service.frappe.get_all",
+				side_effect=[
+					["Counter 2", "Counter 1"],
+					["Counter 1", "Counter 2"],
+				],
+			),
+			patch(
+				"vunapos.services.profile_service.frappe.db.get_value",
+				return_value="Counter 1",
+			) as get_value,
+			patch("vunapos.services.profile_service._require_profile_read"),
+			patch(
+				"vunapos.services.profile_service.frappe.get_cached_doc",
+				return_value=frappe._dict(name="Counter 1", disabled=0),
+			),
+		):
+			profile = resolve_pos_profile()
+
+		self.assertEqual(profile.name, "Counter 1")
+		get_value.assert_called_once_with(
+			"POS Opening Entry",
+			{
+				"user": frappe.session.user,
+				"pos_profile": ["in", ["Counter 1", "Counter 2"]],
+				"status": "Open",
+				"docstatus": 1,
+			},
+			"pos_profile",
+			order_by="period_start_date desc",
+		)
+
 	def test_bootstrap_returns_pos_profile_defaults(self):
 		profile = ensure_test_pos_profile()
 		set_invoice_mode("Sales Invoice")
