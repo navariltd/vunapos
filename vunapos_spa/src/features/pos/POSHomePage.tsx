@@ -496,7 +496,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					role="status"
 					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
-					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}.
+					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}
+					{toast.invoice.is_credit_sale
+						? ` as a credit sale${toast.invoice.due_date ? ` due ${toast.invoice.due_date}` : ""}.`
+						: "."}
 				</div>
 			) : null}
 

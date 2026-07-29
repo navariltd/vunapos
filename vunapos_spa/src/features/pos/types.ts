@@ -104,6 +104,8 @@ export type POSClosingPreviewDTO = {
 		customer_advances: number;
 		reconciled_existing_credits: number;
 		cash_received: number;
+		credit_sales: number;
+		credit_outstanding: number;
 	};
 	payments: POSClosingPaymentDTO[];
 	session?: POSSessionDTO;

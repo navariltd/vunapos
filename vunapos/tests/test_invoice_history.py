@@ -1,5 +1,6 @@
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import nowdate
 
 from vunapos.api.sales import checkout_invoice
 from vunapos.services.invoice_history_service import get_invoice_details, get_invoice_history
@@ -54,6 +55,32 @@ class TestVunaPOSInvoiceHistory(IntegrationTestCase):
 		)
 		self.assertEqual(history["invoices"], [])
 		self.assertEqual(history["summary"]["invoice_count"], 0)
+
+	def test_identifies_and_filters_credit_sales(self):
+		frappe.db.set_value(
+			"POS Profile", self.profile, "vunapos_allow_credit_sales", 1, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+		invoice = create_invoice_with_item("Sales Invoice")
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=nowdate(),
+		)
+		self.assertTrue(response["ok"], response)
+
+		history = get_invoice_history(pos_profile=self.profile, current_shift=1, sale_type="Credit Sale")
+		row = next(value for value in history["invoices"] if value["name"] == invoice["name"])
+		self.assertTrue(row["vunapos_credit_sale"])
+		self.assertEqual(str(row["due_date"]), nowdate())
+		self.assertGreaterEqual(history["summary"]["credit_sales"], amount)
+		self.assertGreaterEqual(history["summary"]["credit_outstanding"], amount)
+
+		cash_history = get_invoice_history(pos_profile=self.profile, current_shift=1, sale_type="Cash Sale")
+		self.assertNotIn(invoice["name"], [row["name"] for row in cash_history["invoices"]])
 
 	def test_creates_partial_credit_note_and_prevents_over_return(self):
 		invoice = create_invoice_with_item("Sales Invoice")

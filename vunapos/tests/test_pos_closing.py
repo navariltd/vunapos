@@ -1,6 +1,6 @@
 import frappe
 from frappe.tests import IntegrationTestCase
-from frappe.utils import flt
+from frappe.utils import flt, nowdate
 
 from vunapos.api.sales import checkout_invoice
 from vunapos.services.payment_service import receive_customer_payment
@@ -92,6 +92,28 @@ class TestVunaPOSClosing(IntegrationTestCase):
 			+ preview["payment_activity"]["outstanding_invoice_payments"]
 			+ preview["payment_activity"]["customer_advances"],
 		)
+
+	def test_preview_reports_credit_sales_without_counting_unpaid_balance_as_cash(self):
+		frappe.db.set_value(
+			"POS Profile", self.profile, "vunapos_allow_credit_sales", 1, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+		invoice = create_invoice_with_item("Sales Invoice")
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[],
+			is_credit_sale=True,
+			due_date=nowdate(),
+		)
+		self.assertTrue(response["ok"], response)
+
+		preview = get_closing_preview(self.profile)
+		self.assertGreaterEqual(preview["payment_activity"]["credit_sales"], amount)
+		self.assertGreaterEqual(preview["payment_activity"]["credit_outstanding"], amount)
+		self.assertEqual(preview["payment_activity"]["sales_collected"], 0)
+		self.assertEqual(preview["payment_activity"]["cash_received"], 0)
 
 	def test_close_submits_native_closing_entry_and_ends_session(self):
 		invoice = create_invoice_with_item("Sales Invoice")
