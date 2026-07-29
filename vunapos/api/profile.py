@@ -15,4 +15,7 @@ def get_bootstrap_data(pos_profile=None):
 
 @frappe.whitelist()
 def get_pos_profiles_for_user():
-	return get_user_pos_profiles()
+	try:
+		return success(get_user_pos_profiles())
+	except Exception as exc:
+		return failure(str(exc), code=exc.__class__.__name__)

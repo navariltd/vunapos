@@ -1,8 +1,15 @@
+import { useMemo, useState } from "react";
+import { useFrappeGetCall } from "frappe-react-sdk";
+
 import { Button } from "../components/ui/Button";
 import { PosOpeningEntryDialog } from "../features/pos/components/PosOpeningEntryDialog";
 import { useBootstrapData } from "../features/pos/hooks/useBootstrapData";
 import { usePosSessionStatus } from "../features/pos/hooks/usePosSessionStatus";
+import type { POSProfileOptionDTO } from "../features/pos/types";
 import { getPaymentModes } from "../features/pos/utils";
+import { hydrate } from "../lib/cacheEngine";
+import { getPosPagePath } from "../lib/stores/navigationStore";
+import { unwrapVunaResponse, vunaMethods } from "../services/vunaApi";
 
 type PosOpeningGateProps = {
 	children: React.ReactNode;
@@ -12,6 +19,31 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 	const bootstrap = useBootstrapData();
 	const posProfile = bootstrap.data?.pos_profile;
 	const { session, isLoading, error } = usePosSessionStatus(posProfile);
+	const profilesCall = useFrappeGetCall<unknown>(
+		vunaMethods.getPosProfilesForUser,
+		{},
+		"vunapos_assigned_pos_profiles",
+	);
+	const profiles = useMemo(() => {
+		if (!profilesCall.data) return [];
+		try {
+			return unwrapVunaResponse<POSProfileOptionDTO[]>(profilesCall.data);
+		} catch {
+			return [];
+		}
+	}, [profilesCall.data]);
+	const [switchingProfile, setSwitchingProfile] = useState(false);
+
+	async function selectProfile(profile: string) {
+		if (!profile || profile === posProfile) return;
+		setSwitchingProfile(true);
+		try {
+			await hydrate(profile);
+		} finally {
+			setSwitchingProfile(false);
+		}
+	}
+
 	if (!posProfile || isLoading) {
 		return <SessionMessage title="Checking POS session" message="Confirming that this till is ready for sales..." />;
 	}
@@ -33,8 +65,11 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
 		return (
 			<PosOpeningEntryDialog
 				posProfile={posProfile}
+				profiles={profiles}
+				onPosProfileChange={selectProfile}
+				profileSwitching={switchingProfile}
 				modesOfPayment={getPaymentModes(bootstrap.data)}
-				onSuccess={() => window.location.reload()}
+				onSuccess={() => window.location.replace(getPosPagePath("Home"))}
 			/>
 		);
 	}

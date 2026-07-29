@@ -3,7 +3,7 @@ import { AlertCircle, Banknote, CheckCircle2, CreditCard, Wallet } from "lucide-
 import { useFrappePostCall } from "frappe-react-sdk";
 
 import { Button } from "../../../components/ui/Button";
-import type { ModeOfPaymentDTO } from "../types";
+import type { ModeOfPaymentDTO, POSProfileOptionDTO } from "../types";
 
 type PaymentMethod = ModeOfPaymentDTO & { type: "Cash" | "Bank" | "General" };
 
@@ -31,6 +31,9 @@ function paymentIcon(type: PaymentMethod["type"]) {
 
 type PosOpeningEntryDialogProps = {
 	posProfile: string;
+	profiles: POSProfileOptionDTO[];
+	onPosProfileChange: (profile: string) => Promise<void>;
+	profileSwitching?: boolean;
 	modesOfPayment: ModeOfPaymentDTO[];
 	onSuccess: () => void;
 };
@@ -38,12 +41,20 @@ type PosOpeningEntryDialogProps = {
 // Ported from feat/pos-opening-entry-bootstrap-flow's PosOpenningEntryDialog.tsx.
 // Dropped: its own posProfileStore.ts/modesOfPaymentStore.ts (both called the raw
 // browser fetch API directly, bypassing this app's CSRF/response-envelope handling,
-// and duplicated bootstrap data) and its profile picker (a cashier only has one
-// active assigned profile in this application). Kept: the per-payment-mode opening balance form and the create flow,
+// and duplicated bootstrap data). The profile picker now uses the permission-filtered
+// server list and rehydrates the active server-backed catalogue when changed. Kept:
+// the per-payment-mode opening balance form and the create flow,
 // now going through useFrappePostCall like every other mutation in this app. No
 // cancel/dismiss - opening a session is a genuine requirement, not optional, same as
 // BootstrapGate's hard block has no bypass either.
-export function PosOpeningEntryDialog({ posProfile, modesOfPayment, onSuccess }: PosOpeningEntryDialogProps) {
+export function PosOpeningEntryDialog({
+	posProfile,
+	profiles,
+	onPosProfileChange,
+	profileSwitching = false,
+	modesOfPayment,
+	onSuccess,
+}: PosOpeningEntryDialogProps) {
 	const [step, setStep] = useState<"form" | "creating" | "success">("form");
 	const [error, setError] = useState("");
 	const [openingAmounts, setOpeningAmounts] = useState<Record<string, string>>({});
@@ -53,6 +64,16 @@ export function PosOpeningEntryDialog({ posProfile, modesOfPayment, onSuccess }:
 		() => modesOfPayment.map((mode) => ({ ...mode, type: classifyPaymentMode(mode.mode_of_payment) })),
 		[modesOfPayment],
 	);
+
+	async function handleProfileChange(profile: string) {
+		setOpeningAmounts({});
+		setError("");
+		try {
+			await onPosProfileChange(profile);
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to load the selected POS Profile");
+		}
+	}
 
 	async function handleCreate() {
 		if (!paymentMethods.length) {
@@ -88,6 +109,26 @@ export function PosOpeningEntryDialog({ posProfile, modesOfPayment, onSuccess }:
 				<div className="p-6">
 					{step === "form" ? (
 						<div className="space-y-6">
+							{profiles.length > 1 ? (
+								<label className="block space-y-2">
+									<span className="text-sm font-medium text-on-surface">POS Profile</span>
+									<select
+										value={posProfile}
+										disabled={profileSwitching || createCall.loading}
+										onChange={(event) => void handleProfileChange(event.target.value)}
+										className="w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm text-on-surface"
+									>
+										{profiles.map((profile) => (
+											<option key={profile.name} value={profile.name}>
+												{profile.name}{profile.warehouse ? ` — ${profile.warehouse}` : ""}
+											</option>
+										))}
+									</select>
+									{profileSwitching ? (
+										<span className="text-xs text-on-surface-variant">Loading the selected profile...</span>
+									) : null}
+								</label>
+							) : null}
 							<div className="space-y-3">
 								{paymentMethods.length ? (
 									paymentMethods.map((method) => (
@@ -129,7 +170,7 @@ export function PosOpeningEntryDialog({ posProfile, modesOfPayment, onSuccess }:
 								</div>
 							) : null}
 
-							<Button className="w-full" disabled={!paymentMethods.length || createCall.loading} onClick={handleCreate}>
+							<Button className="w-full" disabled={!paymentMethods.length || createCall.loading || profileSwitching} onClick={handleCreate}>
 								{createCall.loading ? "Starting..." : "Start POS Session"}
 							</Button>
 						</div>

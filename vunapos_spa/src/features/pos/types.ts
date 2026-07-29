@@ -6,6 +6,14 @@ export type ModeOfPaymentDTO = {
 	requires_reference?: boolean;
 };
 
+export type POSProfileOptionDTO = {
+	name: string;
+	company?: string;
+	warehouse?: string;
+	currency?: string;
+	modes_of_payment?: ModeOfPaymentDTO[];
+};
+
 export type CustomerDTO = {
 	customer: string;
 	customer_name: string;

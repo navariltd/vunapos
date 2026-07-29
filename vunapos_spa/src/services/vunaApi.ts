@@ -43,6 +43,7 @@ export class VunaApiError extends Error {
 
 export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
+	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
 	searchItems: "vunapos.api.item.search_items",
 	getItemDetails: "vunapos.api.item.get_item_details",
 	getItemBatches: "vunapos.api.batch.get_item_batches",

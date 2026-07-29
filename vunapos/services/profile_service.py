@@ -170,6 +170,7 @@ def get_user_pos_profiles():
 			"warehouse",
 			"currency",
 		],
+		order_by="name asc",
 	)
 
 	if not enabled_profiles:
