@@ -35,6 +35,7 @@ def profile_to_dict(profile, invoice_mode):
 		"allow_rate_change": bool(profile.get("allow_rate_change")),
 		"allow_discount_change": bool(profile.get("allow_discount_change")),
 		"hide_images": bool(profile.get("hide_images")),
+		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
 		"default_customer": profile.customer,
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

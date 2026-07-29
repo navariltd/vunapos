@@ -1,4 +1,5 @@
 import frappe
+from erpnext.accounts.utils import get_currency_precision
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
 	get_sre_reserved_qty_for_item_and_warehouse,
 )
@@ -68,12 +69,19 @@ def _to_item_payload(item_code, profile, barcode=None):
 	item_tax_template = next(
 		(row.item_tax_template for row in item.get("taxes", []) if row.item_tax_template), None
 	)
+	item_tax_summary = _get_item_tax_summary_map(
+		[item_tax_template] if item_tax_template else [],
+		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
+		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
+	)
+	rate = _get_rate(item.item_code, profile)
 	return item_to_dict(
 		item,
-		rate=_get_rate(item.item_code, profile),
+		rate=rate,
 		actual_qty=_get_actual_qty(item.item_code, profile.warehouse),
 		barcode=barcode or _get_barcode(item.item_code),
 		item_tax_template=item_tax_template,
+		item_tax=_with_item_tax_prices(item_tax_summary.get(item_tax_template), rate),
 		uoms=uoms,
 	)
 
@@ -113,6 +121,70 @@ def _get_item_tax_template_map(item_codes):
 		if row.parent not in template_map and row.item_tax_template:
 			template_map[row.parent] = row.item_tax_template
 	return template_map
+
+
+def _get_profile_tax_inclusivity(profile):
+	if not profile.get("taxes_and_charges"):
+		return {}
+	template = frappe.get_cached_doc("Sales Taxes and Charges Template", profile.taxes_and_charges)
+	return {
+		row.account_head: bool(row.get("included_in_print_rate"))
+		for row in template.get("taxes", [])
+		if row.account_head
+	}
+
+
+def _get_item_tax_summary_map(template_names, prices_include_tax=False, profile_tax_inclusivity=None):
+	if not template_names:
+		return {}
+
+	rows = frappe.get_all(
+		"Item Tax Template Detail",
+		filters={"parent": ["in", list(set(template_names))]},
+		fields=["parent", "tax_type", "tax_rate"],
+		order_by="parent asc, idx asc",
+	)
+	by_template = {}
+	profile_tax_inclusivity = profile_tax_inclusivity or {}
+	for row in rows:
+		summary = by_template.setdefault(
+			row.parent, {"accounts": [], "tax_rate": 0.0, "inclusive_tax_rate": 0.0}
+		)
+		rate = flt(row.tax_rate)
+		inclusive = profile_tax_inclusivity.get(row.tax_type, bool(prices_include_tax))
+		summary["tax_rate"] += rate
+		if inclusive:
+			summary["inclusive_tax_rate"] += rate
+		summary["accounts"].append(
+			{"account_head": row.tax_type, "rate": rate, "included_in_print_rate": inclusive}
+		)
+
+	for template_name, summary in by_template.items():
+		summary["exclusive_tax_rate"] = summary["tax_rate"] - summary["inclusive_tax_rate"]
+		summary.update(
+			{
+				"template": template_name,
+				"inclusive": bool(summary["tax_rate"] and not summary["exclusive_tax_rate"]),
+			}
+		)
+	return by_template
+
+
+def _with_item_tax_prices(summary, rate):
+	if not summary:
+		return None
+	precision = get_currency_precision()
+	listed_rate = flt(rate, precision)
+	percent = flt(summary.get("tax_rate"))
+	inclusive_percent = flt(summary.get("inclusive_tax_rate"))
+	net_rate = listed_rate / (1 + inclusive_percent / 100) if inclusive_percent else listed_rate
+	gross_rate = net_rate * (1 + percent / 100)
+	return {
+		**summary,
+		"net_rate": flt(net_rate, precision),
+		"tax_amount": flt(gross_rate - net_rate, precision),
+		"gross_rate": flt(gross_rate, precision),
+	}
 
 
 def _get_actual_qty_map(item_codes, warehouse):
@@ -168,19 +240,27 @@ def _get_uom_rate_map(item_codes, price_list, customer=None):
 
 
 def _to_item_payload_from_row(
-	item, rate_map, actual_qty_map, barcode_map, item_tax_template_map=None, uom_map=None
+	item,
+	rate_map,
+	actual_qty_map,
+	barcode_map,
+	item_tax_template_map=None,
+	item_tax_summary_map=None,
+	uom_map=None,
 ):
 	rate = rate_map.get(item.name)
 	if rate is None:
 		rate = flt(item.standard_rate)
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
 
+	item_tax_template = (item_tax_template_map or {}).get(item.name)
 	return item_to_dict(
 		item,
 		rate=rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
-		item_tax_template=(item_tax_template_map or {}).get(item.name),
+		item_tax_template=item_tax_template,
+		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
 		uoms=(uom_map or {}).get(item.name, []),
 	)
 
@@ -322,13 +402,24 @@ def search_items(query=None, pos_profile=None, customer=None, limit=None, since=
 				rate_map[item_code] = item_rates[price_uom]
 				break
 	item_tax_template_map = _get_item_tax_template_map(item_codes)
+	item_tax_summary_map = _get_item_tax_summary_map(
+		item_tax_template_map.values(),
+		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
+		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
+	)
 	uom_map = _get_uom_map(item_codes, uom_rate_map)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
 
 	return [
 		_to_item_payload_from_row(
-			item_by_code[item_code], rate_map, actual_qty_map, barcode_map, item_tax_template_map, uom_map
+			item_by_code[item_code],
+			rate_map,
+			actual_qty_map,
+			barcode_map,
+			item_tax_template_map,
+			item_tax_summary_map,
+			uom_map,
 		)
 		for item_code in item_codes
 	]

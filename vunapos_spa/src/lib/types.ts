@@ -20,6 +20,19 @@ export type CachedItem = {
 	modified: string;
 	/** N9: this item's assigned Item Tax Template, if any (vunapos/dto/item.py). */
 	item_tax_template?: string | null;
+	item_tax?: ItemTaxSummary | null;
+};
+
+export type ItemTaxSummary = {
+	template: string;
+	tax_rate: number;
+	inclusive_tax_rate: number;
+	exclusive_tax_rate: number;
+	inclusive: boolean;
+	net_rate: number;
+	tax_amount: number;
+	gross_rate: number;
+	accounts: Array<{ account_head: string; rate: number; included_in_print_rate: boolean }>;
 };
 
 export type CachedCustomer = {
@@ -56,6 +69,7 @@ export type CachedTaxTemplate = {
 export type ItemTaxRow = {
 	account_head: string;
 	rate: number;
+	included_in_print_rate?: boolean;
 };
 
 export type CachedItemTaxTemplate = {
@@ -94,6 +108,7 @@ export type CachedProfile = {
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	item_prices_include_tax?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

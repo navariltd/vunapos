@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
-import { formatCurrency } from "../utils";
+import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 
 type ItemCardProps = {
 	currency?: string;
@@ -43,9 +43,8 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
 					</div>
 					<div className="mt-auto flex items-center justify-between gap-3">
 						<div>
-							<p className="text-sm font-semibold text-on-surface">
-								{formatCurrency(item.rate, currency)}
-							</p>
+							<ItemTaxLabel item={item} />
+							<ItemTaxPrice currency={currency} item={item} />
 							{item.actual_qty !== undefined ? (
 								<p className={outOfStock ? "text-xs font-medium text-error" : "text-xs text-on-surface-variant"}>
 									{outOfStock ? "Out of stock" : `Qty ${item.actual_qty}`}

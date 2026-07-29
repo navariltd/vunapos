@@ -817,6 +817,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		previous_tax_template_setting = frappe.db.get_single_value(
 			"Accounts Settings", "add_taxes_from_taxes_and_charges_template"
 		)
+		previous_inclusive_setting = frappe.db.get_value(
+			"POS Profile", profile, "vunapos_item_prices_include_tax"
+		)
 
 		try:
 			frappe.db.set_single_value("Accounts Settings", "add_taxes_from_item_tax_template", 1)
@@ -834,7 +837,28 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			self.assertAlmostEqual(flt(invoice["totals"]["net_total"]), 100, places=2)
 			self.assertAlmostEqual(flt(invoice["totals"]["total_taxes_and_charges"]), 10, places=2)
 			self.assertAlmostEqual(flt(invoice["totals"]["grand_total"]), 110, places=2)
+
+			frappe.db.set_value("POS Profile", profile, "vunapos_item_prices_include_tax", 1)
+			frappe.clear_cache(doctype="POS Profile")
+			inclusive_response = preview_invoice(
+				pos_profile=profile,
+				items=[{"item_code": item_code, "qty": 1, "item_tax_template": item_tax_template}],
+				invoice_doctype="Sales Invoice",
+			)
+
+			self.assertTrue(inclusive_response["ok"], inclusive_response)
+			inclusive_invoice = inclusive_response["data"]
+			self.assertTrue(inclusive_invoice["taxes"][0]["included_in_print_rate"])
+			self.assertAlmostEqual(flt(inclusive_invoice["totals"]["net_total"]), 90.91, places=2)
+			self.assertAlmostEqual(
+				flt(inclusive_invoice["totals"]["total_taxes_and_charges"]), 9.09, places=2
+			)
+			self.assertAlmostEqual(flt(inclusive_invoice["totals"]["grand_total"]), 100, places=2)
 		finally:
+			frappe.db.set_value(
+				"POS Profile", profile, "vunapos_item_prices_include_tax", previous_inclusive_setting
+			)
+			frappe.clear_cache(doctype="POS Profile")
 			frappe.db.set_single_value(
 				"Accounts Settings",
 				"add_taxes_from_item_tax_template",

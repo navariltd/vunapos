@@ -108,7 +108,7 @@ export function CartPanel({
 			</div>
 
 			<div className="mt-4 shrink-0 border-t border-outline-variant bg-surface pt-4">
-				<div className="space-y-2 text-sm">
+				<div className="space-y-1.5 text-xs">
 					<div className="flex justify-between">
 						<span className="text-on-surface-variant">Subtotal</span>
 						<span className="font-medium">{formatCurrency(invoice?.totals?.net_total, currency)}</span>
@@ -116,7 +116,7 @@ export function CartPanel({
 					{taxes.map((tax, index) => (
 						<div
 							key={`${tax.account_head || tax.description || "tax"}-${index}`}
-							className="flex items-start justify-between gap-3 text-xs"
+							className="flex items-start justify-between gap-3 text-[11px]"
 						>
 							<span className="min-w-0 text-on-surface-variant">
 								<span className="truncate">{tax.description || tax.account_head || "Tax"}</span>
@@ -134,12 +134,12 @@ export function CartPanel({
 						<span className="text-on-surface-variant">Total taxes and charges</span>
 						<span className="font-medium">{formatCurrency(invoice?.totals?.total_taxes_and_charges, currency)}</span>
 					</div>
-					<div className="flex justify-between text-base">
+					<div className="flex justify-between text-sm">
 						<span className="font-semibold text-on-surface">Grand total</span>
 						<span className="font-semibold text-on-surface">{formatCurrency(invoice?.totals?.grand_total, currency)}</span>
 					</div>
 					{showRoundedTotal ? (
-						<div className="flex justify-between text-base">
+						<div className="flex justify-between text-sm">
 							<span className="font-semibold text-on-surface">Rounded total</span>
 							<span className="font-semibold text-on-surface">{formatCurrency(total, currency)}</span>
 						</div>

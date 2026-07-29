@@ -1,4 +1,6 @@
-def item_to_dict(item, rate=None, actual_qty=None, barcode=None, item_tax_template=None, uoms=None):
+def item_to_dict(
+	item, rate=None, actual_qty=None, barcode=None, item_tax_template=None, item_tax=None, uoms=None
+):
 	uoms = uoms if uoms is not None else item.get("uoms", [])
 	uom_rows = [{"uom": item.stock_uom, "conversion_factor": 1.0, "rate": rate}]
 	seen = {item.stock_uom}
@@ -31,4 +33,5 @@ def item_to_dict(item, rate=None, actual_qty=None, barcode=None, item_tax_templa
 		"barcode": barcode,
 		"modified": item.get("modified"),
 		"item_tax_template": item_tax_template,
+		"item_tax": item_tax,
 	}

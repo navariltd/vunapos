@@ -7,6 +7,19 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"POS Profile": [
+				{
+					"fieldname": "vunapos_item_prices_include_tax",
+					"label": "Item Prices Include Tax",
+					"fieldtype": "Check",
+					"insert_after": "taxes_and_charges",
+					"description": (
+						"Treat prices for items with an Item Tax Template as tax-inclusive in VunaPOS. "
+						"Leave unchecked to add item taxes on top of the listed price."
+					),
+					"default": "0",
+				},
+			],
 			"Sales Invoice Item": [
 				{
 					"fieldname": "vunapos_item_note",

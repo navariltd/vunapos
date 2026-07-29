@@ -126,6 +126,7 @@ export type BootstrapData = {
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	item_prices_include_tax?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -152,6 +153,16 @@ export type ItemDTO = {
 	has_serial_no?: boolean | number;
 	barcode?: string | null;
 	item_tax_template?: string | null;
+	item_tax?: {
+		template: string;
+		tax_rate: number;
+		inclusive_tax_rate: number;
+		exclusive_tax_rate: number;
+		inclusive: boolean;
+		net_rate: number;
+		tax_amount: number;
+		gross_rate: number;
+	};
 };
 
 export type BatchAllocationDTO = {
@@ -221,6 +232,7 @@ export type InvoiceItemDTO = {
 	batch_allocations?: BatchAllocationDTO[];
 	serial_allocations?: SerialAllocationDTO[];
 	item_tax_template?: string | null;
+	item_tax?: ItemDTO["item_tax"];
 	barcode?: string | null;
 	item_note?: string | null;
 	pricing_rules?: string | null;

@@ -316,7 +316,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					</section>
 				)
 			) : (
-				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_390px]">
+				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_clamp(32rem,32vw,38rem)]">
 					<section className="flex min-w-0 min-h-0 flex-col p-4">
 						<ItemSearch
 							isLoading={items.isLoading}
@@ -380,7 +380,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onClick={() => setIsCartOpen(false)}
 						aria-label="Close cart"
 					/>
-					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,26rem)] flex-col border-l border-outline-variant bg-surface shadow-lg">
+					<div className="absolute bottom-0 right-0 top-0 flex w-[min(92vw,32rem)] flex-col border-l border-outline-variant bg-surface shadow-lg">
 						<div className="flex h-12 shrink-0 items-center justify-between border-b border-outline-variant px-4">
 							<div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
 								<ShoppingCart className="size-4 text-primary" />

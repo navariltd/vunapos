@@ -302,7 +302,7 @@ describe("assembleInvoice - item-level tax template (N9)", () => {
 		expect(result.taxes[0].tax_amount).toBeCloseTo(32, 2); // 16 + 16
 	});
 
-	it("does not affect net_total (no inclusive concept at the item-tax-template level)", () => {
+	it("keeps item tax exclusive when the profile has not marked it inclusive", () => {
 		const result = assembleInvoice({
 			cart: [{ item_code: "Item-001", qty: 1 }],
 			priceResolver: () => 1200,
@@ -313,7 +313,23 @@ describe("assembleInvoice - item-level tax template (N9)", () => {
 		expect(result.totals.net_total).toBeCloseTo(1200, 2);
 	});
 
-	it("combines item-level and profile-level tax when both mechanisms are active, summing per account", () => {
+	it("backs inclusive item tax out of the listed rate", () => {
+		const result = assembleInvoice({
+			cart: [{ item_code: "Item-001", qty: 1 }],
+			priceResolver: () => 116,
+			taxSettings: ITEM_ONLY,
+			itemTaxResolver: () => [
+				{ account_head: "VAT - TC", rate: 16, included_in_print_rate: true },
+			],
+		});
+
+		expect(result.totals.net_total).toBeCloseTo(100, 2);
+		expect(result.totals.total_taxes_and_charges).toBeCloseTo(16, 2);
+		expect(result.totals.grand_total).toBeCloseTo(116, 2);
+		expect(result.taxes[0].included_in_print_rate).toBe(true);
+	});
+
+	it("uses the item rate and profile inclusivity when both templates share an account", () => {
 		const result = assembleInvoice({
 			cart: [{ item_code: "Item-001", qty: 1 }],
 			priceResolver: () => 1200,
@@ -322,10 +338,26 @@ describe("assembleInvoice - item-level tax template (N9)", () => {
 			taxRows: [{ account_head: "VAT - TC", charge_type: "On Net Total", rate: 5 }],
 		});
 
-		// item-level: 1200*16%=192 ; profile-level: netTotal(1200)*5%=60 ; same account sums.
+		// ERPNext uses the item-specific 16% rate instead of adding it to the profile's
+		// 5% rate. The profile row still owns the tax-row metadata and inclusivity.
 		expect(result.taxes).toHaveLength(1);
-		expect(result.taxes[0].tax_amount).toBeCloseTo(252, 2);
-		expect(result.totals.grand_total).toBeCloseTo(1452, 2);
+		expect(result.taxes[0].tax_amount).toBeCloseTo(192, 2);
+		expect(result.totals.grand_total).toBeCloseTo(1392, 2);
+	});
+
+	it("inherits inclusivity from a matching profile tax row", () => {
+		const result = assembleInvoice({
+			cart: [{ item_code: "Item-001", qty: 1 }],
+			priceResolver: () => 116,
+			taxSettings: { addTaxesFromItemTaxTemplate: true, addTaxesFromTaxesAndChargesTemplate: true },
+			itemTaxResolver: () => [{ account_head: "VAT - TC", rate: 16 }],
+			taxRows: [{ account_head: "VAT - TC", charge_type: "On Net Total", rate: 5, included_in_print_rate: true }],
+		});
+
+		expect(result.totals.net_total).toBeCloseTo(100, 2);
+		expect(result.totals.total_taxes_and_charges).toBeCloseTo(16, 2);
+		expect(result.totals.grand_total).toBeCloseTo(116, 2);
+		expect(result.taxes[0].included_in_print_rate).toBe(true);
 	});
 
 	it("computes item-level tax on the tax-exclusive base, not the inclusive-tax-laden entered price", () => {

@@ -37,6 +37,7 @@ export function useBootstrapData() {
 			allow_rate_change: profile.allow_rate_change,
 			allow_discount_change: profile.allow_discount_change,
 			hide_images: profile.hide_images,
+			item_prices_include_tax: profile.item_prices_include_tax,
 			default_customer: profile.default_customer as BootstrapData["default_customer"],
 			modes_of_payment: profile.modes_of_payment,
 			print_format: profile.print_format,

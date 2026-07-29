@@ -174,6 +174,7 @@ function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemD
 				...item,
 				uoms: source?.uoms || item.uoms,
 				barcode: source?.barcode || item.barcode,
+				item_tax: source?.item_tax ?? item.item_tax,
 				item_note: source?.item_note ?? item.item_note,
 				pricing_rules: source?.pricing_rules ?? item.pricing_rules,
 				pricing_override_audit: source?.pricing_override_audit ?? item.pricing_override_audit,
@@ -210,6 +211,7 @@ function localizePreviewInvoice(
 				has_batch_no: metadata?.has_batch_no,
 				has_serial_no: metadata?.has_serial_no,
 				warehouse: metadata?.warehouse,
+				item_tax: metadata?.item_tax,
 			};
 		}),
 	};
@@ -263,6 +265,7 @@ function assembledToInvoiceDTO(
 				// Required: the next previewLocalCart round-trip reads item_tax_template back
 				// off this output as its source items - omitting it silently zeroes item tax.
 				item_tax_template: meta?.item_tax_template,
+				item_tax: meta?.item_tax,
 			};
 		}),
 		taxes: assembled.taxes.map((row) => ({
@@ -301,6 +304,9 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	}
 
 	const taxSettings = await resolveTaxSettings();
+	const profileTaxByAccount = new Map(
+		(taxTemplate?.taxes ?? []).map((row) => [row.account_head, row]),
+	);
 	// Every override replaces the previous one. Never use the already-discounted
 	// selling rate as the base or sequential edits will compound discounts.
 	const rateByCode = new Map(
@@ -316,7 +322,14 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 		taxRows: taxTemplate?.taxes ?? [],
 		itemTaxResolver: (code) => {
 			const templateName = itemTaxTemplateByCode.get(code);
-			return templateName ? itemTaxRowsByTemplate.get(templateName) : undefined;
+			return templateName
+				? itemTaxRowsByTemplate.get(templateName)?.map((row) => ({
+					...row,
+					included_in_print_rate: profileTaxByAccount.has(row.account_head)
+						? Boolean(profileTaxByAccount.get(row.account_head)?.included_in_print_rate)
+						: Boolean(profile?.item_prices_include_tax),
+				}))
+				: undefined;
 		},
 		taxSettings,
 		roundingSettings: profile ? {
@@ -350,6 +363,7 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		has_serial_no: item.has_serial_no,
 		barcode: item.barcode,
 		item_tax_template: item.item_tax_template,
+		item_tax: item.item_tax,
 	};
 }
 

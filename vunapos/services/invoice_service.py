@@ -85,12 +85,24 @@ def _reset_invoice_totals(doc):
 	return doc
 
 
+def _apply_item_tax_inclusivity(doc):
+	if not doc.get("pos_profile"):
+		return
+	prices_include_tax = bool(
+		frappe.get_cached_value("POS Profile", doc.pos_profile, "vunapos_item_prices_include_tax")
+	)
+	for tax in doc.get("taxes", []):
+		if tax.get("set_by_item_tax_template"):
+			tax.included_in_print_rate = prices_include_tax
+
+
 def _recalculate(doc):
 	_ensure_controller_item_attrs(doc)
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
 	if hasattr(doc, "append_taxes_from_item_tax_template"):
 		doc.append_taxes_from_item_tax_template()
+	_apply_item_tax_inclusivity(doc)
 	if hasattr(doc, "calculate_taxes_and_totals"):
 		doc.calculate_taxes_and_totals()
 	if hasattr(doc, "set_total_in_words"):

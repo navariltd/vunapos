@@ -54,12 +54,12 @@ export function CustomerSelector({ onClear, onSelect, selectedCustomer }: Custom
 
 	return (
 		<div ref={selectorRef} className="relative">
-			<label className="mb-2 block text-sm font-semibold text-on-surface">Customer</label>
 			<div className="flex min-h-touch items-center rounded-md border border-outline-variant bg-surface-container-low">
 				<button
 					type="button"
 					className="min-w-0 flex-1 px-3 py-2 text-left"
 					onClick={toggleDropdown}
+					aria-label="Select customer"
 				>
 					<span className="block truncate text-sm font-medium text-on-surface">
 						{selectedCustomer?.customer_name || "Select customer"}
