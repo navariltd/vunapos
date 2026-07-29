@@ -548,6 +548,7 @@ type CartActions = {
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
 	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	previewLoyaltyRedemption: (loyaltyPoints: number, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshPriceListPricing: (priceList: string | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
@@ -602,6 +603,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			customer: selectedCustomer?.customer || cart.customer,
 			price_list: get().selectedPriceList || cart.selling_price_list,
 			items: cart.items.map(cartItemPayload),
+			loyalty_points: cart.loyalty_points || undefined,
 		});
 	}
 
@@ -955,6 +957,25 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return validated;
 		},
 
+		previewLoyaltyRedemption: async (loyaltyPoints, api) => {
+			const invoice = get().invoice;
+			if (!invoice?.items?.length) return null;
+			const items = invoice.items.map(clearIncompleteSerialAllocation);
+			const selectedCustomer = getActiveCustomer(get());
+			const sourceInvoice = getLocalCartSource(invoice);
+			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
+				pos_profile: get().posProfile,
+				customer: selectedCustomer?.customer || invoice.customer,
+				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
+				price_list: get().selectedPriceList,
+				items: items.map(cartItemPayload),
+				loyalty_points: loyaltyPoints || undefined,
+			}));
+			const validated = localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
+			set({ invoice: validated });
+			return validated;
+		},
+
 		refreshCartConfiguration: async (api) => {
 			const invoice = get().invoice;
 			if (!invoice?.items.length) return null;
@@ -1196,6 +1217,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						customer: selectedCustomer?.customer,
 						price_list: get().selectedPriceList,
 						items: invoice.items.map(cartItemPayload),
+						loyalty_points: invoice.loyalty_points || undefined,
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {
 							invoice_doctype: draftInvoice.doctype,

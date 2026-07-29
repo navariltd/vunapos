@@ -408,6 +408,28 @@ describe("refreshPriceListPricing", () => {
 });
 
 describe("validateCart", () => {
+	it("stores the exact loyalty credit returned by the server preview", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const previewInvoice = vi.fn().mockResolvedValue({
+			doctype: "Sales Invoice",
+			name: "Not invoiced yet",
+			docstatus: 0,
+			customer: "CUST-1",
+			items: [{ row_name: "server-row", item_code: "ITEM-1", item_name: "Widget", qty: 1, rate: 100, amount: 100 }],
+			taxes: [],
+			loyalty_points: 20,
+			loyalty_amount: 12.5,
+			totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+		});
+
+		const preview = await useCartStore.getState().previewLoyaltyRedemption(20, makeApi({ previewInvoice }));
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({ loyalty_points: 20 }));
+		expect(preview).toMatchObject({ loyalty_points: 20, loyalty_amount: 12.5 });
+		expect(useCartStore.getState().invoice).toMatchObject({ loyalty_points: 20, loyalty_amount: 12.5 });
+	});
+
 	it("repairs a stale partial serial selection before requesting automatic allocation", async () => {
 		useCartStore.setState({
 			defaultCustomer: CUSTOMER,
@@ -767,6 +789,22 @@ describe("holdCart", () => {
 			expect(useCartStore.getState().invoice).toBeNull();
 			expect(createInvoiceFromCart).toHaveBeenCalledOnce();
 			expect(holdInvoice).toHaveBeenCalledOnce();
+		});
+
+		it("persists an applied loyalty redemption on the held draft", async () => {
+			const invoice = useCartStore.getState().invoice!;
+			useCartStore.setState({ invoice: { ...invoice, loyalty_points: 15, loyalty_amount: 10 } });
+			const draft = { doctype: "Sales Invoice", name: "ACC-SINV-DRAFT-LOYALTY", docstatus: 0, items: [], totals: {} };
+			const createInvoiceFromCart = vi.fn().mockResolvedValue(draft);
+			const holdInvoice = vi.fn().mockResolvedValue({ ...draft, is_held: true });
+
+			await useCartStore.getState().holdCart(makeApi({
+				createInvoiceFromCart,
+				holdInvoice,
+				listHeldInvoices: vi.fn().mockResolvedValue([]),
+			}));
+
+			expect(createInvoiceFromCart).toHaveBeenCalledWith(expect.objectContaining({ loyalty_points: 15 }));
 		});
 
 		it("preserves the cart when server draft creation fails", async () => {

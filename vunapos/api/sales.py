@@ -291,6 +291,7 @@ def create_invoice_from_cart(
 	customer: str | None = None,
 	items: list | str | None = None,
 	price_list: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -299,6 +300,7 @@ def create_invoice_from_cart(
 				customer=customer,
 				items=items,
 				price_list=price_list,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -346,6 +348,7 @@ def update_invoice_from_cart(
 	customer: str | None = None,
 	items: list | str | None = None,
 	price_list: str | None = None,
+	loyalty_points: int | str | None = None,
 ):
 	try:
 		return success(
@@ -355,6 +358,7 @@ def update_invoice_from_cart(
 				customer=customer,
 				items=items,
 				price_list=price_list,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:

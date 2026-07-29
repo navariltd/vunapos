@@ -15,7 +15,7 @@ import {
 	totalToMinorUnits,
 } from "../paymentAllocation";
 import { useCartStore } from "../stores/cartStore";
-import type { CustomerLoyaltyDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
+import type { CustomerLoyaltyDTO, InvoiceDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
@@ -38,6 +38,7 @@ type CheckoutDialogProps = {
 		loyaltyPoints?: number,
 	) => void;
 	onHold: () => void;
+	onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
 };
 
 function createIdempotencyKey() {
@@ -69,6 +70,7 @@ export function CheckoutDialog({
 	onClose,
 	onConfirm,
 	onHold,
+	onPreviewLoyalty,
 }: CheckoutDialogProps) {
 	if (!isOpen) {
 		return null;
@@ -89,6 +91,7 @@ export function CheckoutDialog({
 			onClose={onClose}
 			onConfirm={onConfirm}
 			onHold={onHold}
+			onPreviewLoyalty={onPreviewLoyalty}
 		/>
 	);
 }
@@ -106,6 +109,7 @@ function CheckoutDialogContent({
 	onClose,
 	onConfirm,
 	onHold,
+	onPreviewLoyalty,
 }: Omit<CheckoutDialogProps, "isOpen">) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isSubmitting = useCartStore((s) => s.isMutating);
@@ -126,7 +130,10 @@ function CheckoutDialogContent({
 	const [appliedLoyaltyPoints, setAppliedLoyaltyPoints] = useState(
 		Math.min(Math.floor(Number(invoice?.loyalty_points || 0)), maximumLoyaltyPoints),
 	);
-	const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyPoints * loyaltyFactor, precision);
+	const [appliedLoyaltyAmount, setAppliedLoyaltyAmount] = useState(Number(invoice?.loyalty_amount || 0));
+	const [loyaltyError, setLoyaltyError] = useState("");
+	const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
+	const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
 	const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
 	const [amounts, setAmounts] = useState(() =>
 		allowCreditSales && defaultSaleType === "Credit Sale"
@@ -141,7 +148,8 @@ function CheckoutDialogContent({
 	const idempotencyKey = useRef(createIdempotencyKey());
 	const allocation = calculatePaymentAllocation(availableModes, amounts, payableMinor, precision);
 	const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
-	const isPayable = (!isCreditSale || dueDate >= today) && (
+	const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
+	const isPayable = !isApplyingLoyalty && isLoyaltySelectionValid && (!isCreditSale || dueDate >= today) && (
 		payableMinor === 0
 			? !allocation.hasInvalidAmount && allocation.allocatedMinor === 0
 			: availableModes.length > 0 && (isCreditSale
@@ -152,19 +160,30 @@ function CheckoutDialogContent({
 	const loyaltyInputError = loyaltyInput && (
 		loyaltyInputPoints === null || loyaltyInputPoints <= 0 || loyaltyInputPoints > maximumLoyaltyPoints
 	);
-	const applyLoyaltyPoints = (points: number) => {
+	const applyLoyaltyPoints = async (points: number) => {
 		const normalizedPoints = Math.max(Math.min(Math.floor(points), maximumLoyaltyPoints), 0);
-		const nextPayableMinor = Math.max(
-			totalMinor - totalToMinorUnits(normalizedPoints * loyaltyFactor, precision),
-			0,
-		);
-		setAppliedLoyaltyPoints(normalizedPoints);
-		setLoyaltyInput(normalizedPoints ? String(normalizedPoints) : "");
-		setAmounts(
-			isCreditSale
+		setIsApplyingLoyalty(true);
+		setLoyaltyError("");
+		try {
+			const preview = await onPreviewLoyalty(normalizedPoints);
+			const validatedPoints = Math.floor(Number(preview?.loyalty_points || 0));
+			const validatedAmount = Number(preview?.loyalty_amount || 0);
+			const validatedTotalMinor = totalToMinorUnits(
+				preview ? getInvoiceTotal(preview) : total,
+				precision,
+			);
+			const nextPayableMinor = Math.max(validatedTotalMinor - totalToMinorUnits(validatedAmount, precision), 0);
+			setAppliedLoyaltyPoints(validatedPoints);
+			setAppliedLoyaltyAmount(validatedAmount);
+			setLoyaltyInput(validatedPoints ? String(validatedPoints) : "");
+			setAmounts(isCreditSale
 				? Object.fromEntries(availableModes.map((mode) => [mode.mode_of_payment, ""]))
-				: createInitialPaymentAmounts(availableModes, nextPayableMinor, precision),
-		);
+				: createInitialPaymentAmounts(availableModes, nextPayableMinor, precision));
+		} catch (applyError) {
+			setLoyaltyError(applyError instanceof Error ? applyError.message : "Unable to validate loyalty redemption");
+		} finally {
+			setIsApplyingLoyalty(false);
+		}
 	};
 	const isOverpaid = allocation.remainingMinor < 0;
 	const balanceLabel = isOverpaid
@@ -268,19 +287,21 @@ function CheckoutDialogContent({
 											/>
 											<Button
 												variant="ghost"
-												disabled={!maximumLoyaltyPoints}
-												onClick={() => applyLoyaltyPoints(maximumLoyaltyPoints)}
+											disabled={!maximumLoyaltyPoints || isApplyingLoyalty}
+											onClick={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
 											>Maximum</Button>
 											<Button
-												disabled={Boolean(loyaltyInputError) || !loyaltyInputPoints}
-												onClick={() => applyLoyaltyPoints(loyaltyInputPoints || 0)}
-											>Apply</Button>
+											disabled={Boolean(loyaltyInputError) || !loyaltyInputPoints || isApplyingLoyalty}
+											onClick={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
+										>{isApplyingLoyalty ? "Checking..." : "Apply"}</Button>
 										</div>
 										{loyaltyInputError ? <p className="mt-2 text-xs text-error">Enter between 1 and {maximumLoyaltyPoints.toLocaleString()} points.</p> : null}
+										{loyaltyError ? <p className="mt-2 text-xs text-error">{loyaltyError}</p> : null}
+										{!isLoyaltySelectionValid ? <p className="mt-2 text-xs text-error">The available balance changed. Apply a valid number of points again.</p> : null}
 										{appliedLoyaltyPoints ? (
 											<div className="mt-3 flex items-center justify-between text-xs">
 												<span className="text-on-surface-variant">Applied: {appliedLoyaltyPoints.toLocaleString()} points · {formatCurrency(loyaltyAmountMinor / scale, currency, precision)}</span>
-												<button type="button" className="font-medium text-error" onClick={() => applyLoyaltyPoints(0)}>Remove</button>
+												<button type="button" className="font-medium text-error" onClick={() => void applyLoyaltyPoints(0)}>Remove</button>
 											</div>
 										) : null}
 									</div>

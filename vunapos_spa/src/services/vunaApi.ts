@@ -314,6 +314,7 @@ export function createInvoiceFromCart(
 		pos_profile?: string;
 		customer?: string;
 		price_list?: string;
+		loyalty_points?: number;
 		items: CartItemInput[];
 	},
 ) {
@@ -358,6 +359,7 @@ export function updateInvoiceFromCart(
 		invoice_name: string;
 		customer?: string;
 		price_list?: string;
+		loyalty_points?: number;
 		items: { item_code: string; qty: number; batch_allocations?: Array<{ batch_no: string; qty: number }>; pricing_override?: { type: string; value: number } }[];
 	},
 ) {

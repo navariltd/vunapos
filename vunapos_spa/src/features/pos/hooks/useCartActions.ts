@@ -21,6 +21,7 @@ export function useCartActions() {
 	const listHeldAction = useCartStore((s) => s.listHeld);
 	const clearCartAction = useCartStore((s) => s.clearCart);
 	const validateCartAction = useCartStore((s) => s.validateCart);
+	const previewLoyaltyRedemptionAction = useCartStore((s) => s.previewLoyaltyRedemption);
 	const refreshCartConfigurationAction = useCartStore((s) => s.refreshCartConfiguration);
 	const refreshCustomerPricingAction = useCartStore((s) => s.refreshCustomerPricing);
 	const refreshPriceListPricingAction = useCartStore((s) => s.refreshPriceListPricing);
@@ -47,6 +48,7 @@ export function useCartActions() {
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),
+			previewLoyaltyRedemption: (loyaltyPoints: number) => previewLoyaltyRedemptionAction(loyaltyPoints, api),
 			refreshCartConfiguration: () => refreshCartConfigurationAction(api),
 			refreshCustomerPricing: (customer: CustomerDTO | null | undefined) =>
 				refreshCustomerPricingAction(customer, api),
@@ -79,6 +81,7 @@ export function useCartActions() {
 			listHeldAction,
 			clearCartAction,
 			validateCartAction,
+			previewLoyaltyRedemptionAction,
 			refreshCartConfigurationAction,
 			refreshCustomerPricingAction,
 			refreshPriceListPricingAction,

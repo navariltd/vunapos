@@ -353,6 +353,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				printInvoiceHtml(result.printPayload);
 			}
 		} catch (err) {
+			customerLoyalty.refresh();
 			showToast({ type: "error", message: getCheckoutErrorMessage(err) });
 		}
 	};
@@ -541,6 +542,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						if (held) setIsCheckoutOpen(false);
 					});
 				}}
+				onPreviewLoyalty={(points) => cartActions.previewLoyaltyRedemption(points)}
 			/>
 
 			{toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (

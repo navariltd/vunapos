@@ -1040,7 +1040,14 @@ def clear_invoice(invoice_doctype, invoice_name):
 	return invoice_to_dict(doc)
 
 
-def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items=None, price_list=None):
+def update_invoice_from_cart(
+	invoice_doctype,
+	invoice_name,
+	customer=None,
+	items=None,
+	price_list=None,
+	loyalty_points=None,
+):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	cart_items = _cart_item_rows(items)
@@ -1054,6 +1061,8 @@ def update_invoice_from_cart(invoice_doctype, invoice_name, customer=None, items
 		doc.set("taxes", [])
 
 	_append_cart_items(doc, profile, cart_items)
+	_recalculate(doc)
+	_apply_loyalty_redemption(doc, loyalty_points)
 
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1286,7 +1295,13 @@ def checkout_invoice(
 	return invoice_to_dict(doc)
 
 
-def create_invoice_from_cart(pos_profile=None, customer=None, items=None, price_list=None):
+def create_invoice_from_cart(
+	pos_profile=None,
+	customer=None,
+	items=None,
+	price_list=None,
+	loyalty_points=None,
+):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
 	try:
@@ -1302,6 +1317,8 @@ def create_invoice_from_cart(pos_profile=None, customer=None, items=None, price_
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 
 		_append_cart_items(doc, profile, cart_items)
+		_recalculate(doc)
+		_apply_loyalty_redemption(doc, loyalty_points)
 
 		_save_invoice(doc)
 		return invoice_to_dict(doc)
@@ -1335,6 +1352,7 @@ def create_and_submit_invoice(
 			customer=customer,
 			items=items,
 			price_list=price_list,
+			loyalty_points=loyalty_points,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		return checkout_invoice(
