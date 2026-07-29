@@ -16,6 +16,8 @@ export type CachedItem = {
 		discount_percentage: number;
 		pricing_rules: string[];
 		preview_qty: number;
+		kind?: "price" | "product";
+		free_items?: Array<{ item_code: string; item_name?: string; qty: number; uom?: string }>;
 	};
 	actual_qty?: number | null;
 	is_stock_item?: boolean | number;

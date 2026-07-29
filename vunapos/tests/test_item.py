@@ -54,3 +54,33 @@ class TestVunaPOSItem(IntegrationTestCase):
 		self.assertEqual(item["rate"], 90)
 		self.assertEqual(item["pricing_rule"]["discount_percentage"], 10)
 		self.assertIn(rule.name, item["pricing_rule"]["pricing_rules"])
+
+	def test_catalogue_describes_eligible_product_discount(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_item()
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Catalogue Free Item",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Product",
+				"same_item": 1,
+				"free_qty": 1,
+				"rate_or_discount": "Discount Percentage",
+				"priority": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		response = search_items(query=item_code, pos_profile=profile_name)
+
+		self.assertTrue(response["ok"], response)
+		item = next(row for row in response["data"] if row["item_code"] == item_code)
+		self.assertEqual(item["pricing_rule"]["kind"], "product")
+		self.assertEqual(item["pricing_rule"]["free_items"][0]["item_code"], item_code)
+		self.assertEqual(item["pricing_rule"]["free_items"][0]["qty"], 1)

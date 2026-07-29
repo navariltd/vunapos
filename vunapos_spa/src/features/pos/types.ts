@@ -179,6 +179,8 @@ export type ItemDTO = {
 		discount_percentage: number;
 		pricing_rules: string[];
 		preview_qty: number;
+		kind?: "price" | "product";
+		free_items?: Array<{ item_code: string; item_name?: string; qty: number; uom?: string }>;
 	};
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
@@ -256,6 +258,7 @@ export type InvoiceItemDTO = {
 	discount_percentage?: number;
 	discount_amount?: number;
 	amount: number;
+	is_free_item?: boolean;
 	actual_qty?: number;
 	is_stock_item?: boolean | number;
 	allow_negative_stock?: boolean | number;

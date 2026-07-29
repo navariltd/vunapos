@@ -68,6 +68,7 @@ export function CartItemRow({
 	const isBatchTracked = Boolean(item.has_batch_no || item.batch_no || item.batch_allocations?.length);
 	const isSerialTracked = Boolean(item.has_serial_no || item.serial_and_batch_bundle);
 	const itemWarehouse = item.warehouse || warehouse || "";
+	const itemDisabled = Boolean(disabled || item.is_free_item);
 
 	useEffect(() => {
 		if (!expanded || (!batchExpanded && !serialExpanded) || (!isBatchTracked && !isSerialTracked) || !itemWarehouse || batchData) return;
@@ -90,29 +91,29 @@ export function CartItemRow({
 					<button
 						type="button"
 						className="flex min-w-0 flex-1 cursor-pointer items-start justify-between gap-3 text-left"
-						onClick={() => onToggle(item.row_name)}
+						onClick={() => { if (!item.is_free_item) onToggle(item.row_name); }}
 						aria-expanded={expanded}
 						aria-controls={`cart-item-details-${item.row_name}`}
 					>
 						<span className="min-w-0">
-							<span className="block truncate text-sm font-semibold text-on-surface">{item.item_name}</span>
+							<span className="flex items-center gap-2"><span className="block truncate text-sm font-semibold text-on-surface">{item.item_name}</span>{item.is_free_item ? <span className="rounded-full bg-primary-container px-2 py-0.5 text-[10px] font-semibold uppercase text-on-primary-container">Free item</span> : null}</span>
 							<span className="block text-xs text-on-surface-variant">{item.item_code}</span>
 						</span>
 						<ChevronDown className={`mt-1 size-4 shrink-0 text-on-surface-variant transition-transform ${expanded ? "rotate-180" : ""}`} />
 					</button>
-					<button type="button" className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50" disabled={disabled} onClick={() => onRemove(item.row_name)} aria-label={`Remove ${item.item_name}`}>
+					<button type="button" className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50" disabled={itemDisabled} onClick={() => onRemove(item.row_name)} aria-label={`Remove ${item.item_name}`}>
 						<Trash2 className="size-4" />
 					</button>
 				</div>
 				<div className="mt-3 flex items-center justify-between gap-3">
 					<div className="flex items-center overflow-hidden rounded-md border border-outline-variant bg-surface">
-						<button type="button" disabled={disabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
 							<Minus className="size-4" />
 						</button>
 						<input
 							aria-label={`${item.item_name} quantity`}
 							className="h-10 w-14 border-x border-outline-variant bg-surface px-1 text-center text-sm font-semibold outline-none focus:border-primary"
-							disabled={disabled}
+							disabled={itemDisabled}
 							inputMode="decimal"
 							min="0.000001"
 							step="any"
@@ -125,7 +126,7 @@ export function CartItemRow({
 								if (event.key === "Escape") setQuantity(String(item.qty));
 							}}
 						/>
-						<button type="button" disabled={disabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
 							<Plus className="size-4" />
 						</button>
 					</div>
@@ -136,7 +137,7 @@ export function CartItemRow({
 				</div>
 			</div>
 
-			{expanded ? (
+			{expanded && !item.is_free_item ? (
 				<div id={`cart-item-details-${item.row_name}`} className="space-y-4 border-t border-primary bg-surface-container-low p-4">
 					{description ? <p className="rounded-md bg-surface px-3 py-2 text-xs leading-5 text-on-surface-variant">{description}</p> : null}
 
@@ -145,7 +146,7 @@ export function CartItemRow({
 						allowDiscountChange={Boolean(allowDiscountChange)}
 						allowRateChange={Boolean(allowRateChange)}
 						currency={currency}
-						disabled={Boolean(disabled)}
+						disabled={itemDisabled}
 						item={item}
 						onUpdate={(override) => onUpdatePricing(item.row_name, override)}
 					/>

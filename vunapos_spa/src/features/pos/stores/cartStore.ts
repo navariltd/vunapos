@@ -97,6 +97,10 @@ function cartItemPayload(item: InvoiceItemDTO) {
 	};
 }
 
+function cartItemsPayload(items: InvoiceItemDTO[]) {
+	return items.filter((item) => !item.is_free_item).map(cartItemPayload);
+}
+
 function validateManualBatchAllocations(items: InvoiceItemDTO[]) {
 	for (const item of items) {
 		if (item.has_serial_no) {
@@ -614,7 +618,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			customer,
 			invoice_doctype: sourceInvoice?.doctype || currentInvoice?.doctype,
 			price_list: get().selectedPriceList || currentInvoice?.selling_price_list,
-			items: items.map(cartItemPayload),
+			items: cartItemsPayload(items),
 			loyalty_points: currentInvoice?.loyalty_points || undefined,
 		});
 		return localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
@@ -631,7 +635,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			invoice_name: cart.source_invoice_name,
 			customer: selectedCustomer?.customer || cart.customer,
 			price_list: get().selectedPriceList || cart.selling_price_list,
-			items: cart.items.map(cartItemPayload),
+			items: cartItemsPayload(cart.items),
 			loyalty_points: cart.loyalty_points || undefined,
 		});
 	}
@@ -773,7 +777,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 					customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: nextItems.map(cartItemPayload),
+					items: cartItemsPayload(nextItems),
 				}),
 			);
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
@@ -794,7 +798,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 					customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: nextItems.map(cartItemPayload),
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: preservePricingOverrides(updated, nextItems) });
 		},
@@ -816,7 +820,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: nextItems.map(cartItemPayload),
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: updated });
 		},
@@ -844,7 +848,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: nextItems.map(cartItemPayload),
+					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: updated });
 		},
@@ -867,7 +871,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_name: invoice.name,
 					customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: nextItems.map(cartItemPayload),
+					items: cartItemsPayload(nextItems),
 				}),
 			);
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
@@ -974,7 +978,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				customer: selectedCustomer?.customer || invoice.customer,
 				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
 				price_list: get().selectedPriceList,
-				items: items.map(cartItemPayload),
+				items: cartItemsPayload(items),
 			}));
 			const validated = localizePreviewInvoice(
 				authoritative,
@@ -997,7 +1001,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				customer: selectedCustomer?.customer || invoice.customer,
 				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
 				price_list: get().selectedPriceList,
-				items: items.map(cartItemPayload),
+				items: cartItemsPayload(items),
 				loyalty_points: loyaltyPoints || undefined,
 			}));
 			const validated = localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
@@ -1140,7 +1144,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						pos_profile: get().posProfile,
 						customer: selectedCustomer?.customer,
 						price_list: get().selectedPriceList,
-						items: invoice.items.map(cartItemPayload),
+						items: cartItemsPayload(invoice.items),
 						payments,
 						idempotency_key: idempotencyKey,
 						is_credit_sale: isCreditSale,
@@ -1245,7 +1249,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						pos_profile: posProfile,
 						customer: selectedCustomer?.customer,
 						price_list: get().selectedPriceList,
-						items: invoice.items.map(cartItemPayload),
+						items: cartItemsPayload(invoice.items),
 						loyalty_points: invoice.loyalty_points || undefined,
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {

@@ -109,6 +109,7 @@ def invoice_to_dict(doc):
 				"discount_percentage": row.get("discount_percentage"),
 				"discount_amount": row.get("discount_amount"),
 				"amount": row.amount,
+				"is_free_item": bool(row.get("is_free_item")),
 				"warehouse": row.get("warehouse"),
 				"actual_qty": row.get("actual_qty"),
 				"is_stock_item": (item_tracking.get(row.item_code) or {}).get("is_stock_item"),

@@ -32,6 +32,11 @@ export function ItemTaxPrice({ currency, item, align = "left" }: ItemTaxPricePro
 		? effectiveRate * (originalRate / Number(item.rate))
 		: originalRate;
 	const hasPricingDiscount = Boolean(item.pricing_rule && originalDisplayRate > effectiveRate);
+	const productPromotion = item.pricing_rule?.kind === "product"
+		? item.pricing_rule.free_items?.map((freeItem) =>
+			`Get ${freeItem.qty} ${freeItem.uom || ""} ${freeItem.item_name || freeItem.item_code} free`.replace(/\s+/g, " "),
+		).join(" · ")
+		: null;
 	const price = (
 		<div className={alignment} title={item.pricing_rule?.pricing_rules.join(", ") || tax?.template}>
 			{hasPricingDiscount ? (
@@ -41,6 +46,7 @@ export function ItemTaxPrice({ currency, item, align = "left" }: ItemTaxPricePro
 			{hasPricingDiscount ? (
 				<p className="text-xs font-medium text-primary">{item.pricing_rule?.discount_percentage}% off</p>
 			) : null}
+			{productPromotion ? <p className="max-w-44 text-xs font-medium text-primary">{productPromotion}</p> : null}
 		</div>
 	);
 	if (!tax || tax.tax_rate <= 0) {

@@ -322,9 +322,31 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 	precision = get_currency_precision()
 	pricing_rule_map = {}
 	for item, result in zip(items, results, strict=True):
-		if not result.get("has_pricing_rule") or result.get("price_or_product_discount") != "Price":
+		if not result.get("has_pricing_rule"):
 			continue
 		original_rate = flt(rate_map.get(item.name, item.standard_rate), precision)
+		if result.get("price_or_product_discount") == "Product":
+			free_items = [
+				{
+					"item_code": row.get("item_code"),
+					"item_name": row.get("item_name"),
+					"qty": flt(row.get("qty")),
+					"uom": row.get("uom"),
+				}
+				for row in result.get("free_item_data") or []
+			]
+			if free_items:
+				pricing_rule_map[item.name] = {
+					"rate": original_rate,
+					"discount_percentage": 0,
+					"pricing_rules": frappe.parse_json(result.get("pricing_rules") or "[]"),
+					"preview_qty": 1,
+					"kind": "product",
+					"free_items": free_items,
+				}
+			continue
+		if result.get("price_or_product_discount") != "Price":
+			continue
 		rule_rate = flt(result.get("price_list_rate") or original_rate, precision)
 		margin = flt(result.get("margin_rate_or_amount"))
 		if result.get("margin_type") == "Percentage":
@@ -347,6 +369,7 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 			),
 			"pricing_rules": frappe.parse_json(result.get("pricing_rules") or "[]"),
 			"preview_qty": 1,
+			"kind": "price",
 		}
 	return pricing_rule_map
 

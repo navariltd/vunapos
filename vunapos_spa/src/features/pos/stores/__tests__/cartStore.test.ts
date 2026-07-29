@@ -332,6 +332,34 @@ describe("live cart pricing rules", () => {
 		});
 		expect(useCartStore.getState().invoice?.totals.grand_total).toBe(400);
 	});
+
+	it("does not send server-generated free rows back as cashier cart items", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		const previewInvoice = vi.fn().mockImplementation(async (params: { items: string }) => {
+			const paidItems = JSON.parse(params.items) as Array<{ item_code: string; qty: number }>;
+			return {
+				doctype: "Sales Invoice",
+				name: "Not invoiced yet",
+				docstatus: 0,
+				customer: "CUST-1",
+				items: [
+					{ row_name: "paid", item_code: paidItems[0].item_code, item_name: "Widget", qty: paidItems[0].qty, rate: 100, amount: 100 },
+					{ row_name: "free", item_code: "FREE-1", item_name: "Gift", qty: 1, rate: 0, amount: 0, is_free_item: true, pricing_rules: '["BUY-GET"]' },
+				],
+				taxes: [],
+				totals: { net_total: 100, total_taxes_and_charges: 0, grand_total: 100, rounded_total: 100 },
+			};
+		});
+		const api = makeApi({ previewInvoice });
+
+		await useCartStore.getState().addCartItem(makeItem(), api);
+		await useCartStore.getState().updateCartItemNote("paid", "Packed", api);
+
+		const secondPayload = JSON.parse(previewInvoice.mock.calls[1][0].items) as Array<{ item_code: string }>;
+		expect(secondPayload).toEqual([expect.objectContaining({ item_code: "ITEM-1" })]);
+		expect(useCartStore.getState().invoice?.items).toHaveLength(2);
+		expect(useCartStore.getState().invoice?.items[1]).toMatchObject({ item_code: "FREE-1", is_free_item: true });
+	});
 });
 
 describe("updateCartItemPricing", () => {

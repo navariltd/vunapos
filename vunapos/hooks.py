@@ -163,6 +163,7 @@ doc_events = {
 		"Item",
 		"Item Price",
 		"Price List",
+		"Pricing Rule",
 		"Mode of Payment",
 	)
 }
