@@ -10,9 +10,12 @@ from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_QUEUED,
 	QUEUE_STATUS_REQUIRES_REVIEW,
 	QUEUE_STATUS_SUBMITTED,
+	cancel_queued_invoice,
 	enqueue_invoice_submission,
 	get_queue_limits,
 	process_queued_invoice,
+	recover_stale_checkout_jobs,
+	retry_queued_invoice,
 	transition_invoice_queue,
 	validate_queue_transition,
 )
@@ -150,3 +153,63 @@ class TestCheckoutQueueService(TestCase):
 		rollback.assert_called_once()
 		self.assertEqual(commit.call_count, 2)
 		log_error.assert_called_once()
+
+	@patch("vunapos.services.checkout_queue_service._enqueue_submission_job")
+	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
+	@patch("vunapos.services.checkout_queue_service._require_owned_queue_invoice")
+	def test_cashier_retry_revalidates_reservation_and_queues_new_attempt(
+		self, require_owned, validate_reservations, enqueue_job
+	):
+		doc = self._invoice(QUEUE_STATUS_FAILED)
+		doc.vunapos_queue_attempts = 1
+		doc.add_comment = Mock()
+		profile = frappe._dict(vunapos_enable_background_submission=1, vunapos_queue_max_attempts=3)
+		require_owned.return_value = (doc, profile)
+
+		result = retry_queued_invoice("Counter 1", doc.name)
+
+		self.assertEqual(result["queue_status"], QUEUE_STATUS_QUEUED)
+		validate_reservations.assert_called_once_with(doc)
+		enqueue_job.assert_called_once_with(doc)
+
+	@patch("vunapos.services.stock_reservation_service.release_invoice_stock_reservations")
+	@patch("vunapos.services.checkout_queue_service._require_owned_queue_invoice")
+	def test_cashier_cancel_releases_reservation_and_closes_queue_record(
+		self, require_owned, release_reservations
+	):
+		doc = self._invoice(QUEUE_STATUS_FAILED)
+		doc.add_comment = Mock()
+		doc.save = Mock()
+		require_owned.return_value = (doc, frappe._dict())
+
+		result = cancel_queued_invoice("Counter 1", doc.name)
+
+		self.assertEqual(result["queue_status"], QUEUE_STATUS_CANCELLED)
+		release_reservations.assert_called_once_with(doc)
+		doc.save.assert_called_once_with(ignore_permissions=True)
+
+	@patch("vunapos.services.checkout_queue_service._enqueue_submission_job")
+	@patch("frappe.get_cached_doc")
+	@patch("frappe.get_doc")
+	@patch("frappe.get_all")
+	def test_stale_processing_job_is_requeued(self, get_all, get_doc, get_profile, enqueue_job):
+		get_all.return_value = [
+			frappe._dict(
+				name="ACC-SINV-STALE-1",
+				pos_profile="Counter 1",
+				vunapos_queue_started_at=frappe.utils.add_days(frappe.utils.now_datetime(), -1),
+			)
+		]
+		doc = self._invoice(QUEUE_STATUS_PROCESSING)
+		doc.vunapos_queue_attempts = 1
+		get_doc.return_value = doc
+		get_profile.return_value = frappe._dict(
+			vunapos_enable_background_submission=1,
+			vunapos_queue_max_attempts=3,
+			vunapos_queue_processing_timeout_minutes=5,
+		)
+
+		recover_stale_checkout_jobs()
+
+		self.assertEqual(doc.vunapos_queue_status, QUEUE_STATUS_QUEUED)
+		enqueue_job.assert_called_once_with(doc)

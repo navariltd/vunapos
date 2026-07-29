@@ -5,7 +5,7 @@ from collections.abc import Iterable
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime
 
 QUEUE_STATUS_QUEUED = "Queued"
 QUEUE_STATUS_PROCESSING = "Processing"
@@ -157,8 +157,26 @@ def find_invoice_by_idempotency_key(
 
 
 def _queue_job_id(doc) -> str:
-	digest = hashlib.sha256(f"{doc.doctype}:{doc.name}".encode()).hexdigest()[:24]
+	digest = hashlib.sha256(
+		f"{doc.doctype}:{doc.name}:{cint(doc.get('vunapos_queue_attempts'))}".encode()
+	).hexdigest()[:24]
 	return f"vunapos-invoice-submit-{digest}"
+
+
+def _enqueue_submission_job(doc) -> None:
+	job_id = _queue_job_id(doc)
+	doc.vunapos_queue_job_id = job_id
+	doc.save(ignore_permissions=True)
+	frappe.enqueue(
+		"vunapos.services.checkout_queue_service.process_queued_invoice",
+		queue="short",
+		timeout=300,
+		enqueue_after_commit=True,
+		job_id=job_id,
+		deduplicate=True,
+		invoice_doctype=doc.doctype,
+		invoice_name=doc.name,
+	)
 
 
 def enqueue_invoice_submission(doc) -> None:
@@ -173,19 +191,138 @@ def enqueue_invoice_submission(doc) -> None:
 			{"status": status},
 		)
 
-	job_id = _queue_job_id(doc)
-	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED, job_id=job_id)
-	doc.save(ignore_permissions=True)
-	frappe.enqueue(
-		"vunapos.services.checkout_queue_service.process_queued_invoice",
-		queue="short",
-		timeout=300,
-		enqueue_after_commit=True,
-		job_id=job_id,
-		deduplicate=True,
-		invoice_doctype=doc.doctype,
-		invoice_name=doc.name,
+	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
+	_enqueue_submission_job(doc)
+
+
+def _require_owned_queue_invoice(pos_profile: str, invoice_name: str):
+	from vunapos.services.profile_service import require_open_pos_session, resolve_pos_profile
+	from vunapos.utils.permissions import require_read, require_write
+
+	profile = resolve_pos_profile(pos_profile)
+	require_read("Sales Invoice", invoice_name)
+	require_write("Sales Invoice", invoice_name)
+	doc = frappe.get_doc("Sales Invoice", invoice_name, for_update=True)
+	opening_entry = require_open_pos_session(profile.name)
+	if (
+		not doc.get("vunapos_invoice")
+		or doc.get("pos_profile") != profile.name
+		or doc.get("vunapos_session_cashier") != frappe.session.user
+		or doc.get("vunapos_opening_entry") != opening_entry.name
+	):
+		_queue_error(
+			"QUEUE_INVOICE_NOT_AVAILABLE",
+			_("This queued invoice is not available in the current cashier shift"),
+		)
+	return doc, profile
+
+
+def get_checkout_queue(pos_profile: str) -> list[dict]:
+	from vunapos.services.profile_service import require_open_pos_session, resolve_pos_profile
+
+	profile = resolve_pos_profile(pos_profile)
+	opening_entry = require_open_pos_session(profile.name)
+	return frappe.get_list(
+		"Sales Invoice",
+		filters={
+			"docstatus": 0,
+			"vunapos_invoice": 1,
+			"pos_profile": profile.name,
+			"vunapos_opening_entry": opening_entry.name,
+			"vunapos_session_cashier": frappe.session.user,
+			"vunapos_queue_status": [
+				"in",
+				[
+					QUEUE_STATUS_QUEUED,
+					QUEUE_STATUS_PROCESSING,
+					QUEUE_STATUS_FAILED,
+					QUEUE_STATUS_REQUIRES_REVIEW,
+				],
+			],
+		},
+		fields=[
+			"name",
+			"customer",
+			"customer_name",
+			"currency",
+			"grand_total",
+			"rounded_total",
+			"posting_date",
+			"posting_time",
+			"vunapos_queue_status as queue_status",
+			"vunapos_queue_attempts as queue_attempts",
+			"vunapos_queue_error as queue_error",
+			"vunapos_queue_created_at as queued_at",
+			"vunapos_queue_started_at as processing_started_at",
+		],
+		order_by="vunapos_queue_created_at desc, creation desc",
+		limit_page_length=200,
 	)
+
+
+def retry_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
+	from vunapos.dto.invoice import invoice_to_dict
+	from vunapos.services.stock_reservation_service import validate_invoice_stock_reservations
+
+	doc, profile = _require_owned_queue_invoice(pos_profile, invoice_name)
+	status = normalize_queue_status(doc.get("vunapos_queue_status"))
+	if status not in (QUEUE_STATUS_FAILED, QUEUE_STATUS_REQUIRES_REVIEW):
+		_queue_error("QUEUE_RETRY_NOT_ALLOWED", _("Only failed queued invoices can be retried"))
+	limits = get_queue_limits(profile)
+	if cint(doc.get("vunapos_queue_attempts")) >= limits["max_attempts"]:
+		_queue_error(
+			"QUEUE_MAX_ATTEMPTS_REACHED",
+			_("This invoice has reached its maximum submission attempts and must be cancelled or reviewed"),
+		)
+	validate_invoice_stock_reservations(doc)
+	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
+	doc.add_comment("Info", _("Background submission retried by {0}").format(frappe.session.user))
+	_enqueue_submission_job(doc)
+	return invoice_to_dict(doc)
+
+
+def cancel_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
+	from vunapos.dto.invoice import invoice_to_dict
+	from vunapos.services.stock_reservation_service import release_invoice_stock_reservations
+
+	doc, _profile = _require_owned_queue_invoice(pos_profile, invoice_name)
+	status = normalize_queue_status(doc.get("vunapos_queue_status"))
+	if status not in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_FAILED, QUEUE_STATUS_REQUIRES_REVIEW):
+		_queue_error(
+			"QUEUE_CANCEL_NOT_ALLOWED",
+			_("This invoice cannot be cancelled while its submission worker is running"),
+		)
+	release_invoice_stock_reservations(doc)
+	transition_invoice_queue(doc, QUEUE_STATUS_CANCELLED)
+	doc.add_comment("Info", _("Queued sale cancelled by {0}").format(frappe.session.user))
+	doc.save(ignore_permissions=True)
+	return invoice_to_dict(doc)
+
+
+def recover_stale_checkout_jobs() -> None:
+	"""Requeue workers that died while an invoice remained in Processing."""
+	for row in frappe.get_all(
+		"Sales Invoice",
+		filters={"docstatus": 0, "vunapos_invoice": 1, "vunapos_queue_status": QUEUE_STATUS_PROCESSING},
+		fields=["name", "pos_profile", "vunapos_queue_started_at"],
+		limit_page_length=1000,
+	):
+		profile = frappe.get_cached_doc("POS Profile", row.pos_profile)
+		limits = get_queue_limits(profile)
+		cutoff = add_to_date(now_datetime(), minutes=-limits["processing_timeout_minutes"])
+		if row.vunapos_queue_started_at and row.vunapos_queue_started_at > cutoff:
+			continue
+		doc = frappe.get_doc("Sales Invoice", row.name, for_update=True)
+		if doc.get("vunapos_queue_status") != QUEUE_STATUS_PROCESSING:
+			continue
+		message = _("The background worker exceeded its processing timeout")
+		transition_invoice_queue(doc, QUEUE_STATUS_FAILED, error_message=message)
+		if cint(doc.get("vunapos_queue_attempts")) >= limits["max_attempts"]:
+			transition_invoice_queue(doc, QUEUE_STATUS_REQUIRES_REVIEW, error_message=message)
+			doc.save(ignore_permissions=True)
+			continue
+		transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
+		_enqueue_submission_job(doc)
 
 
 def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:

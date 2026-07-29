@@ -188,7 +188,7 @@ def _load_draft_invoice(invoice_doctype, invoice_name):
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus != 0:
 		_throw("INVOICE_ALREADY_SUBMITTED", _("Invoice {0} is not a draft").format(invoice_name))
-	if doc.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
+	if doc.get("vunapos_queue_status"):
 		_throw(
 			"INVOICE_QUEUE_LOCKED",
 			_("Invoice {0} is already queued for submission").format(invoice_name),

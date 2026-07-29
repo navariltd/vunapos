@@ -171,23 +171,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"vunapos.tasks.all"
-# 	],
-# 	"daily": [
-# 		"vunapos.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"vunapos.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"vunapos.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"vunapos.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"cron": {
+		"*/5 * * * *": ["vunapos.services.checkout_queue_service.recover_stale_checkout_jobs"],
+	},
+}
 
 # Testing
 # -------
