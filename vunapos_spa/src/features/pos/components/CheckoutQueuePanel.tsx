@@ -4,6 +4,7 @@ import { RefreshCw, RotateCcw, XCircle } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { useCheckoutQueueRealtime } from "../hooks/useCheckoutQueueRealtime";
 
 type QueueRow = {
 	name: string;
@@ -31,6 +32,9 @@ export function CheckoutQueuePanel({ posProfile, currency }: { posProfile?: stri
 	);
 	const retryCall = useFrappePostCall(vunaMethods.retryQueuedInvoice);
 	const cancelCall = useFrappePostCall(vunaMethods.cancelQueuedInvoice);
+	useCheckoutQueueRealtime((event) => {
+		if (event.pos_profile === posProfile) void call.mutate();
+	});
 	let rows: QueueRow[] = [];
 	let loadError = call.error?.message || "";
 	try {

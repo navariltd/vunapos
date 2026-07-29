@@ -22,6 +22,7 @@ import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
 import { useConfigurationRealtime } from "./hooks/useConfigurationRealtime";
+import { useCheckoutQueueRealtime } from "./hooks/useCheckoutQueueRealtime";
 import { useCustomerLoyalty } from "./hooks/useCustomerLoyalty";
 import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
@@ -175,6 +176,41 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 					? `Configuration changed, but VunaPOS could not refresh: ${refreshError.message}`
 					: "Configuration changed, but VunaPOS could not refresh.",
 			});
+		}
+	});
+
+	useCheckoutQueueRealtime((event) => {
+		if (event.pos_profile !== bootstrap.data?.pos_profile) return;
+		if (event.status === "Submitted") {
+			void (async () => {
+				try {
+					await hydrate(event.pos_profile);
+					const cartState = useCartStore.getState();
+					if (cartState.selectedPriceList) {
+						await cartActions.refreshPriceListPricing(cartState.selectedPriceList);
+					} else {
+						const customer = getActiveCustomer(cartState);
+						if (customer) await cartActions.refreshCustomerPricing(customer);
+						else if (cartState.invoice?.items.length) await cartActions.refreshCartConfiguration();
+					}
+				} catch (refreshError) {
+					console.error("Unable to refresh stock after queued checkout", refreshError);
+				}
+			})();
+			customerLoyalty.refresh();
+			showToast({ type: "info", message: `Invoice ${event.invoice_name} submitted successfully.` });
+			return;
+		}
+		if (event.status === "Failed" || event.status === "Requires Review") {
+			const suffix = event.error ? `: ${event.error}` : ". Open the Checkout Queue for details.";
+			showToast({
+				type: "error",
+				message: `Invoice ${event.invoice_name} ${event.status === "Requires Review" ? "requires review" : "failed to submit"}${suffix}`,
+			});
+			return;
+		}
+		if (event.status === "Cancelled") {
+			showToast({ type: "info", message: `Queued invoice ${event.invoice_name} was cancelled.` });
 		}
 	});
 

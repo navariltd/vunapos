@@ -154,6 +154,39 @@ class TestCheckoutQueueService(TestCase):
 		self.assertEqual(commit.call_count, 2)
 		log_error.assert_called_once()
 
+	@patch("vunapos.services.checkout_queue_service._publish_queue_update")
+	@patch("frappe.db.commit")
+	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
+	@patch("vunapos.services.profile_service.resolve_pos_profile")
+	@patch("frappe.get_doc")
+	def test_worker_publishes_processing_and_submitted_updates(
+		self,
+		get_doc,
+		resolve_profile,
+		validate_reservations,
+		commit,
+		publish_update,
+	):
+		doc = self._invoice(QUEUE_STATUS_QUEUED)
+		doc.save = Mock()
+		doc.submit = Mock(side_effect=lambda: setattr(doc, "docstatus", 1))
+		get_doc.return_value = doc
+		resolve_profile.return_value = frappe._dict(
+			vunapos_enable_background_submission=1,
+			vunapos_queue_max_attempts=3,
+		)
+		published_statuses = []
+		publish_update.side_effect = lambda queued_doc: published_statuses.append(
+			queued_doc.vunapos_queue_status
+		)
+
+		result = process_queued_invoice(doc.doctype, doc.name)
+
+		self.assertEqual(result["status"], QUEUE_STATUS_SUBMITTED)
+		self.assertEqual(published_statuses, [QUEUE_STATUS_PROCESSING, QUEUE_STATUS_SUBMITTED])
+		validate_reservations.assert_called_once_with(doc)
+		self.assertEqual(commit.call_count, 2)
+
 	@patch("vunapos.services.checkout_queue_service._enqueue_submission_job")
 	@patch("vunapos.services.stock_reservation_service.validate_invoice_stock_reservations")
 	@patch("vunapos.services.checkout_queue_service._require_owned_queue_invoice")

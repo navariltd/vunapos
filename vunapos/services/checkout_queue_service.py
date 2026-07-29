@@ -179,6 +179,12 @@ def _enqueue_submission_job(doc) -> None:
 	)
 
 
+def _publish_queue_update(doc) -> None:
+	from vunapos.realtime import publish_checkout_queue_change
+
+	publish_checkout_queue_change(doc)
+
+
 def enqueue_invoice_submission(doc) -> None:
 	"""Persist the queued state and enqueue only after the draft transaction commits."""
 	status = normalize_queue_status(doc.get("vunapos_queue_status"))
@@ -193,6 +199,7 @@ def enqueue_invoice_submission(doc) -> None:
 
 	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
 	_enqueue_submission_job(doc)
+	_publish_queue_update(doc)
 
 
 def _require_owned_queue_invoice(pos_profile: str, invoice_name: str):
@@ -278,6 +285,7 @@ def retry_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
 	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
 	doc.add_comment("Info", _("Background submission retried by {0}").format(frappe.session.user))
 	_enqueue_submission_job(doc)
+	_publish_queue_update(doc)
 	return invoice_to_dict(doc)
 
 
@@ -296,6 +304,7 @@ def cancel_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
 	transition_invoice_queue(doc, QUEUE_STATUS_CANCELLED)
 	doc.add_comment("Info", _("Queued sale cancelled by {0}").format(frappe.session.user))
 	doc.save(ignore_permissions=True)
+	_publish_queue_update(doc)
 	return invoice_to_dict(doc)
 
 
@@ -320,9 +329,11 @@ def recover_stale_checkout_jobs() -> None:
 		if cint(doc.get("vunapos_queue_attempts")) >= limits["max_attempts"]:
 			transition_invoice_queue(doc, QUEUE_STATUS_REQUIRES_REVIEW, error_message=message)
 			doc.save(ignore_permissions=True)
+			_publish_queue_update(doc)
 			continue
 		transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
 		_enqueue_submission_job(doc)
+		_publish_queue_update(doc)
 
 
 def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
@@ -343,6 +354,7 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 	limits = get_queue_limits(profile)
 	transition_invoice_queue(doc, QUEUE_STATUS_PROCESSING)
 	doc.save(ignore_permissions=True)
+	_publish_queue_update(doc)
 	frappe.db.commit()
 
 	try:
@@ -351,6 +363,7 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 		doc.submit()
 		transition_invoice_queue(doc, QUEUE_STATUS_SUBMITTED)
 		doc.save(ignore_permissions=True)
+		_publish_queue_update(doc)
 		frappe.db.commit()
 		return {"doctype": doc.doctype, "name": doc.name, "status": QUEUE_STATUS_SUBMITTED}
 	except Exception as exc:
@@ -365,6 +378,7 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 					error_message=str(exc),
 				)
 			failed.save(ignore_permissions=True)
+			_publish_queue_update(failed)
 			frappe.db.commit()
 		frappe.log_error(
 			message=frappe.get_traceback(with_context=True),
