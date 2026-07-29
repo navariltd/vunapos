@@ -516,6 +516,45 @@ def ensure_vunapos_custom_fields():
 		},
 		ignore_validate=True,
 	)
+	ensure_sales_invoice_stock_reservation_option()
+
+
+def ensure_sales_invoice_stock_reservation_option():
+	legacy_setter = frappe.db.get_value(
+		"Property Setter",
+		{
+			"name": "Stock Reservation Entry-main-options",
+			"doc_type": "Stock Reservation Entry",
+			"field_name": ["is", "not set"],
+			"property": "options",
+			"module": "VunaPOS",
+		},
+		"name",
+	)
+	if legacy_setter:
+		frappe.delete_doc("Property Setter", legacy_setter, ignore_permissions=True)
+		frappe.clear_cache(doctype="Stock Reservation Entry")
+
+	field = frappe.get_meta("Stock Reservation Entry").get_field("voucher_type")
+	options = [option.strip() for option in (field.options or "").splitlines() if option.strip()]
+	if "Sales Invoice" in options:
+		return
+
+	options.append("Sales Invoice")
+	frappe.make_property_setter(
+		{
+			"doctype": "Stock Reservation Entry",
+			"doctype_or_field": "DocField",
+			"fieldname": "voucher_type",
+			"property": "options",
+			"property_type": "Text",
+			"value": "\n" + "\n".join(options),
+		},
+		ignore_validate=True,
+		is_system_generated=False,
+		module="VunaPOS",
+	)
+	frappe.clear_cache(doctype="Stock Reservation Entry")
 
 
 def before_tests():

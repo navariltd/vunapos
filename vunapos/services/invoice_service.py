@@ -32,6 +32,10 @@ from vunapos.services.profile_service import (
 	require_open_pos_session,
 	resolve_pos_profile,
 )
+from vunapos.services.stock_reservation_service import (
+	create_invoice_stock_reservations,
+	validate_invoice_stock_reservations,
+)
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
@@ -1340,6 +1344,12 @@ def create_and_submit_invoice(
 			return invoice_to_dict(existing)
 		if existing.docstatus != 0:
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
+		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
+		if get_queue_limits(existing_profile)["enabled"]:
+			if existing.get("vunapos_reservation_fingerprint"):
+				validate_invoice_stock_reservations(existing)
+			else:
+				create_invoice_stock_reservations(existing)
 		return checkout_invoice(
 			existing.doctype,
 			existing.name,
@@ -1369,6 +1379,8 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
+		if get_queue_limits(profile)["enabled"]:
+			create_invoice_stock_reservations(doc)
 		return checkout_invoice(
 			doc.doctype,
 			doc.name,

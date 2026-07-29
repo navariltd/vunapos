@@ -204,6 +204,7 @@ before_tests = "vunapos.setup.utils.before_tests"
 extend_doctype_class = {
 	"POS Closing Entry": "vunapos.overrides.pos_closing_entry.VunaPOSClosingEntryMixin",
 	"POS Opening Entry": "vunapos.overrides.pos_opening_entry.VunaPOSOpeningEntryMixin",
+	"Sales Invoice": "vunapos.overrides.sales_invoice.VunaPOSSalesInvoiceReservationMixin",
 	"POS Invoice": "vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
 }
 
