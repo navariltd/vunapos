@@ -25,6 +25,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	resolveBarcode,
 	searchItems,
 	holdInvoice,
 	listHeldInvoices,
@@ -44,6 +45,7 @@ export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
 	searchItems: FrappeCall;
+	resolveBarcode: FrappeCall;
 	getItemBatches: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
@@ -375,6 +377,7 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 
 function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 	const rate = Number(item.rate || 0);
+	const tracking = item.scan_tracking;
 	return {
 		row_name: item.item_code,
 		item_code: item.item_code,
@@ -394,10 +397,44 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		has_batch_no: item.has_batch_no,
 		has_serial_no: item.has_serial_no,
 		barcode: item.barcode,
+		batch_allocations: tracking?.type === "batch" && tracking.batch_no
+			? [{ batch_no: tracking.batch_no, qty, available_qty: tracking.available_qty }]
+			: [],
+		serial_allocations: tracking?.type === "serial" && tracking.serial_no
+			? [{ serial_no: tracking.serial_no, batch_no: tracking.batch_no ?? null }]
+			: [],
 		item_tax_template: item.item_tax_template,
 		item_tax: item.item_tax,
 		catalogue_pricing_rule: item.pricing_rule,
 	};
+}
+
+function mergeScannedTracking(row: InvoiceItemDTO, item: ItemDTO): InvoiceItemDTO {
+	const tracking = item.scan_tracking;
+	if (!tracking) return updateLocalQty(row, row.qty + 1);
+	const qty = row.qty + 1;
+	if (tracking.type === "serial" && tracking.serial_no) {
+		if (row.serial_allocations?.some((allocation) => allocation.serial_no === tracking.serial_no)) {
+			throw new Error(`Serial number ${tracking.serial_no} has already been scanned.`);
+		}
+		return {
+			...row,
+			qty,
+			amount: Number(row.rate || 0) * qty,
+			serial_allocations: [...(row.serial_allocations || []), {
+				serial_no: tracking.serial_no,
+				batch_no: tracking.batch_no,
+			}],
+		};
+	}
+	if (tracking.type === "batch" && tracking.batch_no) {
+		const allocations = [...(row.batch_allocations || [])];
+		const existing = allocations.find((allocation) => allocation.batch_no === tracking.batch_no);
+		if (existing) existing.qty += 1;
+		else allocations.push({ batch_no: tracking.batch_no, qty: 1, available_qty: tracking.available_qty });
+		return { ...row, qty, amount: Number(row.rate || 0) * qty, batch_allocations: allocations };
+	}
+	return updateLocalQty(row, qty);
 }
 
 function updateLocalQty(row: InvoiceItemDTO, qty: number): InvoiceItemDTO {
@@ -682,9 +719,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 				const existingItem = currentItems.find((row) => row.item_code === item.item_code);
 				const nextItems = existingItem
 					? currentItems.map((row) => {
-							if (row.item_code === item.item_code) {
-								validateAvailableQty(row, row.qty + 1);
-								return updateLocalQty(row, row.qty + 1);
+						if (row.item_code === item.item_code) {
+							validateAvailableQty(row, row.qty + 1);
+							return mergeScannedTracking(row, item);
 							}
 							return row;
 						})
@@ -710,21 +747,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (!value) return;
 			const state = get();
 			const customer = getActiveCustomer(state);
-			const matches = await runMutation(() => searchItems(api.searchItems, {
-				query: value,
+			const item = await runMutation(() => resolveBarcode(api.resolveBarcode, {
+				barcode: value,
 				pos_profile: state.posProfile,
 				customer: customer?.customer,
-				price_list: state.selectedPriceList,
-				limit: 5,
-			}));
-			const exactMatches = matches.filter((item) => item.barcode?.trim() === value);
-			if (exactMatches.length === 0) {
-				throw new Error(`No item was found for barcode ${value}.`);
-			}
-			if (exactMatches.length > 1) {
-				throw new Error(`Barcode ${value} is assigned to more than one item.`);
-			}
-			await get().addCartItem(exactMatches[0], api);
+					price_list: state.selectedPriceList,
+				}));
+				await get().addCartItem(item, api);
 		},
 
 		updateCartItemQty: async (rowName, qty, api) => {

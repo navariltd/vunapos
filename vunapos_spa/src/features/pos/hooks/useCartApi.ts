@@ -9,6 +9,7 @@ export function useCartApi(): CartApi {
 	const addItemCall = useFrappePostCall(vunaMethods.addItem);
 	const getItemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
 	const searchItemsCall = useFrappePostCall(vunaMethods.searchItems);
+	const resolveBarcodeCall = useFrappePostCall(vunaMethods.resolveBarcode);
 	const getItemBatchesCall = useFrappePostCall(vunaMethods.getItemBatches);
 	const updateItemCall = useFrappePostCall(vunaMethods.updateItem);
 	const removeItemCall = useFrappePostCall(vunaMethods.removeItem);
@@ -27,6 +28,7 @@ export function useCartApi(): CartApi {
 		addItem: addItemCall.call,
 		getItemDetails: getItemDetailsCall.call,
 		searchItems: searchItemsCall.call,
+		resolveBarcode: resolveBarcodeCall.call,
 		getItemBatches: getItemBatchesCall.call,
 		updateItem: updateItemCall.call,
 		removeItem: removeItemCall.call,
