@@ -1,8 +1,5 @@
 import frappe
 
-from vunapos.services.checkout_queue_service import (
-	cancel_queued_invoice as cancel_queued_invoice_service,
-)
 from vunapos.services.checkout_queue_service import get_checkout_queue as get_checkout_queue_service
 from vunapos.services.checkout_queue_service import retry_queued_invoice as retry_queued_invoice_service
 from vunapos.services.invoice_history_service import get_invoice_details as get_invoice_details_service
@@ -153,14 +150,6 @@ def get_checkout_queue(pos_profile: str):
 def retry_queued_invoice(pos_profile: str, invoice_name: str):
 	try:
 		return success(retry_queued_invoice_service(pos_profile, invoice_name))
-	except Exception as exc:
-		return _failure_from_exception(exc)
-
-
-@frappe.whitelist(methods=["POST"])
-def cancel_queued_invoice(pos_profile: str, invoice_name: str):
-	try:
-		return success(cancel_queued_invoice_service(pos_profile, invoice_name))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

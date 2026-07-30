@@ -66,7 +66,6 @@ export const vunaMethods = {
 	getInvoiceHistory: "vunapos.api.sales.get_invoice_history",
 	getCheckoutQueue: "vunapos.api.sales.get_checkout_queue",
 	retryQueuedInvoice: "vunapos.api.sales.retry_queued_invoice",
-	cancelQueuedInvoice: "vunapos.api.sales.cancel_queued_invoice",
 	getInvoiceDetails: "vunapos.api.sales.get_invoice_details",
 	getReturnPreview: "vunapos.api.sales.get_return_preview",
 	createInvoiceReturn: "vunapos.api.sales.create_invoice_return",

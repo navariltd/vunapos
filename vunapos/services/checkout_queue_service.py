@@ -323,37 +323,18 @@ def retry_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
 
 	doc, profile = _require_owned_queue_invoice(pos_profile, invoice_name)
 	status = normalize_queue_status(doc.get("vunapos_queue_status"))
-	if status not in (QUEUE_STATUS_FAILED, QUEUE_STATUS_REQUIRES_REVIEW):
+	if status != QUEUE_STATUS_FAILED:
 		_queue_error("QUEUE_RETRY_NOT_ALLOWED", _("Only failed queued invoices can be retried"))
 	limits = get_queue_limits(profile)
 	if cint(doc.get("vunapos_queue_attempts")) >= limits["max_attempts"]:
 		_queue_error(
 			"QUEUE_MAX_ATTEMPTS_REACHED",
-			_("This invoice has reached its maximum submission attempts and must be cancelled or reviewed"),
+			_("This invoice has reached its maximum submission attempts and requires operator review"),
 		)
 	validate_invoice_stock_reservations(doc)
 	transition_invoice_queue(doc, QUEUE_STATUS_QUEUED)
 	doc.add_comment("Info", _("Background submission retried by {0}").format(frappe.session.user))
 	_enqueue_submission_job(doc)
-	_publish_queue_update(doc)
-	return invoice_to_dict(doc)
-
-
-def cancel_queued_invoice(pos_profile: str, invoice_name: str) -> dict:
-	from vunapos.dto.invoice import invoice_to_dict
-	from vunapos.services.stock_reservation_service import release_invoice_stock_reservations
-
-	doc, _profile = _require_owned_queue_invoice(pos_profile, invoice_name)
-	status = normalize_queue_status(doc.get("vunapos_queue_status"))
-	if status not in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_FAILED, QUEUE_STATUS_REQUIRES_REVIEW):
-		_queue_error(
-			"QUEUE_CANCEL_NOT_ALLOWED",
-			_("This invoice cannot be cancelled while its submission worker is running"),
-		)
-	release_invoice_stock_reservations(doc)
-	transition_invoice_queue(doc, QUEUE_STATUS_CANCELLED)
-	doc.add_comment("Info", _("Queued sale cancelled by {0}").format(frappe.session.user))
-	doc.save(ignore_permissions=True)
 	_publish_queue_update(doc)
 	return invoice_to_dict(doc)
 

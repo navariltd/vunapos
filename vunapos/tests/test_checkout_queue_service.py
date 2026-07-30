@@ -12,7 +12,6 @@ from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_SUBMITTED,
 	_get_worker_profile,
 	audit_checkout_queue_integrity,
-	cancel_queued_invoice,
 	enqueue_invoice_submission,
 	get_queue_limits,
 	process_queued_invoice,
@@ -234,21 +233,15 @@ class TestCheckoutQueueService(TestCase):
 		validate_reservations.assert_called_once_with(doc)
 		enqueue_job.assert_called_once_with(doc)
 
-	@patch("vunapos.services.stock_reservation_service.release_invoice_stock_reservations")
 	@patch("vunapos.services.checkout_queue_service._require_owned_queue_invoice")
-	def test_cashier_cancel_releases_reservation_and_closes_queue_record(
-		self, require_owned, release_reservations
-	):
-		doc = self._invoice(QUEUE_STATUS_FAILED)
-		doc.add_comment = Mock()
-		doc.save = Mock()
+	def test_cashier_cannot_retry_an_invoice_marked_for_review(self, require_owned):
+		doc = self._invoice(QUEUE_STATUS_REQUIRES_REVIEW)
 		require_owned.return_value = (doc, frappe._dict())
 
-		result = cancel_queued_invoice("Counter 1", doc.name)
+		with self.assertRaises(frappe.ValidationError) as context:
+			retry_queued_invoice("Counter 1", doc.name)
 
-		self.assertEqual(result["queue_status"], QUEUE_STATUS_CANCELLED)
-		release_reservations.assert_called_once_with(doc)
-		doc.save.assert_called_once_with(ignore_permissions=True)
+		self.assertEqual(context.exception.vuna_error_code, "QUEUE_RETRY_NOT_ALLOWED")
 
 	@patch("vunapos.services.checkout_queue_service._enqueue_submission_job")
 	@patch("frappe.get_cached_doc")
