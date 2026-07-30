@@ -54,7 +54,7 @@ export function Sidebar() {
 							className={cn(
 								"flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
 								isActive
-									? "bg-surface text-on-surface shadow-sm"
+									? "border border-primary/40 bg-primary-container text-on-primary-container shadow-sm"
 									: "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
 								isCollapsed && "justify-center px-0",
 							)}
@@ -103,7 +103,7 @@ export function BottomNav() {
 							className={cn(
 								"flex min-h-touch flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium transition-colors",
 								isActive
-									? "bg-surface-container-high text-on-surface"
+									? "border border-primary/40 bg-primary-container text-on-primary-container shadow-sm"
 									: "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
 							)}
 							onClick={(event) => {

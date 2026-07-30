@@ -323,9 +323,9 @@ function CheckoutDialogContent({
 							return (
 								<div
 									key={mode.mode_of_payment}
-									className="grid items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-3 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto]"
+									className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto] sm:p-3"
 								>
-									<span className="text-sm font-medium text-on-surface">
+									<span className="col-span-2 text-sm font-medium text-on-surface sm:col-span-1">
 										{mode.mode_of_payment}
 										{mode.default ? <span className="ml-2 text-xs text-on-surface-variant">Default</span> : null}
 									</span>
@@ -347,7 +347,7 @@ function CheckoutDialogContent({
 										aria-label={`Allocate all to ${mode.mode_of_payment}`}
 										aria-pressed={isAll}
 										title={`Allocate the full amount to ${mode.mode_of_payment}`}
-										className={`inline-flex h-touch items-center justify-center gap-1 rounded-md px-3 text-xs font-medium ${
+										className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
 											isAll
 												? "bg-secondary text-on-secondary"
 												: "bg-surface-container text-on-surface hover:bg-surface-container-high"
@@ -356,7 +356,7 @@ function CheckoutDialogContent({
 											setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, payableMinor, precision))
 										}
 									>
-										<Check className="size-4" /> All
+										<Check className="size-4" />
 									</button>
 								</div>
 							);
@@ -395,12 +395,12 @@ function CheckoutDialogContent({
 					<InvoiceSummary invoice={invoice} currency={currency} precision={precision} allocatedMinor={allocation.allocatedMinor} remainingMinor={allocation.remainingMinor} loyaltyAmountMinor={loyaltyAmountMinor} />
 					</div>
 				</div>
-				<div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-outline-variant px-4 py-3 sm:px-6">
-					<Button variant="ghost" onClick={onClose} disabled={isSubmitting}>Back</Button>
-					<Button variant="danger" className="gap-2" onClick={onClear} disabled={isSubmitting}>
+				<div className="grid shrink-0 grid-cols-4 items-center gap-2 border-t border-outline-variant px-3 py-3 sm:flex sm:px-6">
+					<Button variant="ghost" className="min-w-0 px-2 text-xs sm:px-3 sm:text-sm" onClick={onClose} disabled={isSubmitting}>Back</Button>
+					<Button variant="danger" className="min-w-0 gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" onClick={onClear} disabled={isSubmitting}>
 						<Trash2 className="size-4" /> Clear
 					</Button>
-					<Button variant="ghost" className="ml-auto min-w-28 gap-2 bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container" onClick={onHold} disabled={isSubmitting}>
+					<Button variant="ghost" className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container sm:ml-auto sm:min-w-28 sm:gap-2 sm:px-3 sm:text-sm" onClick={onHold} disabled={isSubmitting}>
 						<Pause className="size-4" /> Hold
 					</Button>
 					<Button
@@ -415,7 +415,8 @@ function CheckoutDialogContent({
 							)
 						}
 					>
-						{isSubmitting ? "Submitting..." : isCreditSale ? "Complete credit sale" : "Complete sale"}
+						<span className="sm:hidden">{isSubmitting ? "..." : "Complete"}</span>
+						<span className="hidden sm:inline">{isSubmitting ? "Submitting..." : isCreditSale ? "Complete credit sale" : "Complete sale"}</span>
 					</Button>
 				</div>
 			</div>
