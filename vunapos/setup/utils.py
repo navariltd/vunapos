@@ -9,6 +9,36 @@ def ensure_vunapos_custom_fields():
 		{
 			"POS Profile": [
 				{
+					"fieldname": "vunapos_enable_background_submission",
+					"label": "Enable Background Invoice Submission",
+					"fieldtype": "Check",
+					"insert_after": "disabled",
+					"description": (
+						"Accept validated VunaPOS sales after stock is reserved and submit their invoice "
+						"in a background worker. Requires Enable Stock Reservation in Stock Settings; "
+						"otherwise VunaPOS uses direct submission."
+					),
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_queue_max_attempts",
+					"label": "Background Submission Attempts",
+					"fieldtype": "Int",
+					"insert_after": "vunapos_enable_background_submission",
+					"description": "Maximum number of background submission attempts before review is required.",
+					"default": "3",
+					"depends_on": "eval:doc.vunapos_enable_background_submission",
+				},
+				{
+					"fieldname": "vunapos_queue_processing_timeout_minutes",
+					"label": "Background Processing Timeout (Minutes)",
+					"fieldtype": "Int",
+					"insert_after": "vunapos_queue_max_attempts",
+					"description": "Time after which an abandoned processing attempt may be recovered.",
+					"default": "5",
+					"depends_on": "eval:doc.vunapos_enable_background_submission",
+				},
+				{
 					"fieldname": "vunapos_allow_price_list_switching",
 					"label": "Allow Price List Switching",
 					"fieldtype": "Check",
@@ -136,6 +166,8 @@ def ensure_vunapos_custom_fields():
 					"hidden": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
+					"unique": 1,
+					"search_index": 1,
 				},
 				{
 					"fieldname": "vunapos_opening_entry",
@@ -172,6 +204,82 @@ def ensure_vunapos_custom_fields():
 					"fieldtype": "Link",
 					"options": "POS Closing Entry",
 					"insert_after": "vunapos_session_verified_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_status",
+					"label": "VunaPOS Queue Status",
+					"fieldtype": "Select",
+					"options": "\nQueued\nProcessing\nSubmitted\nFailed\nRequires Review\nCancelled",
+					"insert_after": "vunapos_closing_entry",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+					"search_index": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_attempts",
+					"label": "VunaPOS Queue Attempts",
+					"fieldtype": "Int",
+					"insert_after": "vunapos_queue_status",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_queue_error",
+					"label": "VunaPOS Queue Error",
+					"fieldtype": "Small Text",
+					"insert_after": "vunapos_queue_attempts",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_created_at",
+					"label": "VunaPOS Queued At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_error",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_started_at",
+					"label": "VunaPOS Processing Started At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_created_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_completed_at",
+					"label": "VunaPOS Queue Completed At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_started_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_job_id",
+					"label": "VunaPOS Queue Job ID",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_queue_completed_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_reservation_fingerprint",
+					"label": "VunaPOS Reservation Fingerprint",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_queue_job_id",
+					"hidden": 1,
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
@@ -211,6 +319,8 @@ def ensure_vunapos_custom_fields():
 					"hidden": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
+					"unique": 1,
+					"search_index": 1,
 				},
 				{
 					"fieldname": "vunapos_opening_entry",
@@ -247,6 +357,82 @@ def ensure_vunapos_custom_fields():
 					"fieldtype": "Link",
 					"options": "POS Closing Entry",
 					"insert_after": "vunapos_session_verified_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_status",
+					"label": "VunaPOS Queue Status",
+					"fieldtype": "Select",
+					"options": "\nQueued\nProcessing\nSubmitted\nFailed\nRequires Review\nCancelled",
+					"insert_after": "vunapos_closing_entry",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+					"search_index": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_attempts",
+					"label": "VunaPOS Queue Attempts",
+					"fieldtype": "Int",
+					"insert_after": "vunapos_queue_status",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_queue_error",
+					"label": "VunaPOS Queue Error",
+					"fieldtype": "Small Text",
+					"insert_after": "vunapos_queue_attempts",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_created_at",
+					"label": "VunaPOS Queued At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_error",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_started_at",
+					"label": "VunaPOS Processing Started At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_created_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_completed_at",
+					"label": "VunaPOS Queue Completed At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_queue_started_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_queue_job_id",
+					"label": "VunaPOS Queue Job ID",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_queue_completed_at",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_reservation_fingerprint",
+					"label": "VunaPOS Reservation Fingerprint",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_queue_job_id",
+					"hidden": 1,
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
@@ -331,6 +517,45 @@ def ensure_vunapos_custom_fields():
 		},
 		ignore_validate=True,
 	)
+	ensure_sales_invoice_stock_reservation_option()
+
+
+def ensure_sales_invoice_stock_reservation_option():
+	legacy_setter = frappe.db.get_value(
+		"Property Setter",
+		{
+			"name": "Stock Reservation Entry-main-options",
+			"doc_type": "Stock Reservation Entry",
+			"field_name": ["is", "not set"],
+			"property": "options",
+			"module": "VunaPOS",
+		},
+		"name",
+	)
+	if legacy_setter:
+		frappe.delete_doc("Property Setter", legacy_setter, ignore_permissions=True)
+		frappe.clear_cache(doctype="Stock Reservation Entry")
+
+	field = frappe.get_meta("Stock Reservation Entry").get_field("voucher_type")
+	options = [option.strip() for option in (field.options or "").splitlines() if option.strip()]
+	if "Sales Invoice" in options:
+		return
+
+	options.append("Sales Invoice")
+	frappe.make_property_setter(
+		{
+			"doctype": "Stock Reservation Entry",
+			"doctype_or_field": "DocField",
+			"fieldname": "voucher_type",
+			"property": "options",
+			"property_type": "Text",
+			"value": "\n" + "\n".join(options),
+		},
+		ignore_validate=True,
+		is_system_generated=False,
+		module="VunaPOS",
+	)
+	frappe.clear_cache(doctype="Stock Reservation Entry")
 
 
 def before_tests():

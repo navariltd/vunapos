@@ -171,23 +171,12 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"vunapos.tasks.all"
-# 	],
-# 	"daily": [
-# 		"vunapos.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"vunapos.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"vunapos.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"vunapos.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+	"cron": {
+		"*/5 * * * *": ["vunapos.services.checkout_queue_service.recover_stale_checkout_jobs"],
+		"17 * * * *": ["vunapos.services.checkout_queue_service.audit_checkout_queue_integrity"],
+	},
+}
 
 # Testing
 # -------
@@ -204,6 +193,7 @@ before_tests = "vunapos.setup.utils.before_tests"
 extend_doctype_class = {
 	"POS Closing Entry": "vunapos.overrides.pos_closing_entry.VunaPOSClosingEntryMixin",
 	"POS Opening Entry": "vunapos.overrides.pos_opening_entry.VunaPOSOpeningEntryMixin",
+	"Sales Invoice": "vunapos.overrides.sales_invoice.VunaPOSSalesInvoiceReservationMixin",
 	"POS Invoice": "vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
 }
 

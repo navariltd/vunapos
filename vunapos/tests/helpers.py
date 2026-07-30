@@ -230,6 +230,31 @@ def ensure_test_item():
 	return item.name
 
 
+def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
+	if frappe.db.exists("Item", item_code):
+		item = frappe.get_doc("Item", item_code)
+	else:
+		item = frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": item_code,
+				"item_name": item_code,
+				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+				"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+				"is_sales_item": 1,
+				"is_stock_item": 1,
+				"standard_rate": 100,
+			}
+		)
+		item.insert(ignore_permissions=True)
+	item.is_stock_item = 1
+	item.has_batch_no = 0
+	item.has_serial_no = 0
+	item.save(ignore_permissions=True)
+	frappe.clear_document_cache("Item", item.name)
+	return item.name
+
+
 def ensure_test_batch_item(item_code="_Test Vuna Batch Item", has_serial_no=0):
 	if frappe.db.exists("Item", item_code):
 		item = frappe.get_doc("Item", item_code)

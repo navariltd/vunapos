@@ -1155,6 +1155,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 				await refreshSoldItemStock(
 					invoice.items, get().posProfile, selectedCustomer?.customer, get().selectedPriceList, api,
 				);
+				if (submittedInvoice.queue_status === "Queued" || submittedInvoice.queue_status === "Processing") {
+					set({ invoice: null, selectedPriceList: undefined });
+					await restoreDefaultCataloguePricing(api);
+					return { invoice: submittedInvoice, printPayload: null };
+				}
 				try {
 					const receipt = await renderInvoice(api.renderInvoice, {
 						invoice_doctype: submittedInvoice.doctype,

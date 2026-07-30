@@ -1,14 +1,17 @@
 from unittest.mock import patch
 
 import frappe
+from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt, nowdate
 
 from vunapos.api.batch import allocate_batches
+from vunapos.api.item import search_items
 from vunapos.api.sales import (
 	add_item,
 	checkout_invoice,
 	clear_invoice,
+	create_and_submit_invoice,
 	create_invoice,
 	create_invoice_from_cart,
 	hold_invoice,
@@ -20,6 +23,7 @@ from vunapos.api.sales import (
 	update_invoice_from_cart,
 	update_item,
 )
+from vunapos.services.checkout_queue_service import process_queued_invoice
 from vunapos.services.invoice_service import validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
@@ -29,6 +33,7 @@ from vunapos.tests.helpers import (
 	ensure_test_batch_item,
 	ensure_test_item,
 	ensure_test_pos_profile,
+	ensure_test_stock_item,
 	set_invoice_mode,
 	set_profile_tax_template,
 )
@@ -41,6 +46,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "allow_discount_change", 0, update_modified=False)
 		frappe.db.set_value("POS Profile", profile, "vunapos_allow_credit_sales", 0, update_modified=False)
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_enable_background_submission", 0, update_modified=False
+		)
 		frappe.db.set_value(
 			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
 		)
@@ -878,6 +886,120 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(second["ok"], second)
 		self.assertEqual(second["data"]["name"], first["data"]["name"])
 		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_idempotency_key": key}), 1)
+
+	def test_direct_checkout_resumes_draft_with_same_idempotency_key(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		key = "resume-draft-checkout-key"
+		frappe.db.set_value("Sales Invoice", invoice["name"], "vunapos_idempotency_key", key)
+
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			customer=invoice["customer"],
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": amount}],
+			idempotency_key=key,
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["name"], invoice["name"])
+		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_idempotency_key": key}), 1)
+
+	@patch("frappe.enqueue")
+	def test_background_enabled_checkout_reserves_then_queues_submission(self, enqueue):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_stock_item("_Test VunaPOS Reserved Checkout Item")
+		set_invoice_mode("Sales Invoice")
+		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 1)
+		frappe.db.set_value(
+			"POS Profile",
+			profile_name,
+			"vunapos_enable_background_submission",
+			1,
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="POS Profile")
+		make_stock_entry(item_code=item_code, to_warehouse=profile.warehouse, qty=5, rate=100)
+
+		response = create_and_submit_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 2}],
+			payments=[{"mode_of_payment": "Cash", "amount": 200}],
+			idempotency_key="reserved-synchronous-checkout",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["docstatus"], 0)
+		self.assertEqual(response["data"]["queue_status"], "Queued")
+		reservations = frappe.get_all(
+			"Stock Reservation Entry",
+			filters={"voucher_type": "Sales Invoice", "voucher_no": response["data"]["name"]},
+			fields=["docstatus"],
+		)
+		self.assertEqual(len(reservations), 1)
+		self.assertEqual(reservations[0].docstatus, 1)
+		catalogue = search_items(query=item_code, pos_profile=profile_name)
+		self.assertTrue(catalogue["ok"], catalogue)
+		catalogue_item = next(row for row in catalogue["data"] if row["item_code"] == item_code)
+		self.assertEqual(catalogue_item["actual_qty"], 3)
+		enqueue.assert_called_once_with(
+			"vunapos.services.checkout_queue_service.process_queued_invoice",
+			queue="short",
+			timeout=300,
+			enqueue_after_commit=True,
+			job_id=response["data"]["queue_job_id"],
+			deduplicate=True,
+			invoice_doctype="Sales Invoice",
+			invoice_name=response["data"]["name"],
+		)
+
+		with patch("frappe.db.commit"):
+			processed = process_queued_invoice("Sales Invoice", response["data"]["name"])
+
+		self.assertEqual(processed["status"], "Submitted")
+		self.assertEqual(frappe.db.get_value("Sales Invoice", response["data"]["name"], "docstatus"), 1)
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "vunapos_queue_status"),
+			"Submitted",
+		)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Stock Reservation Entry", {"voucher_no": response["data"]["name"]}, "docstatus"
+			),
+			2,
+		)
+
+	@patch("frappe.enqueue")
+	def test_background_checkout_falls_back_to_direct_submission_without_stock_reservation(self, enqueue):
+		profile_name = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 0)
+		frappe.db.set_value(
+			"POS Profile",
+			profile_name,
+			"vunapos_enable_background_submission",
+			1,
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = create_and_submit_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="direct-checkout-without-stock-reservation",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["docstatus"], 1)
+		self.assertFalse(response["data"].get("queue_status"))
+		enqueue.assert_not_called()
 
 	def test_hold_list_restore_and_clear_invoice(self):
 		profile = ensure_test_pos_profile()

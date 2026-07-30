@@ -747,6 +747,33 @@ describe("submitCart", () => {
 		expect(createAndSubmitInvoice).toHaveBeenCalledWith(expect.objectContaining({ idempotency_key: "idem-1" }));
 	});
 
+	it("clears a reserved queued sale without trying to print the draft", async () => {
+		const renderInvoice = vi.fn();
+		const result = await useCartStore.getState().submitCart(
+			[{ mode_of_payment: "Cash", amount: 100 }],
+			null,
+			"idem-queued",
+			makeApi({
+				getItemDetails: vi.fn().mockResolvedValue(makeItem({ actual_qty: 4 })),
+				createAndSubmitInvoice: vi.fn().mockResolvedValue({
+					doctype: "Sales Invoice",
+					name: "ACC-SINV-QUEUED-1",
+					docstatus: 0,
+					queue_status: "Queued",
+					items: [],
+					totals: {},
+				}),
+				renderInvoice,
+			}),
+			true,
+		);
+
+		expect(result?.invoice.queue_status).toBe("Queued");
+		expect(result?.printPayload).toBeNull();
+		expect(renderInvoice).not.toHaveBeenCalled();
+		expect(useCartStore.getState().invoice).toBeNull();
+	});
+
 	it("passes the selected credit-sale state to direct server checkout", async () => {
 		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
 			doctype: "Sales Invoice", name: "ACC-SINV-CREDIT-1", docstatus: 1, items: [], totals: {},
