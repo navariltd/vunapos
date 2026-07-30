@@ -588,7 +588,7 @@ type CartActions = {
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
-	scanBarcode: (barcode: string, api: CartApi) => Promise<void>;
+	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
 	updateCartItemSerialAllocations: (rowName: string, allocations: InvoiceItemDTO["serial_allocations"], api: CartApi) => Promise<void>;
@@ -764,7 +764,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 		scanBarcode: async (barcode, api) => {
 			const value = barcode.trim();
-			if (!value) return;
+			if (!value) throw new Error("A barcode is required.");
 			const state = get();
 			const customer = getActiveCustomer(state);
 			const item = await runMutation(() => resolveBarcode(api.resolveBarcode, {
@@ -772,8 +772,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 				pos_profile: state.posProfile,
 				customer: customer?.customer,
 					price_list: state.selectedPriceList,
-				}));
-				await get().addCartItem(item, api);
+			}));
+			await get().addCartItem(item, api);
+			return item;
 		},
 
 		updateCartItemQty: async (rowName, qty, api) => {
