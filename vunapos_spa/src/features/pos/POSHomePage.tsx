@@ -16,6 +16,7 @@ import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
+import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -79,6 +80,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
+	const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
 	const [clearCartConfirmation, setClearCartConfirmation] = useState<{ closeCheckout: boolean } | null>(null);
 	const activePage = useNavigationStore((s) => s.activePage);
 	const currentPath = useNavigationStore((s) => s.currentPath);
@@ -483,6 +485,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							value={itemSearchQuery}
 							onChange={setItemSearchQuery}
 							onScan={handleScanBarcode}
+							onOpenCamera={() => setIsBarcodeScannerOpen(true)}
 						/>
 						<div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
 							<ItemGrid
@@ -682,6 +685,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			>
 				<div className="flex justify-between gap-3 text-sm"><span className="text-on-surface-variant">Items in cart</span><strong>{cartInvoice?.items?.length || 0}</strong></div>
 			</ConfirmDialog>
+			<BarcodeScannerDialog
+				open={isBarcodeScannerOpen}
+				onClose={() => setIsBarcodeScannerOpen(false)}
+				onDetected={handleScanBarcode}
+			/>
 		</div>
 	);
 }
