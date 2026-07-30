@@ -29,7 +29,7 @@ type CartPanelProps = {
 	onRemoveItem: (rowName: string) => void;
 	onSelectCustomer: (customer: CustomerDTO) => void;
 	onSelectPriceList: (priceList?: string) => void;
-	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdateQty: (rowName: string, qty: number) => Promise<void>;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	onUpdateNote: (rowName: string, note: string) => Promise<void>;
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
@@ -114,20 +114,22 @@ export function CartPanel({
 
 			<div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
 				{items?.length ? (
-					items?.map((item) => (
+					items?.map((item, index) => {
+						const rowIdentity = `${item.row_name}-${item.uom || item.stock_uom || ""}-${Number(item.conversion_factor || 1)}-${index}`;
+						return (
 						<CartItemRow
-							key={`${item.row_name}-${item.qty}`}
+							key={rowIdentity}
 							currency={currency}
 							allowDiscountChange={allowDiscountChange}
 							allowRateChange={allowRateChange}
 							disabled={isMutating}
-							expanded={expandedRow === item.row_name}
+							expanded={expandedRow === rowIdentity}
 							isOnline={isOnline}
 							item={item}
 							onLoadBatches={onLoadBatches}
 							onRemove={onRemoveItem}
-							onToggle={(rowName) =>
-								setExpandedRow((current) => (current === rowName ? null : rowName))
+							onToggle={() =>
+								setExpandedRow((current) => (current === rowIdentity ? null : rowIdentity))
 							}
 							onUpdateQty={onUpdateQty}
 							onUpdatePricing={onUpdatePricing}
@@ -137,7 +139,8 @@ export function CartPanel({
 							onUpdateSerialAllocations={onUpdateSerialAllocations}
 							warehouse={warehouse}
 						/>
-					))
+						);
+					})
 				) : (
 					<div className="rounded-md border border-dashed border-outline-variant bg-surface-container-low p-6 text-center">
 						<p className="text-sm font-medium text-on-surface">Cart is empty</p>

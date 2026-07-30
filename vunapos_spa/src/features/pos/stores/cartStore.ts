@@ -25,6 +25,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	resolveBarcode,
 	searchItems,
 	holdInvoice,
 	listHeldInvoices,
@@ -44,6 +45,7 @@ export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
 	searchItems: FrappeCall;
+	resolveBarcode: FrappeCall;
 	getItemBatches: FrappeCall;
 	updateItem: FrappeCall;
 	removeItem: FrappeCall;
@@ -217,7 +219,11 @@ function localizePreviewInvoice(
 	selectedCustomer?: CustomerDTO | null,
 	sourceInvoice?: Pick<InvoiceDTO, "doctype" | "name">,
 ) {
-	const metadataByItemCode = new Map(localItems.map((item) => [item.item_code, item]));
+	const metadataFor = (item: InvoiceItemDTO) => localItems.find((candidate) =>
+		candidate.item_code === item.item_code
+		&& (candidate.uom || candidate.stock_uom) === (item.uom || item.stock_uom)
+		&& Number(candidate.conversion_factor || 1) === Number(item.conversion_factor || 1),
+	) || localItems.find((candidate) => candidate.item_code === item.item_code);
 	return {
 		...preview,
 		name: sourceInvoice?.name || "Not invoiced yet",
@@ -227,7 +233,7 @@ function localizePreviewInvoice(
 		customer: selectedCustomer?.customer || preview.customer,
 		customer_name: selectedCustomer?.customer_name || preview.customer_name,
 		items: preview.items.map((item) => {
-			const metadata = metadataByItemCode.get(item.item_code);
+			const metadata = metadataFor(item);
 			return {
 				...item,
 				row_name: item.row_name || metadata?.row_name || item.item_code,
@@ -250,22 +256,26 @@ function assembledToInvoiceDTO(
 	sourceItems: InvoiceItemDTO[],
 	sourceInvoice?: Pick<InvoiceDTO, "doctype" | "name">,
 ): InvoiceDTO {
-	const metaByCode = new Map(sourceItems.map((item) => [item.item_code, item]));
+	const metadataFor = (item: AssembledInvoice["items"][number]) => sourceItems.find((candidate) =>
+		candidate.item_code === item.item_code
+		&& (candidate.uom || candidate.stock_uom) === (item.uom || candidate.stock_uom)
+		&& Number(candidate.conversion_factor || 1) === Number(item.conversion_factor || 1),
+	) || sourceItems.find((candidate) => candidate.item_code === item.item_code);
 	return {
 		doctype: sourceInvoice?.doctype || "Sales Invoice",
 		name: sourceInvoice?.name || "Not invoiced yet",
 		docstatus: 0,
 		items: assembled.items.map((item) => {
-			const meta = metaByCode.get(item.item_code);
+			const meta = metadataFor(item);
 			return {
 				row_name: meta?.row_name || item.item_code,
 				item_code: item.item_code,
 				item_name: meta?.item_name || item.item_code,
 				description: meta?.description,
 				qty: item.qty,
-				uom: meta?.uom,
+				uom: item.uom || meta?.uom,
 				stock_uom: meta?.stock_uom,
-				conversion_factor: meta?.conversion_factor,
+				conversion_factor: item.conversion_factor || meta?.conversion_factor,
 				uoms: meta?.uoms,
 				rate: item.rate,
 				price_list_rate: meta?.price_list_rate ?? meta?.rate ?? item.rate,
@@ -336,8 +346,8 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 	);
 	// Every override replaces the previous one. Never use the already-discounted
 	// selling rate as the base or sequential edits will compound discounts.
-	const rateByCode = new Map(items.map((row) => [
-		row.item_code,
+	const rateByLine = new Map(items.map((row) => [
+		`${row.item_code}::${row.uom || row.stock_uom || ""}::${Number(row.conversion_factor || 1)}`,
 		Number(
 			row.catalogue_pricing_rule?.preview_qty === row.qty
 				? row.catalogue_pricing_rule.rate
@@ -348,9 +358,13 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 		cart: items.map((row) => ({
 			item_code: row.item_code,
 			qty: row.qty,
+			uom: row.uom,
+			conversion_factor: row.conversion_factor,
 			pricing_override: row.pricing_override,
 		})),
-		priceResolver: (code) => rateByCode.get(code),
+		priceResolver: (code, line) => rateByLine.get(
+			`${code}::${line?.uom || ""}::${Number(line?.conversion_factor || 1)}`,
+		),
 		taxRows: taxTemplate?.taxes ?? [],
 		itemTaxResolver: (code) => {
 			const templateName = itemTaxTemplateByCode.get(code);
@@ -375,6 +389,8 @@ async function assembleLocalCart(items: InvoiceItemDTO[]): Promise<AssembledInvo
 
 function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 	const rate = Number(item.rate || 0);
+	const tracking = item.scan_tracking;
+	const conversionFactor = Number(item.conversion_factor || 1);
 	return {
 		row_name: item.item_code,
 		item_code: item.item_code,
@@ -383,7 +399,7 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		qty,
 		uom: item.uom || item.stock_uom,
 		stock_uom: item.stock_uom,
-		conversion_factor: 1,
+		conversion_factor: conversionFactor,
 		uoms: item.uoms,
 		rate,
 		price_list_rate: Number(item.price_list_rate ?? rate),
@@ -394,10 +410,45 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 		has_batch_no: item.has_batch_no,
 		has_serial_no: item.has_serial_no,
 		barcode: item.barcode,
+		batch_allocations: tracking?.type === "batch" && tracking.batch_no
+			? [{ batch_no: tracking.batch_no, qty: qty * conversionFactor, available_qty: tracking.available_qty }]
+			: [],
+		serial_allocations: tracking?.type === "serial" && tracking.serial_no
+			? [{ serial_no: tracking.serial_no, batch_no: tracking.batch_no ?? null }]
+			: [],
 		item_tax_template: item.item_tax_template,
 		item_tax: item.item_tax,
 		catalogue_pricing_rule: item.pricing_rule,
 	};
+}
+
+function mergeScannedTracking(row: InvoiceItemDTO, item: ItemDTO): InvoiceItemDTO {
+	const tracking = item.scan_tracking;
+	if (!tracking) return updateLocalQty(row, row.qty + 1);
+	const qty = row.qty + 1;
+	if (tracking.type === "serial" && tracking.serial_no) {
+		if (row.serial_allocations?.some((allocation) => allocation.serial_no === tracking.serial_no)) {
+			throw new Error(`Serial number ${tracking.serial_no} has already been scanned.`);
+		}
+		return {
+			...row,
+			qty,
+			amount: Number(row.rate || 0) * qty,
+			serial_allocations: [...(row.serial_allocations || []), {
+				serial_no: tracking.serial_no,
+				batch_no: tracking.batch_no,
+			}],
+		};
+	}
+	if (tracking.type === "batch" && tracking.batch_no) {
+		const allocations = [...(row.batch_allocations || [])];
+		const existing = allocations.find((allocation) => allocation.batch_no === tracking.batch_no);
+		const conversionFactor = Number(item.conversion_factor || 1);
+		if (existing) existing.qty += conversionFactor;
+		else allocations.push({ batch_no: tracking.batch_no, qty: conversionFactor, available_qty: tracking.available_qty });
+		return { ...row, qty, amount: Number(row.rate || 0) * qty, batch_allocations: allocations };
+	}
+	return updateLocalQty(row, qty);
 }
 
 function updateLocalQty(row: InvoiceItemDTO, qty: number): InvoiceItemDTO {
@@ -537,6 +588,7 @@ type CartActions = {
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
+	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
 	updateCartItemSerialAllocations: (rowName: string, allocations: InvoiceItemDTO["serial_allocations"], api: CartApi) => Promise<void>;
@@ -678,12 +730,18 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const invoice = get().invoice;
 			if (!invoice || isLocalCart(invoice) || invoice.docstatus !== 0) {
 				const currentItems = invoice && isLocalCart(invoice) && invoice.docstatus === 0 ? invoice.items : [];
-				const existingItem = currentItems.find((row) => row.item_code === item.item_code);
+					const itemUom = item.uom || item.stock_uom;
+					const itemConversionFactor = Number(item.conversion_factor || 1);
+					const existingItem = currentItems.find((row) =>
+						row.item_code === item.item_code
+						&& (row.uom || row.stock_uom) === itemUom
+						&& Number(row.conversion_factor || 1) === itemConversionFactor,
+					);
 				const nextItems = existingItem
 					? currentItems.map((row) => {
-							if (row.item_code === item.item_code) {
-								validateAvailableQty(row, row.qty + 1);
-								return updateLocalQty(row, row.qty + 1);
+						if (row.item_code === item.item_code) {
+							validateAvailableQty(row, row.qty + 1);
+							return mergeScannedTracking(row, item);
 							}
 							return row;
 						})
@@ -702,6 +760,21 @@ export const useCartStore = create<CartStore>((set, get) => {
 				}),
 			);
 			set({ invoice: updatedInvoice });
+		},
+
+		scanBarcode: async (barcode, api) => {
+			const value = barcode.trim();
+			if (!value) throw new Error("A barcode is required.");
+			const state = get();
+			const customer = getActiveCustomer(state);
+			const item = await runMutation(() => resolveBarcode(api.resolveBarcode, {
+				barcode: value,
+				pos_profile: state.posProfile,
+				customer: customer?.customer,
+					price_list: state.selectedPriceList,
+			}));
+			await get().addCartItem(item, api);
+			return item;
 		},
 
 		updateCartItemQty: async (rowName, qty, api) => {

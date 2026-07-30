@@ -39,7 +39,7 @@ export type ItemTaxRow = {
 	included_in_print_rate?: boolean;
 };
 
-export type PriceResolver = (itemCode: string) => number | undefined;
+export type PriceResolver = (itemCode: string, line?: CartLine) => number | undefined;
 export type ItemTaxResolver = (itemCode: string) => ItemTaxRow[] | undefined;
 
 export type EngineTaxSettings = {
@@ -57,6 +57,8 @@ export type EngineRoundingSettings = {
 export type AssembledInvoiceItem = {
 	item_code: string;
 	qty: number;
+	uom?: string;
+	conversion_factor?: number;
 	rate: number;
 	amount: number;
 	price_list_rate?: number;
@@ -185,7 +187,7 @@ export function assembleInvoice(input: {
 		if (!(line.qty > 0)) {
 			throw new InvoiceEngineError(`Quantity for ${line.item_code} must be greater than zero`);
 		}
-		const rate = input.priceResolver(line.item_code);
+		const rate = input.priceResolver(line.item_code, line);
 		if (rate === undefined) {
 			throw new InvoiceEngineError(`No price is available for item ${line.item_code}`);
 		}
@@ -214,6 +216,8 @@ export function assembleInvoice(input: {
 		return {
 			item_code: line.item_code,
 			qty: line.qty,
+			uom: line.uom,
+			conversion_factor: line.conversion_factor,
 			rate: sellingRate,
 			amount: round(sellingRate * line.qty),
 			price_list_rate: priceListRate,

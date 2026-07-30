@@ -16,6 +16,7 @@ import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
+import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -79,6 +80,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
+	const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+	const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
 	const [clearCartConfirmation, setClearCartConfirmation] = useState<{ closeCheckout: boolean } | null>(null);
 	const activePage = useNavigationStore((s) => s.activePage);
 	const currentPath = useNavigationStore((s) => s.currentPath);
@@ -97,10 +100,10 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const items = useItemSearch(itemSearchQuery);
 	const cartInvoice = useCartStore((s) => s.invoice);
+	const cartQuantity = cartInvoice?.items.reduce((total, item) => total + Number(item.qty || 0), 0) || 0;
 	const selectedPriceList = useCartStore((s) => s.selectedPriceList);
 	const activeCustomer = useCartStore(getActiveCustomer);
 	const heldInvoicesView = useHeldInvoicesView();
-	const cartIsMutating = useCartStore((s) => s.isMutating);
 	const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
 	const cartError = useCartStore((s) => s.error);
 	const setCartPosProfile = useCartStore((s) => s.setPosProfile);
@@ -254,10 +257,39 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const handleAddItem = async (item: ItemDTO) => {
 		setPageError(null);
 		clearToast();
+		setPendingItemCode(item.item_code);
 		try {
 			await cartActions.addCartItem(item);
 		} catch (err) {
 			showToast({ type: "error", message: err instanceof Error ? err.message : "Failed to add item" });
+		} finally {
+			setPendingItemCode(null);
+		}
+	};
+
+	const handleScanBarcode = async (barcode: string) => {
+		const value = barcode.trim();
+		if (!value) return;
+		setPageError(null);
+		clearToast();
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "Barcode scanning requires a connection." });
+			return;
+		}
+		try {
+			const item = await cartActions.scanBarcode(value);
+			setItemSearchQuery("");
+			const cartRow = useCartStore.getState().invoice?.items.find((row) =>
+				row.item_code === item.item_code
+				&& (row.uom || row.stock_uom) === (item.uom || item.stock_uom)
+				&& Number(row.conversion_factor || 1) === Number(item.conversion_factor || 1),
+			);
+			showToast({
+				type: "info",
+				message: `${item.item_name || item.item_code} added to cart${cartRow ? ` · Qty ${cartRow.qty}` : ""}.`,
+			});
+		} catch (err) {
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Barcode could not be resolved." });
 		}
 	};
 
@@ -465,6 +497,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							isLoading={items.isLoading}
 							value={itemSearchQuery}
 							onChange={setItemSearchQuery}
+							onScan={handleScanBarcode}
+							onOpenCamera={() => setIsBarcodeScannerOpen(true)}
 						/>
 						<div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
 							<ItemGrid
@@ -472,7 +506,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 								hideImages={bootstrap.data?.hide_images}
 								isLoading={items.isLoading}
 								items={items.items}
-								mutationDisabled={cartIsMutating}
+								pendingItemCode={pendingItemCode}
 								onAddItem={handleAddItem}
 							/>
 						</div>
@@ -517,9 +551,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				aria-label="Open cart"
 			>
 				<ShoppingCart className="size-6" />
-				{cartInvoice?.items?.length ? (
+				{cartQuantity > 0 ? (
 					<span className="absolute -right-1 -top-1 flex min-h-6 min-w-6 items-center justify-center rounded-full bg-error px-1 text-xs font-semibold text-on-error">
-						{cartInvoice.items.length}
+						{cartQuantity}
 					</span>
 				) : null}
 			</button> : null}
@@ -664,6 +698,11 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			>
 				<div className="flex justify-between gap-3 text-sm"><span className="text-on-surface-variant">Items in cart</span><strong>{cartInvoice?.items?.length || 0}</strong></div>
 			</ConfirmDialog>
+			<BarcodeScannerDialog
+				open={isBarcodeScannerOpen}
+				onClose={() => setIsBarcodeScannerOpen(false)}
+				onDetected={handleScanBarcode}
+			/>
 		</div>
 	);
 }

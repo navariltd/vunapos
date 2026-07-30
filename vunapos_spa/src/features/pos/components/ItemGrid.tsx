@@ -8,11 +8,11 @@ type ItemGridProps = {
 	hideImages?: boolean;
 	isLoading?: boolean;
 	items?: ItemDTO[];
-	mutationDisabled?: boolean;
+	pendingItemCode?: string | null;
 	onAddItem: (item: ItemDTO) => void;
 };
 
-export function ItemGrid({ currency, hideImages, isLoading, items, mutationDisabled, onAddItem }: ItemGridProps) {
+export function ItemGrid({ currency, hideImages, isLoading, items, pendingItemCode, onAddItem }: ItemGridProps) {
 	if (isLoading && items?.length === 0) {
 		return <EmptyState title="Loading items" description="Fetching items from ERPNext." />;
 	}
@@ -23,7 +23,7 @@ export function ItemGrid({ currency, hideImages, isLoading, items, mutationDisab
 
 	return hideImages ? (
 		<div>
-			{items?.map((item) => <ItemListRow key={item.item_code} currency={currency} disabled={mutationDisabled} item={item} onAdd={onAddItem} />)}
+			{items?.map((item) => <ItemListRow key={item.item_code} currency={currency} disabled={pendingItemCode === item.item_code} item={item} onAdd={onAddItem} />)}
 		</div>
 	) : (
 		<div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4">
@@ -31,7 +31,7 @@ export function ItemGrid({ currency, hideImages, isLoading, items, mutationDisab
 				<ItemCard
 					key={item.item_code}
 					currency={currency}
-					disabled={mutationDisabled}
+					disabled={pendingItemCode === item.item_code}
 					item={item}
 					onAdd={onAddItem}
 				/>

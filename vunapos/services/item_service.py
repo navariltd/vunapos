@@ -385,6 +385,119 @@ def get_priority_price_list(customer=None, pos_profile=None):
 	return get_default_price_list(customer=customer, pos_profile=pos_profile)
 
 
+def _apply_scanned_uom(payload, item_code, uom, profile, price_list):
+	if not uom:
+		return
+	if uom == payload.get("stock_uom"):
+		conversion_factor = 1
+		unit_rate = flt(payload.get("rate"))
+	else:
+		configured = next((row for row in payload.get("uoms", []) if row.get("uom") == uom), None)
+		if not configured:
+			frappe.throw(_("UOM {0} is not configured for item {1}.").format(uom, item_code))
+		conversion_factor = flt(configured.get("conversion_factor"))
+		unit_rate = configured.get("rate")
+		if unit_rate is None:
+			unit_rate = flt(payload.get("rate")) * conversion_factor
+
+	if conversion_factor <= 0:
+		frappe.throw(_("UOM {0} has an invalid conversion factor for item {1}.").format(uom, item_code))
+
+	payload["uom"] = uom
+	payload["conversion_factor"] = conversion_factor
+	payload["rate"] = flt(unit_rate)
+	payload["price_list_rate"] = flt(unit_rate)
+	if payload.get("item_tax_template"):
+		tax_summary = _get_item_tax_summary_map(
+			[payload["item_tax_template"]],
+			prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
+			profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
+		).get(payload["item_tax_template"])
+		payload["item_tax"] = _with_item_tax_prices(tax_summary, unit_rate)
+
+
+def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list=None):
+	"""Resolve an item, batch, or active serial identifier from a scanner value."""
+	value = (barcode or "").strip()
+	if not value:
+		frappe.throw(_("A barcode is required"))
+	profile = resolve_pos_profile(pos_profile)
+	customer = customer or profile.customer
+	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
+
+	item_barcode_rows = frappe.get_all(
+		"Item Barcode",
+		filters={"barcode": value},
+		fields=["parent as item_code", "uom"],
+		limit_page_length=20,
+	)
+	serial_rows = frappe.get_all(
+		"Serial No",
+		filters={"name": value, "warehouse": profile.warehouse, "status": "Active"},
+		fields=["item_code", "name as serial_no", "batch_no"],
+		limit_page_length=20,
+	)
+	batch_rows = frappe.get_all(
+		"Batch",
+		filters={"name": value, "disabled": 0},
+		fields=["item as item_code", "name as batch_no"],
+		limit_page_length=20,
+	)
+
+	item_codes = {
+		row.item_code
+		for row in [*item_barcode_rows, *serial_rows, *batch_rows]
+		if row.item_code
+		and frappe.db.get_value("Item", {"name": row.item_code, "disabled": 0, "is_sales_item": 1}, "name")
+	}
+	if len(item_codes) != 1:
+		if not item_codes:
+			frappe.throw(_("No sellable item was found for barcode {0}.").format(value))
+		frappe.throw(_("Barcode {0} is assigned to more than one item.").format(value))
+
+	item_code = next(iter(item_codes))
+	payload = _to_item_payload(item_code, profile, barcode=value, price_list=price_list)
+	barcode_row = next((row for row in item_barcode_rows if row.item_code == item_code), None)
+	if barcode_row and barcode_row.uom:
+		_apply_scanned_uom(payload, item_code, barcode_row.uom, profile, price_list)
+	serial = next((row for row in serial_rows if row.item_code == item_code), None)
+	if serial:
+		if flt(payload.get("conversion_factor") or 1) != 1:
+			frappe.throw(
+				_("Serial-numbered item {0} cannot be scanned using multi-unit UOM {1}.").format(
+					item_code, payload.get("uom")
+				)
+			)
+		payload["scan_tracking"] = {
+			"type": "serial",
+			"serial_no": serial.serial_no,
+			"batch_no": serial.batch_no,
+		}
+		return payload
+
+	batch = next((row for row in batch_rows if row.item_code == item_code), None)
+	if batch:
+		from vunapos.services.batch_service import get_item_batches
+
+		available = next(
+			(
+				row
+				for row in get_item_batches(item_code, warehouse=profile.warehouse).get("batches", [])
+				if row["batch_no"] == batch.batch_no
+			),
+			None,
+		)
+		if not available:
+			frappe.throw(_("Batch {0} is not available for sale.").format(batch.batch_no))
+		payload["scan_tracking"] = {
+			"type": "batch",
+			"batch_no": batch.batch_no,
+			"available_qty": available["available_qty"],
+		}
+
+	return payload
+
+
 def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer

@@ -179,6 +179,7 @@ export type ItemDTO = {
 	stock_uom?: string;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	uom?: string;
+	conversion_factor?: number;
 	rate?: number;
 	price_list_rate?: number;
 	pricing_rule?: {
@@ -195,6 +196,12 @@ export type ItemDTO = {
 	has_batch_no?: boolean | number;
 	has_serial_no?: boolean | number;
 	barcode?: string | null;
+	scan_tracking?: {
+		type: "serial" | "batch";
+		serial_no?: string | null;
+		batch_no?: string | null;
+		available_qty?: number | null;
+	};
 	item_tax_template?: string | null;
 	item_tax?: {
 		template: string;

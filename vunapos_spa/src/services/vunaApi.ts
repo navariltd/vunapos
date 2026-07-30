@@ -46,6 +46,7 @@ export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
 	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
 	searchItems: "vunapos.api.item.search_items",
+	resolveBarcode: "vunapos.api.item.resolve_barcode",
 	getItemDetails: "vunapos.api.item.get_item_details",
 	getItemBatches: "vunapos.api.batch.get_item_batches",
 	allocateBatches: "vunapos.api.batch.allocate_batches",
@@ -137,6 +138,13 @@ export function searchItems(
 	params: { query?: string; pos_profile?: string; customer?: string; price_list?: string; limit?: number },
 ) {
 	return callAndUnwrap<ItemDTO[]>(call, params);
+}
+
+export function resolveBarcode(
+	call: FrappeCall,
+	params: { barcode: string; pos_profile?: string; customer?: string; price_list?: string },
+) {
+	return callAndUnwrap<ItemDTO>(call, params);
 }
 
 export function getItemDetails(

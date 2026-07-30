@@ -21,11 +21,18 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
 
 	return (
 		<div className="flex min-h-40 flex-col overflow-hidden rounded-md border border-outline-variant bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44">
-			<button
-				type="button"
-				className="flex flex-1 cursor-pointer flex-col text-left disabled:cursor-not-allowed"
-				disabled={isDisabled}
-				onClick={() => onAdd(item)}
+			<div
+				className={`flex flex-1 flex-col text-left ${isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+				role="button"
+				tabIndex={isDisabled ? -1 : 0}
+				aria-disabled={isDisabled}
+				onClick={() => { if (!isDisabled) onAdd(item); }}
+				onKeyDown={(event) => {
+					if (!isDisabled && (event.key === "Enter" || event.key === " ")) {
+						event.preventDefault();
+						onAdd(item);
+					}
+				}}
 			>
 				<div className="flex aspect-[4/3] items-center justify-center bg-surface-container">
 					{item.image ? (
@@ -51,13 +58,13 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
 								</p>
 							) : null}
 						</div>
-						<Button size="sm" className="pointer-events-none gap-1 px-2" disabled={isDisabled} tabIndex={-1}>
+						<Button size="sm" className="gap-1 px-2" disabled={isDisabled} onClick={(event) => { event.stopPropagation(); onAdd(item); }}>
 							<Plus className="size-4" />
 							<span className="hidden sm:inline">Add</span>
 						</Button>
 					</div>
 				</div>
-			</button>
+			</div>
 		</div>
 	);
 }

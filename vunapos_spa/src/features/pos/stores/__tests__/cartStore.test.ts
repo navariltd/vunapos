@@ -9,6 +9,8 @@ const previewCart = vi.fn().mockImplementation(async (params: { customer?: strin
 	const items = JSON.parse(params.items) as Array<{
 		item_code: string;
 		qty: number;
+		uom?: string;
+		conversion_factor?: number;
 		batch_allocations?: Array<{ batch_no: string; qty: number }>;
 		serial_allocations?: Array<{ serial_no: string; batch_no?: string | null }>;
 		item_note?: string | null;
@@ -18,6 +20,8 @@ const previewCart = vi.fn().mockImplementation(async (params: { customer?: strin
 		item_code: item.item_code,
 		item_name: item.item_code === "ITEM-1" ? "Widget" : item.item_code,
 		qty: item.qty,
+		uom: item.uom,
+		conversion_factor: item.conversion_factor,
 		rate: 100,
 		price_list_rate: 100,
 		amount: item.qty * 100,
@@ -41,8 +45,9 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	const reject = vi.fn().mockRejectedValue(new Error("unexpected API call in this test"));
 	return {
 		addItem: reject,
-		getItemDetails: reject,
+	getItemDetails: reject,
 		searchItems: reject,
+		resolveBarcode: reject,
 		getItemBatches: reject,
 		updateItem: reject,
 		removeItem: reject,
@@ -153,6 +158,84 @@ describe("addCartItem", () => {
 		await expect(useCartStore.getState().addCartItem(scarce, makeApi())).rejects.toThrow(/Insufficient stock/);
 
 		expect(useCartStore.getState().invoice).toBeNull();
+	});
+});
+
+describe("scanBarcode", () => {
+	it("adds the resolved item and increments it on repeated scans", async () => {
+		const resolveBarcode = vi.fn().mockResolvedValue({
+			ok: true,
+			data: makeItem({ barcode: "0123456789" }),
+		});
+		const api = makeApi({ resolveBarcode });
+
+		await useCartStore.getState().scanBarcode("0123456789", api);
+		await useCartStore.getState().scanBarcode("0123456789", api);
+
+		expect(resolveBarcode).toHaveBeenCalledTimes(2);
+		expect(useCartStore.getState().invoice?.items).toHaveLength(1);
+		expect(useCartStore.getState().invoice?.items[0].qty).toBe(2);
+	});
+
+	it("rejects an unknown barcode without creating a cart row", async () => {
+		const api = makeApi({
+			resolveBarcode: vi.fn().mockResolvedValue({
+				ok: false,
+				data: null,
+				errors: [{ code: "BARCODE_NOT_FOUND", message: "No sellable item was found for barcode missing." }],
+			}),
+		});
+
+		await expect(useCartStore.getState().scanBarcode("missing", api)).rejects.toThrow(/No .*item was found/);
+		expect(useCartStore.getState().invoice).toBeNull();
+	});
+
+	it("keeps scanned serial and batch allocations attached to the cart row", async () => {
+		const resolveBarcode = vi.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				data: makeItem({
+					item_code: "SERIAL-ITEM",
+					has_serial_no: 1,
+					scan_tracking: { type: "serial", serial_no: "SN-001" },
+				}),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				data: makeItem({
+					item_code: "BATCH-ITEM",
+					has_batch_no: 1,
+					scan_tracking: { type: "batch", batch_no: "BATCH-001", available_qty: 5 },
+				}),
+			});
+		const api = makeApi({ resolveBarcode });
+
+		await useCartStore.getState().scanBarcode("SN-001", api);
+		await useCartStore.getState().scanBarcode("BATCH-001", api);
+
+		const rows = useCartStore.getState().invoice?.items || [];
+		expect(rows[0].serial_allocations).toEqual([{ serial_no: "SN-001", batch_no: null }]);
+		expect(rows[1].batch_allocations?.[0].batch_no).toBe("BATCH-001");
+	});
+
+	it("preserves the barcode UOM and keeps different UOMs on separate rows", async () => {
+		const resolveBarcode = vi.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				data: makeItem({ item_code: "UOM-ITEM", uom: "Box", stock_uom: "Nos", conversion_factor: 12, rate: 1200, barcode: "BOX-001" }),
+			})
+			.mockResolvedValueOnce({
+				ok: true,
+				data: makeItem({ item_code: "UOM-ITEM", uom: "Nos", stock_uom: "Nos", conversion_factor: 1, rate: 100, barcode: "NOS-001" }),
+			});
+
+		await useCartStore.getState().scanBarcode("BOX-001", makeApi({ resolveBarcode }));
+		await useCartStore.getState().scanBarcode("NOS-001", makeApi({ resolveBarcode }));
+
+		const rows = useCartStore.getState().invoice?.items || [];
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toMatchObject({ uom: "Box", conversion_factor: 12, qty: 1 });
+		expect(rows[1]).toMatchObject({ uom: "Nos", conversion_factor: 1, qty: 1 });
 	});
 });
 

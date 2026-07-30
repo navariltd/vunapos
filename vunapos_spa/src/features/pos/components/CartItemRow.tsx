@@ -16,7 +16,7 @@ type CartItemRowProps = {
 	onLoadBatches: (itemCode: string, warehouse: string, isOnline: boolean) => Promise<ItemBatchesDTO>;
 	onToggle: (rowName: string) => void;
 	onUpdateBatchAllocations: (rowName: string, allocations: BatchAllocationDTO[]) => Promise<void>;
-	onUpdateQty: (rowName: string, qty: number) => void;
+	onUpdateQty: (rowName: string, qty: number) => Promise<void>;
 	onUpdatePricing: (rowName: string, pricingOverride?: PricingOverrideDTO) => Promise<void>;
 	onUpdateNote: (rowName: string, note: string) => Promise<void>;
 	onUpdateUom: (rowName: string, uom: string, conversionFactor: number) => Promise<void>;
@@ -55,13 +55,19 @@ export function CartItemRow({
 	const [serialExpanded, setSerialExpanded] = useState(false);
 	const requestedBatches = useRef<string | null>(null);
 
-	const commitQuantity = () => {
+	const commitQuantity = async () => {
 		const nextQuantity = Number(quantity);
 		if (!Number.isFinite(nextQuantity) || nextQuantity <= 0) {
 			setQuantity(String(item.qty));
 			return;
 		}
-		if (nextQuantity !== item.qty) onUpdateQty(item.row_name, nextQuantity);
+		if (nextQuantity !== item.qty) {
+			try {
+				await onUpdateQty(item.row_name, nextQuantity);
+			} catch {
+				setQuantity(String(item.qty));
+			}
+		}
 	};
 
 	const description = plainDescription(item.description);
@@ -107,7 +113,7 @@ export function CartItemRow({
 				</div>
 				<div className="mt-3 flex items-center justify-between gap-3">
 					<div className="flex items-center overflow-hidden rounded-md border border-outline-variant bg-surface">
-						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); onUpdateQty(item.row_name, item.qty - 1); }} aria-label={`Decrease ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); void onUpdateQty(item.row_name, item.qty - 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Decrease ${item.item_name}`}>
 							<Minus className="size-4" />
 						</button>
 						<input
@@ -126,7 +132,7 @@ export function CartItemRow({
 								if (event.key === "Escape") setQuantity(String(item.qty));
 							}}
 						/>
-						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); onUpdateQty(item.row_name, item.qty + 1); }} aria-label={`Increase ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); void onUpdateQty(item.row_name, item.qty + 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Increase ${item.item_name}`}>
 							<Plus className="size-4" />
 						</button>
 					</div>
