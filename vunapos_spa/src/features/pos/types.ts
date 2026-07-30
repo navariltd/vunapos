@@ -179,6 +179,7 @@ export type ItemDTO = {
 	stock_uom?: string;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	uom?: string;
+	conversion_factor?: number;
 	rate?: number;
 	price_list_rate?: number;
 	pricing_rule?: {
