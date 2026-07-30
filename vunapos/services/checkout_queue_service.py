@@ -466,7 +466,9 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 	transition_invoice_queue(doc, QUEUE_STATUS_PROCESSING)
 	doc.save(ignore_permissions=True)
 	_publish_queue_update(doc)
-	frappe.db.commit()
+	# Commit the processing state before reacquiring the invoice lock so a worker
+	# crash cannot leave the queue looking perpetually Queued.  # nosemgrep
+	frappe.db.commit()  # nosemgrep
 
 	try:
 		doc = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
@@ -478,7 +480,9 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 		# so we never need an after-submit save of those child rows.
 		doc.submit()
 		_publish_queue_update(doc)
-		frappe.db.commit()
+		# The background job owns this transaction and must make the submitted
+		# invoice visible before acknowledging completion.  # nosemgrep
+		frappe.db.commit()  # nosemgrep
 		return {"doctype": doc.doctype, "name": doc.name, "status": QUEUE_STATUS_SUBMITTED}
 	except Exception as exc:
 		frappe.db.rollback()
@@ -493,7 +497,9 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 				)
 			failed.save(ignore_permissions=True)
 			_publish_queue_update(failed)
-			frappe.db.commit()
+			# Persist the terminal failure state before the worker returns so the
+			# cashier/operator can retry or review it safely.  # nosemgrep
+			frappe.db.commit()  # nosemgrep
 		frappe.log_error(
 			message=frappe.get_traceback(with_context=True),
 			title=f"VunaPOS queued invoice failed: {invoice_name}",
