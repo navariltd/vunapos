@@ -261,6 +261,23 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		}
 	};
 
+	const handleScanBarcode = async (barcode: string) => {
+		const value = barcode.trim();
+		if (!value) return;
+		setPageError(null);
+		clearToast();
+		if (!isReachable || navigator.onLine === false) {
+			showToast({ type: "error", message: "Barcode scanning requires a connection." });
+			return;
+		}
+		try {
+			await cartActions.scanBarcode(value);
+			setItemSearchQuery("");
+		} catch (err) {
+			showToast({ type: "error", message: err instanceof Error ? err.message : "Barcode could not be resolved." });
+		}
+	};
+
 	const handleOpenCheckout = async () => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
@@ -465,6 +482,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							isLoading={items.isLoading}
 							value={itemSearchQuery}
 							onChange={setItemSearchQuery}
+							onScan={handleScanBarcode}
 						/>
 						<div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
 							<ItemGrid

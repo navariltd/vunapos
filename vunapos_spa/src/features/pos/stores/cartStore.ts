@@ -537,6 +537,7 @@ type CartActions = {
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
+	scanBarcode: (barcode: string, api: CartApi) => Promise<void>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
 	updateCartItemSerialAllocations: (rowName: string, allocations: InvoiceItemDTO["serial_allocations"], api: CartApi) => Promise<void>;
@@ -702,6 +703,28 @@ export const useCartStore = create<CartStore>((set, get) => {
 				}),
 			);
 			set({ invoice: updatedInvoice });
+		},
+
+		scanBarcode: async (barcode, api) => {
+			const value = barcode.trim();
+			if (!value) return;
+			const state = get();
+			const customer = getActiveCustomer(state);
+			const matches = await runMutation(() => searchItems(api.searchItems, {
+				query: value,
+				pos_profile: state.posProfile,
+				customer: customer?.customer,
+				price_list: state.selectedPriceList,
+				limit: 5,
+			}));
+			const exactMatches = matches.filter((item) => item.barcode?.trim() === value);
+			if (exactMatches.length === 0) {
+				throw new Error(`No item was found for barcode ${value}.`);
+			}
+			if (exactMatches.length > 1) {
+				throw new Error(`Barcode ${value} is assigned to more than one item.`);
+			}
+			await get().addCartItem(exactMatches[0], api);
 		},
 
 		updateCartItemQty: async (rowName, qty, api) => {

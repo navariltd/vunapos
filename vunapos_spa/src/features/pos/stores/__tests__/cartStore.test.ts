@@ -156,6 +156,30 @@ describe("addCartItem", () => {
 	});
 });
 
+describe("scanBarcode", () => {
+	it("adds the resolved item and increments it on repeated scans", async () => {
+		const searchItems = vi.fn().mockResolvedValue({
+			ok: true,
+			data: [makeItem({ barcode: "0123456789" })],
+		});
+		const api = makeApi({ searchItems });
+
+		await useCartStore.getState().scanBarcode("0123456789", api);
+		await useCartStore.getState().scanBarcode("0123456789", api);
+
+		expect(searchItems).toHaveBeenCalledTimes(2);
+		expect(useCartStore.getState().invoice?.items).toHaveLength(1);
+		expect(useCartStore.getState().invoice?.items[0].qty).toBe(2);
+	});
+
+	it("rejects an unknown barcode without creating a cart row", async () => {
+		const api = makeApi({ searchItems: vi.fn().mockResolvedValue({ ok: true, data: [] }) });
+
+		await expect(useCartStore.getState().scanBarcode("missing", api)).rejects.toThrow(/No item was found/);
+		expect(useCartStore.getState().invoice).toBeNull();
+	});
+});
+
 describe("updateCartItemQty", () => {
 	it("removes the row when qty is set to zero", async () => {
 		await useCartStore.getState().addCartItem(makeItem(), makeApi());
