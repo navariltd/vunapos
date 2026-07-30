@@ -15,7 +15,8 @@ def ensure_vunapos_custom_fields():
 					"insert_after": "disabled",
 					"description": (
 						"Accept validated VunaPOS sales after stock is reserved and submit their invoice "
-						"in a background worker."
+						"in a background worker. Requires Enable Stock Reservation in Stock Settings; "
+						"otherwise VunaPOS uses direct submission."
 					),
 					"default": "0",
 				},

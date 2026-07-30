@@ -587,9 +587,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{toast?.type === "queued" ? (
 				<div
 					role="status"
-					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-primary bg-primary-container px-4 py-3 text-sm text-on-primary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
+					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
-					Invoice {toast.invoice.name} is reserved and queued for submission.
+					Invoice {toast.invoice.name} queued successfully.
 				</div>
 			) : toast?.type === "submitted" && toast.invoice.docstatus === 1 ? (
 				<div

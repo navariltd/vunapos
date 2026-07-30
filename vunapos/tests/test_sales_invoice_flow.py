@@ -969,6 +969,33 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			2,
 		)
 
+	@patch("frappe.enqueue")
+	def test_background_checkout_falls_back_to_direct_submission_without_stock_reservation(self, enqueue):
+		profile_name = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 0)
+		frappe.db.set_value(
+			"POS Profile",
+			profile_name,
+			"vunapos_enable_background_submission",
+			1,
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = create_and_submit_invoice(
+			pos_profile=profile_name,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="direct-checkout-without-stock-reservation",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["docstatus"], 1)
+		self.assertFalse(response["data"].get("queue_status"))
+		enqueue.assert_not_called()
+
 	def test_hold_list_restore_and_clear_invoice(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()

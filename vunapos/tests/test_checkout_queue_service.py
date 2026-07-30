@@ -80,7 +80,8 @@ class TestCheckoutQueueService(TestCase):
 
 		self.assertEqual(context.exception.vuna_error_code, "INVALID_VUNAPOS_INVOICE")
 
-	def test_queue_limits_are_bounded(self):
+	@patch("frappe.db.get_single_value", return_value=1)
+	def test_queue_limits_are_bounded(self, _get_single_value):
 		limits = get_queue_limits(
 			frappe._dict(
 				vunapos_enable_background_submission=1,
@@ -90,8 +91,18 @@ class TestCheckoutQueueService(TestCase):
 		)
 
 		self.assertTrue(limits["enabled"])
+		self.assertTrue(limits["configured"])
+		self.assertTrue(limits["stock_reservation_enabled"])
 		self.assertEqual(limits["max_attempts"], 10)
 		self.assertEqual(limits["processing_timeout_minutes"], 120)
+
+	@patch("frappe.db.get_single_value", return_value=0)
+	def test_queue_is_disabled_when_stock_reservation_is_disabled(self, _get_single_value):
+		limits = get_queue_limits(frappe._dict(vunapos_enable_background_submission=1))
+
+		self.assertTrue(limits["configured"])
+		self.assertFalse(limits["stock_reservation_enabled"])
+		self.assertFalse(limits["enabled"])
 
 	@patch("frappe.enqueue")
 	def test_enqueue_uses_a_deterministic_deduplicated_after_commit_job(self, enqueue):
@@ -170,8 +181,16 @@ class TestCheckoutQueueService(TestCase):
 		publish_update,
 	):
 		doc = self._invoice(QUEUE_STATUS_QUEUED)
-		doc.save = Mock()
-		doc.submit = Mock(side_effect=lambda: setattr(doc, "docstatus", 1))
+		events = []
+		doc.save = Mock(
+			side_effect=lambda **_kwargs: events.append(("save", doc.docstatus, doc.vunapos_queue_status))
+		)
+
+		def submit():
+			events.append(("submit", doc.docstatus, doc.vunapos_queue_status))
+			doc.docstatus = 1
+
+		doc.submit = Mock(side_effect=submit)
 		get_doc.return_value = doc
 		get_worker_profile.return_value = frappe._dict(
 			vunapos_enable_background_submission=1,
@@ -186,6 +205,14 @@ class TestCheckoutQueueService(TestCase):
 
 		self.assertEqual(result["status"], QUEUE_STATUS_SUBMITTED)
 		self.assertEqual(published_statuses, [QUEUE_STATUS_PROCESSING, QUEUE_STATUS_SUBMITTED])
+		self.assertEqual(
+			events,
+			[
+				("save", 0, QUEUE_STATUS_PROCESSING),
+				("save", 0, QUEUE_STATUS_SUBMITTED),
+				("submit", 0, QUEUE_STATUS_SUBMITTED),
+			],
+		)
 		validate_reservations.assert_called_once_with(doc)
 		self.assertEqual(commit.call_count, 2)
 

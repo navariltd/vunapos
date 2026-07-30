@@ -127,6 +127,8 @@ export type CachedProfile = {
 	invoice_mode?: string;
 	background_submission?: {
 		enabled: boolean;
+		configured?: boolean;
+		stock_reservation_enabled?: boolean;
 		max_attempts: number;
 		processing_timeout_minutes: number;
 	};

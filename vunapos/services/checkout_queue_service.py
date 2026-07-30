@@ -128,13 +128,22 @@ def transition_invoice_queue(
 
 
 def get_queue_limits(profile) -> dict:
+	configured = bool(profile.get("vunapos_enable_background_submission"))
+	stock_reservation_enabled = bool(
+		cint(frappe.db.get_single_value("Stock Settings", "enable_stock_reservation"))
+	)
 	max_attempts = cint(profile.get("vunapos_queue_max_attempts")) or DEFAULT_QUEUE_MAX_ATTEMPTS
 	timeout = (
 		cint(profile.get("vunapos_queue_processing_timeout_minutes"))
 		or DEFAULT_QUEUE_PROCESSING_TIMEOUT_MINUTES
 	)
 	return {
-		"enabled": bool(profile.get("vunapos_enable_background_submission")),
+		# Queueing is only safe when ERPNext can reserve the draft invoice's stock.
+		# If the site setting is off, checkout falls back to direct submission instead
+		# of creating a draft that will inevitably fail in front of the cashier.
+		"enabled": configured and stock_reservation_enabled,
+		"configured": configured,
+		"stock_reservation_enabled": stock_reservation_enabled,
 		"max_attempts": min(max(max_attempts, 1), MAX_QUEUE_ATTEMPTS),
 		"processing_timeout_minutes": min(max(timeout, 1), MAX_QUEUE_PROCESSING_TIMEOUT_MINUTES),
 	}
@@ -481,9 +490,12 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 	try:
 		doc = frappe.get_doc(invoice_doctype, invoice_name, for_update=True)
 		validate_invoice_stock_reservations(doc)
-		doc.submit()
 		transition_invoice_queue(doc, QUEUE_STATUS_SUBMITTED)
 		doc.save(ignore_permissions=True)
+		# ERPNext may populate child-row serial/batch compatibility fields during
+		# submission. Persist the terminal queue state while this is still a draft
+		# so we never need an after-submit save of those child rows.
+		doc.submit()
 		_publish_queue_update(doc)
 		frappe.db.commit()
 		return {"doctype": doc.doctype, "name": doc.name, "status": QUEUE_STATUS_SUBMITTED}
