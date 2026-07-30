@@ -181,6 +181,12 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	useCheckoutQueueRealtime((event) => {
 		if (event.pos_profile !== bootstrap.data?.pos_profile) return;
+		if (event.status === "Queued") {
+			void hydrate(event.pos_profile).catch((refreshError) => {
+				console.error("Unable to refresh stock after queued checkout", refreshError);
+			});
+			return;
+		}
 		if (event.status === "Submitted") {
 			void (async () => {
 				try {
@@ -210,6 +216,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			return;
 		}
 		if (event.status === "Cancelled") {
+			void hydrate(event.pos_profile).catch((refreshError) => {
+				console.error("Unable to refresh stock after queued checkout cancellation", refreshError);
+			});
 			showToast({ type: "info", message: `Queued invoice ${event.invoice_name} was cancelled.` });
 		}
 	});
@@ -380,9 +389,20 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			setIsCheckoutOpen(false);
 			void handleSelectCustomer(undefined, false);
 			if (result?.invoice) {
+				const queued = result.invoice.queue_status === "Queued" || result.invoice.queue_status === "Processing";
+				if (queued && bootstrap.data?.pos_profile) {
+					// Reservations are created before the queue response is returned. Refresh
+					// immediately so the catalogue shows sellable stock (physical minus
+					// active reservations) without waiting for final invoice submission.
+					try {
+						await hydrate(bootstrap.data.pos_profile);
+					} catch (refreshError) {
+						console.error("Unable to refresh stock after queued checkout", refreshError);
+					}
+				}
 				customerLoyalty.refresh();
 				showToast({
-					type: result.invoice.queue_status === "Queued" || result.invoice.queue_status === "Processing" ? "queued" : "submitted",
+					type: queued ? "queued" : "submitted",
 					invoice: result.invoice,
 				});
 			} else {

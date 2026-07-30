@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, flt, nowdate
 
 from vunapos.api.batch import allocate_batches
+from vunapos.api.item import search_items
 from vunapos.api.sales import (
 	add_item,
 	checkout_invoice,
@@ -942,6 +943,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		)
 		self.assertEqual(len(reservations), 1)
 		self.assertEqual(reservations[0].docstatus, 1)
+		catalogue = search_items(query=item_code, pos_profile=profile_name)
+		self.assertTrue(catalogue["ok"], catalogue)
+		catalogue_item = next(row for row in catalogue["data"] if row["item_code"] == item_code)
+		self.assertEqual(catalogue_item["actual_qty"], 3)
 		enqueue.assert_called_once_with(
 			"vunapos.services.checkout_queue_service.process_queued_invoice",
 			queue="short",

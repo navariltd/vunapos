@@ -7,7 +7,6 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.query_builder.functions import Sum
 from frappe.utils import cint, flt, today
 from pypika import Order
 
@@ -193,18 +192,11 @@ def _get_actual_qty_map(item_codes, warehouse):
 	if not item_codes or not warehouse:
 		return None
 
-	bin_table = frappe.qb.DocType("Bin")
-	rows = (
-		frappe.qb.from_(bin_table)
-		.select(
-			bin_table.item_code,
-			Sum(bin_table.actual_qty - bin_table.reserved_stock).as_("available_qty"),
-		)
-		.where(bin_table.warehouse == warehouse)
-		.where(bin_table.item_code.isin(item_codes))
-		.groupby(bin_table.item_code)
-	).run(as_dict=True)
-	return {row.item_code: max(flt(row.available_qty), 0) for row in rows}
+	# Bin.reserved_stock does not include every reservation source in every
+	# ERPNext release (notably native Stock Reservation Entries). Use the same
+	# reservation-aware calculation as the item-details endpoint so catalogue
+	# quantities represent sellable stock, not merely physical stock.
+	return {item_code: _get_actual_qty(item_code, warehouse) for item_code in item_codes}
 
 
 def _get_uom_rate_map(item_codes, price_list, customer=None):
