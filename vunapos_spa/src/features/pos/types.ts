@@ -375,6 +375,25 @@ export type PaymentInput = {
 	gateway_payment_link?: string;
 };
 
+export type GatewayPaymentLinkDTO = {
+	name: string;
+	source_doctype: string;
+	source_name: string;
+	payment_gateway: string;
+	mode_of_payment: string;
+	status: "Draft" | "Pending" | "Authorized" | "Paid" | "Failed" | "Cancelled" | "Expired" | string;
+	transaction_reference?: string | null;
+	pos_profile: string;
+	opening_entry: string;
+	cashier: string;
+	customer?: string | null;
+	amount: number;
+	currency: string;
+	consumed: 0 | 1 | number;
+	source_status?: string | null;
+	source_reference?: string | null;
+};
+
 export type PrintPayload = {
 	invoice_doctype: string;
 	invoice_name: string;

@@ -24,6 +24,7 @@ import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
 import { useHeldInvoicesView } from "./hooks/useHeldInvoicesView";
 import { useItemSearch } from "./hooks/useItemSearch";
+import { useGatewayPayments } from "./hooks/useGatewayPayments";
 import { useConfigurationRealtime } from "./hooks/useConfigurationRealtime";
 import { useCheckoutQueueRealtime } from "./hooks/useCheckoutQueueRealtime";
 import { useCustomerLoyalty } from "./hooks/useCustomerLoyalty";
@@ -130,6 +131,7 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 	const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
 	const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
 	const cartActions = useCartActions();
+	const gatewayPayments = useGatewayPayments();
 	const { isReachable } = useConnectivity();
 	const customerLoyalty = useCustomerLoyalty(
 		activeCustomer?.customer,
@@ -705,8 +707,26 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 						if (held) setIsCheckoutOpen(false);
 					});
 				}}
+				onAttachC2bGatewayPayment={(params) =>
+					gatewayPayments.attachC2bPayment({
+						...params,
+						pos_profile: bootstrap.data?.pos_profile,
+						customer: activeCustomer?.customer,
+						currency: bootstrap.data?.currency,
+					})
+				}
+				onCheckGatewayPayment={gatewayPayments.getGatewayPaymentStatus}
+				onInitiateGatewayPayment={(params) =>
+					gatewayPayments.initiateStkPayment({
+						...params,
+						pos_profile: bootstrap.data?.pos_profile,
+						customer: activeCustomer?.customer,
+						currency: bootstrap.data?.currency,
+					})
+				}
 				onPreviewLoyalty={(points) => cartActions.previewLoyaltyRedemption(points)}
 				orderType={orderType}
+				posProfile={bootstrap.data?.pos_profile}
 			/>
 
 			{toast?.type === "queued" ? (
