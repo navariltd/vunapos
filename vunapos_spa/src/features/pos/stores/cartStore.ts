@@ -22,6 +22,7 @@ import {
 	checkoutInvoice,
 	clearInvoice,
 	createAndSubmitInvoice,
+	createAndSubmitSalesOrder,
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
@@ -53,6 +54,7 @@ export type CartApi = {
 	createInvoiceFromCart: FrappeCall;
 	previewInvoice: FrappeCall;
 	createAndSubmitInvoice: FrappeCall;
+	createAndSubmitSalesOrder: FrappeCall;
 	checkoutInvoice: FrappeCall;
 	holdInvoice: FrappeCall;
 	listHeldInvoices: FrappeCall;
@@ -625,6 +627,7 @@ type CartActions = {
 		dueDate?: string,
 		loyaltyPoints?: number,
 		taxId?: string,
+		orderType?: "Sales Invoice" | "Sales Order",
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -1187,6 +1190,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			dueDate,
 			loyaltyPoints,
 			taxId,
+			orderType = "Sales Invoice",
 		) => {
 			if (!isOnline) {
 				throw new Error("VunaPOS is online-only. Reconnect before completing this sale.");
@@ -1214,6 +1218,38 @@ export const useCartStore = create<CartStore>((set, get) => {
 				validateAvailableQty(item, item.qty);
 			}
 			validateManualBatchAllocations(invoice.items);
+
+			if (orderType === "Sales Order") {
+				if (!isUnsyncedLocalCart(invoice)) {
+					throw new Error("Restore this held invoice as a Sales Invoice, or clear the cart and create a new Sales Order.");
+				}
+				const salesOrder = await runMutation(() =>
+					createAndSubmitSalesOrder(api.createAndSubmitSalesOrder, {
+						pos_profile: get().posProfile,
+						customer: selectedCustomer?.customer,
+						price_list: get().selectedPriceList,
+						items: cartItemsPayload(invoice.items),
+						idempotency_key: idempotencyKey,
+						delivery_date: dueDate,
+						tax_id: taxId,
+					}),
+				);
+				try {
+					const receipt = await renderInvoice(api.renderInvoice, {
+						invoice_doctype: salesOrder.doctype,
+						invoice_name: salesOrder.name,
+						print_format: printFormat || undefined,
+					});
+					set({ invoice: null, selectedPriceList: undefined });
+					await restoreDefaultCataloguePricing(api);
+					return { invoice: salesOrder, printPayload: receipt };
+				} catch (err) {
+					console.error(err);
+					set({ invoice: null, selectedPriceList: undefined });
+					await restoreDefaultCataloguePricing(api);
+					return { invoice: salesOrder, printPayload: null };
+				}
+			}
 
 			if (isUnsyncedLocalCart(invoice)) {
 				const submittedInvoice = await runMutation(() =>

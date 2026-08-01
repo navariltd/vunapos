@@ -76,6 +76,7 @@ export const vunaMethods = {
 	submitInvoice: "vunapos.api.sales.submit_invoice",
 	checkoutInvoice: "vunapos.api.sales.checkout_invoice",
 	createAndSubmitInvoice: "vunapos.api.sales.create_and_submit_invoice",
+	createAndSubmitSalesOrder: "vunapos.api.sales.create_and_submit_sales_order",
 	createInvoiceFromCart: "vunapos.api.sales.create_invoice_from_cart",
 	holdInvoice: "vunapos.api.sales.hold_invoice",
 	listHeldInvoices: "vunapos.api.sales.list_held_invoices",
@@ -318,6 +319,24 @@ export function createAndSubmitInvoice(
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+	});
+}
+
+export function createAndSubmitSalesOrder(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		customer?: string;
+		price_list?: string;
+		items: CartItemInput[];
+		idempotency_key?: string;
+		delivery_date?: string;
+		tax_id?: string;
+	},
+) {
+	return callAndUnwrap<InvoiceDTO>(call, {
+		...params,
+		items: JSON.stringify(params.items),
 	});
 }
 

@@ -153,7 +153,7 @@ def invoice_to_dict(doc):
 				"amount": row.get("amount"),
 				"default": row.get("default"),
 			}
-			for row in doc.get("payments", [])
+			for row in doc.get("payments", []) or []
 		],
 		"totals": {
 			"net_total": _value(doc, "net_total"),

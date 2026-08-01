@@ -42,6 +42,7 @@ from vunapos.services.stock_reservation_service import (
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
+SUPPORTED_ORDER_DOCTYPES = ("Sales Order",)
 HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
@@ -209,6 +210,14 @@ def _load_checkout_invoice(invoice_doctype, invoice_name):
 
 def _find_submitted_invoice_by_idempotency_key(idempotency_key):
 	doc = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
+	if not doc or doc.docstatus != 1:
+		return None
+	require_read(doc.doctype, doc.name)
+	return doc
+
+
+def _find_submitted_order_by_idempotency_key(idempotency_key):
+	doc = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_ORDER_DOCTYPES)
 	if not doc or doc.docstatus != 1:
 		return None
 	require_read(doc.doctype, doc.name)
@@ -796,7 +805,8 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 	bundle.voucher_no = doc.name
 	bundle.voucher_detail_no = row.name
 	bundle.type_of_transaction = "Outward"
-	bundle.posting_datetime = get_datetime(f"{doc.posting_date} {doc.get('posting_time') or '00:00:00'}")
+	posting_date = doc.get("posting_date") or doc.get("transaction_date") or nowdate()
+	bundle.posting_datetime = get_datetime(f"{posting_date} {doc.get('posting_time') or '00:00:00'}")
 	bundle.set("entries", [])
 	entries = serial_allocations or allocations
 	for allocation in entries:
@@ -906,6 +916,28 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 				{"mode_of_payment": row.mode_of_payment, "amount": 0, "default": row.get("default")},
 			)
 
+	return doc, profile
+
+
+def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, delivery_date=None):
+	profile = resolve_pos_profile(pos_profile)
+	customer = customer or profile.customer
+	if not customer:
+		frappe.throw(_("Customer is required because the POS Profile has no default customer"))
+
+	doc = frappe.new_doc("Sales Order")
+	doc.customer = customer
+	doc.company = profile.company
+	doc.transaction_date = nowdate()
+	doc.delivery_date = delivery_date or nowdate()
+	_set_if_has_field(doc, "order_type", "Sales")
+	_set_if_has_field(doc, "set_warehouse", profile.warehouse)
+	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
+	_set_if_has_field(doc, "vunapos_pos_profile", profile.name)
+	_sync_profile_pricing_fields(doc, profile, price_list)
+	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
+	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
+	_reset_invoice_totals(doc)
 	return doc, profile
 
 
@@ -1509,6 +1541,54 @@ def create_and_submit_invoice(
 			loyalty_points=loyalty_points,
 			tax_id=tax_id,
 		)
+	except Exception:
+		frappe.db.rollback(save_point=savepoint)
+		raise
+
+
+def create_and_submit_sales_order(
+	pos_profile=None,
+	customer=None,
+	items=None,
+	idempotency_key=None,
+	price_list=None,
+	delivery_date=None,
+	tax_id=None,
+):
+	existing = _find_submitted_order_by_idempotency_key(idempotency_key)
+	if existing:
+		return invoice_to_dict(existing)
+
+	savepoint = "vunapos_sales_order_checkout"
+	frappe.db.savepoint(savepoint)
+	try:
+		require_create("Sales Order")
+		if not frappe.has_permission("Sales Order", "submit"):
+			frappe.throw(_("Not permitted to submit Sales Order"), frappe.PermissionError)
+		profile = resolve_pos_profile(pos_profile)
+		opening_entry = require_open_pos_session(profile.name)
+		cart_items = _cart_item_rows(items)
+		validate_cart_items(cart_items, profile)
+		doc, profile = _build_sales_order_doc(
+			pos_profile=profile.name,
+			customer=customer,
+			price_list=price_list,
+			delivery_date=delivery_date,
+		)
+		_append_cart_items(doc, profile, cart_items)
+		_recalculate(doc)
+		validate_invoice_batch_allocations(doc)
+		_stamp_validated_session(doc, opening_entry)
+		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
+		if idempotency_key:
+			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
+		_apply_checkout_tax_id(doc, tax_id)
+		doc.flags.ignore_mandatory = False
+		doc.insert()
+		_materialize_batch_bundles(doc)
+		_apply_checkout_tax_id(doc, tax_id, persist=True)
+		doc.submit()
+		return invoice_to_dict(doc)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise

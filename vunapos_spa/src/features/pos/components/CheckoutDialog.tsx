@@ -41,6 +41,7 @@ type CheckoutDialogProps = {
 	) => void;
 	onHold: () => void;
 	onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
+	orderType?: "Sales Invoice" | "Sales Order";
 };
 
 function createIdempotencyKey() {
@@ -74,6 +75,7 @@ export function CheckoutDialog({
 	onConfirm,
 	onHold,
 	onPreviewLoyalty,
+	orderType = "Sales Invoice",
 }: CheckoutDialogProps) {
 	if (!isOpen) {
 		return null;
@@ -96,6 +98,7 @@ export function CheckoutDialog({
 			onConfirm={onConfirm}
 			onHold={onHold}
 			onPreviewLoyalty={onPreviewLoyalty}
+			orderType={orderType}
 		/>
 	);
 }
@@ -115,9 +118,11 @@ function CheckoutDialogContent({
 	onConfirm,
 	onHold,
 	onPreviewLoyalty,
+	orderType = "Sales Invoice",
 }: Omit<CheckoutDialogProps, "isOpen">) {
 	const invoice = useCartStore((s) => s.invoice);
 	const isSubmitting = useCartStore((s) => s.isMutating);
+	const isSalesOrder = orderType === "Sales Order";
 	const total = getInvoiceTotal(invoice);
 	const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
 	const availableModes = useMemo(
@@ -156,13 +161,13 @@ function CheckoutDialogContent({
 	const allocation = calculatePaymentAllocation(availableModes, amounts, payableMinor, precision);
 	const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
 	const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
-	const isPayable = !isApplyingLoyalty && isLoyaltySelectionValid && (!isCreditSale || dueDate >= today) && (
+	const isPayable = isSalesOrder || (!isApplyingLoyalty && isLoyaltySelectionValid && (!isCreditSale || dueDate >= today) && (
 		payableMinor === 0
 			? !allocation.hasInvalidAmount && allocation.allocatedMinor === 0
 			: availableModes.length > 0 && (isCreditSale
 				? !allocation.hasInvalidAmount && !hasNonCashOverpayment
 				: canCompletePaymentAllocation(allocation, payableMinor, Boolean(allowPartialPayment)))
-	);
+	));
 	const loyaltyInputPoints = /^\d+$/.test(loyaltyInput) ? Number(loyaltyInput) : null;
 	const loyaltyInputError = loyaltyInput && (
 		loyaltyInputPoints === null || loyaltyInputPoints <= 0 || loyaltyInputPoints > maximumLoyaltyPoints
@@ -220,7 +225,7 @@ function CheckoutDialogContent({
 					<div>
 						<h2 className="text-lg font-semibold text-on-surface">Checkout</h2>
 						<p className="text-sm text-on-surface-variant">
-							Invoice {invoice?.is_local ? "#Draft" : invoice?.name || "#Draft"}
+							{isSalesOrder ? "Sales Order" : "Invoice"} {invoice?.is_local ? "#Draft" : invoice?.name || "#Draft"}
 						</p>
 					</div>
 					<button type="button" className="rounded-md p-2 hover:bg-surface-container" onClick={onClose}>
@@ -230,7 +235,7 @@ function CheckoutDialogContent({
 				<div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
 					<div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-2 lg:divide-x lg:divide-outline-variant">
 					<section className="flex min-h-0 flex-col p-4 sm:p-6">
-						{allowCreditSales ? (
+						{allowCreditSales && !isSalesOrder ? (
 							<div className="mb-5 grid grid-cols-2 rounded-lg bg-surface-container p-1" role="group" aria-label="Sale type">
 								{([false, true] as const).map((credit) => (
 									<button
@@ -281,7 +286,7 @@ function CheckoutDialogContent({
 								</span>
 							</label>
 						) : null}
-						{customerLoyalty?.enrolled ? (
+						{customerLoyalty?.enrolled && !isSalesOrder ? (
 							<div className="mb-5 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-4">
 								<div className="flex items-start gap-3">
 									<Award className="mt-0.5 size-5 shrink-0 text-tertiary" />
@@ -330,69 +335,77 @@ function CheckoutDialogContent({
 						) : null}
 						<p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">Amount due</p>
 						<p className="mt-1 text-3xl font-semibold text-on-surface">{formatCurrency(payableMinor / scale, currency, precision)}</p>
-						<div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
-						{availableModes.map((mode) => {
-							const amount = amounts[mode.mode_of_payment] ?? "";
-							const isAll =
-								parsePaymentAmount(amount, precision) === payableMinor &&
-								availableModes.every(
-									(other) =>
-										other.mode_of_payment === mode.mode_of_payment ||
-										parsePaymentAmount(amounts[other.mode_of_payment] || "", precision) === 0,
-								);
-							return (
-								<div
-									key={mode.mode_of_payment}
-									className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto] sm:p-3"
-								>
-									<span className="col-span-2 text-sm font-medium text-on-surface sm:col-span-1">
-										{mode.mode_of_payment}
-										{mode.default ? <span className="ml-2 text-xs text-on-surface-variant">Default</span> : null}
-									</span>
-									<input
-										aria-label={`${mode.mode_of_payment} amount`}
-										className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
-										inputMode="decimal"
-										placeholder={minorUnitsToInput(0, precision)}
-										value={amount}
-										onChange={(event) =>
-											setAmounts((current) => ({
-												...current,
-												[mode.mode_of_payment]: event.target.value,
-											}))
-										}
-									/>
-									<button
-										type="button"
-										aria-label={`Allocate all to ${mode.mode_of_payment}`}
-										aria-pressed={isAll}
-										title={`Allocate the full amount to ${mode.mode_of_payment}`}
-										className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
-											isAll
-												? "bg-secondary text-on-secondary"
-												: "bg-surface-container text-on-surface hover:bg-surface-container-high"
-										}`}
-										onClick={() =>
-											setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, payableMinor, precision))
-										}
-									>
-										<Check className="size-4" />
-									</button>
+						{isSalesOrder ? (
+							<div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
+								This checkout will create a submitted Sales Order. No payment will be collected in this step.
+							</div>
+						) : (
+							<>
+								<div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
+								{availableModes.map((mode) => {
+									const amount = amounts[mode.mode_of_payment] ?? "";
+									const isAll =
+										parsePaymentAmount(amount, precision) === payableMinor &&
+										availableModes.every(
+											(other) =>
+												other.mode_of_payment === mode.mode_of_payment ||
+												parsePaymentAmount(amounts[other.mode_of_payment] || "", precision) === 0,
+										);
+									return (
+										<div
+											key={mode.mode_of_payment}
+											className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto] sm:p-3"
+										>
+											<span className="col-span-2 text-sm font-medium text-on-surface sm:col-span-1">
+												{mode.mode_of_payment}
+												{mode.default ? <span className="ml-2 text-xs text-on-surface-variant">Default</span> : null}
+											</span>
+											<input
+												aria-label={`${mode.mode_of_payment} amount`}
+												className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+												inputMode="decimal"
+												placeholder={minorUnitsToInput(0, precision)}
+												value={amount}
+												onChange={(event) =>
+													setAmounts((current) => ({
+														...current,
+														[mode.mode_of_payment]: event.target.value,
+													}))
+												}
+											/>
+											<button
+												type="button"
+												aria-label={`Allocate all to ${mode.mode_of_payment}`}
+												aria-pressed={isAll}
+												title={`Allocate the full amount to ${mode.mode_of_payment}`}
+												className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
+													isAll
+														? "bg-secondary text-on-secondary"
+														: "bg-surface-container text-on-surface hover:bg-surface-container-high"
+												}`}
+												onClick={() =>
+													setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, payableMinor, precision))
+												}
+											>
+												<Check className="size-4" />
+											</button>
+										</div>
+									);
+								})}
 								</div>
-							);
-						})}
-						</div>
-						<div className="mt-5 grid gap-3 sm:grid-cols-3">
-							<PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / scale, currency, precision)} />
-							<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment && !isCreditSale)} />
-							<PaymentSummary label="Status" value={paymentStatus} invalid={!isPayable} compact />
-						</div>
-					{allocation.hasInvalidAmount ? (
+								<div className="mt-5 grid gap-3 sm:grid-cols-3">
+									<PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / scale, currency, precision)} />
+									<PaymentSummary label={balanceLabel} value={formatCurrency(balanceMinor / scale, currency, precision)} invalid={allocation.hasInvalidAmount || hasNonCashOverpayment || (allocation.remainingMinor > 0 && !allowPartialPayment && !isCreditSale)} />
+									<PaymentSummary label="Status" value={paymentStatus} invalid={!isPayable} compact />
+								</div>
+							</>
+						)}
+					{!isSalesOrder && allocation.hasInvalidAmount ? (
 						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
 							<AlertCircle className="size-4 shrink-0" /> Enter valid amounts with no more than {precision} decimal places.
 						</div>
 					) : null}
-					{hasNonCashOverpayment ? (
+					{!isSalesOrder && hasNonCashOverpayment ? (
 						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
 							<AlertCircle className="size-4 shrink-0" /> Electronic payments cannot exceed the amount due.
 						</div>
@@ -412,7 +425,14 @@ function CheckoutDialogContent({
 						</div>
 					) : null}
 					</section>
-					<InvoiceSummary invoice={invoice} currency={currency} precision={precision} allocatedMinor={allocation.allocatedMinor} remainingMinor={allocation.remainingMinor} loyaltyAmountMinor={loyaltyAmountMinor} />
+					<InvoiceSummary
+						invoice={invoice}
+						currency={currency}
+						precision={precision}
+						allocatedMinor={isSalesOrder ? 0 : allocation.allocatedMinor}
+						remainingMinor={isSalesOrder ? payableMinor : allocation.remainingMinor}
+						loyaltyAmountMinor={isSalesOrder ? 0 : loyaltyAmountMinor}
+					/>
 					</div>
 				</div>
 				<div className="grid shrink-0 grid-cols-4 items-center gap-2 border-t border-outline-variant px-3 py-3 sm:flex sm:px-6">
@@ -420,24 +440,30 @@ function CheckoutDialogContent({
 					<Button variant="danger" className="min-w-0 gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm" onClick={onClear} disabled={isSubmitting}>
 						<Trash2 className="size-4" /> Clear
 					</Button>
-					<Button variant="ghost" className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container sm:ml-auto sm:min-w-28 sm:gap-2 sm:px-3 sm:text-sm" onClick={onHold} disabled={isSubmitting}>
+					<Button
+						variant="ghost"
+						className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container sm:ml-auto sm:min-w-28 sm:gap-2 sm:px-3 sm:text-sm"
+						onClick={onHold}
+						disabled={isSubmitting || isSalesOrder}
+						title={isSalesOrder ? "Holding Sales Orders is not supported yet" : undefined}
+					>
 						<Pause className="size-4" /> Hold
 					</Button>
 					<Button
 						disabled={!isPayable || isSubmitting}
 						onClick={() =>
 							onConfirm(
-								buildPaymentInputs(availableModes, amounts, precision),
+								isSalesOrder ? [] : buildPaymentInputs(availableModes, amounts, precision),
 								idempotencyKey.current,
-								isCreditSale,
-								isCreditSale ? dueDate : undefined,
-								appliedLoyaltyPoints || undefined,
+								isSalesOrder ? false : isCreditSale,
+								isSalesOrder ? undefined : isCreditSale ? dueDate : undefined,
+								isSalesOrder ? undefined : appliedLoyaltyPoints || undefined,
 								isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
 							)
 						}
 					>
-						<span className="sm:hidden">{isSubmitting ? "..." : "Complete"}</span>
-						<span className="hidden sm:inline">{isSubmitting ? "Submitting..." : isCreditSale ? "Complete credit sale" : "Complete sale"}</span>
+						<span className="sm:hidden">{isSubmitting ? "..." : isSalesOrder ? "Order" : "Complete"}</span>
+						<span className="hidden sm:inline">{isSubmitting ? "Submitting..." : isSalesOrder ? "Create Sales Order" : isCreditSale ? "Complete credit sale" : "Complete sale"}</span>
 					</Button>
 				</div>
 			</div>

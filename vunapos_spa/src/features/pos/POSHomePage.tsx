@@ -344,13 +344,6 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 
 	const handleOpenCheckout = async () => {
 		setPageError(null);
-		if (orderType === "Sales Order") {
-			showToast({
-				type: "error",
-				message: "Sales Order checkout is not enabled yet. Switch Order Type to Sales Invoice to complete this sale.",
-			});
-			return;
-		}
 		if (!isReachable || navigator.onLine === false) {
 			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before checkout." });
 			return;
@@ -475,6 +468,7 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 				dueDate,
 				loyaltyPoints,
 				taxId,
+				orderType,
 			);
 			setIsCheckoutOpen(false);
 			void handleSelectCustomer(undefined, false);
@@ -712,6 +706,7 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 					});
 				}}
 				onPreviewLoyalty={(points) => cartActions.previewLoyaltyRedemption(points)}
+				orderType={orderType}
 			/>
 
 			{toast?.type === "queued" ? (
@@ -726,7 +721,7 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 					role="status"
 					className={`fixed inset-x-0 top-4 z-[60] mx-auto w-[calc(100%-2rem)] max-w-sm rounded-md border border-secondary bg-secondary-container px-4 py-3 text-sm text-on-secondary-container shadow-md ${toastClosing ? "animate-toast-rise-out" : "animate-toast-drop-in"}`}
 				>
-					Invoice {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}
+					{toast.invoice.doctype === "Sales Order" ? "Sales Order" : "Invoice"} {toast.invoice.name} submitted for {getInvoiceTotal(toast.invoice).toFixed(2)}
 					{toast.invoice.is_credit_sale
 						? ` as a credit sale${toast.invoice.due_date ? ` due ${toast.invoice.due_date}` : ""}.`
 						: "."}

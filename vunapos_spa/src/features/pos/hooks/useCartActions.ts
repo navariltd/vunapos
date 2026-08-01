@@ -64,8 +64,9 @@ export function useCartActions() {
 				dueDate?: string,
 				loyaltyPoints?: number,
 				taxId?: string,
+				orderType?: "Sales Invoice" | "Sales Order",
 			) => submitCartAction(
-				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId,
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, orderType,
 			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),

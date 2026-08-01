@@ -12,6 +12,7 @@ from vunapos.api.sales import (
 	checkout_invoice,
 	clear_invoice,
 	create_and_submit_invoice,
+	create_and_submit_sales_order,
 	create_invoice,
 	create_invoice_from_cart,
 	hold_invoice,
@@ -90,6 +91,51 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		response = remove_item(invoice["doctype"], invoice["name"], row_name)
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
+
+	def test_create_and_submit_sales_order_from_cart(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		response = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 2}],
+			idempotency_key="sales-order-checkout-key",
+		)
+
+		self.assertTrue(response["ok"], response)
+		order = response["data"]
+		self.assertEqual(order["doctype"], "Sales Order")
+		self.assertEqual(order["docstatus"], 1)
+		self.assertEqual(order["items"][0]["item_code"], item_code)
+		self.assertEqual(order["items"][0]["qty"], 2)
+		self.assertEqual(frappe.db.get_value("Sales Order", order["name"], "vunapos_invoice"), 1)
+		self.assertEqual(
+			frappe.db.get_value("Sales Order", order["name"], "vunapos_pos_profile"),
+			profile,
+		)
+		self.assertEqual(
+			frappe.db.get_value("Sales Order", order["name"], "vunapos_session_cashier"),
+			frappe.session.user,
+		)
+
+	def test_sales_order_checkout_with_same_idempotency_key_does_not_duplicate(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		first = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="same-sales-order-key",
+		)
+		second = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="same-sales-order-key",
+		)
+
+		self.assertTrue(first["ok"], first)
+		self.assertTrue(second["ok"], second)
+		self.assertEqual(first["data"]["name"], second["data"]["name"])
 
 	def test_manual_rate_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()

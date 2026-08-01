@@ -55,6 +55,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 		createInvoiceFromCart: reject,
 		previewInvoice: previewCart,
 		createAndSubmitInvoice: reject,
+		createAndSubmitSalesOrder: reject,
 		checkoutInvoice: reject,
 		holdInvoice: reject,
 		listHeldInvoices: reject,
@@ -876,6 +877,43 @@ describe("submitCart", () => {
 			due_date: "2026-08-28",
 			payments: "[]",
 		}));
+	});
+
+	it("creates a submitted Sales Order when the selected order type is Sales Order", async () => {
+		const createAndSubmitSalesOrder = vi.fn().mockResolvedValue({
+			doctype: "Sales Order", name: "SAL-ORD-1", docstatus: 1, items: [], totals: {},
+		});
+		const createAndSubmitInvoice = vi.fn();
+		const renderInvoice = vi.fn().mockRejectedValue(new Error("no print"));
+
+		const result = await useCartStore.getState().submitCart(
+			[],
+			null,
+			"idem-order",
+			makeApi({
+				getItemDetails: vi.fn().mockResolvedValue(makeItem()),
+				createAndSubmitInvoice,
+				createAndSubmitSalesOrder,
+				renderInvoice,
+			}),
+			true,
+			false,
+			undefined,
+			undefined,
+			undefined,
+			"Sales Order",
+		);
+
+		expect(result?.invoice.name).toBe("SAL-ORD-1");
+		expect(createAndSubmitInvoice).not.toHaveBeenCalled();
+		expect(createAndSubmitSalesOrder).toHaveBeenCalledWith(expect.objectContaining({
+			idempotency_key: "idem-order",
+			items: expect.any(String),
+		}));
+		expect(JSON.parse(createAndSubmitSalesOrder.mock.calls[0][0].items)).toEqual([
+			expect.objectContaining({ item_code: "ITEM-1", qty: 1 }),
+		]);
+		expect(useCartStore.getState().invoice).toBeNull();
 	});
 
 	it("preserves the cart when direct server submission fails", async () => {
