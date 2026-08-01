@@ -48,12 +48,23 @@ export function CartItemRow({
 	isOnline,
 	warehouse,
 }: CartItemRowProps) {
-	const [quantity, setQuantity] = useState(String(item.qty));
+	const [quantityDraft, setQuantityDraft] = useState<{
+		rowName: string;
+		sourceQty: number;
+		value: string;
+	} | null>(null);
 	const [batchData, setBatchData] = useState<ItemBatchesDTO | null>(null);
 	const [batchError, setBatchError] = useState<string | null>(null);
 	const [batchExpanded, setBatchExpanded] = useState(false);
 	const [serialExpanded, setSerialExpanded] = useState(false);
 	const requestedBatches = useRef<string | null>(null);
+	const quantity =
+		quantityDraft?.rowName === item.row_name && quantityDraft.sourceQty === item.qty
+			? quantityDraft.value
+			: String(item.qty);
+	const setQuantity = (value: string, sourceQty = item.qty) => {
+		setQuantityDraft({ rowName: item.row_name, sourceQty, value });
+	};
 
 	const commitQuantity = async () => {
 		const nextQuantity = Number(quantity);
@@ -113,7 +124,7 @@ export function CartItemRow({
 				</div>
 				<div className="mt-3 flex items-center justify-between gap-3">
 					<div className="flex items-center overflow-hidden rounded-md border border-outline-variant bg-surface">
-						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1)); void onUpdateQty(item.row_name, item.qty - 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Decrease ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled || item.qty <= 1} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty - 1), item.qty - 1); void onUpdateQty(item.row_name, item.qty - 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Decrease ${item.item_name}`}>
 							<Minus className="size-4" />
 						</button>
 						<input
@@ -132,7 +143,7 @@ export function CartItemRow({
 								if (event.key === "Escape") setQuantity(String(item.qty));
 							}}
 						/>
-						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1)); void onUpdateQty(item.row_name, item.qty + 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Increase ${item.item_name}`}>
+						<button type="button" disabled={itemDisabled} className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50" onClick={() => { setQuantity(String(item.qty + 1), item.qty + 1); void onUpdateQty(item.row_name, item.qty + 1).catch(() => setQuantity(String(item.qty))); }} aria-label={`Increase ${item.item_name}`}>
 							<Plus className="size-4" />
 						</button>
 					</div>
