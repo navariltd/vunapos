@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { AlertCircle, Award, Check, Loader2, Pause, RefreshCw, Smartphone, Trash2, X } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
+import { useGatewayPaymentRealtime } from "../hooks/useGatewayPaymentRealtime";
 import {
 	allocateAllToMode,
 	buildPaymentInputs,
@@ -295,6 +296,19 @@ function CheckoutDialogContent({
 			setGatewayBusy((current) => ({ ...current, [modeOfPayment]: undefined }));
 		}
 	};
+	useGatewayPaymentRealtime((event) => {
+		const matchingMode = availableModes.find((mode) => {
+			const currentLink = gatewayLinks[mode.mode_of_payment];
+			return (
+				currentLink?.name === event.name ||
+				(currentLink?.source_doctype === event.source_doctype &&
+					currentLink?.source_name === event.source_name)
+			);
+		});
+		if (!matchingMode) return;
+		if (event.pos_profile && posProfile && event.pos_profile !== posProfile) return;
+		setPaidGatewayLink(matchingMode.mode_of_payment, event);
+	});
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-2 sm:p-4">

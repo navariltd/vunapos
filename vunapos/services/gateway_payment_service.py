@@ -277,6 +277,29 @@ def consume_gateway_payment_links(links, target_doc):
 		)
 
 
+def sync_gateway_payment_source_change(doc, method: str | None = None):
+	"""Update and publish VunaPOS gateway links when navari_ke_payments source docs change."""
+	if doc.doctype not in SUPPORTED_SOURCE_DOCTYPES:
+		return
+	link_names = frappe.get_all(
+		"VunaPOS Gateway Payment Link",
+		filters={
+			"source_doctype": doc.doctype,
+			"source_name": doc.name,
+			"consumed": 0,
+		},
+		pluck="name",
+	)
+	if not link_names:
+		return
+	from vunapos.realtime import publish_gateway_payment_change
+
+	for link_name in link_names:
+		link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+		link = _sync_link_from_source(link)
+		publish_gateway_payment_change(link)
+
+
 def get_gateway_payment_status(link_name: str | None):
 	if not link_name:
 		_gateway_error("GATEWAY_PAYMENT_REQUIRED", _("Gateway payment link is required"))

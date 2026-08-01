@@ -168,6 +168,20 @@ doc_events = {
 	)
 }
 
+doc_events.update(
+	{
+		"VunaPOS Gateway Payment Link": {
+			"on_update": "vunapos.realtime.publish_gateway_payment_change",
+		},
+		"KE Payment Request": {
+			"on_update": "vunapos.services.gateway_payment_service.sync_gateway_payment_source_change",
+		},
+		"KE C2B Payment Register": {
+			"on_update": "vunapos.services.gateway_payment_service.sync_gateway_payment_source_change",
+		},
+	}
+)
+
 # Scheduled Tasks
 # ---------------
 
