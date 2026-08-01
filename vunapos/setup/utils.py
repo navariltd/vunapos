@@ -9,10 +9,72 @@ def ensure_vunapos_custom_fields():
 		{
 			"POS Profile": [
 				{
+					"fieldname": "vunapos_tab",
+					"label": "VunaPOS",
+					"fieldtype": "Tab Break",
+					"insert_after": "column_break_hwfg",
+				},
+				{
+					"fieldname": "vunapos_sales_section",
+					"label": "Sales Settings",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_tab",
+				},
+				{
+					"fieldname": "vunapos_item_prices_include_tax",
+					"label": "Item Prices Include Tax",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_sales_section",
+					"description": (
+						"Treat prices for items with an Item Tax Template as tax-inclusive in VunaPOS. "
+						"Leave unchecked to add item taxes on top of the listed price."
+					),
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_allow_credit_sales",
+					"label": "Allow Credit Sales",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_item_prices_include_tax",
+					"description": "Allow VunaPOS invoices to be submitted with an unpaid customer balance.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_default_sale_type",
+					"label": "Default Sale Type",
+					"fieldtype": "Select",
+					"options": "Cash Sale\nCredit Sale",
+					"insert_after": "vunapos_allow_credit_sales",
+					"description": "Choose whether VunaPOS checkout starts as a cash or credit sale.",
+					"default": "Cash Sale",
+					"depends_on": "eval:doc.vunapos_allow_credit_sales",
+				},
+				{
+					"fieldname": "vunapos_allow_price_list_switching",
+					"label": "Allow Price List Switching",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_default_sale_type",
+					"description": "Allow cashiers to select an approved selling price list for one VunaPOS sale.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_allowed_price_lists",
+					"label": "Allowed Price Lists",
+					"fieldtype": "Table",
+					"options": "VunaPOS Allowed Price List",
+					"insert_after": "vunapos_allow_price_list_switching",
+					"depends_on": "eval:doc.vunapos_allow_price_list_switching",
+				},
+				{
+					"fieldname": "vunapos_queue_column_break",
+					"fieldtype": "Column Break",
+					"insert_after": "vunapos_allowed_price_lists",
+				},
+				{
 					"fieldname": "vunapos_enable_background_submission",
 					"label": "Enable Background Invoice Submission",
 					"fieldtype": "Check",
-					"insert_after": "disabled",
+					"insert_after": "vunapos_queue_column_break",
 					"description": (
 						"Accept validated VunaPOS sales after stock is reserved and submit their invoice "
 						"in a background worker. Requires Enable Stock Reservation in Stock Settings; "
@@ -37,51 +99,6 @@ def ensure_vunapos_custom_fields():
 					"description": "Time after which an abandoned processing attempt may be recovered.",
 					"default": "5",
 					"depends_on": "eval:doc.vunapos_enable_background_submission",
-				},
-				{
-					"fieldname": "vunapos_allow_price_list_switching",
-					"label": "Allow Price List Switching",
-					"fieldtype": "Check",
-					"insert_after": "selling_price_list",
-					"description": "Allow cashiers to select an approved selling price list for one VunaPOS sale.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_allowed_price_lists",
-					"label": "Allowed Price Lists",
-					"fieldtype": "Table",
-					"options": "VunaPOS Allowed Price List",
-					"insert_after": "vunapos_allow_price_list_switching",
-					"depends_on": "eval:doc.vunapos_allow_price_list_switching",
-				},
-				{
-					"fieldname": "vunapos_allow_credit_sales",
-					"label": "Allow Credit Sales",
-					"fieldtype": "Check",
-					"insert_after": "allow_partial_payment",
-					"description": "Allow VunaPOS invoices to be submitted with an unpaid customer balance.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_default_sale_type",
-					"label": "Default Sale Type",
-					"fieldtype": "Select",
-					"options": "Cash Sale\nCredit Sale",
-					"insert_after": "vunapos_allow_credit_sales",
-					"description": "Choose whether VunaPOS checkout starts as a cash or credit sale.",
-					"default": "Cash Sale",
-					"depends_on": "eval:doc.vunapos_allow_credit_sales",
-				},
-				{
-					"fieldname": "vunapos_item_prices_include_tax",
-					"label": "Item Prices Include Tax",
-					"fieldtype": "Check",
-					"insert_after": "taxes_and_charges",
-					"description": (
-						"Treat prices for items with an Item Tax Template as tax-inclusive in VunaPOS. "
-						"Leave unchecked to add item taxes on top of the listed price."
-					),
-					"default": "0",
 				},
 			],
 			"Sales Invoice Item": [
