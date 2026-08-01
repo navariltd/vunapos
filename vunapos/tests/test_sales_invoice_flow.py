@@ -25,6 +25,10 @@ from vunapos.api.sales import (
 	update_item,
 )
 from vunapos.services.checkout_queue_service import process_queued_invoice
+from vunapos.services.gateway_payment_service import (
+	attach_c2b_gateway_payment,
+	search_c2b_gateway_payments,
+)
 from vunapos.services.invoice_service import validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
@@ -111,6 +115,33 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		)
 		doc.insert(ignore_permissions=True)
 		return doc
+
+	def _make_c2b_payment(self, gateway, mode_of_payment, amount, currency="KES", customer=None, submit=True):
+		if not frappe.db.table_exists("KE C2B Payment Register"):
+			self.skipTest("navari_ke_payments is not installed")
+		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
+		source = frappe.get_doc(
+			{
+				"doctype": "KE C2B Payment Register",
+				"provider": "Mpesa",
+				"transaction_id": frappe.generate_hash(length=10).upper(),
+				"transaction_date": nowdate(),
+				"amount": amount,
+				"currency": currency,
+				"party_phone": "254700000000",
+				"party_name": "VunaPOS C2B Test Payer",
+				"status": "Received",
+				"payment_gateway": frappe.db.get_value("Payment Gateway Account", gateway, "payment_gateway"),
+				"company": profile.company,
+				"mode_of_payment": mode_of_payment,
+				"customer": customer,
+				"create_payment_entry": 0,
+			}
+		)
+		source.insert(ignore_permissions=True, ignore_links=True)
+		if submit and source.meta.is_submittable:
+			source.submit()
+		return source
 
 	def _make_gateway_payment_link(self, profile, mode_of_payment, gateway, amount, source):
 		opening_entry = ensure_open_pos_opening_entry(profile)
@@ -824,6 +855,78 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			frappe.db.get_value("VunaPOS Gateway Payment Link", link, "consumed_by_name"),
 			response["data"]["name"],
 		)
+
+	def test_c2b_search_excludes_reserved_gateway_payment(self):
+		profile = ensure_test_pos_profile()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		currency = frappe.db.get_value("POS Profile", profile, "currency")
+		source = self._make_c2b_payment(gateway, mode, 100, currency=currency)
+
+		before_attach = search_c2b_gateway_payments(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			query=source.transaction_id[:4],
+			currency=currency,
+		)
+		self.assertTrue(any(row["name"] == source.name for row in before_attach), before_attach)
+
+		attach_c2b_gateway_payment(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			transaction_reference=source.transaction_id,
+			amount=100,
+			currency=currency,
+			idempotency_key="reserved-c2b-search-hidden",
+		)
+
+		after_attach = search_c2b_gateway_payments(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			query=source.transaction_id[:4],
+			currency=currency,
+		)
+		self.assertFalse(any(row["name"] == source.name for row in after_attach), after_attach)
+
+	def test_checkout_consumes_c2b_source_and_disables_ke_payment_entry_creation(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		currency = frappe.db.get_value("POS Profile", profile, "currency")
+		source = self._make_c2b_payment(gateway, mode, amount, currency=currency, submit=False)
+		link = attach_c2b_gateway_payment(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			transaction_reference=source.transaction_id,
+			amount=amount,
+			currency=currency,
+			idempotency_key="consume-c2b-source",
+		)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "gateway_payment_link": link["name"]}],
+			idempotency_key="consume-c2b-source-checkout",
+		)
+
+		self.assertTrue(response["ok"], response)
+		source.reload()
+		self.assertEqual(source.docstatus, 1)
+		self.assertEqual(source.reference_doctype, response["data"]["doctype"])
+		self.assertEqual(source.reference_docname, response["data"]["name"])
+		self.assertEqual(source.is_reconciled, 1)
+		self.assertEqual(source.reconciliation_status, "Reconciled")
+		self.assertEqual(source.create_payment_entry, 0)
+		self.assertEqual(flt(source.allocated_amount), flt(amount))
+		self.assertEqual(flt(source.unallocated_amount), 0)
 
 	def test_payment_validation_accepts_split_at_currency_precision(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
