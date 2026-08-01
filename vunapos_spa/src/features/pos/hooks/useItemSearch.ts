@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { ItemDTO } from "../types";
 import { itemRepository } from "../../../lib/repositories/itemRepository";
+import { profileRepository } from "../../../lib/repositories/profileRepository";
 import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
 // Search the current server-hydrated in-memory catalogue without a request per keypress.
@@ -20,7 +21,11 @@ export function useItemSearch(query: string) {
 	}, [query]);
 
 	useEffect(() => {
-		void itemRepository.search(debouncedQuery, 60).then((rows) => setItems(rows as ItemDTO[]));
+		void profileRepository.getActive().then((profile) =>
+			itemRepository.search(debouncedQuery, 60, {
+				hideUnavailable: Boolean(profile?.hide_unavailable_items),
+			}),
+		).then((rows) => setItems(rows as ItemDTO[]));
 	}, [debouncedQuery, revision]);
 
 	return {

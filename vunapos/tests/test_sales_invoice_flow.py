@@ -149,6 +149,43 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
 		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
 
+	def test_checkout_allows_erpnext_pricing_rule_without_rate_change_permission(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_item()
+		frappe.db.set_value("POS Profile", profile_name, "allow_rate_change", 0, update_modified=False)
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Checkout Discount",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Discount Percentage",
+				"discount_percentage": 20,
+				"min_qty": 1,
+				"priority": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile_name)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": 80}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["rate"], 80)
+		self.assertEqual(response["data"]["items"][0]["discount_percentage"], 20)
+
 	def test_manual_discount_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()

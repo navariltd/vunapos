@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingCart, X } from "lucide-react";
 
 import type { HeldInvoiceDTO, ItemDTO, PaymentInput, PrintPayload } from "./types";
@@ -84,6 +84,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
 	const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
 	const [clearCartConfirmation, setClearCartConfirmation] = useState<{ closeCheckout: boolean } | null>(null);
+	const lastAutoAddedSearch = useRef("");
 	const activePage = useNavigationStore((s) => s.activePage);
 	const currentPath = useNavigationStore((s) => s.currentPath);
 	const setActivePage = useNavigationStore((s) => s.setActivePage);
@@ -162,12 +163,16 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				try {
 					await cartActions.refreshPriceListPricing(cartState.selectedPriceList);
 				} catch {
-					// The profile change may have revoked the selected list. Reprice the
-					// current cart using its customer/profile default without losing it.
-					await cartActions.refreshPriceListPricing(undefined);
+					// The profile change may have revoked the selected list. Fall back to
+					// the active customer's default list before using the profile default.
+					const customer = getActiveCustomer(cartState);
+					if (customer) await cartActions.refreshCustomerPricing(customer);
+					else await cartActions.refreshPriceListPricing(undefined);
 				}
-			} else if (cartState.invoice?.items.length) {
-				await cartActions.refreshCartConfiguration();
+			} else {
+				const customer = getActiveCustomer(cartState);
+				if (customer) await cartActions.refreshCustomerPricing(customer);
+				else if (cartState.invoice?.items.length) await cartActions.refreshCartConfiguration();
 			}
 			showToast({
 				type: "info",
@@ -255,7 +260,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [bootstrap.data?.pos_profile, isReachable, showToast]);
 
-	const handleAddItem = async (item: ItemDTO) => {
+	const handleAddItem = useCallback(async (item: ItemDTO) => {
 		setPageError(null);
 		clearToast();
 		setPendingItemCode(item.item_code);
@@ -266,7 +271,32 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		} finally {
 			setPendingItemCode(null);
 		}
-	};
+	}, [cartActions, clearToast, setPageError, showToast]);
+
+	useEffect(() => {
+		const query = itemSearchQuery.trim();
+		if (
+			!bootstrap.data?.automatically_add_filtered_item_to_cart
+			|| !query
+			|| items.isLoading
+			|| items.items.length !== 1
+			|| pendingItemCode
+		) {
+			return;
+		}
+		const item = items.items[0];
+		const autoAddKey = `${query.toLowerCase()}::${item.item_code}`;
+		if (lastAutoAddedSearch.current === autoAddKey) return;
+		lastAutoAddedSearch.current = autoAddKey;
+		void handleAddItem(item).then(() => setItemSearchQuery(""));
+	}, [
+		bootstrap.data?.automatically_add_filtered_item_to_cart,
+		itemSearchQuery,
+		items.isLoading,
+		items.items,
+		handleAddItem,
+		pendingItemCode,
+	]);
 
 	const handleScanBarcode = async (barcode: string) => {
 		const value = barcode.trim();

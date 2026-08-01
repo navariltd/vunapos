@@ -1108,6 +1108,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					item_tax_template: catalogueItem.item_tax_template,
 					item_tax: catalogueItem.item_tax ?? undefined,
 					uoms: catalogueItem.uoms,
+					catalogue_pricing_rule: catalogueItem.pricing_rule,
 				};
 			});
 			const selectedCustomer = getActiveCustomer(get());
@@ -1136,6 +1137,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						item_tax_template: catalogueItem.item_tax_template,
 						item_tax: catalogueItem.item_tax ?? undefined,
 						uoms: catalogueItem.uoms,
+						catalogue_pricing_rule: catalogueItem.pricing_rule,
 					} : item;
 				}),
 			};

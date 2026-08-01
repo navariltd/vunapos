@@ -141,6 +141,7 @@ def _sync_profile_pricing_fields(doc, profile, requested_price_list=None):
 	_set_if_has_field(doc, "selling_price_list", price_list)
 	_set_if_has_field(doc, "currency", profile.currency)
 	_set_if_has_field(doc, "taxes_and_charges", profile.get("taxes_and_charges"))
+	_set_if_has_field(doc, "ignore_pricing_rule", profile.get("ignore_pricing_rule"))
 	return doc
 
 
@@ -534,6 +535,7 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 			"conversion_factor": conversion_factor,
 			"is_pos": doc.get("is_pos"),
 			"update_stock": doc.get("update_stock"),
+			"ignore_pricing_rule": doc.get("ignore_pricing_rule"),
 		}
 	)
 	details = get_item_details(ctx, doc=doc)
@@ -584,6 +586,24 @@ def _apply_vunapos_item_metadata(row, item):
 	if row.meta.has_field("vunapos_pricing_override_by"):
 		row.vunapos_pricing_override_by = frappe.session.user if override else None
 	return row
+
+
+def _has_vunapos_pricing_override(row):
+	return row.meta.has_field("vunapos_pricing_override") and bool(row.get("vunapos_pricing_override"))
+
+
+def _rate_matches_pricing_rule_discount(row, precision):
+	if not row.get("pricing_rules") or _has_vunapos_pricing_override(row):
+		return False
+	price_list_rate = flt(row.get("price_list_rate") or 0, precision)
+	rate = flt(row.get("rate") or 0, precision)
+	discount_amount = flt(row.get("discount_amount") or 0, precision)
+	discount_percentage = flt(row.get("discount_percentage") or 0, precision)
+	if discount_amount:
+		return rate == flt(price_list_rate - discount_amount, precision)
+	if discount_percentage:
+		return rate == flt(price_list_rate - (price_list_rate * discount_percentage / 100), precision)
+	return False
 
 
 def _set_row_batch_allocations(row, allocations):
@@ -958,6 +978,8 @@ def _validate_existing_pricing_permissions(doc, profile):
 		discount_changed = flt(item.get("discount_percentage"), precision) != flt(
 			baseline.get("discount_percentage"), precision
 		) or flt(item.get("discount_amount"), precision) != flt(baseline.get("discount_amount"), precision)
+		if (rate_changed or discount_changed) and _rate_matches_pricing_rule_discount(item, precision):
+			continue
 		if rate_changed:
 			if discount_changed and profile.get("allow_discount_change"):
 				continue

@@ -47,6 +47,7 @@ def _get_rate(item_code, profile, price_list=None):
 			"plc_conversion_rate": 1,
 			"warehouse": profile.warehouse,
 			"qty": 1,
+			"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
 		}
 	)
 	details = get_item_details(ctx)
@@ -265,7 +266,7 @@ def _to_item_payload_from_row(
 
 
 def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_list):
-	if not items:
+	if not items or profile.get("ignore_pricing_rule"):
 		return {}
 
 	pricing_items = []
@@ -303,7 +304,7 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 			"plc_conversion_rate": 1,
 			"company": profile.company,
 			"transaction_date": today(),
-			"ignore_pricing_rule": 0,
+			"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
 			"doctype": "Sales Invoice",
 			"name": "",
 			"update_stock": 1,

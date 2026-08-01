@@ -120,6 +120,9 @@ export type CachedProfile = {
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	hide_unavailable_items?: boolean;
+	automatically_add_filtered_item_to_cart?: boolean;
+	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
