@@ -295,6 +295,31 @@ def get_payment_history(
 	by_payment = {}
 	for row in references:
 		by_payment.setdefault(row.parent, []).append(row)
+	payment_names = [row.name for row in rows]
+	gateway_links = []
+	if payment_names:
+		gateway_links = frappe.get_all(
+			"VunaPOS Gateway Payment Link",
+			filters={
+				"pos_profile": profile.name,
+				"consumed_by_doctype": "Payment Entry",
+				"consumed_by_name": ["in", payment_names],
+			},
+			fields=[
+				"name",
+				"source_doctype",
+				"source_name",
+				"payment_gateway",
+				"mode_of_payment",
+				"status",
+				"transaction_reference",
+				"consumed_by_name",
+			],
+			order_by="creation desc",
+		)
+	gateway_by_payment = {}
+	for row in gateway_links:
+		gateway_by_payment.setdefault(row.consumed_by_name, []).append(row)
 	return {
 		"payments": [
 			{
@@ -302,6 +327,7 @@ def get_payment_history(
 				"status": "Cancelled" if row.docstatus == 2 else "Submitted",
 				"allocated_amount": flt(row.received_amount) - flt(row.unallocated_amount),
 				"references": by_payment.get(row.name, []),
+				"gateway_links": gateway_by_payment.get(row.name, []),
 			}
 			for row in rows
 		]

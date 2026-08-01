@@ -55,6 +55,7 @@ type CheckoutDialogProps = {
 		idempotency_key: string;
 	}) => Promise<GatewayPaymentLinkDTO>;
 	onCheckGatewayPayment?: (gatewayPaymentLink: string) => Promise<GatewayPaymentLinkDTO>;
+	onCancelGatewayPayment?: (gatewayPaymentLink: string) => Promise<GatewayPaymentLinkDTO>;
 	onInitiateGatewayPayment?: (params: {
 		mode_of_payment: string;
 		amount: number;
@@ -98,6 +99,7 @@ export function CheckoutDialog({
 	onHold,
 	onAttachC2bGatewayPayment,
 	onCheckGatewayPayment,
+	onCancelGatewayPayment,
 	onInitiateGatewayPayment,
 	onPreviewLoyalty,
 	orderType = "Sales Invoice",
@@ -125,6 +127,7 @@ export function CheckoutDialog({
 			onHold={onHold}
 			onAttachC2bGatewayPayment={onAttachC2bGatewayPayment}
 			onCheckGatewayPayment={onCheckGatewayPayment}
+			onCancelGatewayPayment={onCancelGatewayPayment}
 			onInitiateGatewayPayment={onInitiateGatewayPayment}
 			onPreviewLoyalty={onPreviewLoyalty}
 			orderType={orderType}
@@ -149,6 +152,7 @@ function CheckoutDialogContent({
 	onHold,
 	onAttachC2bGatewayPayment,
 	onCheckGatewayPayment,
+	onCancelGatewayPayment,
 	onInitiateGatewayPayment,
 	onPreviewLoyalty,
 	orderType = "Sales Invoice",
@@ -279,7 +283,7 @@ function CheckoutDialogContent({
 	};
 	const runGatewayAction = async (
 		modeOfPayment: string,
-		action: "stk" | "status" | "c2b",
+		action: "stk" | "status" | "c2b" | "cancel",
 		fn: () => Promise<GatewayPaymentLinkDTO>,
 	) => {
 		setGatewayBusy((current) => ({ ...current, [modeOfPayment]: action }));
@@ -295,6 +299,15 @@ function CheckoutDialogContent({
 		} finally {
 			setGatewayBusy((current) => ({ ...current, [modeOfPayment]: undefined }));
 		}
+	};
+	const cancelGatewayLink = (modeOfPayment: string) => {
+		const link = gatewayLinks[modeOfPayment];
+		if (!link || !onCancelGatewayPayment) return;
+		void runGatewayAction(modeOfPayment, "cancel", async () => {
+			const cancelled = await onCancelGatewayPayment(link.name);
+			setAmounts((current) => ({ ...current, [modeOfPayment]: "" }));
+			return cancelled;
+		});
 	};
 	useGatewayPaymentRealtime((event) => {
 		const matchingMode = availableModes.find((mode) => {
@@ -508,7 +521,7 @@ function CheckoutDialogContent({
 																	: "No verified payment"}
 														</span>
 													</div>
-													<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+													<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
 														<input
 															aria-label={`${mode.mode_of_payment} phone number`}
 															className="h-10 rounded-md border border-outline-variant bg-surface px-3 text-sm"
@@ -556,6 +569,14 @@ function CheckoutDialogContent({
 																? <Loader2 className="size-4 animate-spin" />
 																: <RefreshCw className="size-4" />}
 															Check
+														</Button>
+														<Button
+															variant="ghost"
+															className="h-10"
+															disabled={!gatewayLink || gatewayPaid || !onCancelGatewayPayment || Boolean(gatewayBusyState)}
+															onClick={() => cancelGatewayLink(mode.mode_of_payment)}
+														>
+															{gatewayBusyState === "cancel" ? "Cancelling..." : "Cancel"}
 														</Button>
 													</div>
 													<div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

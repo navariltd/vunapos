@@ -4,6 +4,9 @@ from vunapos.services.gateway_payment_service import (
 	attach_c2b_gateway_payment as attach_c2b_gateway_payment_service,
 )
 from vunapos.services.gateway_payment_service import (
+	cancel_gateway_payment_link as cancel_gateway_payment_link_service,
+)
+from vunapos.services.gateway_payment_service import (
 	get_gateway_payment_status as get_gateway_payment_status_service,
 )
 from vunapos.services.gateway_payment_service import (
@@ -50,6 +53,14 @@ def initiate_stk_gateway_payment(
 def get_gateway_payment_status(gateway_payment_link: str | None = None):
 	try:
 		return success(get_gateway_payment_status_service(gateway_payment_link))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_gateway_payment_link(gateway_payment_link: str | None = None):
+	try:
+		return success(cancel_gateway_payment_link_service(gateway_payment_link))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

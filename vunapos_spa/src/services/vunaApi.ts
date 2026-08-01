@@ -63,6 +63,7 @@ export const vunaMethods = {
 	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
 	initiateStkGatewayPayment: "vunapos.api.gateway.initiate_stk_gateway_payment",
 	getGatewayPaymentStatus: "vunapos.api.gateway.get_gateway_payment_status",
+	cancelGatewayPaymentLink: "vunapos.api.gateway.cancel_gateway_payment_link",
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
@@ -226,6 +227,10 @@ export function initiateStkGatewayPayment(
 }
 
 export function getGatewayPaymentStatus(call: FrappeCall, gatewayPaymentLink: string) {
+	return callAndUnwrap<GatewayPaymentLinkDTO>(call, { gateway_payment_link: gatewayPaymentLink });
+}
+
+export function cancelGatewayPaymentLink(call: FrappeCall, gatewayPaymentLink: string) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, { gateway_payment_link: gatewayPaymentLink });
 }
 

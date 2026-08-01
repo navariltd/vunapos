@@ -7,6 +7,19 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"POS Settings": [
+				{
+					"fieldname": "vunapos_gateway_payment_timeout_minutes",
+					"label": "VunaPOS Gateway Payment Timeout (Minutes)",
+					"fieldtype": "Int",
+					"insert_after": "invoice_type",
+					"description": (
+						"Unconsumed pending VunaPOS gateway payment links older than this value are "
+						"expired automatically. Use 0 or blank for the default timeout."
+					),
+					"default": "15",
+				},
+			],
 			"Customer": [
 				{
 					"fieldname": "is_walkin",

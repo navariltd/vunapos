@@ -21,7 +21,7 @@ type Props = {
 type Candidate = { name: string; posting_date: string; amount: number; currency?: string; outstanding_amount?: number; remarks?: string };
 type Candidates = { payments: Candidate[]; invoices: Candidate[] };
 type Allocation = { payment_entry: string; invoice: string; allocated_amount: number; currency?: string };
-type PaymentHistoryRow = Candidate & { customer: string; customer_name?: string; mode_of_payment?: string; received_amount: number; unallocated_amount: number; allocated_amount: number; reference_no?: string; remarks?: string; status: string; cashier?: string; receipt_type?: string; closing_entry?: string; references: Array<{ reference_doctype: string; reference_name: string; allocated_amount: number }> };
+type PaymentHistoryRow = Candidate & { customer: string; customer_name?: string; mode_of_payment?: string; received_amount: number; unallocated_amount: number; allocated_amount: number; reference_no?: string; remarks?: string; status: string; cashier?: string; receipt_type?: string; closing_entry?: string; references: Array<{ reference_doctype: string; reference_name: string; allocated_amount: number }>; gateway_links?: Array<{ name: string; source_doctype: string; source_name: string; status: string; transaction_reference?: string | null }> };
 type HistoryFilters = { customer: string; from_date: string; to_date: string; mode_of_payment: string; reference: string; status: string; cashier: string };
 const fieldClass = "mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary";
 
@@ -61,7 +61,7 @@ export function PaymentsPage({
 	const [gatewayReference, setGatewayReference] = useState("");
 	const [gatewayLink, setGatewayLink] = useState<GatewayPaymentLinkDTO | null>(null);
 	const [gatewayError, setGatewayError] = useState<string | null>(null);
-	const [gatewayBusy, setGatewayBusy] = useState<"stk" | "c2b" | "status" | null>(null);
+	const [gatewayBusy, setGatewayBusy] = useState<"stk" | "c2b" | "status" | "cancel" | null>(null);
 
 	const [reconcileCustomer, setReconcileCustomer] = useState("");
 	const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
@@ -72,6 +72,7 @@ export function PaymentsPage({
 	const receiveCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
 	const initiateStkCall = useFrappePostCall(vunaMethods.initiateStkGatewayPayment);
 	const statusCall = useFrappePostCall(vunaMethods.getGatewayPaymentStatus);
+	const cancelCall = useFrappePostCall(vunaMethods.cancelGatewayPaymentLink);
 	const attachC2bCall = useFrappePostCall(vunaMethods.attachC2bGatewayPayment);
 	const allocateCall = useFrappePostCall(vunaMethods.allocateCustomerPayments);
 	const reconcileCall = useFrappePostCall(vunaMethods.reconcileCustomerPayment);
@@ -103,7 +104,7 @@ export function PaymentsPage({
 		setGatewayBusy(null);
 	};
 
-	const gatewayAction = async (action: "stk" | "c2b" | "status", run: () => Promise<GatewayPaymentLinkDTO>) => {
+	const gatewayAction = async (action: "stk" | "c2b" | "status" | "cancel", run: () => Promise<GatewayPaymentLinkDTO>) => {
 		setGatewayBusy(action);
 		setGatewayError(null);
 		try {
@@ -178,6 +179,7 @@ export function PaymentsPage({
 				phone={gatewayPhone}
 				reference={gatewayReference}
 				onAttachC2b={() => void gatewayAction("c2b", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await attachC2bCall.call({ pos_profile: posProfile, mode_of_payment: mode, transaction_reference: gatewayReference, amount: gatewayAmount, customer: receiveCustomer, currency, idempotency_key: `${idempotencyKey.current}:${mode}:customer-payment:c2b:${gatewayReference}` })))}
+				onCancel={() => gatewayLink ? void gatewayAction("cancel", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await cancelCall.call({ gateway_payment_link: gatewayLink.name }))) : undefined}
 				onCheckStatus={() => gatewayLink ? void gatewayAction("status", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await statusCall.call({ gateway_payment_link: gatewayLink.name }))) : undefined}
 				onInitiateStk={() => void gatewayAction("stk", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await initiateStkCall.call({ pos_profile: posProfile, mode_of_payment: mode, amount: gatewayAmount, phone_number: gatewayPhone, customer: receiveCustomer, currency, idempotency_key: `${idempotencyKey.current}:${mode}:customer-payment:stk` })))}
 				onPhoneChange={setGatewayPhone}
@@ -205,13 +207,14 @@ function GatewayPaymentBox({
 	phone,
 	reference,
 	onAttachC2b,
+	onCancel,
 	onCheckStatus,
 	onInitiateStk,
 	onPhoneChange,
 	onReferenceChange,
 }: {
 	amount: number;
-	busy: "stk" | "c2b" | "status" | null;
+	busy: "stk" | "c2b" | "status" | "cancel" | null;
 	currency?: string;
 	error: string | null;
 	gatewayLink: GatewayPaymentLinkDTO | null;
@@ -219,6 +222,7 @@ function GatewayPaymentBox({
 	phone: string;
 	reference: string;
 	onAttachC2b: () => void;
+	onCancel?: () => void;
 	onCheckStatus?: () => void;
 	onInitiateStk: () => void;
 	onPhoneChange: (value: string) => void;
@@ -235,10 +239,11 @@ function GatewayPaymentBox({
 				{paid ? `Paid${gatewayLink?.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}` : gatewayLink ? `Status: ${gatewayLink.status}` : `Amount ${money(amount || 0, currency)}`}
 			</span>
 		</div>
-		<div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+		<div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto]">
 			<input className={fieldClass} value={phone} onChange={(event) => onPhoneChange(event.target.value)} placeholder="Phone number for STK push"/>
 			<Button variant="ghost" disabled={!amount || busy !== null} onClick={onInitiateStk}>{busy === "stk" ? "Sending..." : "Send STK"}</Button>
 			<Button variant="ghost" disabled={!gatewayLink || busy !== null} onClick={onCheckStatus}>{busy === "status" ? "Checking..." : "Check status"}</Button>
+			<Button variant="ghost" disabled={!gatewayLink || paid || busy !== null} onClick={onCancel}>{busy === "cancel" ? "Cancelling..." : "Cancel"}</Button>
 		</div>
 		<div className="grid gap-3 md:grid-cols-[1fr_auto]">
 			<input className={fieldClass} value={reference} onChange={(event) => onReferenceChange(event.target.value)} placeholder="C2B transaction reference"/>
@@ -263,7 +268,7 @@ function PaymentHistory({ rows, filters, setFilters, paymentModes, currency, loa
 		</div>
 		<div className="overflow-x-auto rounded-lg border border-outline-variant">
 			<table className="w-full min-w-[720px] text-left text-sm"><thead className="bg-surface-container-low text-xs text-on-surface-variant"><tr><th className="px-3 py-3">Payment</th><th>Customer</th><th>Date / mode</th><th>Received</th><th>Invoices</th><th>Status</th></tr></thead>
-			<tbody>{loading ? <tr><td colSpan={6} className="p-6 text-center">Loading payments...</td></tr> : rows.length ? rows.map((row) => <tr key={row.name} className="border-t border-outline-variant align-top"><td className="px-3 py-3"><a className="font-medium text-primary hover:underline" href={`/app/payment-entry/${encodeURIComponent(row.name)}`} target="_blank" rel="noreferrer">{row.name}</a><span className="block text-xs text-on-surface-variant">{row.reference_no || "No external reference"}</span></td><td>{row.customer_name || row.customer}<span className="block text-xs text-on-surface-variant">{row.cashier || "-"}</span></td><td>{formatDate(row.posting_date)}<span className="block text-xs text-on-surface-variant">{row.mode_of_payment || "-"}</span></td><td>{money(row.received_amount, currency)}</td><td>{row.references.length ? row.references.map((ref) => <a key={`${ref.reference_doctype}-${ref.reference_name}`} className="block text-primary hover:underline" href={`/app/${ref.reference_doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(ref.reference_name)}`} target="_blank" rel="noreferrer">{ref.reference_name} ({money(ref.allocated_amount, currency)})</a>) : "-"}</td><td><span className={row.status === "Cancelled" ? "text-error" : "text-secondary"}>{row.status}</span>{row.closing_entry ? <span className="block text-xs text-on-surface-variant">Shift closed</span> : null}</td></tr>) : <tr><td colSpan={6} className="p-6 text-center text-on-surface-variant">No customer payments match these filters.</td></tr>}</tbody></table>
+			<tbody>{loading ? <tr><td colSpan={6} className="p-6 text-center">Loading payments...</td></tr> : rows.length ? rows.map((row) => <tr key={row.name} className="border-t border-outline-variant align-top"><td className="px-3 py-3"><a className="font-medium text-primary hover:underline" href={`/app/payment-entry/${encodeURIComponent(row.name)}`} target="_blank" rel="noreferrer">{row.name}</a><span className="block text-xs text-on-surface-variant">{row.reference_no || "No external reference"}</span>{row.gateway_links?.length ? row.gateway_links.map((link) => <a key={link.name} className="block text-xs text-primary hover:underline" href={`/app/vunapos-gateway-payment-link/${encodeURIComponent(link.name)}`} target="_blank" rel="noreferrer">{link.source_doctype}: {link.transaction_reference || link.source_name}</a>) : null}</td><td>{row.customer_name || row.customer}<span className="block text-xs text-on-surface-variant">{row.cashier || "-"}</span></td><td>{formatDate(row.posting_date)}<span className="block text-xs text-on-surface-variant">{row.mode_of_payment || "-"}</span></td><td>{money(row.received_amount, currency)}</td><td>{row.references.length ? row.references.map((ref) => <a key={`${ref.reference_doctype}-${ref.reference_name}`} className="block text-primary hover:underline" href={`/app/${ref.reference_doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(ref.reference_name)}`} target="_blank" rel="noreferrer">{ref.reference_name} ({money(ref.allocated_amount, currency)})</a>) : "-"}</td><td><span className={row.status === "Cancelled" ? "text-error" : "text-secondary"}>{row.status}</span>{row.closing_entry ? <span className="block text-xs text-on-surface-variant">Shift closed</span> : null}</td></tr>) : <tr><td colSpan={6} className="p-6 text-center text-on-surface-variant">No customer payments match these filters.</td></tr>}</tbody></table>
 		</div>
 	</div>;
 }

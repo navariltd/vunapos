@@ -3,11 +3,14 @@ from decimal import Decimal, InvalidOperation
 import frappe
 from erpnext.accounts.utils import get_currency_precision
 from frappe import _
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import add_to_date, cint, flt, now_datetime
 
 from vunapos.services.profile_service import require_open_pos_session, resolve_pos_profile
 
 SUCCESSFUL_LINK_STATUSES = {"Authorized", "Paid"}
+ACTIVE_LINK_STATUSES = {"Draft", "Pending"}
+DEFAULT_GATEWAY_PAYMENT_TIMEOUT_MINUTES = 15
+MAX_GATEWAY_PAYMENT_TIMEOUT_MINUTES = 24 * 60
 SUPPORTED_SOURCE_DOCTYPES = {"KE Payment Request", "KE C2B Payment Register"}
 
 
@@ -16,6 +19,13 @@ def _gateway_error(code, message, meta=None):
 	exc.vuna_error_code = code
 	exc.vuna_error_meta = meta or {}
 	raise exc
+
+
+def get_gateway_payment_timeout_minutes() -> int:
+	configured = cint(frappe.db.get_single_value("POS Settings", "vunapos_gateway_payment_timeout_minutes"))
+	return min(
+		max(configured or DEFAULT_GATEWAY_PAYMENT_TIMEOUT_MINUTES, 1), MAX_GATEWAY_PAYMENT_TIMEOUT_MINUTES
+	)
 
 
 def gateway_modes_for_profile(profile) -> dict[str, str]:
@@ -373,6 +383,72 @@ def get_gateway_payment_status(link_name: str | None):
 	return gateway_payment_link_to_dict(link)
 
 
+def cancel_gateway_payment_link(link_name: str | None):
+	if not link_name:
+		_gateway_error("GATEWAY_PAYMENT_REQUIRED", _("Gateway payment link is required"))
+	if not frappe.db.exists("VunaPOS Gateway Payment Link", link_name):
+		_gateway_error(
+			"GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment link {0} was not found").format(link_name)
+		)
+	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+	if not frappe.has_permission(link.doctype, "read", doc=link):
+		frappe.throw(_("Not permitted to read VunaPOS Gateway Payment Link"), frappe.PermissionError)
+	if link.get("cashier") != frappe.session.user and "System Manager" not in frappe.get_roles():
+		frappe.throw(_("Not permitted to cancel this gateway payment"), frappe.PermissionError)
+	if link.consumed:
+		_gateway_error(
+			"GATEWAY_PAYMENT_ALREADY_CONSUMED",
+			_("Gateway payment {0} has already been consumed").format(link.name),
+		)
+	link = _sync_link_from_source(link)
+	if link.status in SUCCESSFUL_LINK_STATUSES:
+		_gateway_error(
+			"GATEWAY_PAYMENT_NOT_CANCELLABLE",
+			_("Paid gateway payment {0} cannot be cancelled from VunaPOS").format(link.name),
+		)
+	if link.status != "Cancelled":
+		link.db_set(
+			{
+				"status": "Cancelled",
+				"remarks": _("Cancelled from VunaPOS by {0}").format(frappe.session.user),
+			},
+			update_modified=True,
+		)
+		link.reload()
+	return gateway_payment_link_to_dict(link)
+
+
+def expire_stale_gateway_payment_links():
+	timeout_minutes = get_gateway_payment_timeout_minutes()
+	cutoff = add_to_date(now_datetime(), minutes=-timeout_minutes)
+	link_names = frappe.get_all(
+		"VunaPOS Gateway Payment Link",
+		filters={
+			"consumed": 0,
+			"status": ["in", list(ACTIVE_LINK_STATUSES)],
+			"creation": ["<=", cutoff],
+		},
+		pluck="name",
+	)
+	expired = []
+	for link_name in link_names:
+		link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+		link = _sync_link_from_source(link)
+		if link.consumed or link.status not in ACTIVE_LINK_STATUSES:
+			continue
+		link.db_set(
+			{
+				"status": "Expired",
+				"remarks": _("Expired automatically after {0} minutes without consumption").format(
+					timeout_minutes
+				),
+			},
+			update_modified=True,
+		)
+		expired.append(link.name)
+	return {"expired": expired, "timeout_minutes": timeout_minutes}
+
+
 def _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=None, source=None):
 	filters = {
 		"pos_profile": profile.name,
@@ -380,12 +456,13 @@ def _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key
 		"cashier": opening_entry.user,
 		"mode_of_payment": mode_of_payment,
 		"consumed": 0,
+		"status": ["not in", ["Cancelled", "Expired", "Failed"]],
 	}
 	if idempotency_key:
 		filters["idempotency_key"] = idempotency_key
 	if source:
 		filters.update({"source_doctype": source.doctype, "source_name": source.name})
-	if len(filters) == 5:
+	if not idempotency_key and not source:
 		return None
 	link_name = frappe.db.get_value("VunaPOS Gateway Payment Link", filters, "name")
 	return frappe.get_doc("VunaPOS Gateway Payment Link", link_name) if link_name else None

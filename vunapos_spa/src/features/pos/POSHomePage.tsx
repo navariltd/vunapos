@@ -716,6 +716,7 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 					})
 				}
 				onCheckGatewayPayment={gatewayPayments.getGatewayPaymentStatus}
+				onCancelGatewayPayment={gatewayPayments.cancelGatewayPaymentLink}
 				onInitiateGatewayPayment={(params) =>
 					gatewayPayments.initiateStkPayment({
 						...params,
