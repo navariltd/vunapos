@@ -463,6 +463,7 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 
 	profile = _get_worker_profile(doc)
 	limits = get_queue_limits(profile)
+	checkout_tax_id = doc.get("tax_id")
 	transition_invoice_queue(doc, QUEUE_STATUS_PROCESSING)
 	doc.save(ignore_permissions=True)
 	_publish_queue_update(doc)
@@ -475,6 +476,9 @@ def process_queued_invoice(invoice_doctype: str, invoice_name: str) -> dict:
 		validate_invoice_stock_reservations(doc)
 		transition_invoice_queue(doc, QUEUE_STATUS_SUBMITTED)
 		doc.save(ignore_permissions=True)
+		if checkout_tax_id and frappe.get_meta(doc.doctype).has_field("tax_id"):
+			doc.set("tax_id", checkout_tax_id)
+			doc.db_set("tax_id", checkout_tax_id, update_modified=False)
 		# ERPNext may populate child-row serial/batch compatibility fields during
 		# submission. Persist the terminal queue state while this is still a draft
 		# so we never need an after-submit save of those child rows.

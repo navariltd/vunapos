@@ -136,6 +136,7 @@ def get_customer_directory(
 		"territory",
 		"mobile_no",
 		"email_id",
+		"is_walkin",
 		"default_currency",
 		"loyalty_program",
 		"modified",
@@ -220,6 +221,7 @@ def get_customer_directory(
 				"territory": customer.territory,
 				"mobile_no": customer.mobile_no,
 				"email_id": customer.email_id,
+				"is_walkin": bool(customer.get("is_walkin")),
 				"currency": customer.default_currency or profile.currency,
 				"outstanding_balance": flt(customer_balance) if customer_balance is not None else None,
 				"invoice_count": cint(summary.invoice_count)
@@ -368,6 +370,7 @@ def get_customer_details(pos_profile=None, customer=None, invoice_limit=20, paym
 			"mobile_no": customer_doc.mobile_no,
 			"email_id": customer_doc.email_id,
 			"tax_id": customer_doc.get("tax_id"),
+			"is_walkin": bool(customer_doc.get("is_walkin")),
 			"currency": customer_doc.get("default_currency") or profile.currency,
 		},
 		"balance": flt(balance),

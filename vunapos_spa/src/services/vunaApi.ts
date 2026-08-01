@@ -260,6 +260,7 @@ export function submitInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		loyalty_points?: number;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -278,6 +279,7 @@ export function checkoutInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		loyalty_points?: number;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -309,6 +311,7 @@ export function createAndSubmitInvoice(
 		idempotency_key?: string;
 		is_credit_sale?: boolean;
 		due_date?: string;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {

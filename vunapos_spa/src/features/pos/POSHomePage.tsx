@@ -433,6 +433,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 		isCreditSale: boolean,
 		dueDate?: string,
 		loyaltyPoints?: number,
+		taxId?: string,
 	) => {
 		setPageError(null);
 		if (!isReachable || navigator.onLine === false) {
@@ -448,6 +449,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				isCreditSale,
 				dueDate,
 				loyaltyPoints,
+				taxId,
 			);
 			setIsCheckoutOpen(false);
 			void handleSelectCustomer(undefined, false);
@@ -653,6 +655,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 				allowPartialPayment={bootstrap.data?.allow_partial_payment}
 				currency={bootstrap.data?.currency}
 				currencyPrecision={bootstrap.data?.currency_precision}
+				customer={activeCustomer}
 				defaultSaleType={bootstrap.data?.default_sale_type}
 				error={pageError}
 				isOpen={isCheckoutOpen}

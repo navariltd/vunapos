@@ -21,6 +21,8 @@ export type CustomerDTO = {
 	email_id?: string | null;
 	customer_group?: string | null;
 	default_price_list?: string | null;
+	is_walkin?: boolean | number;
+	tax_id?: string | null;
 };
 
 export type CustomerLoyaltyDTO = {
@@ -322,6 +324,7 @@ export type InvoiceDTO = {
 	source_invoice_name?: string;
 	customer?: string;
 	customer_name?: string;
+	tax_id?: string | null;
 	selling_price_list?: string;
 	price_list_currency?: string;
 	redeem_loyalty_points?: boolean;

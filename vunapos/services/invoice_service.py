@@ -305,6 +305,32 @@ def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
 	return parsed_due_date
 
 
+def _normalize_checkout_tax_id(tax_id):
+	tax_id = cstr(tax_id or "").strip()
+	if len(tax_id) > 140:
+		_throw("TAX_ID_TOO_LONG", _("Tax ID cannot exceed 140 characters"))
+	return tax_id or None
+
+
+def _customer_accepts_checkout_tax_id(customer):
+	return bool(customer and frappe.db.get_value("Customer", customer, "is_walkin"))
+
+
+def _apply_checkout_tax_id(doc, tax_id=None, *, persist=False):
+	tax_id = _normalize_checkout_tax_id(tax_id)
+	if not tax_id:
+		return doc
+	if not _customer_accepts_checkout_tax_id(doc.get("customer")):
+		_throw(
+			"CUSTOMER_TAX_ID_NOT_ALLOWED",
+			_("Checkout Tax ID can only be entered for customers marked as walk-in"),
+		)
+	_set_if_has_field(doc, "tax_id", tax_id)
+	if persist and _has_field(doc.doctype, "tax_id") and doc.get("name"):
+		doc.db_set("tax_id", tax_id, update_modified=False)
+	return doc
+
+
 def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 	_set_if_has_field(doc, CREDIT_SALE_FIELD, is_credit_sale)
 	if is_credit_sale:
@@ -1246,6 +1272,7 @@ def submit_invoice(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
@@ -1262,11 +1289,13 @@ def submit_invoice(
 	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
+	_apply_checkout_tax_id(doc, tax_id)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
 	doc.save()
+	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	doc.submit()
 	return invoice_to_dict(doc)
 
@@ -1279,6 +1308,7 @@ def checkout_invoice(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1301,6 +1331,7 @@ def checkout_invoice(
 		is_credit_sale=is_credit_sale,
 		due_date=due_date,
 		loyalty_points=loyalty_points,
+		tax_id=tax_id,
 	)
 	doc.submit()
 	return invoice_to_dict(doc)
@@ -1314,6 +1345,7 @@ def _prepare_invoice_for_checkout(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1329,6 +1361,7 @@ def _prepare_invoice_for_checkout(
 	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
+	_apply_checkout_tax_id(doc, tax_id)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1338,6 +1371,7 @@ def _prepare_invoice_for_checkout(
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
 	doc.save()
+	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	return doc
 
 
@@ -1386,6 +1420,7 @@ def create_and_submit_invoice(
 	due_date=None,
 	price_list=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1411,12 +1446,14 @@ def create_and_submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
 			else:
 				create_invoice_stock_reservations(existing)
 			enqueue_invoice_submission(existing)
+			_apply_checkout_tax_id(existing, tax_id, persist=True)
 			return invoice_to_dict(existing)
 		return checkout_invoice(
 			existing.doctype,
@@ -1426,6 +1463,7 @@ def create_and_submit_invoice(
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
 			loyalty_points=loyalty_points,
+			tax_id=tax_id,
 		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
@@ -1455,9 +1493,11 @@ def create_and_submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 			create_invoice_stock_reservations(doc)
 			enqueue_invoice_submission(doc)
+			_apply_checkout_tax_id(doc, tax_id, persist=True)
 			return invoice_to_dict(doc)
 		return checkout_invoice(
 			doc.doctype,
@@ -1467,6 +1507,7 @@ def create_and_submit_invoice(
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
 			loyalty_points=loyalty_points,
+			tax_id=tax_id,
 		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)

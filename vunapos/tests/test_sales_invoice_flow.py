@@ -482,6 +482,52 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
 
+	def test_checkout_applies_tax_id_for_walkin_customer(self):
+		profile = ensure_test_pos_profile()
+		customer = frappe.db.get_value("POS Profile", profile, "customer")
+		frappe.db.set_value("Customer", customer, "is_walkin", 1, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount, "default": 1}],
+			tax_id="P051234567A",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["tax_id"], "P051234567A")
+		self.assertEqual(
+			frappe.db.get_value(response["data"]["doctype"], response["data"]["name"], "tax_id"),
+			"P051234567A",
+		)
+
+	def test_checkout_rejects_tax_id_for_non_walkin_customer(self):
+		profile = ensure_test_pos_profile()
+		customer = frappe.db.get_value("POS Profile", profile, "customer")
+		frappe.db.set_value("Customer", customer, "is_walkin", 0, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount, "default": 1}],
+			tax_id="P051234567A",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CUSTOMER_TAX_ID_NOT_ALLOWED")
+
 	def test_submit_invoice_rejects_missing_payment_rows(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -950,6 +996,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def test_background_enabled_checkout_reserves_then_queues_submission(self, enqueue):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)
+		frappe.db.set_value("Customer", profile.customer, "is_walkin", 1, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
 		item_code = ensure_test_stock_item("_Test VunaPOS Reserved Checkout Item")
 		set_invoice_mode("Sales Invoice")
 		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 1)
@@ -968,11 +1016,16 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			items=[{"item_code": item_code, "qty": 2}],
 			payments=[{"mode_of_payment": "Cash", "amount": 200}],
 			idempotency_key="reserved-synchronous-checkout",
+			tax_id="P051234567A",
 		)
 
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["docstatus"], 0)
 		self.assertEqual(response["data"]["queue_status"], "Queued")
+		self.assertEqual(response["data"]["tax_id"], "P051234567A")
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "tax_id"), "P051234567A"
+		)
 		reservations = frappe.get_all(
 			"Stock Reservation Entry",
 			filters={"voucher_type": "Sales Invoice", "voucher_no": response["data"]["name"]},
@@ -1000,6 +1053,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		self.assertEqual(processed["status"], "Submitted")
 		self.assertEqual(frappe.db.get_value("Sales Invoice", response["data"]["name"], "docstatus"), 1)
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "tax_id"), "P051234567A"
+		)
 		self.assertEqual(
 			frappe.db.get_value("Sales Invoice", response["data"]["name"], "vunapos_queue_status"),
 			"Submitted",

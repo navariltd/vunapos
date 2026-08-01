@@ -7,6 +7,16 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"Customer": [
+				{
+					"fieldname": "is_walkin",
+					"label": "Is Walk-in Customer",
+					"fieldtype": "Check",
+					"insert_after": "tax_id",
+					"description": "Allow VunaPOS cashiers to enter a transaction-specific Tax ID at checkout.",
+					"default": "0",
+				},
+			],
 			"POS Profile": [
 				{
 					"fieldname": "vunapos_tab",

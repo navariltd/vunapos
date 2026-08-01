@@ -1,11 +1,18 @@
 import frappe
 from erpnext.accounts.utils import get_currency_precision
 
+from vunapos.dto.customer import customer_to_dict
 from vunapos.services.checkout_queue_service import get_queue_limits
 from vunapos.services.price_list_service import get_permitted_price_lists
 
 
 def profile_to_dict(profile, invoice_mode):
+	def default_customer():
+		if not profile.customer:
+			return None
+		customer = frappe.get_cached_doc("Customer", profile.customer)
+		return customer_to_dict(customer)
+
 	def payment_mode(row):
 		account = frappe.db.get_value(
 			"Mode of Payment Account",
@@ -52,7 +59,7 @@ def profile_to_dict(profile, invoice_mode):
 		"automatically_add_filtered_item_to_cart": bool(profile.get("auto_add_item_to_cart")),
 		"ignore_pricing_rule": bool(profile.get("ignore_pricing_rule")),
 		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
-		"default_customer": profile.customer,
+		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],
 		"print_format": profile.get("print_format"),

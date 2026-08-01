@@ -50,6 +50,8 @@ export type CachedCustomer = {
 	email_id?: string | null;
 	customer_group?: string | null;
 	default_price_list?: string | null;
+	is_walkin?: boolean | number;
+	tax_id?: string | null;
 	modified: string;
 };
 

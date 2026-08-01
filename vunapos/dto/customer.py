@@ -14,5 +14,7 @@ def customer_to_dict(customer):
 		"email_id": customer.get("email_id"),
 		"customer_group": customer.get("customer_group"),
 		"default_price_list": default_price_list,
+		"is_walkin": bool(customer.get("is_walkin")),
+		"tax_id": customer.get("tax_id"),
 		"modified": customer.get("modified"),
 	}

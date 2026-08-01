@@ -15,7 +15,7 @@ import {
 	totalToMinorUnits,
 } from "../paymentAllocation";
 import { useCartStore } from "../stores/cartStore";
-import type { CustomerLoyaltyDTO, InvoiceDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
+import type { CustomerDTO, CustomerLoyaltyDTO, InvoiceDTO, ModeOfPaymentDTO, PaymentInput } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
@@ -23,6 +23,7 @@ type CheckoutDialogProps = {
 	allowPartialPayment?: boolean;
 	currency?: string;
 	currencyPrecision?: number;
+	customer?: CustomerDTO | null;
 	customerLoyalty?: CustomerLoyaltyDTO | null;
 	defaultSaleType?: "Cash Sale" | "Credit Sale";
 	error?: string | null;
@@ -36,6 +37,7 @@ type CheckoutDialogProps = {
 		isCreditSale: boolean,
 		dueDate?: string,
 		loyaltyPoints?: number,
+		taxId?: string,
 	) => void;
 	onHold: () => void;
 	onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
@@ -61,6 +63,7 @@ export function CheckoutDialog({
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	customer,
 	customerLoyalty,
 	defaultSaleType,
 	error,
@@ -83,6 +86,7 @@ export function CheckoutDialog({
 			allowPartialPayment={allowPartialPayment}
 			currency={currency}
 			currencyPrecision={currencyPrecision}
+			customer={customer}
 			customerLoyalty={customerLoyalty}
 			defaultSaleType={defaultSaleType}
 			error={error}
@@ -101,6 +105,7 @@ function CheckoutDialogContent({
 	allowPartialPayment,
 	currency,
 	currencyPrecision,
+	customer,
 	customerLoyalty,
 	defaultSaleType,
 	error,
@@ -145,7 +150,9 @@ function CheckoutDialogContent({
 	);
 	const today = useMemo(() => todayInputValue(), []);
 	const [dueDate, setDueDate] = useState(invoice?.due_date || today);
+	const [checkoutTaxId, setCheckoutTaxId] = useState("");
 	const idempotencyKey = useRef(createIdempotencyKey());
+	const isWalkinCustomer = Boolean(customer?.is_walkin);
 	const allocation = calculatePaymentAllocation(availableModes, amounts, payableMinor, precision);
 	const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
 	const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
@@ -256,6 +263,22 @@ function CheckoutDialogContent({
 									onChange={(event) => setDueDate(event.target.value)}
 									className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
 								/>
+							</label>
+						) : null}
+						{isWalkinCustomer ? (
+							<label className="mb-5 block text-sm font-medium text-on-surface">
+								Customer Tax ID
+								<input
+									type="text"
+									value={checkoutTaxId}
+									onChange={(event) => setCheckoutTaxId(event.target.value)}
+									maxLength={140}
+									placeholder={customer?.tax_id || "PIN / Tax ID for this receipt"}
+									className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+								/>
+								<span className="mt-1 block text-xs font-normal text-on-surface-variant">
+									This Tax ID will be printed on this invoice only.
+								</span>
 							</label>
 						) : null}
 						{customerLoyalty?.enrolled ? (
@@ -409,6 +432,7 @@ function CheckoutDialogContent({
 								isCreditSale,
 								isCreditSale ? dueDate : undefined,
 								appliedLoyaltyPoints || undefined,
+								isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
 							)
 						}
 					>
