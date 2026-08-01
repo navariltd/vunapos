@@ -56,6 +56,10 @@ def _serial_allocations(row):
 	]
 
 
+def _payment_reference(row):
+	return row.get("ke_transaction_id") or row.get("reference_no") or row.get("transaction_reference") or None
+
+
 def invoice_to_dict(doc):
 	item_tracking = {
 		row.item_code: frappe.get_cached_value(
@@ -152,6 +156,9 @@ def invoice_to_dict(doc):
 				"mode_of_payment": row.get("mode_of_payment"),
 				"amount": row.get("amount"),
 				"default": row.get("default"),
+				"transaction_reference": _payment_reference(row),
+				"transaction_date": row.get("ke_transaction_date"),
+				"ke_payment_request": row.get("ke_payment_request"),
 			}
 			for row in doc.get("payments", []) or []
 		],

@@ -31,6 +31,7 @@ from vunapos.services.checkout_queue_service import (
 )
 from vunapos.services.gateway_payment_service import (
 	consume_gateway_payment_links,
+	gateway_payment_metadata,
 	payment_mode_gateway,
 	validate_gateway_payment_link,
 )
@@ -1303,6 +1304,7 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 		return doc
 
 	doc.set("payments", [])
+	payment_child_doctype = frappe.get_meta(doc.doctype).get_field("payments").options
 	payment_rows = _payment_rows(payments)
 	if is_credit_sale and not payment_rows:
 		# ERPNext validates POS documents before it discards zero-value payment rows.
@@ -1324,15 +1326,29 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 			}
 		]
 	for payment in payment_rows:
-		doc.append(
-			"payments",
-			{
-				"mode_of_payment": payment.get("mode_of_payment"),
-				"amount": flt(payment.get("amount")),
-				"default": payment.get("default"),
-			},
-		)
+		row = {
+			"mode_of_payment": payment.get("mode_of_payment"),
+			"amount": flt(payment.get("amount")),
+			"default": payment.get("default"),
+		}
+		_apply_gateway_metadata_to_payment_row(row, payment, payment_child_doctype)
+		doc.append("payments", row)
 	return doc
+
+
+def _apply_gateway_metadata_to_payment_row(row: dict, payment: dict, child_doctype: str) -> None:
+	metadata = gateway_payment_metadata(payment.get("gateway_payment_link"))
+	if not metadata:
+		return
+	field_map = {
+		"ke_transaction_id": metadata.get("transaction_reference"),
+		"ke_transaction_date": metadata.get("transaction_date"),
+		"ke_payment_request": metadata.get("ke_payment_request"),
+	}
+	child_meta = frappe.get_meta(child_doctype)
+	for fieldname, value in field_map.items():
+		if value and child_meta.has_field(fieldname):
+			row[fieldname] = value
 
 
 def _gateway_payment_links(payment_rows):

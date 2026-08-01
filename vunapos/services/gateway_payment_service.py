@@ -98,6 +98,41 @@ def _get_source_transaction_reference(source_doc) -> str | None:
 	)
 
 
+def _get_source_transaction_date(source_doc) -> str | None:
+	return (
+		source_doc.get("transaction_date")
+		or source_doc.get("callback_received_on")
+		or source_doc.get("modified")
+	)
+
+
+def gateway_payment_metadata(link_name: str | None) -> dict:
+	if not link_name or not frappe.db.exists("VunaPOS Gateway Payment Link", link_name):
+		return {}
+	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+	source_doc = None
+	if (
+		link.get("source_doctype")
+		and link.get("source_name")
+		and frappe.db.exists(link.source_doctype, link.source_name)
+	):
+		source_doc = frappe.get_doc(link.source_doctype, link.source_name)
+	transaction_reference = (
+		_get_source_transaction_reference(source_doc) if source_doc else None
+	) or link.get("transaction_reference")
+	return {
+		"gateway_payment_link": link.name,
+		"gateway_source_doctype": link.get("source_doctype"),
+		"gateway_source_name": link.get("source_name"),
+		"payment_gateway": link.get("payment_gateway"),
+		"transaction_reference": transaction_reference,
+		"transaction_date": _get_source_transaction_date(source_doc) if source_doc else None,
+		"ke_payment_request": link.get("source_name")
+		if link.get("source_doctype") == "KE Payment Request"
+		else None,
+	}
+
+
 def _validate_source(link, source_doc, precision: int):
 	if link.source_doctype not in SUPPORTED_SOURCE_DOCTYPES:
 		_gateway_error(
@@ -265,6 +300,7 @@ def consume_gateway_payment_links(links, target_doc):
 				"GATEWAY_PAYMENT_ALREADY_CONSUMED",
 				_("Gateway payment {0} has already been consumed").format(link.name),
 			)
+		_link_gateway_source_to_target(link, target_doc)
 		link.db_set(
 			{
 				"consumed": 1,
@@ -275,6 +311,29 @@ def consume_gateway_payment_links(links, target_doc):
 			},
 			update_modified=True,
 		)
+
+
+def _link_gateway_source_to_target(link, target_doc) -> None:
+	if not (
+		link.get("source_doctype")
+		and link.get("source_name")
+		and frappe.db.exists(link.source_doctype, link.source_name)
+	):
+		return
+	source_doc = frappe.get_doc(link.source_doctype, link.source_name)
+	updates = {}
+	for source_field, value in {
+		"reference_doctype": target_doc.doctype,
+		"reference_docname": target_doc.name,
+		"mode_of_payment": link.get("mode_of_payment"),
+		"payment_gateway_account": link.get("payment_gateway"),
+		"company": target_doc.get("company"),
+		"customer": link.get("customer") or target_doc.get("customer"),
+	}.items():
+		if source_doc.meta.has_field(source_field) and value:
+			updates[source_field] = value
+	if updates:
+		source_doc.db_set(updates, update_modified=True)
 
 
 def sync_gateway_payment_source_change(doc, method: str | None = None):
