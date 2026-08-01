@@ -34,7 +34,7 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
 					}
 				}}
 			>
-				<div className="flex aspect-[4/3] items-center justify-center bg-surface-container">
+				<div className="flex h-32 shrink-0 items-center justify-center bg-surface-container sm:h-36">
 					{item.image ? (
 						<img src={item.image} alt="" className="h-full w-full object-cover" />
 					) : (
