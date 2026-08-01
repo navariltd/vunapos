@@ -256,9 +256,6 @@ function CheckoutDialogContent({
 									onChange={(event) => setDueDate(event.target.value)}
 									className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
 								/>
-								<span className="mt-1 block text-xs font-normal text-on-surface-variant">
-									The unpaid balance becomes due on this date.
-								</span>
 							</label>
 						) : null}
 						{customerLoyalty?.enrolled ? (
@@ -377,7 +374,7 @@ function CheckoutDialogContent({
 							<AlertCircle className="size-4 shrink-0" /> Electronic payments cannot exceed the amount due.
 						</div>
 					) : null}
-					{allocation.remainingMinor > 0 && isCreditSale ? (
+					{/* {allocation.remainingMinor > 0 && isCreditSale ? (
 						<p className="text-sm text-on-surface-variant">
 							The outstanding balance will remain on the customer's account. Add a payment above only when taking a deposit.
 						</p>
@@ -385,7 +382,7 @@ function CheckoutDialogContent({
 						<p className="text-sm text-on-surface-variant">
 							Partial payment is enabled.
 						</p>
-					) : null}
+					) : null} */}
 					{error ? (
 						<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
 							<AlertCircle className="size-4 shrink-0" /> {error}

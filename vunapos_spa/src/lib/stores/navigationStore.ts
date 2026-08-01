@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift";
+export type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift" | "Profile";
 
 const PAGE_PATHS: Record<POSPage, string> = {
 	Home: "/vunapos",
@@ -8,6 +8,7 @@ const PAGE_PATHS: Record<POSPage, string> = {
 	Payments: "/vunapos/payments",
 	Customers: "/vunapos/customers",
 	"Close Shift": "/vunapos/close-shift",
+	Profile: "/vunapos/profile",
 };
 
 const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page as POSPage]));

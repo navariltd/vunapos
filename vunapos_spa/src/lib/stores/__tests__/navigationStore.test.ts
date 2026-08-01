@@ -38,6 +38,7 @@ describe("navigationStore", () => {
 		expect(getPosPagePath("Payments")).toBe("/vunapos/payments");
 		expect(getPosPagePath("Customers")).toBe("/vunapos/customers");
 		expect(getPosPagePath("Close Shift")).toBe("/vunapos/close-shift");
+		expect(getPosPagePath("Profile")).toBe("/vunapos/profile");
 	});
 
 	it("replaces the current history entry when returning home after opening a shift", () => {
@@ -55,6 +56,7 @@ describe("navigationStore", () => {
 
 	it("resolves application paths and tolerates a trailing slash", () => {
 		expect(getPosPageFromPath("/vunapos/close-shift")).toBe("Close Shift");
+		expect(getPosPageFromPath("/vunapos/profile")).toBe("Profile");
 		expect(getPosPageFromPath("/vunapos/invoices/")).toBe("Invoices");
 		expect(getPosPageFromPath("/vunapos/not-built-yet")).toBe("Home");
 	});

@@ -50,7 +50,7 @@ export function CustomerDetailsPage({ customer, posProfile, onStartSale }: Props
 				<Summary label="Current balance" value={money(details.balance, row.currency)} />
 				<Summary label="Loyalty points" value={details.loyalty ? details.loyalty.points.toLocaleString() : "Not enrolled"} sub={details.loyalty?.tier || details.loyalty?.program} />
 				<Summary label="Customer type" value={row.customer_type || "-"} sub={row.territory || undefined} />
-				<Summary label="Last updated" value={new Date(details.as_of.replace(" ", "T")).toLocaleString()} />
+				<Summary label="Last updated" value={formatDateTime(details.as_of)} />
 			</div>
 
 			<div className="grid gap-4 lg:grid-cols-2">
@@ -58,13 +58,32 @@ export function CustomerDetailsPage({ customer, posProfile, onStartSale }: Props
 				<div className="rounded-lg border border-outline-variant p-4"><h3 className="flex items-center gap-2 font-semibold"><MapPin className="size-4"/>Primary address</h3><div className="mt-3 text-sm text-on-surface-variant">{address ? <p>{[address.address_line1, address.address_line2, address.city, address.state, address.country, address.pincode].filter(Boolean).join(", ")}</p> : <p>No permitted primary address available.</p>}</div></div>
 			</div>
 
-			<div className="rounded-lg border border-outline-variant"><div className="border-b border-outline-variant px-4 py-3"><h3 className="flex items-center gap-2 font-semibold"><ReceiptText className="size-4"/>Recent invoices</h3></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-surface-container-low text-xs uppercase text-on-surface-variant"><tr><th className="px-4 py-3">Invoice</th><th>Date</th><th>Status</th><th>Total</th><th>Paid</th><th>Outstanding</th><th></th></tr></thead><tbody>{details.invoices.length ? details.invoices.map((invoice) => <tr key={invoice.name} className="border-t border-outline-variant"><td className="px-4 py-3 font-medium">{invoice.name}</td><td>{invoice.posting_date}</td><td><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusStyle[invoice.status] || ""}`}>{invoice.status}</span></td><td>{money(invoice.grand_total, invoice.currency)}</td><td>{money(invoice.paid_amount, invoice.currency)}</td><td>{money(invoice.outstanding_amount, invoice.currency)}</td><td><a className="text-primary hover:underline" href={`/app/${invoice.doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(invoice.name)}`} target="_blank" rel="noreferrer">View</a></td></tr>) : <tr><td colSpan={7} className="p-6 text-center text-on-surface-variant">No submitted invoices available.</td></tr>}</tbody></table></div></div>
+			<div className="rounded-lg border border-outline-variant"><div className="border-b border-outline-variant px-4 py-3"><h3 className="flex items-center gap-2 font-semibold"><ReceiptText className="size-4"/>Recent invoices</h3></div><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-surface-container-low text-xs uppercase text-on-surface-variant"><tr><th className="px-4 py-3">Invoice</th><th>Date</th><th>Status</th><th>Total</th><th>Paid</th><th>Outstanding</th><th></th></tr></thead><tbody>{details.invoices.length ? details.invoices.map((invoice) => <tr key={invoice.name} className="border-t border-outline-variant"><td className="px-4 py-3 font-medium">{invoice.name}</td><td>{formatDate(invoice.posting_date)}</td><td><span className={`rounded-full px-2 py-1 text-xs font-medium ${statusStyle[invoice.status] || ""}`}>{invoice.status}</span></td><td>{money(invoice.grand_total, invoice.currency)}</td><td>{money(invoice.paid_amount, invoice.currency)}</td><td>{money(invoice.outstanding_amount, invoice.currency)}</td><td><a className="text-primary hover:underline" href={`/app/${invoice.doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(invoice.name)}`} target="_blank" rel="noreferrer">View</a></td></tr>) : <tr><td colSpan={7} className="p-6 text-center text-on-surface-variant">No submitted invoices available.</td></tr>}</tbody></table></div></div>
 
-			<div className="rounded-lg border border-outline-variant"><div className="border-b border-outline-variant px-4 py-3"><h3 className="flex items-center gap-2 font-semibold"><CreditCard className="size-4"/>Recent payments</h3></div>{details.payments.length ? details.payments.map((payment) => <div key={payment.name} className="grid gap-2 border-t border-outline-variant px-4 py-3 text-sm first:border-t-0 sm:grid-cols-[1.3fr_1fr_1fr_1fr]"><div><p className="font-medium">{payment.name}</p><p className="text-xs text-on-surface-variant">{payment.posting_date}</p></div><p>{payment.mode_of_payment || "Unspecified"}</p><p>{money(payment.received_amount, row.currency)}</p><p className="text-on-surface-variant">Unallocated {money(payment.unallocated_amount, row.currency)}</p></div>) : <p className="p-6 text-center text-sm text-on-surface-variant">No permitted Payment Entries available.</p>}</div>
+			<div className="rounded-lg border border-outline-variant"><div className="border-b border-outline-variant px-4 py-3"><h3 className="flex items-center gap-2 font-semibold"><CreditCard className="size-4"/>Recent payments</h3></div>{details.payments.length ? details.payments.map((payment) => <div key={payment.name} className="grid gap-2 border-t border-outline-variant px-4 py-3 text-sm first:border-t-0 sm:grid-cols-[1.3fr_1fr_1fr_1fr]"><div><p className="font-medium">{payment.name}</p><p className="text-xs text-on-surface-variant">{formatDate(payment.posting_date)}</p></div><p>{payment.mode_of_payment || "Unspecified"}</p><p>{money(payment.received_amount, row.currency)}</p><p className="text-on-surface-variant">Unallocated {money(payment.unallocated_amount, row.currency)}</p></div>) : <p className="p-6 text-center text-sm text-on-surface-variant">No permitted Payment Entries available.</p>}</div>
 		</div>
 	</section>;
 }
 
 function Summary({ label, value, sub }: { label: string; value: string; sub?: string | null }) {
 	return <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4"><p className="text-xs uppercase text-on-surface-variant">{label}</p><p className="mt-1 font-semibold text-on-surface">{value}</p>{sub ? <p className="mt-1 text-xs text-on-surface-variant">{sub}</p> : null}</div>;
+}
+
+function formatDate(value?: string) {
+	if (!value) return "-";
+	const date = value.split(" ")[0];
+	const [year, month, day] = date.split("-");
+	return year && month && day ? `${day}/${month}/${year}` : date;
+}
+
+function formatTime(value?: string) {
+	if (!value) return "";
+	const time = value.split(" ")[1] || value;
+	const parts = time.split(".")[0].split(":");
+	return parts.length >= 2 ? `${parts[0]}:${parts[1]}:${parts[2] || "00"}` : time.split(".")[0];
+}
+
+function formatDateTime(value?: string) {
+	const time = formatTime(value);
+	return time ? `${formatDate(value)} ${time}` : formatDate(value);
 }
