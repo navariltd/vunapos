@@ -16,6 +16,7 @@ import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
+import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
@@ -490,6 +491,8 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						<p className="text-sm text-on-surface-variant">Loading the POS Profile for shift closing...</p>
 					</section>
 				)
+			) : activePage === "Profile" ? (
+				<UserProfilePage bootstrap={bootstrap.data} />
 			) : (
 				<div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_clamp(32rem,32vw,38rem)]">
 					<section className="flex min-w-0 min-h-0 flex-col p-4">

@@ -27,7 +27,7 @@ export function ItemSearch({ isLoading, onChange, onOpenCamera, onScan, value }:
 						}
 					}}
 				/>
-				<button type="button" className="flex h-touch shrink-0 items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low px-3 text-sm font-medium text-on-surface hover:bg-surface-container" onClick={onOpenCamera} aria-label="Scan with camera">
+				<button type="button" className="flex h-touch shrink-0 cursor-pointer items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low px-3 text-sm font-medium text-on-surface hover:bg-surface-container" onClick={onOpenCamera} aria-label="Scan with camera">
 					<Camera className="size-4" /> <span className="hidden sm:inline">Scan</span>
 				</button>
 				{isLoading ? <span className="text-sm text-on-surface-variant">Searching...</span> : null}

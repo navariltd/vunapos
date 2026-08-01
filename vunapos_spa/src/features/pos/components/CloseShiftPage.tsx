@@ -38,7 +38,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 	const [error, setError] = useState("");
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const countedAmount = (modeOfPayment: string, expectedAmount: number) =>
-		amounts[modeOfPayment] ?? String(expectedAmount);
+		amounts[modeOfPayment] ?? formatAmountInput(expectedAmount);
 
 	const preview = useMemo(() => {
 		if (!previewCall.data) return null;
@@ -66,7 +66,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 		}
 		const closingBalances = preview.payments.map((row) => ({
 			mode_of_payment: row.mode_of_payment,
-			closing_amount: Number(countedAmount(row.mode_of_payment, row.expected_amount)),
+			closing_amount: parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)),
 		}));
 		if (closingBalances.some((row) => !Number.isFinite(row.closing_amount) || row.closing_amount < 0)) {
 			setError("Enter a valid counted amount for every payment mode.");
@@ -86,7 +86,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 		try {
 			const closingBalances = preview.payments.map((row) => ({
 				mode_of_payment: row.mode_of_payment,
-				closing_amount: Number(countedAmount(row.mode_of_payment, row.expected_amount)),
+				closing_amount: parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)),
 			}));
 			const result = await closePosSession(closeCall.call, {
 				pos_profile: posProfile,
@@ -113,7 +113,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 						<h2 className="text-lg font-semibold">Close POS Shift</h2>
 						<p className="text-sm text-on-surface-variant">Reconcile the till and close {posProfile}.</p>
 					</div>
-					<Button variant="ghost" onClick={onBack}>Back to POS</Button>
+					<Button onClick={onBack}>Back to POS</Button>
 				</div>
 
 				{blocker || loadError || error ? (
@@ -126,23 +126,17 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 				{previewCall.isLoading ? <p className="py-12 text-center text-sm text-on-surface-variant">Loading shift totals...</p> : null}
 				{preview ? (
 					<>
-						<div className="grid gap-3 sm:grid-cols-3">
-							<Summary label="Invoices" value={String(preview.invoice_count)} />
-							<Summary label="Net sales" value={money(preview.net_total, currency)} />
-							<Summary label="Grand total" value={money(preview.grand_total, currency)} />
-						</div>
-						{preview.payment_activity ? <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4"><h3 className="font-semibold">Shift payment activity</h3><p className="mt-1 text-xs text-on-surface-variant">Credit sales are reported as sales but only their deposits are included in cash received. Reconciled credits are allocations only.</p><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Summary label="Checkout collections" value={money(preview.payment_activity.sales_collected, currency)}/><Summary label="Credit sales" value={money(preview.payment_activity.credit_sales, currency)}/><Summary label="Credit outstanding" value={money(preview.payment_activity.credit_outstanding, currency)}/><Summary label="Old invoice payments" value={money(preview.payment_activity.outstanding_invoice_payments, currency)}/><Summary label="Customer advances" value={money(preview.payment_activity.customer_advances, currency)}/><Summary label="Credits reconciled" value={money(preview.payment_activity.reconciled_existing_credits, currency)}/><Summary label="Cash received" value={money(preview.payment_activity.cash_received, currency)}/></div></div> : null}
 						<div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
 							<h3 className="font-semibold">Payment reconciliation</h3>
 							<div className="mt-3 space-y-3">
 								{preview.payments.map((row) => {
 									const rawAmount = countedAmount(row.mode_of_payment, row.expected_amount);
-									const counted = Number(rawAmount);
+									const counted = parseAmountInput(rawAmount);
 									const difference = rawAmount?.trim() && Number.isFinite(counted) ? counted - row.expected_amount : null;
 									return (
 										<div key={row.mode_of_payment} className="grid items-center gap-2 rounded-md bg-surface p-3 sm:grid-cols-[1fr_1fr_1fr]">
 											<div><p className="text-sm font-medium">{row.mode_of_payment}</p><p className="text-xs text-on-surface-variant">Expected {money(row.expected_amount, currency)}</p></div>
-											<input type="number" min="0" step="0.01" placeholder="Counted amount" value={rawAmount} onChange={(event) => setAmounts((current) => ({ ...current, [row.mode_of_payment]: event.target.value }))} className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm" />
+											<input inputMode="decimal" placeholder="Counted amount" value={rawAmount} onChange={(event) => setAmounts((current) => ({ ...current, [row.mode_of_payment]: formatAmountInput(event.target.value) }))} className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm" />
 											<p className="text-sm text-on-surface-variant">Difference: {difference === null ? "-" : money(difference, currency)}</p>
 										</div>
 									);
@@ -151,8 +145,14 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 						</div>
 						<div className="flex justify-end gap-2">
 							<Button variant="ghost" onClick={() => previewCall.mutate()}><RefreshCw className="mr-2 size-4" />Refresh totals</Button>
-							<Button disabled={Boolean(blocker) || closeCall.loading} onClick={handleClose}>{closeCall.loading ? "Closing..." : "Close POS Shift"}</Button>
+							<Button variant="danger" disabled={Boolean(blocker) || closeCall.loading} onClick={handleClose}>{closeCall.loading ? "Closing..." : "Close POS Shift"}</Button>
 						</div>
+						<div className="grid gap-3 sm:grid-cols-3">
+							<Summary label="Invoices" value={String(preview.invoice_count)} />
+							<Summary label="Net sales" value={money(preview.net_total, currency)} />
+							<Summary label="Grand total" value={money(preview.grand_total, currency)} />
+						</div>
+						{preview.payment_activity ? <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4"><h3 className="font-semibold">Shift payment activity</h3><p className="mt-1 text-xs text-on-surface-variant">Credit sales are reported as sales but only their deposits are included in cash received. Reconciled credits are allocations only.</p><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Summary label="Checkout collections" value={money(preview.payment_activity.sales_collected, currency)}/><Summary label="Credit sales" value={money(preview.payment_activity.credit_sales, currency)}/><Summary label="Credit outstanding" value={money(preview.payment_activity.credit_outstanding, currency)}/><Summary label="Old invoice payments" value={money(preview.payment_activity.outstanding_invoice_payments, currency)}/><Summary label="Customer advances" value={money(preview.payment_activity.customer_advances, currency)}/><Summary label="Credits reconciled" value={money(preview.payment_activity.reconciled_existing_credits, currency)}/><Summary label="Cash received" value={money(preview.payment_activity.cash_received, currency)}/></div></div> : null}
 						<div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
 							<div className="flex items-center justify-between gap-3">
 								<div>
@@ -206,7 +206,7 @@ export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageP
 				}}
 				onConfirm={() => void confirmClose()}
 			>
-				{preview ? <div className="space-y-3 text-sm">{blocker || error ? <div role="alert" className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-on-error-container"><AlertCircle className="size-4 shrink-0" /><span>{blocker || error}</span></div> : null}<div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = Number(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
+				{preview ? <div className="space-y-3 text-sm">{blocker || error ? <div role="alert" className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-on-error-container"><AlertCircle className="size-4 shrink-0" /><span>{blocker || error}</span></div> : null}<div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
 			</ConfirmDialog>
 		</section>
 	);
@@ -218,4 +218,19 @@ function Summary({ label, value }: { label: string; value: string }) {
 
 function money(value: number, currency?: string) {
 	return formatCurrency(value, currency);
+}
+
+function parseAmountInput(value: string) {
+	return Number(value.replace(/,/g, ""));
+}
+
+function formatAmountInput(value: string | number) {
+	const normalized = String(value).replace(/,/g, "").replace(/[^\d.]/g, "");
+	if (!normalized) return "";
+	const [integer, ...decimalParts] = normalized.split(".");
+	const decimal = decimalParts.join("");
+	const formattedInteger = integer
+		? Number(integer).toLocaleString(undefined, { maximumFractionDigits: 0 })
+		: "0";
+	return decimalParts.length ? `${formattedInteger}.${decimal}` : formattedInteger;
 }

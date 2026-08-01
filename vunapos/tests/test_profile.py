@@ -5,6 +5,7 @@ from frappe.tests import IntegrationTestCase
 
 from vunapos.api.profile import get_bootstrap_data
 from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.setup.utils import ensure_vunapos_custom_fields
 from vunapos.tests.helpers import ensure_test_pos_profile, set_invoice_mode
 
 
@@ -67,6 +68,26 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertIn(response["data"]["modes_of_payment"][0]["type"], {"Cash", "Bank", "General", "Phone"})
 		self.assertEqual(response["data"]["session"]["cashier"], frappe.session.user)
 		self.assertEqual(response["data"]["session"]["pos_profile"], profile)
+
+	def test_vunapos_pos_profile_fields_live_in_vunapos_tab(self):
+		ensure_vunapos_custom_fields()
+		fields = {
+			row.fieldname: row
+			for row in frappe.get_all(
+				"Custom Field",
+				filters={"dt": "POS Profile", "fieldname": ["like", "vunapos_%"]},
+				fields=["fieldname", "label", "fieldtype", "insert_after"],
+			)
+		}
+
+		self.assertEqual(fields["vunapos_tab"].fieldtype, "Tab Break")
+		self.assertEqual(fields["vunapos_tab"].label, "VunaPOS")
+		self.assertEqual(fields["vunapos_sales_section"].insert_after, "vunapos_tab")
+		self.assertEqual(fields["vunapos_item_prices_include_tax"].insert_after, "vunapos_sales_section")
+		self.assertEqual(fields["vunapos_allow_credit_sales"].insert_after, "vunapos_item_prices_include_tax")
+		self.assertEqual(
+			fields["vunapos_enable_background_submission"].insert_after, "vunapos_queue_column_break"
+		)
 
 	def test_explicit_profile_must_be_assigned_to_current_user(self):
 		profile_name = ensure_test_pos_profile()

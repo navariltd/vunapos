@@ -1,17 +1,13 @@
-import { Moon, Sun } from "lucide-react";
+import { ChevronDown } from "lucide-react";
+import { useState } from "react";
 
 import { useThemeSync } from "../../features/pos/hooks/useThemeSync";
-import { useThemeStore } from "../../lib/stores/themeStore";
 
-type HeaderProps = {
-	cashier?: string;
-	posProfile?: string;
-	warehouse?: string;
-};
+type OrderType = "Sales Invoice" | "Sales Order";
 
-export function Header({ cashier, posProfile, warehouse }: HeaderProps) {
-	const resolved = useThemeStore((s) => s.resolved);
-	const { setTheme } = useThemeSync();
+export function Header() {
+	useThemeSync();
+	const [orderType, setOrderType] = useState<OrderType>("Sales Invoice");
 
 	return (
 		<header className="sticky top-0 z-40 h-12 shrink-0 border-b border-outline-variant bg-surface px-3 sm:px-5">
@@ -19,27 +15,21 @@ export function Header({ cashier, posProfile, warehouse }: HeaderProps) {
 				<div className="flex shrink-0 items-center gap-2">
 					<h1 className="text-sm font-semibold tracking-tight text-on-surface">VunaPOS</h1>
 				</div>
-				<div className="flex min-w-0 items-center gap-3">
-					<div className="min-w-0 text-right text-[11px] leading-4 text-on-surface-variant sm:flex sm:flex-wrap sm:items-center sm:justify-end sm:gap-x-4 sm:gap-y-1 sm:text-xs">
-						<span className="block truncate sm:inline">
-							Profile <strong className="font-semibold text-on-surface">{posProfile || "-"}</strong>
+				<div className="flex min-w-0 items-center gap-2">
+					<label className="flex items-center gap-2 text-xs text-on-surface-variant">
+						<span className="hidden sm:inline">Order Type</span>
+						<span className="relative">
+							<select
+								className="h-8 max-w-36 appearance-none rounded-md border border-outline-variant bg-surface-container-low py-0 pl-2 pr-7 text-xs font-medium text-on-surface outline-none hover:border-outline focus:border-primary sm:max-w-none sm:pl-3 sm:pr-8 sm:text-sm"
+								value={orderType}
+								onChange={(event) => setOrderType(event.target.value as OrderType)}
+							>
+								<option>Sales Invoice</option>
+								<option>Sales Order</option>
+							</select>
+							<ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
 						</span>
-						<span className="block truncate sm:inline">
-							Warehouse <strong className="font-semibold text-on-surface">{warehouse || "-"}</strong>
-						</span>
-						<span className="block truncate sm:inline">
-							Cashier <strong className="font-semibold text-on-surface">{cashier || "-"}</strong>
-						</span>
-					</div>
-					<button
-						type="button"
-						className="flex size-8 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
-						title={resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-						aria-label={resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-						onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
-					>
-						{resolved === "dark" ? <Sun className="size-4" /> : <Moon className="size-4" />}
-					</button>
+					</label>
 				</div>
 			</div>
 		</header>
