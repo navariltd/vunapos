@@ -26,7 +26,7 @@ export function ItemGrid({ currency, hideImages, isLoading, items, pendingItemCo
 			{items?.map((item) => <ItemListRow key={item.item_code} currency={currency} disabled={pendingItemCode === item.item_code} item={item} onAdd={onAddItem} />)}
 		</div>
 	) : (
-		<div className="grid grid-cols-2 gap-3 xl:grid-cols-3 2xl:grid-cols-4">
+		<div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
 			{items?.map((item) => (
 				<ItemCard
 					key={item.item_code}
