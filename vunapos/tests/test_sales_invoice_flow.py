@@ -53,6 +53,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.db.set_value(
 			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
 		)
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		for row in profile_doc.get("payments", []):
+			row.payment_gateway = None
+		profile_doc.save(ignore_permissions=True)
 		frappe.clear_cache(doctype="POS Profile")
 		ensure_open_pos_opening_entry(profile)
 

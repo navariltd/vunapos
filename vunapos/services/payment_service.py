@@ -2,9 +2,16 @@ from decimal import Decimal, InvalidOperation
 
 import frappe
 from erpnext.accounts.party import get_party_account
+from erpnext.accounts.utils import get_currency_precision
 from frappe import _
-from frappe.utils import cint, flt, nowdate
+from frappe.utils import cint, flt, getdate, nowdate
 
+from vunapos.services.gateway_payment_service import (
+	consume_gateway_payment_links,
+	gateway_payment_metadata,
+	payment_mode_gateway,
+	validate_gateway_payment_link,
+)
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
 
@@ -59,6 +66,7 @@ def receive_customer_payment(
 	reference_date=None,
 	remarks=None,
 	idempotency_key=None,
+	gateway_payment_link=None,
 ):
 	if not idempotency_key:
 		frappe.throw(_("An idempotency key is required"))
@@ -85,6 +93,29 @@ def receive_customer_payment(
 		frappe.throw(_("Customer {0} is disabled").format(customer))
 
 	amount = _amount(amount, _("Payment amount"))
+	payment_gateway = payment_mode_gateway(profile, mode_of_payment)
+	gateway_link = None
+	gateway_metadata = {}
+	if payment_gateway:
+		precision = get_currency_precision() or 2
+		gateway_link = validate_gateway_payment_link(
+			gateway_payment_link,
+			profile=profile,
+			opening_entry=opening_entry,
+			mode_of_payment=mode_of_payment,
+			payment_gateway=payment_gateway,
+			customer=customer,
+			amount=amount,
+			currency=profile.currency,
+			precision=precision,
+		)
+		amount = flt(gateway_link.amount, precision)
+		gateway_metadata = gateway_payment_metadata(gateway_link.name)
+		reference_no = gateway_metadata.get("transaction_reference") or reference_no or gateway_link.name
+		if gateway_metadata.get("transaction_date"):
+			reference_date = getdate(gateway_metadata.get("transaction_date"))
+		else:
+			reference_date = reference_date or nowdate()
 	allocation = 0
 	invoice = None
 	if sales_invoice:
@@ -164,6 +195,8 @@ def receive_customer_payment(
 	doc.set_amounts()
 	doc.insert()
 	doc.submit()
+	if gateway_link:
+		consume_gateway_payment_links([gateway_link], doc)
 	return payment_entry_to_dict(doc)
 
 

@@ -24,6 +24,7 @@ def receive_customer_payment(
 	reference_date=None,
 	remarks=None,
 	idempotency_key=None,
+	gateway_payment_link=None,
 ):
 	try:
 		return success(
@@ -39,6 +40,7 @@ def receive_customer_payment(
 				reference_date=reference_date,
 				remarks=remarks,
 				idempotency_key=idempotency_key,
+				gateway_payment_link=gateway_payment_link,
 			)
 		)
 	except Exception as exc:

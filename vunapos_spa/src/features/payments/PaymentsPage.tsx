@@ -6,7 +6,8 @@ import { Button } from "../../components/ui/Button";
 import { navigateToPosPage } from "../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../services/vunaApi";
 import { useCustomerSearch } from "../pos/hooks/useCustomerSearch";
-import type { CustomerDetailsDTO, ModeOfPaymentDTO } from "../pos/types";
+import { useGatewayPaymentRealtime } from "../pos/hooks/useGatewayPaymentRealtime";
+import type { CustomerDetailsDTO, GatewayPaymentLinkDTO, ModeOfPaymentDTO } from "../pos/types";
 
 type Props = {
 	allowHistory?: boolean;
@@ -56,6 +57,11 @@ export function PaymentsPage({
 	const [error, setError] = useState<string | null>(null);
 	const [message, setMessage] = useState<string | null>(null);
 	const idempotencyKey = useRef(crypto.randomUUID());
+	const [gatewayPhone, setGatewayPhone] = useState("");
+	const [gatewayReference, setGatewayReference] = useState("");
+	const [gatewayLink, setGatewayLink] = useState<GatewayPaymentLinkDTO | null>(null);
+	const [gatewayError, setGatewayError] = useState<string | null>(null);
+	const [gatewayBusy, setGatewayBusy] = useState<"stk" | "c2b" | "status" | null>(null);
 
 	const [reconcileCustomer, setReconcileCustomer] = useState("");
 	const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
@@ -64,6 +70,9 @@ export function PaymentsPage({
 	const [historyFilters, setHistoryFilters] = useState({ customer: "", from_date: "", to_date: "", mode_of_payment: "", reference: "", status: "", cashier: "" });
 
 	const receiveCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
+	const initiateStkCall = useFrappePostCall(vunaMethods.initiateStkGatewayPayment);
+	const statusCall = useFrappePostCall(vunaMethods.getGatewayPaymentStatus);
+	const attachC2bCall = useFrappePostCall(vunaMethods.attachC2bGatewayPayment);
 	const allocateCall = useFrappePostCall(vunaMethods.allocateCustomerPayments);
 	const reconcileCall = useFrappePostCall(vunaMethods.reconcileCustomerPayment);
 	const detailsCall = useFrappeGetCall<unknown>(vunaMethods.getCustomerDetails, { pos_profile: posProfile, customer: receiveCustomer }, allowReceive && posProfile && receiveCustomer && isOnline ? ["vunapos_payment_customer", posProfile, receiveCustomer, message] : null);
@@ -79,18 +88,44 @@ export function PaymentsPage({
 	const outstanding = details?.invoices.filter((row) => !row.is_return && row.outstanding_amount > 0) || [];
 	const selectedOutstanding = outstanding.find((row) => row.name === invoice)?.outstanding_amount;
 	const displayedAmount = amount || (invoice && selectedOutstanding !== undefined ? String(selectedOutstanding) : "");
-	const requiresReference = Boolean(paymentModes.find((row) => row.mode_of_payment === mode)?.requires_reference);
+	const selectedMode = paymentModes.find((row) => row.mode_of_payment === mode);
+	const requiresReference = Boolean(selectedMode?.requires_reference);
+	const isGatewayMode = Boolean(selectedMode?.payment_gateway);
+	const gatewayAmount = Number(displayedAmount);
+
+	useGatewayPaymentRealtime((event) => {
+		setGatewayLink((current) => (current?.name === event.name ? event : current));
+	});
+
+	const clearGatewayState = () => {
+		setGatewayLink(null);
+		setGatewayError(null);
+		setGatewayBusy(null);
+	};
+
+	const gatewayAction = async (action: "stk" | "c2b" | "status", run: () => Promise<GatewayPaymentLinkDTO>) => {
+		setGatewayBusy(action);
+		setGatewayError(null);
+		try {
+			setGatewayLink(await run());
+		} catch (err) {
+			setGatewayError(errorText(err));
+		} finally {
+			setGatewayBusy(null);
+		}
+	};
 
 	async function receive() {
 		setError(null); setMessage(null);
 		if (!allowReceive) { setError("Receiving customer payments is disabled for this POS Profile."); return; }
 		if (!isOnline || !receiveCustomer || !mode || !(Number(displayedAmount) > 0)) { setError("Select a customer, payment mode, and valid amount while online."); return; }
-		if (requiresReference && (!referenceNo.trim() || !referenceDate)) { setError("Reference No and Reference Date are required for bank payments."); return; }
+		if (isGatewayMode && gatewayLink?.status !== "Paid") { setError(`${mode} requires a verified gateway payment before receiving money.`); return; }
+		if (!isGatewayMode && requiresReference && (!referenceNo.trim() || !referenceDate)) { setError("Reference No and Reference Date are required for bank payments."); return; }
 		try {
-			const response = await receiveCall.call({ pos_profile: posProfile, customer: receiveCustomer, amount: Number(displayedAmount), mode_of_payment: mode, sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined, reference_no: referenceNo || undefined, reference_date: referenceNo ? referenceDate : undefined, remarks: remarks || undefined, idempotency_key: idempotencyKey.current });
+			const response = await receiveCall.call({ pos_profile: posProfile, customer: receiveCustomer, amount: Number(displayedAmount), mode_of_payment: mode, sales_invoice: invoice || undefined, allocated_amount: invoice ? Number(displayedAmount) : undefined, reference_no: !isGatewayMode && referenceNo ? referenceNo : undefined, reference_date: !isGatewayMode && referenceNo ? referenceDate : undefined, remarks: remarks || undefined, idempotency_key: idempotencyKey.current, gateway_payment_link: isGatewayMode ? gatewayLink?.name : undefined });
 			const created = unwrapVunaResponse<{ name: string }>(response);
 			setMessage(`Payment Entry ${created.name} was submitted successfully.`);
-			idempotencyKey.current = crypto.randomUUID(); setAmount(""); setInvoice(""); setReferenceNo(""); setRemarks("");
+			idempotencyKey.current = crypto.randomUUID(); setAmount(""); setInvoice(""); setReferenceNo(""); setRemarks(""); setGatewayPhone(""); setGatewayReference(""); clearGatewayState();
 			await detailsCall.mutate();
 		} catch (err) { setError(errorText(err)); }
 	}
@@ -130,13 +165,27 @@ export function PaymentsPage({
 		{error || loadError ? <Notice error>{error || loadError}</Notice> : null}{message ? <Notice>{message}</Notice> : null}
 		{!availableTabs.length ? <Notice error>All customer payment operations are disabled for this POS Profile.</Notice> : activeTab === "receive" && allowReceive ? <div className="grid gap-4 rounded-lg border border-outline-variant p-4 md:grid-cols-2">
 			<div className="md:col-span-2"><CustomerPicker selected={receiveCustomer && details ? details.customer.customer_name : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={setReceiveCustomer} onClear={() => { setReceiveCustomer(""); setInvoice(""); }}/></div>
-			<label className="text-sm font-medium">Apply to invoice<select className={fieldClass} value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstanding.find((row) => row.name === next)?.outstanding_amount || "") : ""); }} disabled={!receiveCustomer}><option value="">Customer advance / unallocated</option>{outstanding.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
-			<label className="text-sm font-medium">Mode of Payment<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
-			<label className="text-sm font-medium">Amount<input className={fieldClass} type="number" min="0" step="0.01" value={displayedAmount} onChange={(event) => setAmount(event.target.value)}/></label>
-			<label className="text-sm font-medium">Reference No{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder={requiresReference ? "Required for bank payment" : "Optional"}/></label>
-			{requiresReference || referenceNo ? <label className="text-sm font-medium">Reference Date{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.target.value)}/></label> : null}
+			<label className="text-sm font-medium">Apply to invoice<select className={fieldClass} value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstanding.find((row) => row.name === next)?.outstanding_amount || "") : ""); clearGatewayState(); }} disabled={!receiveCustomer}><option value="">Customer advance / unallocated</option>{outstanding.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
+			<label className="text-sm font-medium">Mode of Payment<select className={fieldClass} value={mode} onChange={(event) => { setMode(event.target.value); clearGatewayState(); }}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
+			<label className="text-sm font-medium">Amount<input className={fieldClass} type="number" min="0" step="0.01" value={displayedAmount} onChange={(event) => { setAmount(event.target.value); clearGatewayState(); }}/></label>
+			{isGatewayMode ? <GatewayPaymentBox
+				amount={gatewayAmount}
+				busy={gatewayBusy}
+				currency={currency}
+				error={gatewayError}
+				gatewayLink={gatewayLink}
+				mode={mode}
+				phone={gatewayPhone}
+				reference={gatewayReference}
+				onAttachC2b={() => void gatewayAction("c2b", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await attachC2bCall.call({ pos_profile: posProfile, mode_of_payment: mode, transaction_reference: gatewayReference, amount: gatewayAmount, customer: receiveCustomer, currency, idempotency_key: `${idempotencyKey.current}:${mode}:customer-payment:c2b:${gatewayReference}` })))}
+				onCheckStatus={() => gatewayLink ? void gatewayAction("status", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await statusCall.call({ gateway_payment_link: gatewayLink.name }))) : undefined}
+				onInitiateStk={() => void gatewayAction("stk", async () => unwrapVunaResponse<GatewayPaymentLinkDTO>(await initiateStkCall.call({ pos_profile: posProfile, mode_of_payment: mode, amount: gatewayAmount, phone_number: gatewayPhone, customer: receiveCustomer, currency, idempotency_key: `${idempotencyKey.current}:${mode}:customer-payment:stk` })))}
+				onPhoneChange={setGatewayPhone}
+				onReferenceChange={setGatewayReference}
+			/> : <><label className="text-sm font-medium">Reference No{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder={requiresReference ? "Required for bank payment" : "Optional"}/></label>
+			{requiresReference || referenceNo ? <label className="text-sm font-medium">Reference Date{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.target.value)}/></label> : null}</>}
 			<label className="text-sm font-medium md:col-span-2">Remarks<textarea className={fieldClass} value={remarks} onChange={(event) => setRemarks(event.target.value)}/></label>
-			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer || (requiresReference && (!referenceNo.trim() || !referenceDate))} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
+			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer || (isGatewayMode ? gatewayLink?.status !== "Paid" : requiresReference && (!referenceNo.trim() || !referenceDate))} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
 		</div> : activeTab === "reconcile" && allowReconciliation ? <div className="space-y-4">
 			<div className="rounded-lg border border-outline-variant p-4"><CustomerPicker selected={reconcileCustomer ? reconcileCustomer : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={(value) => { setReconcileCustomer(value); setSelectedPayments([]); setSelectedInvoices([]); setAllocationPreview([]); }} onClear={() => setReconcileCustomer("")}/></div>
 			<div className="grid gap-4 lg:grid-cols-2"><SelectionList title="Unallocated payments" empty="No unallocated payments for this customer." rows={candidates.payments} selected={selectedPayments} onToggle={(name) => { toggle(name, selectedPayments, setSelectedPayments); setAllocationPreview([]); }}/><SelectionList title="Outstanding invoices" empty="No outstanding invoices for this customer." rows={candidates.invoices} selected={selectedInvoices} onToggle={(name) => { toggle(name, selectedInvoices, setSelectedInvoices); setAllocationPreview([]); }} invoices/></div>
@@ -144,6 +193,59 @@ export function PaymentsPage({
 			{allocationPreview.length ? <div className="rounded-lg border border-outline-variant"><div className="bg-surface-container-low px-4 py-3 font-semibold">Allocation preview</div>{allocationPreview.map((row, index) => <div key={`${row.payment_entry}-${row.invoice}-${index}`} className="grid gap-1 border-t border-outline-variant px-4 py-3 text-sm sm:grid-cols-[1fr_auto_1fr]"><span>{row.payment_entry}</span><strong>{money(row.allocated_amount, row.currency || currency)} →</strong><span>{row.invoice}</span></div>)}<div className="flex justify-end border-t border-outline-variant p-4"><Button disabled={reconcileCall.loading} onClick={reconcile}>{reconcileCall.loading ? "Reconciling..." : "Reconcile"}</Button></div></div> : null}
 		</div> : allowHistory ? <PaymentHistory rows={history} filters={historyFilters} setFilters={setHistoryFilters} paymentModes={paymentModes} currency={currency} loading={historyCall.isLoading}/> : null}
 	</div></section>;
+}
+
+function GatewayPaymentBox({
+	amount,
+	busy,
+	currency,
+	error,
+	gatewayLink,
+	mode,
+	phone,
+	reference,
+	onAttachC2b,
+	onCheckStatus,
+	onInitiateStk,
+	onPhoneChange,
+	onReferenceChange,
+}: {
+	amount: number;
+	busy: "stk" | "c2b" | "status" | null;
+	currency?: string;
+	error: string | null;
+	gatewayLink: GatewayPaymentLinkDTO | null;
+	mode: string;
+	phone: string;
+	reference: string;
+	onAttachC2b: () => void;
+	onCheckStatus?: () => void;
+	onInitiateStk: () => void;
+	onPhoneChange: (value: string) => void;
+	onReferenceChange: (value: string) => void;
+}) {
+	const paid = gatewayLink?.status === "Paid";
+	return <div className="space-y-3 rounded-lg border border-outline-variant bg-surface-container-low p-3 text-sm md:col-span-2">
+		<div className="flex flex-wrap items-center justify-between gap-2">
+			<div>
+				<p className="font-medium">{mode} gateway payment</p>
+				<p className="text-xs text-on-surface-variant">Receive this payment through the configured gateway before submitting the Payment Entry.</p>
+			</div>
+			<span className={paid ? "font-medium text-secondary" : "text-on-surface-variant"}>
+				{paid ? `Paid${gatewayLink?.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}` : gatewayLink ? `Status: ${gatewayLink.status}` : `Amount ${money(amount || 0, currency)}`}
+			</span>
+		</div>
+		<div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+			<input className={fieldClass} value={phone} onChange={(event) => onPhoneChange(event.target.value)} placeholder="Phone number for STK push"/>
+			<Button variant="ghost" disabled={!amount || busy !== null} onClick={onInitiateStk}>{busy === "stk" ? "Sending..." : "Send STK"}</Button>
+			<Button variant="ghost" disabled={!gatewayLink || busy !== null} onClick={onCheckStatus}>{busy === "status" ? "Checking..." : "Check status"}</Button>
+		</div>
+		<div className="grid gap-3 md:grid-cols-[1fr_auto]">
+			<input className={fieldClass} value={reference} onChange={(event) => onReferenceChange(event.target.value)} placeholder="C2B transaction reference"/>
+			<Button variant="ghost" disabled={!amount || !reference.trim() || busy !== null} onClick={onAttachC2b}>{busy === "c2b" ? "Checking..." : "Attach C2B"}</Button>
+		</div>
+		{error ? <p className="text-xs text-error">{error}</p> : null}
+	</div>;
 }
 
 function PaymentHistory({ rows, filters, setFilters, paymentModes, currency, loading }: { rows: PaymentHistoryRow[]; filters: HistoryFilters; setFilters: (value: HistoryFilters) => void; paymentModes: ModeOfPaymentDTO[]; currency?: string; loading: boolean }) {
