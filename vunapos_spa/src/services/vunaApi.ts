@@ -1,6 +1,7 @@
 import type {
 	BatchAllocationResultDTO,
 	BootstrapData,
+	C2BGatewayPaymentDTO,
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
@@ -65,6 +66,7 @@ export const vunaMethods = {
 	getGatewayPaymentStatus: "vunapos.api.gateway.get_gateway_payment_status",
 	cancelGatewayPaymentLink: "vunapos.api.gateway.cancel_gateway_payment_link",
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
+	searchC2bGatewayPayments: "vunapos.api.gateway.search_c2b_gateway_payments",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
@@ -247,6 +249,20 @@ export function attachC2bGatewayPayment(
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
+}
+
+export function searchC2bGatewayPayments(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		mode_of_payment: string;
+		query: string;
+		customer?: string;
+		currency?: string;
+		limit?: number;
+	},
+) {
+	return callAndUnwrap<C2BGatewayPaymentDTO[]>(call, params);
 }
 
 export function createInvoice(call: FrappeCall, params: { pos_profile?: string; customer?: string }) {

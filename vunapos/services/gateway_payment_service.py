@@ -642,3 +642,113 @@ def attach_c2b_gateway_payment(
 		idempotency_key=idempotency_key,
 	)
 	return gateway_payment_link_to_dict(link)
+
+
+def search_c2b_gateway_payments(
+	pos_profile=None,
+	mode_of_payment=None,
+	query=None,
+	customer=None,
+	currency=None,
+	limit=20,
+):
+	_require_navari_ke_payments("KE C2B Payment Register")
+	query = (query or "").strip()
+	if len(query) < 3:
+		return []
+
+	profile = resolve_pos_profile(pos_profile)
+	require_open_pos_session(profile.name)
+	payment_gateway_account = _profile_gateway_account(profile, mode_of_payment)
+	payment_gateway = _payment_gateway_name(payment_gateway_account)
+	currency = currency or profile.currency
+	limit = min(max(cint(limit or 20), 1), 50)
+	meta = frappe.get_meta("KE C2B Payment Register")
+	has_field = meta.has_field
+
+	filters = {
+		"status": ["in", list(_source_success_statuses("KE C2B Payment Register"))],
+		"currency": currency,
+	}
+	if payment_gateway and has_field("payment_gateway"):
+		filters["payment_gateway"] = payment_gateway
+	if has_field("company"):
+		filters["company"] = profile.company
+	if has_field("mode_of_payment"):
+		filters["mode_of_payment"] = mode_of_payment
+	if has_field("is_reconciled"):
+		filters["is_reconciled"] = 0
+
+	customer_names = []
+	if has_field("customer"):
+		customer_filters = [["Customer", "name", "like", f"%{query}%"]]
+		if frappe.get_meta("Customer").has_field("customer_name"):
+			customer_filters.append(["Customer", "customer_name", "like", f"%{query}%"])
+		customer_names = frappe.get_all("Customer", or_filters=customer_filters, pluck="name", limit=20)
+
+	or_filters = [
+		["KE C2B Payment Register", "name", "like", f"%{query}%"],
+		["KE C2B Payment Register", "transaction_id", "like", f"%{query}%"],
+		["KE C2B Payment Register", "party_phone", "like", f"%{query}%"],
+		["KE C2B Payment Register", "party_name", "like", f"%{query}%"],
+	]
+	if has_field("bill_reference"):
+		or_filters.append(["KE C2B Payment Register", "bill_reference", "like", f"%{query}%"])
+	if customer_names:
+		or_filters.append(["KE C2B Payment Register", "customer", "in", customer_names])
+	fields = [
+		"name",
+		"transaction_id",
+		"transaction_date",
+		"amount",
+		"currency",
+		"party_phone",
+		"party_name",
+		"bill_reference",
+		"payment_gateway",
+		"status",
+	]
+	for fieldname in ("customer", "company", "mode_of_payment", "payment_entry"):
+		if has_field(fieldname):
+			fields.append(fieldname)
+
+	rows = frappe.get_all(
+		"KE C2B Payment Register",
+		filters=filters,
+		or_filters=or_filters,
+		fields=fields,
+		order_by="transaction_date desc, modified desc",
+		limit=limit,
+	)
+	if not rows:
+		return []
+
+	consumed_sources = frappe.get_all(
+		"VunaPOS Gateway Payment Link",
+		filters={
+			"source_doctype": "KE C2B Payment Register",
+			"source_name": ["in", [row.name for row in rows]],
+			"consumed": 1,
+		},
+		pluck="source_name",
+	)
+	consumed_sources = set(consumed_sources)
+	return [
+		{
+			"name": row.name,
+			"transaction_id": row.transaction_id,
+			"transaction_date": row.transaction_date,
+			"amount": flt(row.amount),
+			"currency": row.currency,
+			"party_phone": row.get("party_phone"),
+			"party_name": row.get("party_name"),
+			"bill_reference": row.get("bill_reference"),
+			"payment_gateway": row.get("payment_gateway"),
+			"status": row.status,
+			"customer": row.get("customer"),
+		}
+		for row in rows
+		if row.name not in consumed_sources
+		and not row.get("payment_entry")
+		and (not customer or not row.get("customer") or row.get("customer") == customer)
+	]

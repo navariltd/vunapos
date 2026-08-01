@@ -12,6 +12,9 @@ from vunapos.services.gateway_payment_service import (
 from vunapos.services.gateway_payment_service import (
 	initiate_stk_gateway_payment as initiate_stk_gateway_payment_service,
 )
+from vunapos.services.gateway_payment_service import (
+	search_c2b_gateway_payments as search_c2b_gateway_payments_service,
+)
 from vunapos.utils.response import failure, success
 
 
@@ -85,6 +88,30 @@ def attach_c2b_gateway_payment(
 				customer=customer,
 				currency=currency,
 				idempotency_key=idempotency_key,
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def search_c2b_gateway_payments(
+	pos_profile: str | None = None,
+	mode_of_payment: str | None = None,
+	query: str | None = None,
+	customer: str | None = None,
+	currency: str | None = None,
+	limit: int | str | None = 20,
+):
+	try:
+		return success(
+			search_c2b_gateway_payments_service(
+				pos_profile=pos_profile,
+				mode_of_payment=mode_of_payment,
+				query=query,
+				customer=customer,
+				currency=currency,
+				limit=limit,
 			)
 		)
 	except Exception as exc:

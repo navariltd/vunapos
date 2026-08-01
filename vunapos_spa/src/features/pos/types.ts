@@ -7,6 +7,20 @@ export type ModeOfPaymentDTO = {
 	requires_reference?: boolean;
 };
 
+export type C2BGatewayPaymentDTO = {
+	name: string;
+	transaction_id: string;
+	transaction_date?: string | null;
+	amount: number;
+	currency?: string | null;
+	party_phone?: string | null;
+	party_name?: string | null;
+	bill_reference?: string | null;
+	payment_gateway?: string | null;
+	status?: string | null;
+	customer?: string | null;
+};
+
 export type POSProfileOptionDTO = {
 	name: string;
 	company?: string;

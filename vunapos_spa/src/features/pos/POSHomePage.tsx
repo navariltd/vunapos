@@ -715,6 +715,14 @@ export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales I
 						currency: bootstrap.data?.currency,
 					})
 				}
+				onSearchC2bGatewayPayments={(params) =>
+					gatewayPayments.searchC2bPayments({
+						...params,
+						pos_profile: bootstrap.data?.pos_profile,
+						customer: activeCustomer?.customer,
+						currency: bootstrap.data?.currency,
+					})
+				}
 				onCheckGatewayPayment={gatewayPayments.getGatewayPaymentStatus}
 				onCancelGatewayPayment={gatewayPayments.cancelGatewayPaymentLink}
 				onInitiateGatewayPayment={(params) =>
