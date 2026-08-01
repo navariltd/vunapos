@@ -159,6 +159,13 @@ export type BootstrapData = {
 	automatically_add_filtered_item_to_cart?: boolean;
 	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
+	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_order_type_change?: boolean;
+	allow_customer_management?: boolean;
+	allow_customer_creation?: boolean;
+	allow_customer_payments?: boolean;
+	allow_payment_reconciliation?: boolean;
+	allow_payment_history?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];

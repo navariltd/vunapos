@@ -8,7 +8,15 @@ import { unwrapVunaResponse, vunaMethods } from "../../services/vunaApi";
 import { useCustomerSearch } from "../pos/hooks/useCustomerSearch";
 import type { CustomerDetailsDTO, ModeOfPaymentDTO } from "../pos/types";
 
-type Props = { posProfile?: string; currency?: string; paymentModes: ModeOfPaymentDTO[]; isOnline: boolean };
+type Props = {
+	allowHistory?: boolean;
+	allowReceive?: boolean;
+	allowReconciliation?: boolean;
+	posProfile?: string;
+	currency?: string;
+	paymentModes: ModeOfPaymentDTO[];
+	isOnline: boolean;
+};
 type Candidate = { name: string; posting_date: string; amount: number; currency?: string; outstanding_amount?: number; remarks?: string };
 type Candidates = { payments: Candidate[]; invoices: Candidate[] };
 type Allocation = { payment_entry: string; invoice: string; allocated_amount: number; currency?: string };
@@ -16,9 +24,26 @@ type PaymentHistoryRow = Candidate & { customer: string; customer_name?: string;
 type HistoryFilters = { customer: string; from_date: string; to_date: string; mode_of_payment: string; reference: string; status: string; cashier: string };
 const fieldClass = "mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary";
 
-export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: Props) {
+export function PaymentsPage({
+	allowHistory = true,
+	allowReceive = true,
+	allowReconciliation = true,
+	posProfile,
+	currency,
+	paymentModes,
+	isOnline,
+}: Props) {
 	const initial = useMemo(() => new URLSearchParams(window.location.search), []);
-	const [tab, setTab] = useState<"receive" | "reconcile" | "history">("receive");
+	const availableTabs = useMemo(
+		() => [
+			allowReceive ? "receive" : null,
+			allowReconciliation ? "reconcile" : null,
+			allowHistory ? "history" : null,
+		].filter(Boolean) as Array<"receive" | "reconcile" | "history">,
+		[allowHistory, allowReceive, allowReconciliation],
+	);
+	const [tab, setTab] = useState<"receive" | "reconcile" | "history">(availableTabs[0] || "receive");
+	const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] || "receive";
 	const [receiveCustomer, setReceiveCustomer] = useState(initial.get("customer") || "");
 	const [invoice, setInvoice] = useState(initial.get("invoice") || "");
 	const [query, setQuery] = useState("");
@@ -41,9 +66,9 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 	const receiveCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
 	const allocateCall = useFrappePostCall(vunaMethods.allocateCustomerPayments);
 	const reconcileCall = useFrappePostCall(vunaMethods.reconcileCustomerPayment);
-	const detailsCall = useFrappeGetCall<unknown>(vunaMethods.getCustomerDetails, { pos_profile: posProfile, customer: receiveCustomer }, posProfile && receiveCustomer && isOnline ? ["vunapos_payment_customer", posProfile, receiveCustomer, message] : null);
-	const candidatesCall = useFrappeGetCall<unknown>(vunaMethods.getReconciliationCandidates, { pos_profile: posProfile, customer: reconcileCustomer }, posProfile && reconcileCustomer && isOnline ? ["vunapos_native_reconciliation", posProfile, reconcileCustomer, message] : null);
-	const historyCall = useFrappeGetCall<unknown>(vunaMethods.getPaymentHistory, { pos_profile: posProfile, ...historyFilters }, posProfile && isOnline && tab === "history" ? ["vunapos_payment_history", posProfile, historyFilters, message] : null);
+	const detailsCall = useFrappeGetCall<unknown>(vunaMethods.getCustomerDetails, { pos_profile: posProfile, customer: receiveCustomer }, allowReceive && posProfile && receiveCustomer && isOnline ? ["vunapos_payment_customer", posProfile, receiveCustomer, message] : null);
+	const candidatesCall = useFrappeGetCall<unknown>(vunaMethods.getReconciliationCandidates, { pos_profile: posProfile, customer: reconcileCustomer }, allowReconciliation && posProfile && reconcileCustomer && isOnline ? ["vunapos_native_reconciliation", posProfile, reconcileCustomer, message] : null);
+	const historyCall = useFrappeGetCall<unknown>(vunaMethods.getPaymentHistory, { pos_profile: posProfile, ...historyFilters }, allowHistory && posProfile && isOnline && activeTab === "history" ? ["vunapos_payment_history", posProfile, historyFilters, message] : null);
 	let details: CustomerDetailsDTO | null = null;
 	let candidates: Candidates = { payments: [], invoices: [] };
 	let loadError: string | null = null;
@@ -58,6 +83,7 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 
 	async function receive() {
 		setError(null); setMessage(null);
+		if (!allowReceive) { setError("Receiving customer payments is disabled for this POS Profile."); return; }
 		if (!isOnline || !receiveCustomer || !mode || !(Number(displayedAmount) > 0)) { setError("Select a customer, payment mode, and valid amount while online."); return; }
 		if (requiresReference && (!referenceNo.trim() || !referenceDate)) { setError("Reference No and Reference Date are required for bank payments."); return; }
 		try {
@@ -71,6 +97,7 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 
 	async function allocate() {
 		setError(null); setMessage(null); setAllocationPreview([]);
+		if (!allowReconciliation) { setError("Payment reconciliation is disabled for this POS Profile."); return; }
 		if (!reconcileCustomer || !selectedPayments.length || !selectedInvoices.length) { setError("Select a customer, at least one payment, and at least one invoice."); return; }
 		try {
 			const response = await allocateCall.call({ pos_profile: posProfile, customer: reconcileCustomer, payment_entries: JSON.stringify(selectedPayments), invoices: JSON.stringify(selectedInvoices) });
@@ -81,6 +108,7 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 
 	async function reconcile() {
 		setError(null); setMessage(null);
+		if (!allowReconciliation) { setError("Payment reconciliation is disabled for this POS Profile."); return; }
 		if (!allocationPreview.length) { setError("Click Allocate and review the allocation first."); return; }
 		try {
 			const response = await reconcileCall.call({ pos_profile: posProfile, customer: reconcileCustomer, payment_entries: JSON.stringify(selectedPayments), invoices: JSON.stringify(selectedInvoices) });
@@ -93,10 +121,14 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 
 	return <section className="min-h-0 flex-1 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4"><div className="mx-auto flex max-w-5xl flex-col gap-4">
 		<div className="flex items-center justify-between gap-3"><div><h2 className="text-lg font-semibold">Payments</h2><p className="text-sm text-on-surface-variant">Receive and reconcile customer payments.</p></div><Button onClick={() => navigateToPosPage("Home")}>Back to POS</Button></div>
-		<div className="flex border-b border-outline-variant"><Tab active={tab === "receive"} onClick={() => setTab("receive")}>Receive</Tab><Tab active={tab === "reconcile"} onClick={() => setTab("reconcile")}>Reconcile</Tab><Tab active={tab === "history"} onClick={() => setTab("history")}>History</Tab></div>
+		{availableTabs.length ? <div className="flex border-b border-outline-variant">
+			{allowReceive ? <Tab active={activeTab === "receive"} onClick={() => setTab("receive")}>Receive</Tab> : null}
+			{allowReconciliation ? <Tab active={activeTab === "reconcile"} onClick={() => setTab("reconcile")}>Reconcile</Tab> : null}
+			{allowHistory ? <Tab active={activeTab === "history"} onClick={() => setTab("history")}>History</Tab> : null}
+		</div> : null}
 		{!isOnline ? <Notice error>Payments are online-only. Reconnect before continuing.</Notice> : null}
 		{error || loadError ? <Notice error>{error || loadError}</Notice> : null}{message ? <Notice>{message}</Notice> : null}
-		{tab === "receive" ? <div className="grid gap-4 rounded-lg border border-outline-variant p-4 md:grid-cols-2">
+		{!availableTabs.length ? <Notice error>All customer payment operations are disabled for this POS Profile.</Notice> : activeTab === "receive" && allowReceive ? <div className="grid gap-4 rounded-lg border border-outline-variant p-4 md:grid-cols-2">
 			<div className="md:col-span-2"><CustomerPicker selected={receiveCustomer && details ? details.customer.customer_name : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={setReceiveCustomer} onClear={() => { setReceiveCustomer(""); setInvoice(""); }}/></div>
 			<label className="text-sm font-medium">Apply to invoice<select className={fieldClass} value={invoice} onChange={(event) => { const next = event.target.value; setInvoice(next); setAmount(next ? String(outstanding.find((row) => row.name === next)?.outstanding_amount || "") : ""); }} disabled={!receiveCustomer}><option value="">Customer advance / unallocated</option>{outstanding.map((row) => <option key={row.name} value={row.name}>{row.name} — {money(row.outstanding_amount, row.currency)}</option>)}</select></label>
 			<label className="text-sm font-medium">Mode of Payment<select className={fieldClass} value={mode} onChange={(event) => setMode(event.target.value)}>{paymentModes.map((row) => <option key={row.mode_of_payment}>{row.mode_of_payment}</option>)}</select></label>
@@ -105,12 +137,12 @@ export function PaymentsPage({ posProfile, currency, paymentModes, isOnline }: P
 			{requiresReference || referenceNo ? <label className="text-sm font-medium">Reference Date{requiresReference ? " *" : ""}<input className={fieldClass} required={requiresReference} type="date" value={referenceDate} onChange={(event) => setReferenceDate(event.target.value)}/></label> : null}
 			<label className="text-sm font-medium md:col-span-2">Remarks<textarea className={fieldClass} value={remarks} onChange={(event) => setRemarks(event.target.value)}/></label>
 			<Button className="md:col-span-2" disabled={!isOnline || receiveCall.loading || !receiveCustomer || (requiresReference && (!referenceNo.trim() || !referenceDate))} onClick={receive}><CreditCard className="mr-2 size-4"/>{receiveCall.loading ? "Submitting..." : invoice ? "Receive and allocate payment" : "Receive customer advance"}</Button>
-		</div> : tab === "reconcile" ? <div className="space-y-4">
+		</div> : activeTab === "reconcile" && allowReconciliation ? <div className="space-y-4">
 			<div className="rounded-lg border border-outline-variant p-4"><CustomerPicker selected={reconcileCustomer ? reconcileCustomer : ""} query={query} setQuery={setQuery} customers={search.customers} onSelect={(value) => { setReconcileCustomer(value); setSelectedPayments([]); setSelectedInvoices([]); setAllocationPreview([]); }} onClear={() => setReconcileCustomer("")}/></div>
 			<div className="grid gap-4 lg:grid-cols-2"><SelectionList title="Unallocated payments" empty="No unallocated payments for this customer." rows={candidates.payments} selected={selectedPayments} onToggle={(name) => { toggle(name, selectedPayments, setSelectedPayments); setAllocationPreview([]); }}/><SelectionList title="Outstanding invoices" empty="No outstanding invoices for this customer." rows={candidates.invoices} selected={selectedInvoices} onToggle={(name) => { toggle(name, selectedInvoices, setSelectedInvoices); setAllocationPreview([]); }} invoices/></div>
 			<div className="flex justify-end"><Button disabled={!isOnline || allocateCall.loading || !selectedPayments.length || !selectedInvoices.length} onClick={allocate}>{allocateCall.loading ? "Allocating..." : "Allocate"}</Button></div>
 			{allocationPreview.length ? <div className="rounded-lg border border-outline-variant"><div className="bg-surface-container-low px-4 py-3 font-semibold">Allocation preview</div>{allocationPreview.map((row, index) => <div key={`${row.payment_entry}-${row.invoice}-${index}`} className="grid gap-1 border-t border-outline-variant px-4 py-3 text-sm sm:grid-cols-[1fr_auto_1fr]"><span>{row.payment_entry}</span><strong>{money(row.allocated_amount, row.currency || currency)} →</strong><span>{row.invoice}</span></div>)}<div className="flex justify-end border-t border-outline-variant p-4"><Button disabled={reconcileCall.loading} onClick={reconcile}>{reconcileCall.loading ? "Reconciling..." : "Reconcile"}</Button></div></div> : null}
-		</div> : <PaymentHistory rows={history} filters={historyFilters} setFilters={setHistoryFilters} paymentModes={paymentModes} currency={currency} loading={historyCall.isLoading}/>}
+		</div> : allowHistory ? <PaymentHistory rows={history} filters={historyFilters} setFilters={setHistoryFilters} paymentModes={paymentModes} currency={currency} loading={historyCall.isLoading}/> : null}
 	</div></section>;
 }
 

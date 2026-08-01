@@ -88,6 +88,20 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertEqual(
 			fields["vunapos_enable_background_submission"].insert_after, "vunapos_queue_column_break"
 		)
+		self.assertEqual(
+			fields["vunapos_operations_section"].insert_after, "vunapos_queue_processing_timeout_minutes"
+		)
+		self.assertEqual(fields["vunapos_default_order_type"].insert_after, "vunapos_operations_section")
+		self.assertEqual(
+			fields["vunapos_allow_customer_management"].insert_after, "vunapos_allow_order_type_change"
+		)
+		self.assertEqual(
+			fields["vunapos_allow_customer_payments"].insert_after, "vunapos_operations_column_break"
+		)
+		self.assertEqual(
+			fields["vunapos_allow_payment_reconciliation"].insert_after,
+			"vunapos_allow_customer_payments",
+		)
 
 	def test_explicit_profile_must_be_assigned_to_current_user(self):
 		profile_name = ensure_test_pos_profile()
@@ -123,3 +137,32 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		enabled = get_bootstrap_data(pos_profile=profile)
 		self.assertTrue(enabled["data"]["allow_credit_sales"])
 		self.assertEqual(enabled["data"]["default_sale_type"], "Credit Sale")
+
+	def test_bootstrap_exposes_profile_operation_controls(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value(
+			"POS Profile",
+			profile,
+			{
+				"vunapos_default_order_type": "Sales Order",
+				"vunapos_allow_order_type_change": 0,
+				"vunapos_allow_customer_management": 0,
+				"vunapos_allow_customer_creation": 0,
+				"vunapos_allow_customer_payments": 0,
+				"vunapos_allow_payment_reconciliation": 1,
+				"vunapos_allow_payment_history": 1,
+			},
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = get_bootstrap_data(pos_profile=profile)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["default_order_type"], "Sales Order")
+		self.assertFalse(response["data"]["allow_order_type_change"])
+		self.assertFalse(response["data"]["allow_customer_management"])
+		self.assertFalse(response["data"]["allow_customer_creation"])
+		self.assertFalse(response["data"]["allow_customer_payments"])
+		self.assertFalse(response["data"]["allow_payment_reconciliation"])
+		self.assertFalse(response["data"]["allow_payment_history"])

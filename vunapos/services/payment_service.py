@@ -3,10 +3,22 @@ from decimal import Decimal, InvalidOperation
 import frappe
 from erpnext.accounts.party import get_party_account
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, nowdate
 
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
+
+
+def _feature_disabled(code, message):
+	exc = frappe.ValidationError(message)
+	exc.vuna_error_code = code
+	raise exc
+
+
+def _require_profile_feature(profile, fieldname, code, message):
+	value = profile.get(fieldname)
+	if value is not None and not cint(value):
+		_feature_disabled(code, message)
 
 
 def _amount(value, label):
@@ -58,6 +70,12 @@ def receive_customer_payment(
 		return payment_entry_to_dict(frappe.get_doc("Payment Entry", existing), duplicate=True)
 
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
 	opening_entry = require_open_pos_session(profile.name)
 	require_create("Payment Entry")
 	if not frappe.has_permission("Payment Entry", "submit"):
@@ -183,6 +201,18 @@ def get_payment_history(
 	limit=100,
 ):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_history",
+		"PAYMENT_HISTORY_DISABLED",
+		_("Payment history is disabled for this POS Profile"),
+	)
 	filters = {"company": profile.company, "vunapos_payment": 1}
 	if customer:
 		filters["party"] = customer
@@ -294,9 +324,21 @@ def _native_candidates(profile, customer, limit=100):
 
 def get_reconciliation_candidates(pos_profile=None, customer=None, limit=100):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	if not customer:
 		return {"payments": [], "invoices": []}
-	_, payments, invoices = _native_candidates(profile, customer, limit)
+	payments, invoices = _native_candidates(profile, customer, limit)[1:]
 	return {
 		"payments": [
 			{
@@ -323,6 +365,18 @@ def get_reconciliation_candidates(pos_profile=None, customer=None, limit=100):
 
 def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=None, invoices=None):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	if not payment_entries or not invoices:
 		frappe.throw(_("Select at least one payment and one invoice"))
 	doc, payments, invoice_rows = _native_candidates(profile, customer)
@@ -355,6 +409,18 @@ def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=
 
 def reconcile_customer_payment(pos_profile=None, customer=None, payment_entries=None, invoices=None):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	opening_entry = require_open_pos_session(profile.name)
 	for name in payment_entries or []:
 		require_read("Payment Entry", name)

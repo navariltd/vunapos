@@ -39,10 +39,14 @@ def search_customers(query=None, limit=20, since=None):
 	return [customer_to_dict(frappe.get_doc("Customer", row.name)) for row in customers]
 
 
-def create_customer(customer_name, mobile_no=None, email_id=None):
+def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=None):
 	if not customer_name:
 		frappe.throw(_("Customer name is required"))
 
+	profile = resolve_pos_profile(pos_profile)
+	allow_creation = profile.get("vunapos_allow_customer_creation")
+	if allow_creation is not None and not cint(allow_creation):
+		frappe.throw(_("Customer creation is disabled for this POS Profile"), frappe.PermissionError)
 	require_create("Customer")
 	customer = frappe.get_doc(
 		{
@@ -107,6 +111,9 @@ def get_customer_directory(
 ):
 	"""Return a permission-filtered customer page with live accounting summaries."""
 	profile = resolve_pos_profile(pos_profile)
+	allow_management = profile.get("vunapos_allow_customer_management")
+	if allow_management is not None and not cint(allow_management):
+		frappe.throw(_("Customer management is disabled for this POS Profile"), frappe.PermissionError)
 	start = max(cint(start), 0)
 	limit = min(max(cint(limit) or 25, 1), 100)
 	filters = {"disabled": 0}

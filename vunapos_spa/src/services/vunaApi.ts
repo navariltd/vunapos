@@ -200,7 +200,7 @@ export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: str
 
 export function createCustomer(
 	call: FrappeCall,
-	params: { customer_name: string; mobile_no?: string; email_id?: string },
+	params: { customer_name: string; mobile_no?: string; email_id?: string; pos_profile?: string },
 ) {
 	return callAndUnwrap<CustomerDTO>(call, params);
 }

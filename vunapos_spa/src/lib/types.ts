@@ -126,6 +126,13 @@ export type CachedProfile = {
 	automatically_add_filtered_item_to_cart?: boolean;
 	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
+	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_order_type_change?: boolean;
+	allow_customer_management?: boolean;
+	allow_customer_creation?: boolean;
+	allow_customer_payments?: boolean;
+	allow_payment_reconciliation?: boolean;
+	allow_payment_history?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

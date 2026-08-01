@@ -40,10 +40,20 @@ def get_customer_loyalty(pos_profile: str | None = None, customer: str | None = 
 
 
 @frappe.whitelist()
-def create_customer(customer_name, mobile_no=None, email_id=None):
+def create_customer(
+	customer_name: str,
+	mobile_no: str | None = None,
+	email_id: str | None = None,
+	pos_profile: str | None = None,
+):
 	try:
 		return success(
-			create_customer_service(customer_name=customer_name, mobile_no=mobile_no, email_id=email_id)
+			create_customer_service(
+				customer_name=customer_name,
+				mobile_no=mobile_no,
+				email_id=email_id,
+				pos_profile=pos_profile,
+			)
 		)
 	except Exception as exc:
 		return failure(str(exc), code=exc.__class__.__name__)

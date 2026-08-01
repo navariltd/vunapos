@@ -26,17 +26,32 @@ const items: { label: POSPage; icon: typeof Home }[] = [
 	{ label: "Close Shift", icon: LogOut },
 ];
 
+export type NavFeatureFlags = {
+	allowCustomerManagement?: boolean;
+	allowCustomerPayments?: boolean;
+};
+
+function visibleItems(features?: NavFeatureFlags) {
+	return items.filter((item) => {
+		if (item.label === "Payments") return features?.allowCustomerPayments !== false;
+		if (item.label === "Customers") return features?.allowCustomerManagement !== false;
+		return true;
+	});
+}
+
 const activeLinkClass = "border border-primary bg-primary text-on-primary shadow-sm dark:bg-primary dark:text-on-primary";
 const inactiveLinkClass = "text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface";
 
 type SidebarProps = {
 	cashier?: string;
+	features?: NavFeatureFlags;
 	posProfile?: string;
 	warehouse?: string;
 };
 
-export function Sidebar({ cashier, posProfile, warehouse }: SidebarProps) {
+export function Sidebar({ cashier, features, posProfile, warehouse }: SidebarProps) {
 	const activePage = useNavigationStore((s) => s.activePage);
+	const navItems = visibleItems(features);
 	const [isCollapsed, setIsCollapsed] = useState(() => {
 		return window.localStorage.getItem("vunapos_sidebar_collapsed") === "true";
 	});
@@ -53,7 +68,7 @@ export function Sidebar({ cashier, posProfile, warehouse }: SidebarProps) {
 			)}
 		>
 			<nav className="space-y-0.5">
-				{items.map((item) => {
+				{navItems.map((item) => {
 					const Icon = item.icon;
 					const isActive = item.label === activePage;
 					return (
@@ -123,13 +138,14 @@ export function Sidebar({ cashier, posProfile, warehouse }: SidebarProps) {
 	);
 }
 
-export function BottomNav() {
+export function BottomNav({ features }: { features?: NavFeatureFlags }) {
 	const activePage = useNavigationStore((s) => s.activePage);
+	const navItems = visibleItems(features);
 
 	return (
 		<nav className="fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface px-2 pb-2 pt-1 lg:hidden">
-			<div className="grid grid-cols-5 gap-1">
-				{items.map((item) => {
+			<div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
+				{navItems.map((item) => {
 					const Icon = item.icon;
 					const isActive = item.label === activePage;
 					return (

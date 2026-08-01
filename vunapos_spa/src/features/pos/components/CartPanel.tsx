@@ -11,6 +11,7 @@ import { CustomerSelector } from "./CustomerSelector";
 import { CustomerLoyaltyCard } from "./CustomerLoyaltyCard";
 
 type CartPanelProps = {
+	allowCustomerCreation?: boolean;
 	allowPriceListSwitching?: boolean;
 	allowedPriceLists?: Array<{ name: string; currency?: string }>;
 	allowDiscountChange?: boolean;
@@ -36,12 +37,14 @@ type CartPanelProps = {
 	onUpdateUom: (rowName: string, uom: string, conversionFactor: number) => Promise<void>;
 	onUpdateSerialAllocations: (rowName: string, allocations: SerialAllocationDTO[]) => Promise<void>;
 	isOnline: boolean;
+	posProfile?: string;
 	warehouse?: string;
 	selectedPriceList?: string;
 };
 
 export function CartPanel({
 	allowDiscountChange,
+	allowCustomerCreation,
 	allowRateChange,
 	allowPriceListSwitching,
 	allowedPriceLists = [],
@@ -66,6 +69,7 @@ export function CartPanel({
 	onUpdateUom,
 	onUpdateSerialAllocations,
 	isOnline,
+	posProfile,
 	warehouse,
 	selectedPriceList,
 }: CartPanelProps) {
@@ -84,6 +88,8 @@ export function CartPanel({
 		<aside className={cn("flex min-h-0 flex-col border-t border-outline-variant bg-surface p-4 xl:border-l xl:border-t-0", className)}>
 			<div className="shrink-0">
 				<CustomerSelector
+					allowCreate={allowCustomerCreation !== false}
+					posProfile={posProfile}
 					selectedCustomer={selectedCustomer}
 					onClear={onClearCustomer}
 					onSelect={onSelectCustomer}

@@ -6,18 +6,26 @@ import type { CustomerDTO } from "../types";
 import { useCustomerSearch } from "../hooks/useCustomerSearch";
 
 type CustomerSelectorProps = {
+	allowCreate?: boolean;
 	onClear?: () => void;
 	onSelect: (customer: CustomerDTO) => void;
+	posProfile?: string;
 	selectedCustomer?: CustomerDTO | null;
 };
 
-export function CustomerSelector({ onClear, onSelect, selectedCustomer }: CustomerSelectorProps) {
+export function CustomerSelector({
+	allowCreate = true,
+	onClear,
+	onSelect,
+	posProfile,
+	selectedCustomer,
+}: CustomerSelectorProps) {
 	const selectorRef = useRef<HTMLDivElement>(null);
 	const [isOpen, setIsOpen] = useState(false);
 	const [query, setQuery] = useState("");
 	const [showCreate, setShowCreate] = useState(false);
 	const [customerName, setCustomerName] = useState("");
-	const { create, customers, error, isCreating, isLoading } = useCustomerSearch(query);
+	const { create, customers, error, isCreating, isLoading } = useCustomerSearch(query, posProfile);
 
 	useEffect(() => {
 		if (!isOpen) return;
@@ -131,7 +139,7 @@ export function CustomerSelector({ onClear, onSelect, selectedCustomer }: Custom
 						)}
 					</div>
 
-					<div className="mt-3 space-y-2">
+					{allowCreate ? <div className="mt-3 space-y-2">
 					<Button
 						variant="ghost"
 						size="sm"
@@ -154,7 +162,7 @@ export function CustomerSelector({ onClear, onSelect, selectedCustomer }: Custom
 							</Button>
 						</div>
 					) : null}
-				</div>
+				</div> : null}
 				</div>
 			) : null}
 		</div>

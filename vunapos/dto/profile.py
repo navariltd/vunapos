@@ -1,5 +1,6 @@
 import frappe
 from erpnext.accounts.utils import get_currency_precision
+from frappe.utils import cint
 
 from vunapos.dto.customer import customer_to_dict
 from vunapos.services.checkout_queue_service import get_queue_limits
@@ -7,6 +8,10 @@ from vunapos.services.price_list_service import get_permitted_price_lists
 
 
 def profile_to_dict(profile, invoice_mode):
+	def enabled(fieldname):
+		value = profile.get(fieldname)
+		return True if value is None else bool(cint(value))
+
 	def default_customer():
 		if not profile.customer:
 			return None
@@ -34,6 +39,9 @@ def profile_to_dict(profile, invoice_mode):
 	if not allow_credit_sales or default_sale_type != "Credit Sale":
 		default_sale_type = "Cash Sale"
 	queue = get_queue_limits(profile)
+	default_order_type = profile.get("vunapos_default_order_type") or "Sales Invoice"
+	if default_order_type not in ("Sales Invoice", "Sales Order"):
+		default_order_type = "Sales Invoice"
 
 	return {
 		"name": profile.name,
@@ -59,6 +67,15 @@ def profile_to_dict(profile, invoice_mode):
 		"automatically_add_filtered_item_to_cart": bool(profile.get("auto_add_item_to_cart")),
 		"ignore_pricing_rule": bool(profile.get("ignore_pricing_rule")),
 		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
+		"default_order_type": default_order_type,
+		"allow_order_type_change": enabled("vunapos_allow_order_type_change"),
+		"allow_customer_management": enabled("vunapos_allow_customer_management"),
+		"allow_customer_creation": enabled("vunapos_allow_customer_creation"),
+		"allow_customer_payments": enabled("vunapos_allow_customer_payments"),
+		"allow_payment_reconciliation": enabled("vunapos_allow_customer_payments")
+		and enabled("vunapos_allow_payment_reconciliation"),
+		"allow_payment_history": enabled("vunapos_allow_customer_payments")
+		and enabled("vunapos_allow_payment_history"),
 		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

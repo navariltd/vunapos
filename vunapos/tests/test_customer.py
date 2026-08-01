@@ -1,6 +1,8 @@
+import frappe
 from frappe.tests import IntegrationTestCase
 
 from vunapos.api.customer import (
+	create_customer,
 	get_customer_details,
 	get_customer_directory,
 	get_customer_loyalty,
@@ -31,6 +33,18 @@ class TestVunaPOSCustomer(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertIn(customer, [row["customer"] for row in response["data"]])
 
+	def test_create_customer_respects_profile_operation_setting(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_allow_customer_creation", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = create_customer(customer_name="_Test VunaPOS Blocked Customer", pos_profile=profile)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "PermissionError")
+
 	def test_directory_returns_paginated_customer_summaries_and_filter_options(self):
 		customer = ensure_test_customer()
 		profile = ensure_test_pos_profile()
@@ -46,6 +60,18 @@ class TestVunaPOSCustomer(IntegrationTestCase):
 		self.assertIn("customer_groups", data)
 		self.assertIn("territories", data)
 		self.assertTrue(data["as_of"])
+
+	def test_directory_respects_profile_operation_setting(self):
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_allow_customer_management", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = get_customer_directory(pos_profile=profile, query="_Test Customer", limit=10)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "PermissionError")
 
 	def test_details_returns_native_balance_and_customer_history_sections(self):
 		customer = ensure_test_customer()

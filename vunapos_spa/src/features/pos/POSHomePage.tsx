@@ -6,6 +6,7 @@ import { getInvoiceTotal, getPaymentModes, normalizeDefaultCustomer } from "./ut
 import { getCustomerFromPath, getInvoiceFromPath, navigateToPosPage, useNavigationStore } from "../../lib/stores/navigationStore";
 import { VunaApiError } from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
+import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { CustomersPage } from "../customers/CustomersPage";
 import { CustomerDetailsPage } from "../customers/CustomerDetailsPage";
@@ -29,9 +30,11 @@ import { useCustomerLoyalty } from "./hooks/useCustomerLoyalty";
 import { getActiveCustomer, useCartStore } from "./stores/cartStore";
 import { useUiFeedbackStore } from "./stores/uiFeedbackStore";
 import { hydrate } from "../../lib/cacheEngine";
+import type { OrderType } from "../../components/layout/Header";
 
 type POSHomePageProps = {
 	bootstrap?: ReturnType<typeof useBootstrapData>;
+	orderType?: OrderType;
 };
 
 function printInvoiceHtml(printPayload: PrintPayload) {
@@ -77,7 +80,19 @@ function getCheckoutErrorMessage(error: unknown) {
 	return error instanceof Error ? error.message : "Checkout failed";
 }
 
-export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) {
+function FeatureDisabled({ title, message }: { title: string; message: string }) {
+	return (
+		<section className="flex min-h-0 flex-1 items-center justify-center border-t border-outline-variant bg-surface p-6">
+			<div className="max-w-md rounded-lg border border-outline-variant bg-surface-container-low p-6 text-center">
+				<h2 className="text-lg font-semibold text-on-surface">{title}</h2>
+				<p className="mt-2 text-sm text-on-surface-variant">{message}</p>
+				<Button className="mt-4" onClick={() => navigateToPosPage("Home")}>Back to POS</Button>
+			</div>
+		</section>
+	);
+}
+
+export function POSHomePage({ bootstrap: providedBootstrap, orderType = "Sales Invoice" }: POSHomePageProps) {
 	const [itemSearchQuery, setItemSearchQuery] = useState("");
 	const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
 	const [isCartOpen, setIsCartOpen] = useState(false);
@@ -99,6 +114,9 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 	const bootstrap = providedBootstrap || ownBootstrap;
 	const defaultCustomer = useMemo(() => normalizeDefaultCustomer(bootstrap.data), [bootstrap.data]);
 	const paymentModes = useMemo(() => getPaymentModes(bootstrap.data), [bootstrap.data]);
+	const allowCustomerManagement = bootstrap.data?.allow_customer_management !== false;
+	const allowCustomerCreation = bootstrap.data?.allow_customer_creation !== false;
+	const allowCustomerPayments = bootstrap.data?.allow_customer_payments !== false;
 
 	const items = useItemSearch(itemSearchQuery);
 	const cartInvoice = useCartStore((s) => s.invoice);
@@ -326,6 +344,13 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 
 	const handleOpenCheckout = async () => {
 		setPageError(null);
+		if (orderType === "Sales Order") {
+			showToast({
+				type: "error",
+				message: "Sales Order checkout is not enabled yet. Switch Order Type to Sales Invoice to complete this sale.",
+			});
+			return;
+		}
 		if (!isReachable || navigator.onLine === false) {
 			showToast({ type: "error", message: "VunaPOS is online-only. Reconnect before checkout." });
 			return;
@@ -501,9 +526,19 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 			{activePage === "Invoices" ? (
 				getInvoiceFromPath(currentPath) ? <InvoiceDetailsPage invoice={getInvoiceFromPath(currentPath) || ""} posProfile={bootstrap.data?.pos_profile} isOnline={isReachable && navigator.onLine !== false} onStartSale={(customer) => { void handleSelectCustomer(customer); navigateToPosPage("Home"); }}/> : <InvoicesPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} heldInvoices={heldInvoicesView} heldLoading={cartIsHeldLoading} onBack={() => setActivePage("Home")} onRefreshHeld={handleRefreshHeld} onRestoreHeld={handleRestoreHeld}/>
 			) : activePage === "Payments" ? (
-				<PaymentsPage posProfile={bootstrap.data?.pos_profile} currency={bootstrap.data?.currency} paymentModes={paymentModes} isOnline={isReachable && navigator.onLine !== false} />
+				allowCustomerPayments ? (
+					<PaymentsPage
+						allowHistory={bootstrap.data?.allow_payment_history !== false}
+						allowReceive={allowCustomerPayments}
+						allowReconciliation={bootstrap.data?.allow_payment_reconciliation !== false}
+						posProfile={bootstrap.data?.pos_profile}
+						currency={bootstrap.data?.currency}
+						paymentModes={paymentModes}
+						isOnline={isReachable && navigator.onLine !== false}
+					/>
+				) : <FeatureDisabled title="Payments disabled" message="Customer payments are disabled for this POS Profile." />
 			) : activePage === "Customers" ? (
-				getCustomerFromPath(currentPath) ? <CustomerDetailsPage
+				allowCustomerManagement ? getCustomerFromPath(currentPath) ? <CustomerDetailsPage
 					customer={getCustomerFromPath(currentPath) || ""}
 					posProfile={bootstrap.data?.pos_profile}
 					onStartSale={(customer) => {
@@ -511,6 +546,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						navigateToPosPage("Home");
 					}}
 				/> : <CustomersPage posProfile={bootstrap.data?.pos_profile} defaultCurrency={bootstrap.data?.currency} />
+					: <FeatureDisabled title="Customer management disabled" message="Customer management is disabled for this POS Profile." />
 			) : activePage === "Close Shift" ? (
 				bootstrap.data?.pos_profile ? (
 					<CloseShiftPage
@@ -547,6 +583,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						</div>
 					</section>
 					<CartPanel
+						allowCustomerCreation={allowCustomerCreation}
 						allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
 						allowedPriceLists={bootstrap.data?.allowed_price_lists}
 						className="hidden xl:flex"
@@ -568,6 +605,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 						onRemoveItem={cartActions.removeCartItem}
 						onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
 						onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+						posProfile={bootstrap.data?.pos_profile}
 						selectedPriceList={selectedPriceList}
 						onUpdateQty={cartActions.updateCartItemQty}
 						onUpdatePricing={cartActions.updateCartItemPricing}
@@ -617,6 +655,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							</button>
 						</div>
 						<CartPanel
+							allowCustomerCreation={allowCustomerCreation}
 							allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
 							allowedPriceLists={bootstrap.data?.allowed_price_lists}
 							className="flex-1 border-0"
@@ -638,6 +677,7 @@ export function POSHomePage({ bootstrap: providedBootstrap }: POSHomePageProps) 
 							onRemoveItem={cartActions.removeCartItem}
 							onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
 							onSelectPriceList={(priceList) => void handleSelectPriceList(priceList)}
+							posProfile={bootstrap.data?.pos_profile}
 							selectedPriceList={selectedPriceList}
 							onUpdateQty={cartActions.updateCartItemQty}
 							onUpdatePricing={cartActions.updateCartItemPricing}
