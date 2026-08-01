@@ -56,6 +56,79 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.clear_cache(doctype="POS Profile")
 		ensure_open_pos_opening_entry(profile)
 
+	def _ensure_payment_gateway(self, gateway="_Test VunaPOS Gateway"):
+		company = frappe.defaults.get_defaults().company or frappe.db.get_single_value(
+			"Global Defaults", "default_company"
+		)
+		currency = frappe.db.get_value("Company", company, "default_currency") or "KES"
+		account_name = f"{gateway} - {currency} - {frappe.db.get_value('Company', company, 'abbr')}"
+		if not frappe.db.exists("Payment Gateway Account", account_name):
+			account = frappe.db.get_value(
+				"Account",
+				{"company": company, "account_type": ["in", ("Cash", "Bank")], "is_group": 0},
+				"name",
+			)
+			if not account:
+				self.skipTest("No cash or bank account available for Payment Gateway Account fixture")
+			frappe.get_doc(
+				{
+					"doctype": "Payment Gateway Account",
+					"name": gateway,
+					"payment_gateway": gateway,
+					"company": company,
+					"payment_account": account,
+					"currency": currency,
+				}
+			).insert(ignore_permissions=True, ignore_links=True)
+		return account_name
+
+	def _set_profile_payment_gateway(self, profile, mode_of_payment, gateway):
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		for row in profile_doc.get("payments", []):
+			if row.mode_of_payment == mode_of_payment:
+				row.payment_gateway = gateway
+		profile_doc.save(ignore_permissions=True)
+		frappe.clear_cache(doctype="POS Profile")
+
+	def _make_ke_payment_request(self, gateway, amount, currency="KES"):
+		if not frappe.db.table_exists("KE Payment Request"):
+			self.skipTest("navari_ke_payments is not installed")
+		doc = frappe.get_doc(
+			{
+				"doctype": "KE Payment Request",
+				"provider": "Mpesa",
+				"status": "Completed",
+				"payment_gateway": gateway,
+				"amount": amount,
+				"currency": currency,
+				"phone_number": "254700000000",
+				"transaction_id": frappe.generate_hash(length=10),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def _make_gateway_payment_link(self, profile, mode_of_payment, gateway, amount, source):
+		opening_entry = ensure_open_pos_opening_entry(profile)
+		doc = frappe.get_doc(
+			{
+				"doctype": "VunaPOS Gateway Payment Link",
+				"source_doctype": source.doctype,
+				"source_name": source.name,
+				"payment_gateway": gateway,
+				"mode_of_payment": mode_of_payment,
+				"status": "Paid",
+				"pos_profile": profile,
+				"opening_entry": opening_entry,
+				"cashier": frappe.session.user,
+				"customer": frappe.db.get_value("POS Profile", profile, "customer"),
+				"amount": amount,
+				"currency": frappe.db.get_value("POS Profile", profile, "currency"),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
+
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
 		profile = ensure_test_pos_profile()
 		warehouse = frappe.db.get_value("POS Profile", profile, "warehouse")
@@ -698,6 +771,56 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 				self.assertFalse(response["ok"], response)
 				self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_AMOUNT")
 
+	def test_checkout_rejects_manual_amount_for_gateway_controlled_mode(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "amount": amount}],
+			idempotency_key="manual-gateway-rejected",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "GATEWAY_PAYMENT_REQUIRED")
+
+	def test_checkout_consumes_verified_gateway_payment_link(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		source = self._make_ke_payment_request(
+			gateway, amount, frappe.db.get_value("POS Profile", profile, "currency")
+		)
+		link = self._make_gateway_payment_link(profile, mode, gateway, amount, source)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "gateway_payment_link": link}],
+			idempotency_key="verified-gateway-consumed",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(frappe.db.get_value("VunaPOS Gateway Payment Link", link, "consumed"), 1)
+		self.assertEqual(
+			frappe.db.get_value("VunaPOS Gateway Payment Link", link, "consumed_by_name"),
+			response["data"]["name"],
+		)
+
 	def test_payment_validation_accepts_split_at_currency_precision(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
 		doc.precision = lambda _fieldname: 2
@@ -722,8 +845,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(
 			rows,
 			[
-				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
-				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
+				{"mode_of_payment": "Cash", "amount": 25.25, "default": None, "gateway_payment_link": None},
+				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None, "gateway_payment_link": None},
 			],
 		)
 

@@ -102,6 +102,7 @@ export type CachedPaymentMode = {
 	mode_of_payment: string;
 	default?: boolean;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	payment_gateway?: string | null;
 };
 
 export type CachedProfile = {

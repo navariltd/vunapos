@@ -29,6 +29,7 @@ def profile_to_dict(profile, invoice_mode):
 			"default": row.get("default"),
 			"type": frappe.get_cached_value("Mode of Payment", row.mode_of_payment, "type"),
 			"account": account,
+			"payment_gateway": row.get("payment_gateway"),
 			"requires_reference": bool(
 				account and frappe.get_cached_value("Account", account, "account_type") == "Bank"
 			),

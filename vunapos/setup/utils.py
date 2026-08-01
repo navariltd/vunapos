@@ -17,6 +17,19 @@ def ensure_vunapos_custom_fields():
 					"default": "0",
 				},
 			],
+			"POS Payment Method": [
+				{
+					"fieldname": "payment_gateway",
+					"label": "Payment Gateway",
+					"fieldtype": "Link",
+					"options": "Payment Gateway Account",
+					"insert_after": "mode_of_payment",
+					"description": (
+						"When set, VunaPOS treats this mode as gateway-controlled and blocks "
+						"manual cashier-entered amounts during checkout."
+					),
+				},
+			],
 			"POS Profile": [
 				{
 					"fieldname": "vunapos_tab",

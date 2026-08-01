@@ -3,6 +3,7 @@ export type ModeOfPaymentDTO = {
 	default?: number | boolean ;
 	account?: string;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	payment_gateway?: string | null;
 	requires_reference?: boolean;
 };
 
@@ -371,6 +372,7 @@ export type HeldInvoiceDTO = {
 export type PaymentInput = {
 	mode_of_payment: string;
 	amount: number;
+	gateway_payment_link?: string;
 };
 
 export type PrintPayload = {

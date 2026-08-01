@@ -204,7 +204,7 @@ def get_user_pos_profiles():
 		profile["modes_of_payment"] = frappe.get_all(
 			"POS Payment Method",
 			filters={"parent": profile.name},
-			fields=["mode_of_payment", "default"],
+			fields=["mode_of_payment", "default", "payment_gateway"],
 			order_by="idx",
 		)
 

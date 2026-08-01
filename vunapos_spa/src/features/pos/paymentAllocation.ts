@@ -49,10 +49,12 @@ export function createInitialPaymentAmounts(
 	precision: number,
 ): PaymentAmounts {
 	const defaultMode = modes.find((mode) => mode.default) || modes[0];
+	const defaultManualMode = modes.find((mode) => !mode.payment_gateway && mode.default)
+		|| modes.find((mode) => !mode.payment_gateway);
 	return Object.fromEntries(
 		modes.map((mode) => [
 			mode.mode_of_payment,
-			mode.mode_of_payment === defaultMode?.mode_of_payment
+			mode.mode_of_payment === (defaultManualMode || defaultMode)?.mode_of_payment && !mode.payment_gateway
 				? minorUnitsToInput(totalMinor, precision)
 				: "",
 		]),
@@ -68,7 +70,7 @@ export function allocateAllToMode(
 	return Object.fromEntries(
 		modes.map((mode) => [
 			mode.mode_of_payment,
-			mode.mode_of_payment === modeOfPayment ? minorUnitsToInput(totalMinor, precision) : "",
+			mode.mode_of_payment === modeOfPayment && !mode.payment_gateway ? minorUnitsToInput(totalMinor, precision) : "",
 		]),
 	);
 }

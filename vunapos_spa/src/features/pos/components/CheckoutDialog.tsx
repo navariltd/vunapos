@@ -343,8 +343,10 @@ function CheckoutDialogContent({
 							<>
 								<div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
 								{availableModes.map((mode) => {
+									const isGatewayControlled = Boolean(mode.payment_gateway);
 									const amount = amounts[mode.mode_of_payment] ?? "";
 									const isAll =
+										!isGatewayControlled &&
 										parsePaymentAmount(amount, precision) === payableMinor &&
 										availableModes.every(
 											(other) =>
@@ -359,13 +361,15 @@ function CheckoutDialogContent({
 											<span className="col-span-2 text-sm font-medium text-on-surface sm:col-span-1">
 												{mode.mode_of_payment}
 												{mode.default ? <span className="ml-2 text-xs text-on-surface-variant">Default</span> : null}
+												{isGatewayControlled ? <span className="ml-2 text-xs text-primary">Gateway</span> : null}
 											</span>
 											<input
 												aria-label={`${mode.mode_of_payment} amount`}
-												className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+												className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm disabled:bg-surface-container disabled:text-on-surface-variant"
 												inputMode="decimal"
-												placeholder={minorUnitsToInput(0, precision)}
+												placeholder={isGatewayControlled ? "Use gateway" : minorUnitsToInput(0, precision)}
 												value={amount}
+												disabled={isGatewayControlled}
 												onChange={(event) =>
 													setAmounts((current) => ({
 														...current,
@@ -377,11 +381,14 @@ function CheckoutDialogContent({
 												type="button"
 												aria-label={`Allocate all to ${mode.mode_of_payment}`}
 												aria-pressed={isAll}
-												title={`Allocate the full amount to ${mode.mode_of_payment}`}
+												disabled={isGatewayControlled}
+												title={isGatewayControlled
+													? `${mode.mode_of_payment} requires gateway payment`
+													: `Allocate the full amount to ${mode.mode_of_payment}`}
 												className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
 													isAll
 														? "bg-secondary text-on-secondary"
-														: "bg-surface-container text-on-surface hover:bg-surface-container-high"
+														: "bg-surface-container text-on-surface hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
 												}`}
 												onClick={() =>
 													setAmounts(allocateAllToMode(availableModes, mode.mode_of_payment, payableMinor, precision))

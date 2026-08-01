@@ -29,6 +29,11 @@ from vunapos.services.checkout_queue_service import (
 	find_invoice_by_idempotency_key,
 	get_queue_limits,
 )
+from vunapos.services.gateway_payment_service import (
+	consume_gateway_payment_links,
+	payment_mode_gateway,
+	validate_gateway_payment_link,
+)
 from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
 	get_invoice_mode,
@@ -285,6 +290,15 @@ def _payment_mode_type(mode_of_payment):
 	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
 
 
+def _has_gateway_payment_rows(payments, profile):
+	rows = _payment_rows(payments)
+	if not rows or not profile:
+		return False
+	return any(
+		payment_mode_gateway(profile, row.get("mode_of_payment")) for row in rows if isinstance(row, dict)
+	)
+
+
 def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
 	is_credit_sale = bool(cint(is_credit_sale))
 	if not is_credit_sale:
@@ -351,7 +365,7 @@ def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 	return doc
 
 
-def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
+def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False, opening_entry=None):
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	rows = _payment_rows(payments)
 	precision = _currency_precision(doc)
@@ -388,19 +402,42 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 				"DUPLICATE_PAYMENT_MODE",
 				_("Payment mode {0} can only be used once").format(mode_of_payment),
 			)
+		payment_gateway = payment_mode_gateway(profile, mode_of_payment) if profile else None
 
-		try:
-			raw_amount = row.get("amount")
-			if isinstance(raw_amount, bool):
-				raise InvalidOperation
-			amount = Decimal(str(raw_amount))
-		except (InvalidOperation, TypeError, ValueError):
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
-		if not amount.is_finite() or amount <= 0:
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
-		storage_amount = float(amount)
-		if not math.isfinite(storage_amount):
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+		raw_amount = row.get("amount")
+		storage_amount = None
+		amount = None
+		if not payment_gateway or raw_amount not in (None, ""):
+			try:
+				if isinstance(raw_amount, bool):
+					raise InvalidOperation
+				amount = Decimal(str(raw_amount))
+			except (InvalidOperation, TypeError, ValueError):
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
+			if not amount.is_finite() or amount <= 0:
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
+			storage_amount = float(amount)
+			if not math.isfinite(storage_amount):
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+		gateway_link = None
+		if payment_gateway:
+			if not opening_entry:
+				_throw(
+					"GATEWAY_PAYMENT_SESSION_MISMATCH", _("Gateway payments require an active POS session")
+				)
+			gateway_link = validate_gateway_payment_link(
+				row.get("gateway_payment_link"),
+				profile=profile,
+				opening_entry=opening_entry,
+				mode_of_payment=mode_of_payment,
+				payment_gateway=payment_gateway,
+				customer=doc.get("customer"),
+				amount=storage_amount if amount is not None else None,
+				currency=doc.get("currency"),
+				precision=precision,
+			)
+			storage_amount = flt(gateway_link.amount, precision)
+			amount = Decimal(str(storage_amount))
 
 		seen_modes.add(mode_of_payment)
 		total_paid += amount
@@ -411,6 +448,7 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 				"mode_of_payment": mode_of_payment,
 				"amount": storage_amount,
 				"default": row.get("default"),
+				"gateway_payment_link": gateway_link.name if gateway_link else None,
 			}
 		)
 
@@ -1297,6 +1335,15 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 	return doc
 
 
+def _gateway_payment_links(payment_rows):
+	links = []
+	for payment in payment_rows or []:
+		link_name = payment.get("gateway_payment_link")
+		if link_name:
+			links.append(frappe.get_doc("VunaPOS Gateway Payment Link", link_name))
+	return links
+
+
 def submit_invoice(
 	invoice_doctype,
 	invoice_name,
@@ -1318,7 +1365,10 @@ def submit_invoice(
 	_recalculate(doc)
 	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	payment_rows = validate_payment_rows(
+		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+	)
+	gateway_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
@@ -1329,6 +1379,7 @@ def submit_invoice(
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	doc.submit()
+	consume_gateway_payment_links(gateway_links, doc)
 	return invoice_to_dict(doc)
 
 
@@ -1366,6 +1417,7 @@ def checkout_invoice(
 		tax_id=tax_id,
 	)
 	doc.submit()
+	consume_gateway_payment_links(getattr(doc, "_vunapos_gateway_payment_links", []), doc)
 	return invoice_to_dict(doc)
 
 
@@ -1390,7 +1442,10 @@ def _prepare_invoice_for_checkout(
 	_recalculate(doc)
 	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	payment_rows = validate_payment_rows(
+		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+	)
+	doc._vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
@@ -1462,7 +1517,8 @@ def create_and_submit_invoice(
 		if existing.docstatus != 0:
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
 		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
-		if get_queue_limits(existing_profile)["enabled"]:
+		has_gateway_payment = _has_gateway_payment_rows(payments, existing_profile)
+		if get_queue_limits(existing_profile)["enabled"] and not has_gateway_payment:
 			if existing.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
 				return invoice_to_dict(existing)
 			if existing.get("vunapos_queue_status"):
@@ -1501,7 +1557,12 @@ def create_and_submit_invoice(
 	frappe.db.savepoint(savepoint)
 	try:
 		profile = resolve_pos_profile(pos_profile)
-		if get_queue_limits(profile)["enabled"] and not str(idempotency_key or "").strip():
+		has_gateway_payment = _has_gateway_payment_rows(payments, profile)
+		if (
+			get_queue_limits(profile)["enabled"]
+			and not has_gateway_payment
+			and not str(idempotency_key or "").strip()
+		):
 			_throw(
 				"CHECKOUT_IDEMPOTENCY_REQUIRED",
 				_("An idempotency key is required when background invoice submission is enabled"),
@@ -1517,7 +1578,7 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		if get_queue_limits(profile)["enabled"]:
+		if get_queue_limits(profile)["enabled"] and not has_gateway_payment:
 			_prepare_invoice_for_checkout(
 				doc,
 				payments=payments,

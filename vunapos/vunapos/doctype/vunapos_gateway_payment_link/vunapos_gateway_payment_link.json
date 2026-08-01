@@ -1,0 +1,229 @@
+{
+ "actions": [],
+ "autoname": "VPGL-.YY.-.#####",
+ "creation": "2026-08-02 01:08:07.511483",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "source_section",
+  "source_doctype",
+  "source_name",
+  "payment_gateway",
+  "column_break_source",
+  "mode_of_payment",
+  "status",
+  "transaction_reference",
+  "session_section",
+  "pos_profile",
+  "opening_entry",
+  "cashier",
+  "column_break_session",
+  "customer",
+  "amount",
+  "currency",
+  "consumption_section",
+  "consumed",
+  "consumed_by_doctype",
+  "consumed_by_name",
+  "column_break_consumption",
+  "consumed_on",
+  "consumed_by",
+  "idempotency_key",
+  "remarks"
+ ],
+ "fields": [
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "Gateway Source"
+  },
+  {
+   "fieldname": "source_doctype",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Source DocType",
+   "options": "DocType",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_name",
+   "fieldtype": "Dynamic Link",
+   "in_list_view": 1,
+   "label": "Source Name",
+   "options": "source_doctype",
+   "reqd": 1
+  },
+  {
+   "fieldname": "payment_gateway",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Payment Gateway",
+   "options": "Payment Gateway Account",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_source",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "mode_of_payment",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Mode of Payment",
+   "options": "Mode of Payment",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Draft\nPending\nAuthorized\nPaid\nFailed\nCancelled\nExpired",
+   "reqd": 1
+  },
+  {
+   "fieldname": "transaction_reference",
+   "fieldtype": "Data",
+   "label": "Transaction Reference",
+   "read_only": 1
+  },
+  {
+   "fieldname": "session_section",
+   "fieldtype": "Section Break",
+   "label": "VunaPOS Session"
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "POS Profile",
+   "options": "POS Profile",
+   "reqd": 1
+  },
+  {
+   "fieldname": "opening_entry",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Opening Entry",
+   "options": "POS Opening Entry",
+   "reqd": 1
+  },
+  {
+   "fieldname": "cashier",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Cashier",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_session",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Amount",
+   "options": "currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "currency",
+   "fieldtype": "Link",
+   "label": "Currency",
+   "options": "Currency",
+   "reqd": 1
+  },
+  {
+   "fieldname": "consumption_section",
+   "fieldtype": "Section Break",
+   "label": "Consumption"
+  },
+  {
+   "default": "0",
+   "fieldname": "consumed",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Consumed"
+  },
+  {
+   "fieldname": "consumed_by_doctype",
+   "fieldtype": "Link",
+   "label": "Consumed By DocType",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consumed_by_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Consumed By Name",
+   "options": "consumed_by_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_consumption",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "consumed_on",
+   "fieldtype": "Datetime",
+   "label": "Consumed On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "consumed_by",
+   "fieldtype": "Link",
+   "label": "Consumed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "no_copy": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "remarks",
+   "fieldtype": "Small Text",
+   "label": "Remarks"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-08-02 03:40:35.789573",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Gateway Payment Link",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "Sales User"
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

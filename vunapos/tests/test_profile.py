@@ -79,8 +79,19 @@ class TestVunaPOSProfile(IntegrationTestCase):
 				fields=["fieldname", "label", "fieldtype", "insert_after"],
 			)
 		}
+		payment_fields = {
+			row.fieldname: row
+			for row in frappe.get_all(
+				"Custom Field",
+				filters={"dt": "POS Payment Method", "fieldname": "payment_gateway"},
+				fields=["fieldname", "label", "fieldtype", "options", "insert_after"],
+			)
+		}
 
 		self.assertEqual(fields["vunapos_tab"].fieldtype, "Tab Break")
+		self.assertEqual(payment_fields["payment_gateway"].fieldtype, "Link")
+		self.assertEqual(payment_fields["payment_gateway"].options, "Payment Gateway Account")
+		self.assertEqual(payment_fields["payment_gateway"].insert_after, "mode_of_payment")
 		self.assertEqual(fields["vunapos_tab"].label, "VunaPOS")
 		self.assertEqual(fields["vunapos_sales_section"].insert_after, "vunapos_tab")
 		self.assertEqual(fields["vunapos_item_prices_include_tax"].insert_after, "vunapos_sales_section")

@@ -40,6 +40,21 @@ describe("payment allocation", () => {
 		});
 	});
 
+	it("does not manually allocate gateway-controlled modes", () => {
+		const gatewayModes: ModeOfPaymentDTO[] = [
+			{ mode_of_payment: "M-Pesa", default: 1, type: "Phone", payment_gateway: "Mpesa-Test" },
+			{ mode_of_payment: "Cash", type: "Cash" },
+		];
+		expect(createInitialPaymentAmounts(gatewayModes, 150000, 2)).toEqual({
+			"M-Pesa": "",
+			Cash: "1500.00",
+		});
+		expect(allocateAllToMode(gatewayModes, "M-Pesa", 150000, 2)).toEqual({
+			"M-Pesa": "",
+			Cash: "",
+		});
+	});
+
 	it("calculates exact split, underpayment, and overpayment in minor units", () => {
 		expect(
 			calculatePaymentAllocation(modes, { Cash: "500", "M-Pesa": "1000.00", Card: "" }, 150000, 2),
