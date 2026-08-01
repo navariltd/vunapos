@@ -7,7 +7,7 @@ import { useThemeSync } from "../hooks/useThemeSync";
 import type { BootstrapData, CustomerDTO } from "../types";
 
 type UserProfilePageProps = {
-	bootstrap?: BootstrapData;
+	bootstrap?: BootstrapData | null;
 };
 
 export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
