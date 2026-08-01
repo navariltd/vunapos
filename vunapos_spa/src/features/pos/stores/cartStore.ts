@@ -525,11 +525,11 @@ async function refreshAndValidateStock(
 			const fresh = freshByCode.get(item.item_code);
 			return fresh
 				? {
-						...item,
-						actual_qty: fresh.actual_qty,
-						allow_negative_stock: fresh.allow_negative_stock,
-						is_stock_item: fresh.is_stock_item,
-					}
+					...item,
+					actual_qty: fresh.actual_qty,
+					allow_negative_stock: fresh.allow_negative_stock,
+					is_stock_item: fresh.is_stock_item,
+				}
 				: item;
 		}),
 	};
@@ -734,21 +734,21 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const invoice = get().invoice;
 			if (!invoice || isLocalCart(invoice) || invoice.docstatus !== 0) {
 				const currentItems = invoice && isLocalCart(invoice) && invoice.docstatus === 0 ? invoice.items : [];
-					const itemUom = item.uom || item.stock_uom;
-					const itemConversionFactor = Number(item.conversion_factor || 1);
-					const existingItem = currentItems.find((row) =>
-						row.item_code === item.item_code
-						&& (row.uom || row.stock_uom) === itemUom
-						&& Number(row.conversion_factor || 1) === itemConversionFactor,
-					);
+				const itemUom = item.uom || item.stock_uom;
+				const itemConversionFactor = Number(item.conversion_factor || 1);
+				const existingItem = currentItems.find((row) =>
+					row.item_code === item.item_code
+					&& (row.uom || row.stock_uom) === itemUom
+					&& Number(row.conversion_factor || 1) === itemConversionFactor,
+				);
 				const nextItems = existingItem
 					? currentItems.map((row) => {
 						if (row.item_code === item.item_code) {
 							validateAvailableQty(row, row.qty + 1);
 							return mergeScannedTracking(row, item);
-							}
-							return row;
-						})
+						}
+						return row;
+					})
 					: [...currentItems, itemToCartRow(item)];
 				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
@@ -775,7 +775,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				barcode: value,
 				pos_profile: state.posProfile,
 				customer: customer?.customer,
-					price_list: state.selectedPriceList,
+				price_list: state.selectedPriceList,
 			}));
 			await get().addCartItem(item, api);
 			return item;
@@ -792,12 +792,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 					qty <= 0
 						? invoice.items.filter((row) => row.row_name !== rowName)
 						: invoice.items.map((row) => {
-								if (row.row_name === rowName) {
-									validateAvailableQty(row, qty);
-									return updateLocalQty(row, qty);
-								}
-								return row;
-							});
+							if (row.row_name === rowName) {
+								validateAvailableQty(row, qty);
+								return updateLocalQty(row, qty);
+							}
+							return row;
+						});
 				if (!nextItems.length) {
 					set({ invoice: null });
 					return;
@@ -889,8 +889,10 @@ export const useCartStore = create<CartStore>((set, get) => {
 				const stockRate = Number(item.price_list_rate ?? item.rate) / oldFactor;
 				const configuredRate = item.uoms?.find((row) => row.uom === uom)?.rate;
 				const rate = configuredRate == null ? stockRate * conversionFactor : Number(configuredRate);
-				return { ...item, uom, conversion_factor: conversionFactor, rate, price_list_rate: rate,
-					pricing_override: undefined, batch_allocations: [], serial_allocations: [] };
+				return {
+					...item, uom, conversion_factor: conversionFactor, rate, price_list_rate: rate,
+					pricing_override: undefined, batch_allocations: [], serial_allocations: []
+				};
 			});
 			const updated = isLocalCart(invoice)
 				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
@@ -923,10 +925,10 @@ export const useCartStore = create<CartStore>((set, get) => {
 				return;
 			}
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
-					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
-					price_list: get().selectedPriceList || invoice.selling_price_list,
-					items: cartItemsPayload(nextItems),
-				}));
+				invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
+				price_list: get().selectedPriceList || invoice.selling_price_list,
+				items: cartItemsPayload(nextItems),
+			}));
 			set({ invoice: updated });
 		},
 

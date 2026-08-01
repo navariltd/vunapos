@@ -45,7 +45,7 @@ function makeApi(overrides: Partial<CartApi> = {}): CartApi {
 	const reject = vi.fn().mockRejectedValue(new Error("unexpected API call in this test"));
 	return {
 		addItem: reject,
-	getItemDetails: reject,
+		getItemDetails: reject,
 		searchItems: reject,
 		resolveBarcode: reject,
 		getItemBatches: reject,

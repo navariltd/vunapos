@@ -32,6 +32,6 @@ export function useItemSearch(query: string) {
 		error: null as string | null,
 		isLoading: query !== debouncedQuery || items === undefined,
 		items: (items ?? []) as ItemDTO[],
-		reload: () => {},
+		reload: () => { },
 	};
 }

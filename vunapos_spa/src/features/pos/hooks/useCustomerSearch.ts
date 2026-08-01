@@ -67,6 +67,6 @@ export function useCustomerSearch(query: string, posProfile?: string) {
 		error: createError,
 		isCreating,
 		isLoading: query !== debouncedQuery || cachedCustomers === undefined,
-		search: () => {},
+		search: () => { },
 	};
 }
