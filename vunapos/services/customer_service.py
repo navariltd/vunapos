@@ -79,6 +79,17 @@ def get_customer_contact_phone(pos_profile=None, customer=None):
 	)
 	contact = _permitted_linked_doc("Contact", contact_name, ["mobile_no", "phone"])
 	contact_mobile = ((contact or {}).get("mobile_no") or (contact or {}).get("phone") or "").strip()
+	if contact and not contact_mobile:
+		phone_rows = frappe.get_all(
+			"Contact Phone",
+			filters={"parent": contact_name, "parenttype": "Contact"},
+			fields=["phone", "is_primary_mobile_no", "is_primary_phone", "idx"],
+			order_by="is_primary_mobile_no desc, is_primary_phone desc, idx asc",
+		)
+		contact_mobile = next(
+			((row.get("phone") or "").strip() for row in phone_rows if (row.get("phone") or "").strip()),
+			"",
+		)
 	return {
 		"customer": customer_doc.name,
 		"mobile_no": contact_mobile or None,

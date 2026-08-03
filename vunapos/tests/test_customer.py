@@ -45,7 +45,6 @@ class TestVunaPOSCustomer(IntegrationTestCase):
 				"phone_nos": [
 					{
 						"phone": "254700123456",
-						"is_primary_mobile_no": 1,
 					}
 				],
 				"links": [{"link_doctype": "Customer", "link_name": customer}],
