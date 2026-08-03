@@ -7,6 +7,42 @@ from frappe.utils import now_datetime
 def ensure_vunapos_custom_fields():
 	create_custom_fields(
 		{
+			"POS Settings": [
+				{
+					"fieldname": "vunapos_gateway_payment_timeout_minutes",
+					"label": "VunaPOS Gateway Payment Timeout (Minutes)",
+					"fieldtype": "Int",
+					"insert_after": "invoice_type",
+					"description": (
+						"Unconsumed pending VunaPOS gateway payment links older than this value are "
+						"expired automatically. Use 0 or blank for the default timeout."
+					),
+					"default": "15",
+				},
+			],
+			"Customer": [
+				{
+					"fieldname": "is_walkin",
+					"label": "Is Walk-in Customer",
+					"fieldtype": "Check",
+					"insert_after": "tax_id",
+					"description": "Allow VunaPOS cashiers to enter a transaction-specific Tax ID at checkout.",
+					"default": "0",
+				},
+			],
+			"POS Payment Method": [
+				{
+					"fieldname": "payment_gateway",
+					"label": "Payment Gateway",
+					"fieldtype": "Link",
+					"options": "Payment Gateway Account",
+					"insert_after": "mode_of_payment",
+					"description": (
+						"When set, VunaPOS treats this mode as gateway-controlled and blocks "
+						"manual cashier-entered amounts during checkout."
+					),
+				},
+			],
 			"POS Profile": [
 				{
 					"fieldname": "vunapos_tab",
@@ -99,6 +135,76 @@ def ensure_vunapos_custom_fields():
 					"description": "Time after which an abandoned processing attempt may be recovered.",
 					"default": "5",
 					"depends_on": "eval:doc.vunapos_enable_background_submission",
+				},
+				{
+					"fieldname": "vunapos_operations_section",
+					"label": "POS Operations",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_queue_processing_timeout_minutes",
+				},
+				{
+					"fieldname": "vunapos_default_order_type",
+					"label": "Default Order Type",
+					"fieldtype": "Select",
+					"options": "Sales Invoice\nSales Order",
+					"insert_after": "vunapos_operations_section",
+					"description": "Choose the default transaction type shown in the VunaPOS header.",
+					"default": "Sales Invoice",
+				},
+				{
+					"fieldname": "vunapos_allow_order_type_change",
+					"label": "Allow Order Type Change",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_default_order_type",
+					"description": "Allow cashiers to switch between configured order types during a sale.",
+					"default": "1",
+				},
+				{
+					"fieldname": "vunapos_allow_customer_management",
+					"label": "Allow Customer Management",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_allow_order_type_change",
+					"description": "Allow access to the VunaPOS Customers page and customer detail views.",
+					"default": "1",
+				},
+				{
+					"fieldname": "vunapos_allow_customer_creation",
+					"label": "Allow Customer Creation",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_allow_customer_management",
+					"description": "Allow cashiers to create simple customer records from VunaPOS.",
+					"default": "1",
+				},
+				{
+					"fieldname": "vunapos_operations_column_break",
+					"fieldtype": "Column Break",
+					"insert_after": "vunapos_allow_customer_creation",
+				},
+				{
+					"fieldname": "vunapos_allow_customer_payments",
+					"label": "Allow Customer Payments",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_operations_column_break",
+					"description": "Allow cashiers to receive outstanding invoice payments and customer advances.",
+					"default": "1",
+				},
+				{
+					"fieldname": "vunapos_allow_payment_reconciliation",
+					"label": "Allow Payment Reconciliation",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_allow_customer_payments",
+					"description": "Allow cashiers to allocate and reconcile existing customer credits.",
+					"default": "1",
+					"depends_on": "eval:doc.vunapos_allow_customer_payments",
+				},
+				{
+					"fieldname": "vunapos_allow_payment_history",
+					"label": "Allow Payment History",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_allow_payment_reconciliation",
+					"description": "Allow cashiers to view VunaPOS customer payment history.",
+					"default": "1",
+					"depends_on": "eval:doc.vunapos_allow_customer_payments",
 				},
 			],
 			"Sales Invoice Item": [
@@ -297,6 +403,66 @@ def ensure_vunapos_custom_fields():
 					"fieldtype": "Data",
 					"insert_after": "vunapos_queue_job_id",
 					"hidden": 1,
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+			],
+			"Sales Order": [
+				{
+					"fieldname": "vunapos_invoice",
+					"label": "VunaPOS Order",
+					"fieldtype": "Check",
+					"insert_after": "customer",
+					"hidden": 1,
+					"allow_on_submit": 1,
+				},
+				{
+					"fieldname": "vunapos_idempotency_key",
+					"label": "VunaPOS Idempotency Key",
+					"fieldtype": "Data",
+					"insert_after": "vunapos_invoice",
+					"hidden": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+					"unique": 1,
+					"search_index": 1,
+				},
+				{
+					"fieldname": "vunapos_pos_profile",
+					"label": "VunaPOS Profile",
+					"fieldtype": "Link",
+					"options": "POS Profile",
+					"insert_after": "vunapos_idempotency_key",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_opening_entry",
+					"label": "VunaPOS Opening Entry",
+					"fieldtype": "Link",
+					"options": "POS Opening Entry",
+					"insert_after": "vunapos_pos_profile",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_session_cashier",
+					"label": "VunaPOS Session Cashier",
+					"fieldtype": "Link",
+					"options": "User",
+					"insert_after": "vunapos_opening_entry",
+					"read_only": 1,
+					"allow_on_submit": 1,
+					"no_copy": 1,
+				},
+				{
+					"fieldname": "vunapos_session_verified_at",
+					"label": "VunaPOS Session Verified At",
+					"fieldtype": "Datetime",
+					"insert_after": "vunapos_session_cashier",
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,

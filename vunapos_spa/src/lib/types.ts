@@ -50,6 +50,8 @@ export type CachedCustomer = {
 	email_id?: string | null;
 	customer_group?: string | null;
 	default_price_list?: string | null;
+	is_walkin?: boolean | number;
+	tax_id?: string | null;
 	modified: string;
 };
 
@@ -100,6 +102,7 @@ export type CachedPaymentMode = {
 	mode_of_payment: string;
 	default?: boolean;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	payment_gateway?: string | null;
 };
 
 export type CachedProfile = {
@@ -120,7 +123,17 @@ export type CachedProfile = {
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	hide_unavailable_items?: boolean;
+	automatically_add_filtered_item_to_cart?: boolean;
+	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
+	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_order_type_change?: boolean;
+	allow_customer_management?: boolean;
+	allow_customer_creation?: boolean;
+	allow_customer_payments?: boolean;
+	allow_payment_reconciliation?: boolean;
+	allow_payment_history?: boolean;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

@@ -25,6 +25,21 @@ from vunapos.tests.helpers import (
 class TestVunaPOSCustomerPayment(IntegrationTestCase):
 	def setUp(self):
 		self.profile = ensure_test_pos_profile()
+		frappe.db.set_value(
+			"POS Profile",
+			self.profile,
+			{
+				"vunapos_allow_customer_payments": 1,
+				"vunapos_allow_payment_reconciliation": 1,
+				"vunapos_allow_payment_history": 1,
+			},
+			update_modified=False,
+		)
+		profile_doc = frappe.get_doc("POS Profile", self.profile)
+		for row in profile_doc.get("payments", []):
+			row.payment_gateway = None
+		profile_doc.save(ignore_permissions=True)
+		frappe.clear_cache(doctype="POS Profile")
 		self.customer = ensure_test_customer()
 		self.opening_entry = ensure_open_pos_opening_entry(self.profile)
 		self.mode = frappe.get_doc("POS Profile", self.profile).get("payments")[0].mode_of_payment
@@ -52,6 +67,49 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 		history = get_payment_history(pos_profile=self.profile, customer=self.customer)
 		self.assertIn(payment.name, [row["name"] for row in history["payments"]])
 		self.assertIn("<html", render_payment_receipt(payment.name)["html"].lower())
+
+	def test_gateway_controlled_customer_payment_requires_verified_link(self):
+		payment_row = next(
+			row
+			for row in frappe.get_doc("POS Profile", self.profile).get("payments", [])
+			if row.mode_of_payment == self.mode
+		)
+		frappe.db.set_value(
+			"POS Payment Method",
+			payment_row.name,
+			"payment_gateway",
+			"_Test VunaPOS Gateway Account",
+			update_modified=False,
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = receive_customer_payment(
+			pos_profile=self.profile,
+			customer=self.customer,
+			amount=100,
+			mode_of_payment=self.mode,
+			idempotency_key=frappe.generate_hash(length=20),
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "GATEWAY_PAYMENT_REQUIRED")
+
+	def test_receive_payment_respects_profile_operation_setting(self):
+		frappe.db.set_value(
+			"POS Profile", self.profile, "vunapos_allow_customer_payments", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		response = receive_customer_payment(
+			pos_profile=self.profile,
+			customer=self.customer,
+			amount=100,
+			mode_of_payment=self.mode,
+			idempotency_key=frappe.generate_hash(length=20),
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CUSTOMER_PAYMENTS_DISABLED")
 
 	def test_repeated_idempotency_key_returns_the_same_payment(self):
 		key = frappe.generate_hash(length=20)
@@ -154,3 +212,32 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 				"Comment", {"reference_doctype": "Payment Entry", "reference_name": advance["data"]["name"]}
 			)
 		)
+
+	def test_reconciliation_respects_profile_operation_setting(self):
+		frappe.db.set_value(
+			"POS Profile", self.profile, "vunapos_allow_payment_reconciliation", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			allocate_customer_payments(
+				pos_profile=self.profile,
+				customer=self.customer,
+				payment_entries=["PAYMENT-1"],
+				invoices=["SINV-1"],
+			)
+
+		self.assertEqual(
+			getattr(context.exception, "vuna_error_code", None), "PAYMENT_RECONCILIATION_DISABLED"
+		)
+
+	def test_payment_history_respects_profile_operation_setting(self):
+		frappe.db.set_value(
+			"POS Profile", self.profile, "vunapos_allow_payment_history", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		with self.assertRaises(frappe.ValidationError) as context:
+			get_payment_history(pos_profile=self.profile, customer=self.customer)
+
+		self.assertEqual(getattr(context.exception, "vuna_error_code", None), "PAYMENT_HISTORY_DISABLED")

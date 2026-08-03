@@ -5,7 +5,7 @@ import { profileRepository } from "./repositories/profileRepository";
 import { useRuntimeCacheStore } from "./stores/runtimeCacheStore";
 import type { BootstrapPayload, CachedPosSession } from "./types";
 
-export class BootstrapVerificationError extends Error {}
+export class BootstrapVerificationError extends Error { }
 
 export async function cachePosSession(session: CachedPosSession): Promise<void> {
 	await metaRepository.set(META_KEYS.posSession, session);

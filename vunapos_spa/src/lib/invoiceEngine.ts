@@ -232,8 +232,8 @@ export function assembleInvoice(input: {
 		if (row.charge_type && row.charge_type !== SUPPORTED_CHARGE_TYPE) {
 			throw new InvoiceEngineError(
 				`Unsupported tax charge type "${row.charge_type}" on account ${row.account_head ?? "?"} - ` +
-					`the client Invoice Engine only implements "${SUPPORTED_CHARGE_TYPE}" (see N9/ADR-005: ` +
-					"scoped to this client's actual configuration, not a generic replica of ERPNext's tax engine).",
+				`the client Invoice Engine only implements "${SUPPORTED_CHARGE_TYPE}" (see N9/ADR-005: ` +
+				"scoped to this client's actual configuration, not a generic replica of ERPNext's tax engine).",
 			);
 		}
 	}

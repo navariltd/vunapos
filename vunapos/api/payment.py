@@ -13,17 +13,18 @@ from vunapos.utils.response import failure, success
 
 @frappe.whitelist(methods=["POST"])
 def receive_customer_payment(
-	pos_profile=None,
-	customer=None,
-	amount=None,
-	mode_of_payment=None,
-	sales_invoice=None,
-	allocated_amount=None,
-	posting_date=None,
-	reference_no=None,
-	reference_date=None,
-	remarks=None,
-	idempotency_key=None,
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	amount: str | int | float | None = None,
+	mode_of_payment: str | None = None,
+	sales_invoice: str | None = None,
+	allocated_amount: str | int | float | None = None,
+	posting_date: str | None = None,
+	reference_no: str | None = None,
+	reference_date: str | None = None,
+	remarks: str | None = None,
+	idempotency_key: str | None = None,
+	gateway_payment_link: str | None = None,
 ):
 	try:
 		return success(
@@ -39,6 +40,7 @@ def receive_customer_payment(
 				reference_date=reference_date,
 				remarks=remarks,
 				idempotency_key=idempotency_key,
+				gateway_payment_link=gateway_payment_link,
 			)
 		)
 	except Exception as exc:

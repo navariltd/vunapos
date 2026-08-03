@@ -1,9 +1,24 @@
 export type ModeOfPaymentDTO = {
 	mode_of_payment: string;
-	default?: number | boolean ;
+	default?: number | boolean;
 	account?: string;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
+	payment_gateway?: string | null;
 	requires_reference?: boolean;
+};
+
+export type C2BGatewayPaymentDTO = {
+	name: string;
+	transaction_id: string;
+	transaction_date?: string | null;
+	amount: number;
+	currency?: string | null;
+	party_phone?: string | null;
+	party_name?: string | null;
+	bill_reference?: string | null;
+	payment_gateway?: string | null;
+	status?: string | null;
+	customer?: string | null;
 };
 
 export type POSProfileOptionDTO = {
@@ -21,6 +36,14 @@ export type CustomerDTO = {
 	email_id?: string | null;
 	customer_group?: string | null;
 	default_price_list?: string | null;
+	is_walkin?: boolean | number;
+	tax_id?: string | null;
+};
+
+export type CustomerContactPhoneDTO = {
+	customer: string;
+	mobile_no?: string | null;
+	source?: "Customer" | "Contact" | null;
 };
 
 export type CustomerLoyaltyDTO = {
@@ -153,7 +176,17 @@ export type BootstrapData = {
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
 	hide_images?: boolean;
+	hide_unavailable_items?: boolean;
+	automatically_add_filtered_item_to_cart?: boolean;
+	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
+	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_order_type_change?: boolean;
+	allow_customer_management?: boolean;
+	allow_customer_creation?: boolean;
+	allow_customer_payments?: boolean;
+	allow_payment_reconciliation?: boolean;
+	allow_payment_history?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
@@ -319,6 +352,7 @@ export type InvoiceDTO = {
 	source_invoice_name?: string;
 	customer?: string;
 	customer_name?: string;
+	tax_id?: string | null;
 	selling_price_list?: string;
 	price_list_currency?: string;
 	redeem_loyalty_points?: boolean;
@@ -358,6 +392,26 @@ export type HeldInvoiceDTO = {
 export type PaymentInput = {
 	mode_of_payment: string;
 	amount: number;
+	gateway_payment_link?: string;
+};
+
+export type GatewayPaymentLinkDTO = {
+	name: string;
+	source_doctype: string;
+	source_name: string;
+	payment_gateway: string;
+	mode_of_payment: string;
+	status: "Draft" | "Pending" | "Authorized" | "Paid" | "Failed" | "Cancelled" | "Expired" | string;
+	transaction_reference?: string | null;
+	pos_profile: string;
+	opening_entry: string;
+	cashier: string;
+	customer?: string | null;
+	amount: number;
+	currency: string;
+	consumed: 0 | 1 | number;
+	source_status?: string | null;
+	source_reference?: string | null;
 };
 
 export type PrintPayload = {

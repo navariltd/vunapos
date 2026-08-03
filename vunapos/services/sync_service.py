@@ -96,6 +96,7 @@ def _sync_payment_modes(profile):
 			"mode_of_payment": row.mode_of_payment,
 			"default": bool(row.get("default")),
 			"type": frappe.get_cached_value("Mode of Payment", row.mode_of_payment, "type"),
+			"payment_gateway": row.get("payment_gateway"),
 		}
 		for row in profile.get("payments", [])
 	]

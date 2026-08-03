@@ -2,69 +2,87 @@ import { Button } from "../components/ui/Button";
 import { useBootstrapSync } from "../features/pos/hooks/useBootstrapSync";
 
 type BootstrapGateProps = {
-	children: React.ReactNode;
+  children: React.ReactNode;
 };
 
 // Bootstrap still hydrates the local read cache for fast catalogue rendering, but
 // VunaPOS is online-only: cached data never authorizes sales when the server is unavailable.
-function getPosProfileIssue(code: string | null, message: string | null): "missing" | "permission" | null {
-	if (code === "POS_PROFILE_NOT_ASSIGNED" || code === "POS_PROFILE_NOT_ENABLED") return "missing";
-	if (code === "POS_PROFILE_READ_DENIED") return "permission";
+function getPosProfileIssue(
+  code: string | null,
+  message: string | null,
+): "missing" | "permission" | null {
+  if (code === "POS_PROFILE_NOT_ASSIGNED" || code === "POS_PROFILE_NOT_ENABLED")
+    return "missing";
+  if (code === "POS_PROFILE_READ_DENIED") return "permission";
 
-	// Compatibility with responses from a server that has not yet been migrated.
-	const normalized = message?.toLowerCase() || "";
-	if (normalized.includes("no pos profile") || normalized.includes("no enabled pos profile")) return "missing";
-	if (normalized.includes("not permitted to read pos profile")) return "permission";
-	return null;
+  // Compatibility with responses from a server that has not yet been migrated.
+  const normalized = message?.toLowerCase() || "";
+  if (
+    normalized.includes("no pos profile") ||
+    normalized.includes("no enabled pos profile")
+  )
+    return "missing";
+  if (normalized.includes("not permitted to read pos profile"))
+    return "permission";
+  return null;
 }
 
 export function BootstrapGate({ children }: BootstrapGateProps) {
-	const { phase, error, errorCode, retry } = useBootstrapSync();
+  const { phase, error, errorCode, retry } = useBootstrapSync();
 
-	if (phase === "blocked") {
-		// Not a connectivity problem - a config problem the "try again" retry can't
-		// fix. Give this its own message instead of the generic "connect once" one.
-		const profileIssue = getPosProfileIssue(errorCode, error);
-		if (profileIssue) {
-			return (
-				<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
-					<div className="max-w-sm text-center">
-						<h1 className="text-lg font-semibold text-on-surface">
-							{profileIssue === "missing" ? "No POS Profile assigned" : "POS Profile access required"}
-						</h1>
-						<p className="mt-2 text-sm text-on-surface-variant">
-							{profileIssue === "missing"
-								? "Your account does not have an enabled POS Profile assignment. Ask an administrator to add you to a POS Profile before using VunaPOS."
-								: "Your account is assigned to a POS Profile, but does not have permission to read it. Ask an administrator to grant the required POS role or permissions."}
-						</p>
-					</div>
-				</div>
-			);
-		}
+  if (phase === "blocked") {
+    // Not a connectivity problem - a config problem the "try again" retry can't
+    // fix. Give this its own message instead of the generic "connect once" one.
+    const profileIssue = getPosProfileIssue(errorCode, error);
+    if (profileIssue) {
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
+          <div className="max-w-sm text-center">
+            <h1 className="text-lg font-semibold text-on-surface">
+              {profileIssue === "missing"
+                ? "No POS Profile assigned"
+                : "POS Profile access required"}
+            </h1>
+            <p className="mt-2 text-sm text-on-surface-variant">
+              {profileIssue === "missing"
+                ? "Your account does not have an enabled POS Profile assignment. Ask an administrator to add you to a POS Profile before using VunaPOS."
+                : "Your account is assigned to a POS Profile, but does not have permission to read it. Ask an administrator to grant the required POS role or permissions."}
+            </p>
+          </div>
+        </div>
+      );
+    }
 
-		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
-				<div className="max-w-sm text-center">
-					<h1 className="text-lg font-semibold text-on-surface">Connection required</h1>
-					<p className="mt-2 text-sm text-on-surface-variant">
-						VunaPOS could not reach the server to load the active POS Profile and catalogue. Reconnect before continuing.
-					</p>
-					{error ? <p className="mt-2 text-xs text-on-surface-variant">{error}</p> : null}
-					<Button className="mt-4" onClick={retry}>
-						Try again
-					</Button>
-				</div>
-			</div>
-		);
-	}
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
+        <div className="max-w-sm text-center">
+          <h1 className="text-lg font-semibold text-on-surface">
+            Connection required
+          </h1>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            VunaPOS could not reach the server to load the active POS Profile
+            and catalogue. Reconnect before continuing.
+          </p>
+          {error ? (
+            <p className="mt-2 text-xs text-on-surface-variant">{error}</p>
+          ) : null}
+          <Button className="mt-4" onClick={retry}>
+            Try again
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
-	if (phase === "hydrating") {
-		return (
-			<div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
-				<div className="text-sm font-medium text-on-surface-variant">Loading VunaPOS data...</div>
-			</div>
-		);
-	}
+  if (phase === "hydrating") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-6 text-on-surface">
+        <div className="text-sm font-medium text-on-surface-variant">
+          Loading VunaPOS data...
+        </div>
+      </div>
+    );
+  }
 
-	return <>{children}</>;
+  return <>{children}</>;
 }

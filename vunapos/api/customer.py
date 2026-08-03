@@ -1,6 +1,7 @@
 import frappe
 
 from vunapos.services.customer_service import create_customer as create_customer_service
+from vunapos.services.customer_service import get_customer_contact_phone as get_customer_contact_phone_service
 from vunapos.services.customer_service import get_customer_details as get_customer_details_service
 from vunapos.services.customer_service import get_customer_directory as get_customer_directory_service
 from vunapos.services.customer_service import get_customer_loyalty as get_customer_loyalty_service
@@ -40,10 +41,28 @@ def get_customer_loyalty(pos_profile: str | None = None, customer: str | None = 
 
 
 @frappe.whitelist()
-def create_customer(customer_name, mobile_no=None, email_id=None):
+def get_customer_contact_phone(pos_profile: str | None = None, customer: str | None = None):
+	try:
+		return success(get_customer_contact_phone_service(pos_profile=pos_profile, customer=customer))
+	except Exception as exc:
+		return failure(str(exc), code=exc.__class__.__name__)
+
+
+@frappe.whitelist()
+def create_customer(
+	customer_name: str,
+	mobile_no: str | None = None,
+	email_id: str | None = None,
+	pos_profile: str | None = None,
+):
 	try:
 		return success(
-			create_customer_service(customer_name=customer_name, mobile_no=mobile_no, email_id=email_id)
+			create_customer_service(
+				customer_name=customer_name,
+				mobile_no=mobile_no,
+				email_id=email_id,
+				pos_profile=pos_profile,
+			)
 		)
 	except Exception as exc:
 		return failure(str(exc), code=exc.__class__.__name__)

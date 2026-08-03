@@ -29,6 +29,12 @@ from vunapos.services.checkout_queue_service import (
 	find_invoice_by_idempotency_key,
 	get_queue_limits,
 )
+from vunapos.services.gateway_payment_service import (
+	consume_gateway_payment_links,
+	gateway_payment_metadata,
+	payment_mode_gateway,
+	validate_gateway_payment_link,
+)
 from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
 	get_invoice_mode,
@@ -42,6 +48,7 @@ from vunapos.services.stock_reservation_service import (
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
+SUPPORTED_ORDER_DOCTYPES = ("Sales Order",)
 HELD_FIELD = "vunapos_held"
 VUNAPOS_FIELD = "vunapos_invoice"
 IDEMPOTENCY_FIELD = "vunapos_idempotency_key"
@@ -141,6 +148,7 @@ def _sync_profile_pricing_fields(doc, profile, requested_price_list=None):
 	_set_if_has_field(doc, "selling_price_list", price_list)
 	_set_if_has_field(doc, "currency", profile.currency)
 	_set_if_has_field(doc, "taxes_and_charges", profile.get("taxes_and_charges"))
+	_set_if_has_field(doc, "ignore_pricing_rule", profile.get("ignore_pricing_rule"))
 	return doc
 
 
@@ -214,6 +222,14 @@ def _find_submitted_invoice_by_idempotency_key(idempotency_key):
 	return doc
 
 
+def _find_submitted_order_by_idempotency_key(idempotency_key):
+	doc = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_ORDER_DOCTYPES)
+	if not doc or doc.docstatus != 1:
+		return None
+	require_read(doc.doctype, doc.name)
+	return doc
+
+
 def _payment_rows(payments):
 	if isinstance(payments, str):
 		payments = json.loads(payments or "[]")
@@ -275,6 +291,15 @@ def _payment_mode_type(mode_of_payment):
 	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
 
 
+def _has_gateway_payment_rows(payments, profile):
+	rows = _payment_rows(payments)
+	if not rows or not profile:
+		return False
+	return any(
+		payment_mode_gateway(profile, row.get("mode_of_payment")) for row in rows if isinstance(row, dict)
+	)
+
+
 def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
 	is_credit_sale = bool(cint(is_credit_sale))
 	if not is_credit_sale:
@@ -304,6 +329,32 @@ def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
 	return parsed_due_date
 
 
+def _normalize_checkout_tax_id(tax_id):
+	tax_id = cstr(tax_id or "").strip()
+	if len(tax_id) > 140:
+		_throw("TAX_ID_TOO_LONG", _("Tax ID cannot exceed 140 characters"))
+	return tax_id or None
+
+
+def _customer_accepts_checkout_tax_id(customer):
+	return bool(customer and frappe.db.get_value("Customer", customer, "is_walkin"))
+
+
+def _apply_checkout_tax_id(doc, tax_id=None, *, persist=False):
+	tax_id = _normalize_checkout_tax_id(tax_id)
+	if not tax_id:
+		return doc
+	if not _customer_accepts_checkout_tax_id(doc.get("customer")):
+		_throw(
+			"CUSTOMER_TAX_ID_NOT_ALLOWED",
+			_("Checkout Tax ID can only be entered for customers marked as walk-in"),
+		)
+	_set_if_has_field(doc, "tax_id", tax_id)
+	if persist and _has_field(doc.doctype, "tax_id") and doc.get("name"):
+		doc.db_set("tax_id", tax_id, update_modified=False)
+	return doc
+
+
 def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 	_set_if_has_field(doc, CREDIT_SALE_FIELD, is_credit_sale)
 	if is_credit_sale:
@@ -315,7 +366,7 @@ def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 	return doc
 
 
-def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
+def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False, opening_entry=None):
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	rows = _payment_rows(payments)
 	precision = _currency_precision(doc)
@@ -352,19 +403,42 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 				"DUPLICATE_PAYMENT_MODE",
 				_("Payment mode {0} can only be used once").format(mode_of_payment),
 			)
+		payment_gateway = payment_mode_gateway(profile, mode_of_payment) if profile else None
 
-		try:
-			raw_amount = row.get("amount")
-			if isinstance(raw_amount, bool):
-				raise InvalidOperation
-			amount = Decimal(str(raw_amount))
-		except (InvalidOperation, TypeError, ValueError):
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
-		if not amount.is_finite() or amount <= 0:
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
-		storage_amount = float(amount)
-		if not math.isfinite(storage_amount):
-			_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+		raw_amount = row.get("amount")
+		storage_amount = None
+		amount = None
+		if not payment_gateway or raw_amount not in (None, ""):
+			try:
+				if isinstance(raw_amount, bool):
+					raise InvalidOperation
+				amount = Decimal(str(raw_amount))
+			except (InvalidOperation, TypeError, ValueError):
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be a valid number"))
+			if not amount.is_finite() or amount <= 0:
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount must be greater than zero"))
+			storage_amount = float(amount)
+			if not math.isfinite(storage_amount):
+				_throw("INVALID_PAYMENT_AMOUNT", _("Payment amount is outside the supported range"))
+		gateway_link = None
+		if payment_gateway:
+			if not opening_entry:
+				_throw(
+					"GATEWAY_PAYMENT_SESSION_MISMATCH", _("Gateway payments require an active POS session")
+				)
+			gateway_link = validate_gateway_payment_link(
+				row.get("gateway_payment_link"),
+				profile=profile,
+				opening_entry=opening_entry,
+				mode_of_payment=mode_of_payment,
+				payment_gateway=payment_gateway,
+				customer=doc.get("customer"),
+				amount=storage_amount if amount is not None else None,
+				currency=doc.get("currency"),
+				precision=precision,
+			)
+			storage_amount = flt(gateway_link.amount, precision)
+			amount = Decimal(str(storage_amount))
 
 		seen_modes.add(mode_of_payment)
 		total_paid += amount
@@ -375,6 +449,7 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 				"mode_of_payment": mode_of_payment,
 				"amount": storage_amount,
 				"default": row.get("default"),
+				"gateway_payment_link": gateway_link.name if gateway_link else None,
 			}
 		)
 
@@ -534,6 +609,7 @@ def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_
 			"conversion_factor": conversion_factor,
 			"is_pos": doc.get("is_pos"),
 			"update_stock": doc.get("update_stock"),
+			"ignore_pricing_rule": doc.get("ignore_pricing_rule"),
 		}
 	)
 	details = get_item_details(ctx, doc=doc)
@@ -584,6 +660,24 @@ def _apply_vunapos_item_metadata(row, item):
 	if row.meta.has_field("vunapos_pricing_override_by"):
 		row.vunapos_pricing_override_by = frappe.session.user if override else None
 	return row
+
+
+def _has_vunapos_pricing_override(row):
+	return row.meta.has_field("vunapos_pricing_override") and bool(row.get("vunapos_pricing_override"))
+
+
+def _rate_matches_pricing_rule_discount(row, precision):
+	if not row.get("pricing_rules") or _has_vunapos_pricing_override(row):
+		return False
+	price_list_rate = flt(row.get("price_list_rate") or 0, precision)
+	rate = flt(row.get("rate") or 0, precision)
+	discount_amount = flt(row.get("discount_amount") or 0, precision)
+	discount_percentage = flt(row.get("discount_percentage") or 0, precision)
+	if discount_amount:
+		return rate == flt(price_list_rate - discount_amount, precision)
+	if discount_percentage:
+		return rate == flt(price_list_rate - (price_list_rate * discount_percentage / 100), precision)
+	return False
 
 
 def _set_row_batch_allocations(row, allocations):
@@ -750,7 +844,8 @@ def _create_serial_and_batch_bundle_for_row(doc, row, allocations):
 	bundle.voucher_no = doc.name
 	bundle.voucher_detail_no = row.name
 	bundle.type_of_transaction = "Outward"
-	bundle.posting_datetime = get_datetime(f"{doc.posting_date} {doc.get('posting_time') or '00:00:00'}")
+	posting_date = doc.get("posting_date") or doc.get("transaction_date") or nowdate()
+	bundle.posting_datetime = get_datetime(f"{posting_date} {doc.get('posting_time') or '00:00:00'}")
 	bundle.set("entries", [])
 	entries = serial_allocations or allocations
 	for allocation in entries:
@@ -863,6 +958,28 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 	return doc, profile
 
 
+def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, delivery_date=None):
+	profile = resolve_pos_profile(pos_profile)
+	customer = customer or profile.customer
+	if not customer:
+		frappe.throw(_("Customer is required because the POS Profile has no default customer"))
+
+	doc = frappe.new_doc("Sales Order")
+	doc.customer = customer
+	doc.company = profile.company
+	doc.transaction_date = nowdate()
+	doc.delivery_date = delivery_date or nowdate()
+	_set_if_has_field(doc, "order_type", "Sales")
+	_set_if_has_field(doc, "set_warehouse", profile.warehouse)
+	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
+	_set_if_has_field(doc, "vunapos_pos_profile", profile.name)
+	_sync_profile_pricing_fields(doc, profile, price_list)
+	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
+	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
+	_reset_invoice_totals(doc)
+	return doc, profile
+
+
 def _append_cart_items(doc, profile, items):
 	reserved = _reserved_batch_qtys(doc)
 	for item in _cart_item_rows(items):
@@ -958,6 +1075,8 @@ def _validate_existing_pricing_permissions(doc, profile):
 		discount_changed = flt(item.get("discount_percentage"), precision) != flt(
 			baseline.get("discount_percentage"), precision
 		) or flt(item.get("discount_amount"), precision) != flt(baseline.get("discount_amount"), precision)
+		if (rate_changed or discount_changed) and _rate_matches_pricing_rule_discount(item, precision):
+			continue
 		if rate_changed:
 			if discount_changed and profile.get("allow_discount_change"):
 				continue
@@ -1185,6 +1304,7 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 		return doc
 
 	doc.set("payments", [])
+	payment_child_doctype = frappe.get_meta(doc.doctype).get_field("payments").options
 	payment_rows = _payment_rows(payments)
 	if is_credit_sale and not payment_rows:
 		# ERPNext validates POS documents before it discards zero-value payment rows.
@@ -1206,15 +1326,38 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 			}
 		]
 	for payment in payment_rows:
-		doc.append(
-			"payments",
-			{
-				"mode_of_payment": payment.get("mode_of_payment"),
-				"amount": flt(payment.get("amount")),
-				"default": payment.get("default"),
-			},
-		)
+		row = {
+			"mode_of_payment": payment.get("mode_of_payment"),
+			"amount": flt(payment.get("amount")),
+			"default": payment.get("default"),
+		}
+		_apply_gateway_metadata_to_payment_row(row, payment, payment_child_doctype)
+		doc.append("payments", row)
 	return doc
+
+
+def _apply_gateway_metadata_to_payment_row(row: dict, payment: dict, child_doctype: str) -> None:
+	metadata = gateway_payment_metadata(payment.get("gateway_payment_link"))
+	if not metadata:
+		return
+	field_map = {
+		"ke_transaction_id": metadata.get("transaction_reference"),
+		"ke_transaction_date": metadata.get("transaction_date"),
+		"ke_payment_request": metadata.get("ke_payment_request"),
+	}
+	child_meta = frappe.get_meta(child_doctype)
+	for fieldname, value in field_map.items():
+		if value and child_meta.has_field(fieldname):
+			row[fieldname] = value
+
+
+def _gateway_payment_links(payment_rows):
+	links = []
+	for payment in payment_rows or []:
+		link_name = payment.get("gateway_payment_link")
+		if link_name:
+			links.append(frappe.get_doc("VunaPOS Gateway Payment Link", link_name))
+	return links
 
 
 def submit_invoice(
@@ -1224,6 +1367,7 @@ def submit_invoice(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
@@ -1237,15 +1381,21 @@ def submit_invoice(
 	_recalculate(doc)
 	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	payment_rows = validate_payment_rows(
+		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+	)
+	gateway_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
+	_apply_checkout_tax_id(doc, tax_id)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
 	doc.save()
+	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	doc.submit()
+	consume_gateway_payment_links(gateway_links, doc)
 	return invoice_to_dict(doc)
 
 
@@ -1257,6 +1407,7 @@ def checkout_invoice(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1279,8 +1430,10 @@ def checkout_invoice(
 		is_credit_sale=is_credit_sale,
 		due_date=due_date,
 		loyalty_points=loyalty_points,
+		tax_id=tax_id,
 	)
 	doc.submit()
+	consume_gateway_payment_links(getattr(doc, "_vunapos_gateway_payment_links", []), doc)
 	return invoice_to_dict(doc)
 
 
@@ -1292,6 +1445,7 @@ def _prepare_invoice_for_checkout(
 	is_credit_sale=False,
 	due_date=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1304,9 +1458,13 @@ def _prepare_invoice_for_checkout(
 	_recalculate(doc)
 	_apply_loyalty_redemption(doc, loyalty_points)
 	validate_invoice_batch_allocations(doc)
-	payment_rows = validate_payment_rows(doc, payments, profile, is_credit_sale=is_credit_sale)
+	payment_rows = validate_payment_rows(
+		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+	)
+	doc._vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
+	_apply_checkout_tax_id(doc, tax_id)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1316,6 +1474,7 @@ def _prepare_invoice_for_checkout(
 		doc.set_paid_amount()
 	doc.flags.ignore_mandatory = False
 	doc.save()
+	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	return doc
 
 
@@ -1364,6 +1523,7 @@ def create_and_submit_invoice(
 	due_date=None,
 	price_list=None,
 	loyalty_points=None,
+	tax_id=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1373,7 +1533,8 @@ def create_and_submit_invoice(
 		if existing.docstatus != 0:
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
 		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
-		if get_queue_limits(existing_profile)["enabled"]:
+		has_gateway_payment = _has_gateway_payment_rows(payments, existing_profile)
+		if get_queue_limits(existing_profile)["enabled"] and not has_gateway_payment:
 			if existing.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
 				return invoice_to_dict(existing)
 			if existing.get("vunapos_queue_status"):
@@ -1389,12 +1550,14 @@ def create_and_submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
 			else:
 				create_invoice_stock_reservations(existing)
 			enqueue_invoice_submission(existing)
+			_apply_checkout_tax_id(existing, tax_id, persist=True)
 			return invoice_to_dict(existing)
 		return checkout_invoice(
 			existing.doctype,
@@ -1404,12 +1567,18 @@ def create_and_submit_invoice(
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
 			loyalty_points=loyalty_points,
+			tax_id=tax_id,
 		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
 	try:
 		profile = resolve_pos_profile(pos_profile)
-		if get_queue_limits(profile)["enabled"] and not str(idempotency_key or "").strip():
+		has_gateway_payment = _has_gateway_payment_rows(payments, profile)
+		if (
+			get_queue_limits(profile)["enabled"]
+			and not has_gateway_payment
+			and not str(idempotency_key or "").strip()
+		):
 			_throw(
 				"CHECKOUT_IDEMPOTENCY_REQUIRED",
 				_("An idempotency key is required when background invoice submission is enabled"),
@@ -1425,7 +1594,7 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		if get_queue_limits(profile)["enabled"]:
+		if get_queue_limits(profile)["enabled"] and not has_gateway_payment:
 			_prepare_invoice_for_checkout(
 				doc,
 				payments=payments,
@@ -1433,9 +1602,11 @@ def create_and_submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 			create_invoice_stock_reservations(doc)
 			enqueue_invoice_submission(doc)
+			_apply_checkout_tax_id(doc, tax_id, persist=True)
 			return invoice_to_dict(doc)
 		return checkout_invoice(
 			doc.doctype,
@@ -1445,7 +1616,56 @@ def create_and_submit_invoice(
 			is_credit_sale=is_credit_sale,
 			due_date=due_date,
 			loyalty_points=loyalty_points,
+			tax_id=tax_id,
 		)
+	except Exception:
+		frappe.db.rollback(save_point=savepoint)
+		raise
+
+
+def create_and_submit_sales_order(
+	pos_profile=None,
+	customer=None,
+	items=None,
+	idempotency_key=None,
+	price_list=None,
+	delivery_date=None,
+	tax_id=None,
+):
+	existing = _find_submitted_order_by_idempotency_key(idempotency_key)
+	if existing:
+		return invoice_to_dict(existing)
+
+	savepoint = "vunapos_sales_order_checkout"
+	frappe.db.savepoint(savepoint)
+	try:
+		require_create("Sales Order")
+		if not frappe.has_permission("Sales Order", "submit"):
+			frappe.throw(_("Not permitted to submit Sales Order"), frappe.PermissionError)
+		profile = resolve_pos_profile(pos_profile)
+		opening_entry = require_open_pos_session(profile.name)
+		cart_items = _cart_item_rows(items)
+		validate_cart_items(cart_items, profile)
+		doc, profile = _build_sales_order_doc(
+			pos_profile=profile.name,
+			customer=customer,
+			price_list=price_list,
+			delivery_date=delivery_date,
+		)
+		_append_cart_items(doc, profile, cart_items)
+		_recalculate(doc)
+		validate_invoice_batch_allocations(doc)
+		_stamp_validated_session(doc, opening_entry)
+		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
+		if idempotency_key:
+			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
+		_apply_checkout_tax_id(doc, tax_id)
+		doc.flags.ignore_mandatory = False
+		doc.insert()
+		_materialize_batch_bundles(doc)
+		_apply_checkout_tax_id(doc, tax_id, persist=True)
+		doc.submit()
+		return invoice_to_dict(doc)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise

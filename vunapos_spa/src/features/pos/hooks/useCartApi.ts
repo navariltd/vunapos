@@ -17,6 +17,7 @@ export function useCartApi(): CartApi {
 	const createInvoiceFromCartCall = useFrappePostCall(vunaMethods.createInvoiceFromCart);
 	const previewInvoiceCall = useFrappePostCall(vunaMethods.previewInvoice);
 	const createAndSubmitInvoiceCall = useFrappePostCall(vunaMethods.createAndSubmitInvoice);
+	const createAndSubmitSalesOrderCall = useFrappePostCall(vunaMethods.createAndSubmitSalesOrder);
 	const checkoutInvoiceCall = useFrappePostCall(vunaMethods.checkoutInvoice);
 	const holdInvoiceCall = useFrappePostCall(vunaMethods.holdInvoice);
 	const listHeldInvoicesCall = useFrappePostCall(vunaMethods.listHeldInvoices);
@@ -36,6 +37,7 @@ export function useCartApi(): CartApi {
 		createInvoiceFromCart: createInvoiceFromCartCall.call,
 		previewInvoice: previewInvoiceCall.call,
 		createAndSubmitInvoice: createAndSubmitInvoiceCall.call,
+		createAndSubmitSalesOrder: createAndSubmitSalesOrderCall.call,
 		checkoutInvoice: checkoutInvoiceCall.call,
 		holdInvoice: holdInvoiceCall.call,
 		listHeldInvoices: listHeldInvoicesCall.call,

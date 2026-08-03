@@ -56,6 +56,10 @@ def _serial_allocations(row):
 	]
 
 
+def _payment_reference(row):
+	return row.get("ke_transaction_id") or row.get("reference_no") or row.get("transaction_reference") or None
+
+
 def invoice_to_dict(doc):
 	item_tracking = {
 		row.item_code: frappe.get_cached_value(
@@ -89,6 +93,7 @@ def invoice_to_dict(doc):
 		"is_credit_sale": bool(_value(doc, "vunapos_credit_sale", 0)),
 		"customer": _value(doc, "customer"),
 		"customer_name": _value(doc, "customer_name"),
+		"tax_id": _value(doc, "tax_id"),
 		"selling_price_list": _value(doc, "selling_price_list"),
 		"price_list_currency": _value(doc, "price_list_currency"),
 		"redeem_loyalty_points": bool(_value(doc, "redeem_loyalty_points", 0)),
@@ -151,8 +156,11 @@ def invoice_to_dict(doc):
 				"mode_of_payment": row.get("mode_of_payment"),
 				"amount": row.get("amount"),
 				"default": row.get("default"),
+				"transaction_reference": _payment_reference(row),
+				"transaction_date": row.get("ke_transaction_date"),
+				"ke_payment_request": row.get("ke_payment_request"),
 			}
-			for row in doc.get("payments", [])
+			for row in doc.get("payments", []) or []
 		],
 		"totals": {
 			"net_total": _value(doc, "net_total"),

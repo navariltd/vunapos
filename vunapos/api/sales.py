@@ -10,6 +10,9 @@ from vunapos.services.invoice_service import add_item as add_item_service
 from vunapos.services.invoice_service import checkout_invoice as checkout_invoice_service
 from vunapos.services.invoice_service import clear_invoice as clear_invoice_service
 from vunapos.services.invoice_service import create_and_submit_invoice as create_and_submit_invoice_service
+from vunapos.services.invoice_service import (
+	create_and_submit_sales_order as create_and_submit_sales_order_service,
+)
 from vunapos.services.invoice_service import create_draft_invoice
 from vunapos.services.invoice_service import create_invoice_from_cart as create_invoice_from_cart_service
 from vunapos.services.invoice_service import get_invoice as get_invoice_service
@@ -79,6 +82,7 @@ def checkout_invoice(
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
+	tax_id: str | None = None,
 ):
 	try:
 		return success(
@@ -90,6 +94,7 @@ def checkout_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 		)
 	except Exception as exc:
@@ -244,6 +249,7 @@ def submit_invoice(
 	is_credit_sale: bool | int | str = False,
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
+	tax_id: str | None = None,
 ):
 	try:
 		return success(
@@ -254,6 +260,7 @@ def submit_invoice(
 				is_credit_sale=is_credit_sale,
 				due_date=due_date,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
 			)
 		)
 	except Exception as exc:
@@ -271,6 +278,7 @@ def create_and_submit_invoice(
 	due_date: str | None = None,
 	price_list: str | None = None,
 	loyalty_points: int | str | None = None,
+	tax_id: str | None = None,
 ):
 	try:
 		return success(
@@ -284,6 +292,33 @@ def create_and_submit_invoice(
 				due_date=due_date,
 				price_list=price_list,
 				loyalty_points=loyalty_points,
+				tax_id=tax_id,
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def create_and_submit_sales_order(
+	pos_profile: str | None = None,
+	customer: str | None = None,
+	items: list | str | None = None,
+	idempotency_key: str | None = None,
+	price_list: str | None = None,
+	delivery_date: str | None = None,
+	tax_id: str | None = None,
+):
+	try:
+		return success(
+			create_and_submit_sales_order_service(
+				pos_profile=pos_profile,
+				customer=customer,
+				items=items,
+				idempotency_key=idempotency_key,
+				price_list=price_list,
+				delivery_date=delivery_date,
+				tax_id=tax_id,
 			)
 		)
 	except Exception as exc:

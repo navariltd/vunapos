@@ -92,14 +92,25 @@ def get_invoice_history(
 	payment_modes = {}
 	if rows and frappe.get_meta(doctype).has_field("payments"):
 		payment_child = frappe.get_meta(doctype).get_field("payments").options
+		payment_child_meta = frappe.get_meta(payment_child)
+		payment_fields = ["parent", "mode_of_payment", "amount"]
+		for fieldname in ("ke_transaction_id", "ke_transaction_date", "ke_payment_request"):
+			if payment_child_meta.has_field(fieldname):
+				payment_fields.append(fieldname)
 		for payment in frappe.get_all(
 			payment_child,
 			filters={"parent": ["in", [row.name for row in rows]], "amount": ["!=", 0]},
-			fields=["parent", "mode_of_payment", "amount"],
+			fields=payment_fields,
 			order_by="idx",
 		):
 			payment_modes.setdefault(payment.parent, []).append(
-				{"mode_of_payment": payment.mode_of_payment, "amount": flt(payment.amount)}
+				{
+					"mode_of_payment": payment.mode_of_payment,
+					"amount": flt(payment.amount),
+					"transaction_reference": payment.get("ke_transaction_id"),
+					"transaction_date": payment.get("ke_transaction_date"),
+					"ke_payment_request": payment.get("ke_payment_request"),
+				}
 			)
 
 	result = []

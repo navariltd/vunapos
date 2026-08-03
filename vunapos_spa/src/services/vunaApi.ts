@@ -1,10 +1,13 @@
 import type {
 	BatchAllocationResultDTO,
 	BootstrapData,
+	C2BGatewayPaymentDTO,
+	CustomerContactPhoneDTO,
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
 	CustomerLoyaltyDTO,
+	GatewayPaymentLinkDTO,
 	HeldInvoiceDTO,
 	ItemBatchesDTO,
 	InvoiceDTO,
@@ -53,6 +56,7 @@ export const vunaMethods = {
 	searchCustomers: "vunapos.api.customer.search_customers",
 	getCustomerDirectory: "vunapos.api.customer.get_customer_directory",
 	getCustomerDetails: "vunapos.api.customer.get_customer_details",
+	getCustomerContactPhone: "vunapos.api.customer.get_customer_contact_phone",
 	getCustomerLoyalty: "vunapos.api.customer.get_customer_loyalty",
 	receiveCustomerPayment: "vunapos.api.payment.receive_customer_payment",
 	getReconciliationCandidates: "vunapos.api.payment.get_reconciliation_candidates",
@@ -60,6 +64,11 @@ export const vunaMethods = {
 	renderPaymentReceipt: "vunapos.api.payment.render_payment_receipt",
 	allocateCustomerPayments: "vunapos.api.payment.allocate_customer_payments",
 	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
+	initiateStkGatewayPayment: "vunapos.api.gateway.initiate_stk_gateway_payment",
+	getGatewayPaymentStatus: "vunapos.api.gateway.get_gateway_payment_status",
+	cancelGatewayPaymentLink: "vunapos.api.gateway.cancel_gateway_payment_link",
+	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
+	searchC2bGatewayPayments: "vunapos.api.gateway.search_c2b_gateway_payments",
 	createCustomer: "vunapos.api.customer.create_customer",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
@@ -76,6 +85,7 @@ export const vunaMethods = {
 	submitInvoice: "vunapos.api.sales.submit_invoice",
 	checkoutInvoice: "vunapos.api.sales.checkout_invoice",
 	createAndSubmitInvoice: "vunapos.api.sales.create_and_submit_invoice",
+	createAndSubmitSalesOrder: "vunapos.api.sales.create_and_submit_sales_order",
 	createInvoiceFromCart: "vunapos.api.sales.create_invoice_from_cart",
 	holdInvoice: "vunapos.api.sales.hold_invoice",
 	listHeldInvoices: "vunapos.api.sales.list_held_invoices",
@@ -194,15 +204,74 @@ export function getCustomerDetails(call: FrappeCall, params: { pos_profile?: str
 	return callAndUnwrap<CustomerDetailsDTO>(call, params);
 }
 
+export function getCustomerContactPhone(
+	call: FrappeCall,
+	params: { pos_profile?: string; customer: string },
+) {
+	return callAndUnwrap<CustomerContactPhoneDTO>(call, params);
+}
+
 export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
 	return callAndUnwrap<CustomerLoyaltyDTO>(call, params);
 }
 
 export function createCustomer(
 	call: FrappeCall,
-	params: { customer_name: string; mobile_no?: string; email_id?: string },
+	params: { customer_name: string; mobile_no?: string; email_id?: string; pos_profile?: string },
 ) {
 	return callAndUnwrap<CustomerDTO>(call, params);
+}
+
+export function initiateStkGatewayPayment(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		mode_of_payment: string;
+		amount: number;
+		phone_number: string;
+		customer?: string;
+		currency?: string;
+		idempotency_key?: string;
+	},
+) {
+	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
+}
+
+export function getGatewayPaymentStatus(call: FrappeCall, gatewayPaymentLink: string) {
+	return callAndUnwrap<GatewayPaymentLinkDTO>(call, { gateway_payment_link: gatewayPaymentLink });
+}
+
+export function cancelGatewayPaymentLink(call: FrappeCall, gatewayPaymentLink: string) {
+	return callAndUnwrap<GatewayPaymentLinkDTO>(call, { gateway_payment_link: gatewayPaymentLink });
+}
+
+export function attachC2bGatewayPayment(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		mode_of_payment: string;
+		transaction_reference: string;
+		amount: number;
+		customer?: string;
+		currency?: string;
+		idempotency_key?: string;
+	},
+) {
+	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
+}
+
+export function searchC2bGatewayPayments(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		mode_of_payment: string;
+		query: string;
+		customer?: string;
+		currency?: string;
+		limit?: number;
+	},
+) {
+	return callAndUnwrap<C2BGatewayPaymentDTO[]>(call, params);
 }
 
 export function createInvoice(call: FrappeCall, params: { pos_profile?: string; customer?: string }) {
@@ -260,6 +329,7 @@ export function submitInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		loyalty_points?: number;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -278,6 +348,7 @@ export function checkoutInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		loyalty_points?: number;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -309,12 +380,31 @@ export function createAndSubmitInvoice(
 		idempotency_key?: string;
 		is_credit_sale?: boolean;
 		due_date?: string;
+		tax_id?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+	});
+}
+
+export function createAndSubmitSalesOrder(
+	call: FrappeCall,
+	params: {
+		pos_profile?: string;
+		customer?: string;
+		price_list?: string;
+		items: CartItemInput[];
+		idempotency_key?: string;
+		delivery_date?: string;
+		tax_id?: string;
+	},
+) {
+	return callAndUnwrap<InvoiceDTO>(call, {
+		...params,
+		items: JSON.stringify(params.items),
 	});
 }
 

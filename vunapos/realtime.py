@@ -1,9 +1,10 @@
 import frappe
 from frappe.model.document import Document
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 CONFIGURATION_EVENT = "vunapos_configuration_changed"
 CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed"
+GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
 
 
 def publish_configuration_change(doc: Document, method: str | None = None) -> None:
@@ -48,6 +49,33 @@ def publish_checkout_queue_change(doc: Document) -> None:
 			"status": doc.get("vunapos_queue_status"),
 			"attempts": cint(doc.get("vunapos_queue_attempts")),
 			"error": doc.get("vunapos_queue_error") or "",
+		},
+		user=cashier,
+		after_commit=True,
+	)
+
+
+def publish_gateway_payment_change(doc: Document) -> None:
+	"""Notify only the cashier who owns an active gateway checkout payment."""
+	cashier = doc.get("cashier")
+	if not cashier:
+		return
+	frappe.publish_realtime(
+		GATEWAY_PAYMENT_EVENT,
+		{
+			"name": doc.name,
+			"source_doctype": doc.get("source_doctype"),
+			"source_name": doc.get("source_name"),
+			"payment_gateway": doc.get("payment_gateway"),
+			"mode_of_payment": doc.get("mode_of_payment"),
+			"status": doc.get("status"),
+			"transaction_reference": doc.get("transaction_reference"),
+			"pos_profile": doc.get("pos_profile"),
+			"opening_entry": doc.get("opening_entry"),
+			"customer": doc.get("customer"),
+			"amount": flt(doc.get("amount")),
+			"currency": doc.get("currency"),
+			"consumed": cint(doc.get("consumed")),
 		},
 		user=cashier,
 		after_commit=True,

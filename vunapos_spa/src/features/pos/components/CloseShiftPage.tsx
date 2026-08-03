@@ -9,228 +9,449 @@ import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { cachePosSession } from "../../../lib/cacheEngine";
 import type { CachedPosSession } from "../../../lib/types";
 import {
-	closePosSession,
-	unwrapVunaResponse,
-	vunaMethods,
+  closePosSession,
+  unwrapVunaResponse,
+  vunaMethods,
 } from "../../../services/vunaApi";
 import { useConnectivity } from "../hooks/useConnectivity";
 
 type CloseShiftPageProps = {
-	posProfile: string;
-	currency?: string;
-	onBack: () => void;
+  posProfile: string;
+  currency?: string;
+  onBack: () => void;
 };
 
-export function CloseShiftPage({ posProfile, currency, onBack }: CloseShiftPageProps) {
-	const { isReachable } = useConnectivity();
-	const previewCall = useFrappeGetCall<unknown>(
-		vunaMethods.getClosingPreview,
-		{ pos_profile: posProfile },
-		["vunapos_closing_preview", posProfile],
-		{
-			revalidateOnMount: true,
-			dedupingInterval: 0,
-			keepPreviousData: false,
-		},
-	);
-	const closeCall = useFrappePostCall(vunaMethods.closePosSession);
-	const [amounts, setAmounts] = useState<Record<string, string>>({});
-	const [error, setError] = useState("");
-	const [confirmOpen, setConfirmOpen] = useState(false);
-	const countedAmount = (modeOfPayment: string, expectedAmount: number) =>
-		amounts[modeOfPayment] ?? formatAmountInput(expectedAmount);
+export function CloseShiftPage({
+  posProfile,
+  currency,
+  onBack,
+}: CloseShiftPageProps) {
+  const { isReachable } = useConnectivity();
+  const previewCall = useFrappeGetCall<unknown>(
+    vunaMethods.getClosingPreview,
+    { pos_profile: posProfile },
+    ["vunapos_closing_preview", posProfile],
+    {
+      revalidateOnMount: true,
+      dedupingInterval: 0,
+      keepPreviousData: false,
+    },
+  );
+  const closeCall = useFrappePostCall(vunaMethods.closePosSession);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const countedAmount = (modeOfPayment: string, expectedAmount: number) =>
+    amounts[modeOfPayment] ?? formatAmountInput(expectedAmount);
 
-	const preview = useMemo(() => {
-		if (!previewCall.data) return null;
-		try {
-			const response = unwrapVunaResponse<POSClosingPreviewDTO>(previewCall.data);
-			// Be tolerant of a response cached by an older frontend/backend release.
-			// The live revalidation above will replace it, but it must not crash this page first.
-			return {
-				...response,
-				invoices: Array.isArray(response.invoices) ? response.invoices : [],
-				payments: Array.isArray(response.payments) ? response.payments : [],
-			};
-		} catch {
-			return null;
-		}
-	}, [previewCall.data]);
+  const preview = useMemo(() => {
+    if (!previewCall.data) return null;
+    try {
+      const response = unwrapVunaResponse<POSClosingPreviewDTO>(
+        previewCall.data,
+      );
+      // Be tolerant of a response cached by an older frontend/backend release.
+      // The live revalidation above will replace it, but it must not crash this page first.
+      return {
+        ...response,
+        invoices: Array.isArray(response.invoices) ? response.invoices : [],
+        payments: Array.isArray(response.payments) ? response.payments : [],
+      };
+    } catch {
+      return null;
+    }
+  }, [previewCall.data]);
 
-	const blocker = !isReachable ? "Reconnect to the server before closing this shift." : null;
+  const blocker = !isReachable
+    ? "Reconnect to the server before closing this shift."
+    : null;
 
-	async function handleClose() {
-		if (!preview || blocker) return;
-		if (preview.payments.some((row) => !countedAmount(row.mode_of_payment, row.expected_amount).trim())) {
-			setError("Enter a counted amount for every payment mode.");
-			return;
-		}
-		const closingBalances = preview.payments.map((row) => ({
-			mode_of_payment: row.mode_of_payment,
-			closing_amount: parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)),
-		}));
-		if (closingBalances.some((row) => !Number.isFinite(row.closing_amount) || row.closing_amount < 0)) {
-			setError("Enter a valid counted amount for every payment mode.");
-			return;
-		}
-		setError("");
-		setConfirmOpen(true);
-	}
+  async function handleClose() {
+    if (!preview || blocker) return;
+    if (
+      preview.payments.some(
+        (row) =>
+          !countedAmount(row.mode_of_payment, row.expected_amount).trim(),
+      )
+    ) {
+      setError("Enter a counted amount for every payment mode.");
+      return;
+    }
+    const closingBalances = preview.payments.map((row) => ({
+      mode_of_payment: row.mode_of_payment,
+      closing_amount: parseAmountInput(
+        countedAmount(row.mode_of_payment, row.expected_amount),
+      ),
+    }));
+    if (
+      closingBalances.some(
+        (row) => !Number.isFinite(row.closing_amount) || row.closing_amount < 0,
+      )
+    ) {
+      setError("Enter a valid counted amount for every payment mode.");
+      return;
+    }
+    setError("");
+    setConfirmOpen(true);
+  }
 
-	async function confirmClose() {
-		if (!preview) return;
-		setError("");
-		if (!isReachable || navigator.onLine === false) {
-			setError("Reconnect to the server before closing this shift.");
-			return;
-		}
-		try {
-			const closingBalances = preview.payments.map((row) => ({
-				mode_of_payment: row.mode_of_payment,
-				closing_amount: parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)),
-			}));
-			const result = await closePosSession(closeCall.call, {
-				pos_profile: posProfile,
-				closing_balances: closingBalances,
-			});
-			if (result.session) {
-				await cachePosSession(result.session as CachedPosSession);
-			}
-			// Re-run the top-level session gate immediately. The cached server result
-			// already marks this session as closed, so sales stay blocked even if the
-			// live session check is briefly unavailable during the reload.
-			window.location.reload();
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to close POS session");
-		}
-	}
+  async function confirmClose() {
+    if (!preview) return;
+    setError("");
+    if (!isReachable || navigator.onLine === false) {
+      setError("Reconnect to the server before closing this shift.");
+      return;
+    }
+    try {
+      const closingBalances = preview.payments.map((row) => ({
+        mode_of_payment: row.mode_of_payment,
+        closing_amount: parseAmountInput(
+          countedAmount(row.mode_of_payment, row.expected_amount),
+        ),
+      }));
+      const result = await closePosSession(closeCall.call, {
+        pos_profile: posProfile,
+        closing_balances: closingBalances,
+      });
+      if (result.session) {
+        await cachePosSession(result.session as CachedPosSession);
+      }
+      // Re-run the top-level session gate immediately. The cached server result
+      // already marks this session as closed, so sales stay blocked even if the
+      // live session check is briefly unavailable during the reload.
+      window.location.reload();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to close POS session",
+      );
+    }
+  }
 
-	const loadError = previewCall.error?.message || (!previewCall.isLoading && !preview ? "Unable to load closing summary" : "");
-	return (
-		<section className="h-full overflow-y-auto p-4 pb-[84px] lg:pb-4">
-			<div className="mx-auto max-w-4xl space-y-4">
-				<div className="flex items-center justify-between gap-3">
-					<div>
-						<h2 className="text-lg font-semibold">Close POS Shift</h2>
-						<p className="text-sm text-on-surface-variant">Reconcile the till and close {posProfile}.</p>
-					</div>
-					<Button onClick={onBack}>Back to POS</Button>
-				</div>
+  const loadError =
+    previewCall.error?.message ||
+    (!previewCall.isLoading && !preview
+      ? "Unable to load closing summary"
+      : "");
+  return (
+    <section className="h-full overflow-y-auto p-4 pb-[84px] lg:pb-4">
+      <div className="mx-auto max-w-4xl space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">Close POS Shift</h2>
+            <p className="text-sm text-on-surface-variant">
+              Reconcile the till and close {posProfile}.
+            </p>
+          </div>
+          <Button onClick={onBack}>Back to POS</Button>
+        </div>
 
-				{blocker || loadError || error ? (
-					<div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
-						<AlertCircle className="size-4 shrink-0" />
-						{blocker || loadError || error}
-					</div>
-				) : null}
+        {blocker || loadError || error ? (
+          <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+            <AlertCircle className="size-4 shrink-0" />
+            {blocker || loadError || error}
+          </div>
+        ) : null}
 
-				{previewCall.isLoading ? <p className="py-12 text-center text-sm text-on-surface-variant">Loading shift totals...</p> : null}
-				{preview ? (
-					<>
-						<div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
-							<h3 className="font-semibold">Payment reconciliation</h3>
-							<div className="mt-3 space-y-3">
-								{preview.payments.map((row) => {
-									const rawAmount = countedAmount(row.mode_of_payment, row.expected_amount);
-									const counted = parseAmountInput(rawAmount);
-									const difference = rawAmount?.trim() && Number.isFinite(counted) ? counted - row.expected_amount : null;
-									return (
-										<div key={row.mode_of_payment} className="grid items-center gap-2 rounded-md bg-surface p-3 sm:grid-cols-[1fr_1fr_1fr]">
-											<div><p className="text-sm font-medium">{row.mode_of_payment}</p><p className="text-xs text-on-surface-variant">Expected {money(row.expected_amount, currency)}</p></div>
-											<input inputMode="decimal" placeholder="Counted amount" value={rawAmount} onChange={(event) => setAmounts((current) => ({ ...current, [row.mode_of_payment]: formatAmountInput(event.target.value) }))} className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm" />
-											<p className="text-sm text-on-surface-variant">Difference: {difference === null ? "-" : money(difference, currency)}</p>
-										</div>
-									);
-								})}
-							</div>
-						</div>
-						<div className="flex justify-end gap-2">
-							<Button variant="ghost" onClick={() => previewCall.mutate()}><RefreshCw className="mr-2 size-4" />Refresh totals</Button>
-							<Button variant="danger" disabled={Boolean(blocker) || closeCall.loading} onClick={handleClose}>{closeCall.loading ? "Closing..." : "Close POS Shift"}</Button>
-						</div>
-						<div className="grid gap-3 sm:grid-cols-3">
-							<Summary label="Invoices" value={String(preview.invoice_count)} />
-							<Summary label="Net sales" value={money(preview.net_total, currency)} />
-							<Summary label="Grand total" value={money(preview.grand_total, currency)} />
-						</div>
-						{preview.payment_activity ? <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4"><h3 className="font-semibold">Shift payment activity</h3><p className="mt-1 text-xs text-on-surface-variant">Credit sales are reported as sales but only their deposits are included in cash received. Reconciled credits are allocations only.</p><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Summary label="Checkout collections" value={money(preview.payment_activity.sales_collected, currency)}/><Summary label="Credit sales" value={money(preview.payment_activity.credit_sales, currency)}/><Summary label="Credit outstanding" value={money(preview.payment_activity.credit_outstanding, currency)}/><Summary label="Old invoice payments" value={money(preview.payment_activity.outstanding_invoice_payments, currency)}/><Summary label="Customer advances" value={money(preview.payment_activity.customer_advances, currency)}/><Summary label="Credits reconciled" value={money(preview.payment_activity.reconciled_existing_credits, currency)}/><Summary label="Cash received" value={money(preview.payment_activity.cash_received, currency)}/></div></div> : null}
-						<div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
-							<div className="flex items-center justify-between gap-3">
-								<div>
-									<h3 className="font-semibold">Sales in this shift</h3>
-									<p className="text-xs text-on-surface-variant">Invoices included in this closing reconciliation.</p>
-								</div>
-								<span className="text-sm font-medium">{preview.invoice_count} total</span>
-							</div>
-							{preview.invoices.length ? (
-								<div className="mt-3 overflow-x-auto">
-									<table className="w-full min-w-[640px] text-left text-sm">
-										<thead className="text-xs text-on-surface-variant">
-											<tr className="border-b border-outline-variant">
-												<th className="px-2 py-2 font-medium">Invoice</th>
-												<th className="px-2 py-2 font-medium">Date / time</th>
-												<th className="px-2 py-2 font-medium">Customer</th>
-												<th className="px-2 py-2 text-right font-medium">Total</th>
-											</tr>
-										</thead>
-										<tbody>
-											{preview.invoices.map((invoice) => (
-												<tr key={`${invoice.doctype}:${invoice.name}`} className="border-b border-outline-variant last:border-0">
-													<td className="px-2 py-2 font-medium">{invoice.name}{invoice.is_return ? " (Return)" : ""}</td>
-													<td className="px-2 py-2 text-on-surface-variant">{invoice.posting_date} {invoice.posting_time || ""}</td>
-													<td className="px-2 py-2 text-on-surface-variant">{invoice.customer || "-"}</td>
-													<td className="px-2 py-2 text-right font-medium">{money(invoice.grand_total, currency)}</td>
-												</tr>
-											))}
-										</tbody>
-									</table>
-								</div>
-							) : (
-								<p className="mt-3 rounded-md bg-surface p-3 text-sm text-on-surface-variant">No submitted VunaPOS invoices belong to this opening session yet.</p>
-							)}
-						</div>
-					</>
-				) : null}
-			</div>
-			<ConfirmDialog
-				isOpen={confirmOpen}
-				title="Close this POS shift?"
-				description="Review the shift summary before closing. A new POS Opening Entry will be required before making another sale."
-				confirmLabel="Close POS Shift"
-				confirmDisabled={Boolean(blocker)}
-				danger
-				size="lg"
-				loading={closeCall.loading}
-				onCancel={() => {
-					setConfirmOpen(false);
-					setError("");
-				}}
-				onConfirm={() => void confirmClose()}
-			>
-				{preview ? <div className="space-y-3 text-sm">{blocker || error ? <div role="alert" className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-on-error-container"><AlertCircle className="size-4 shrink-0" /><span>{blocker || error}</span></div> : null}<div className="grid grid-cols-2 gap-3"><div><p className="text-xs text-on-surface-variant">Invoices</p><p className="font-semibold">{preview.invoice_count}</p></div><div><p className="text-xs text-on-surface-variant">Grand total</p><p className="font-semibold">{money(preview.grand_total, currency)}</p></div></div><div className="border-t border-outline-variant pt-3"><p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">Counted amounts</p>{preview.payments.map((row) => { const counted = parseAmountInput(countedAmount(row.mode_of_payment, row.expected_amount)); return <div key={row.mode_of_payment} className="flex justify-between gap-3 py-1"><span>{row.mode_of_payment}</span><span className="text-right font-medium">{money(counted, currency)} <span className="text-xs font-normal text-on-surface-variant">({money(counted - row.expected_amount, currency)} difference)</span></span></div>; })}</div></div> : null}
-			</ConfirmDialog>
-		</section>
-	);
+        {previewCall.isLoading ? (
+          <p className="py-12 text-center text-sm text-on-surface-variant">
+            Loading shift totals...
+          </p>
+        ) : null}
+        {preview ? (
+          <>
+            <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
+              <h3 className="font-semibold">Payment reconciliation</h3>
+              <div className="mt-3 space-y-3">
+                {preview.payments.map((row) => {
+                  const rawAmount = countedAmount(
+                    row.mode_of_payment,
+                    row.expected_amount,
+                  );
+                  const counted = parseAmountInput(rawAmount);
+                  const difference =
+                    rawAmount?.trim() && Number.isFinite(counted)
+                      ? counted - row.expected_amount
+                      : null;
+                  return (
+                    <div
+                      key={row.mode_of_payment}
+                      className="grid items-center gap-2 rounded-md bg-surface p-3 sm:grid-cols-[1fr_1fr_1fr]"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">
+                          {row.mode_of_payment}
+                        </p>
+                        <p className="text-xs text-on-surface-variant">
+                          Expected {money(row.expected_amount, currency)}
+                        </p>
+                      </div>
+                      <input
+                        inputMode="decimal"
+                        placeholder="Counted amount"
+                        value={rawAmount}
+                        onChange={(event) =>
+                          setAmounts((current) => ({
+                            ...current,
+                            [row.mode_of_payment]: formatAmountInput(
+                              event.target.value,
+                            ),
+                          }))
+                        }
+                        className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm"
+                      />
+                      <p className="text-sm text-on-surface-variant">
+                        Difference:{" "}
+                        {difference === null
+                          ? "-"
+                          : money(difference, currency)}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => previewCall.mutate()}>
+                <RefreshCw className="mr-2 size-4" />
+                Refresh totals
+              </Button>
+              <Button
+                variant="danger"
+                disabled={Boolean(blocker) || closeCall.loading}
+                onClick={handleClose}
+              >
+                {closeCall.loading ? "Closing..." : "Close POS Shift"}
+              </Button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Summary label="Invoices" value={String(preview.invoice_count)} />
+              <Summary
+                label="Net sales"
+                value={money(preview.net_total, currency)}
+              />
+              <Summary
+                label="Grand total"
+                value={money(preview.grand_total, currency)}
+              />
+            </div>
+            {preview.payment_activity ? (
+              <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
+                <h3 className="font-semibold">Shift payment activity</h3>
+                <p className="mt-1 text-xs text-on-surface-variant">
+                  Credit sales are reported as sales but only their deposits are
+                  included in cash received. Reconciled credits are allocations
+                  only.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Summary
+                    label="Checkout collections"
+                    value={money(
+                      preview.payment_activity.sales_collected,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Credit sales"
+                    value={money(
+                      preview.payment_activity.credit_sales,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Credit outstanding"
+                    value={money(
+                      preview.payment_activity.credit_outstanding,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Old invoice payments"
+                    value={money(
+                      preview.payment_activity.outstanding_invoice_payments,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Customer advances"
+                    value={money(
+                      preview.payment_activity.customer_advances,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Credits reconciled"
+                    value={money(
+                      preview.payment_activity.reconciled_existing_credits,
+                      currency,
+                    )}
+                  />
+                  <Summary
+                    label="Cash received"
+                    value={money(
+                      preview.payment_activity.cash_received,
+                      currency,
+                    )}
+                  />
+                </div>
+              </div>
+            ) : null}
+            <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-semibold">Sales in this shift</h3>
+                  <p className="text-xs text-on-surface-variant">
+                    Invoices included in this closing reconciliation.
+                  </p>
+                </div>
+                <span className="text-sm font-medium">
+                  {preview.invoice_count} total
+                </span>
+              </div>
+              {preview.invoices.length ? (
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-left text-sm">
+                    <thead className="text-xs text-on-surface-variant">
+                      <tr className="border-b border-outline-variant">
+                        <th className="px-2 py-2 font-medium">Invoice</th>
+                        <th className="px-2 py-2 font-medium">Date / time</th>
+                        <th className="px-2 py-2 font-medium">Customer</th>
+                        <th className="px-2 py-2 text-right font-medium">
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.invoices.map((invoice) => (
+                        <tr
+                          key={`${invoice.doctype}:${invoice.name}`}
+                          className="border-b border-outline-variant last:border-0"
+                        >
+                          <td className="px-2 py-2 font-medium">
+                            {invoice.name}
+                            {invoice.is_return ? " (Return)" : ""}
+                          </td>
+                          <td className="px-2 py-2 text-on-surface-variant">
+                            {invoice.posting_date} {invoice.posting_time || ""}
+                          </td>
+                          <td className="px-2 py-2 text-on-surface-variant">
+                            {invoice.customer || "-"}
+                          </td>
+                          <td className="px-2 py-2 text-right font-medium">
+                            {money(invoice.grand_total, currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mt-3 rounded-md bg-surface p-3 text-sm text-on-surface-variant">
+                  No submitted VunaPOS invoices belong to this opening session
+                  yet.
+                </p>
+              )}
+            </div>
+          </>
+        ) : null}
+      </div>
+      <ConfirmDialog
+        isOpen={confirmOpen}
+        title="Close this POS shift?"
+        description="Review the shift summary before closing. A new POS Opening Entry will be required before making another sale."
+        confirmLabel="Close POS Shift"
+        confirmDisabled={Boolean(blocker)}
+        danger
+        size="lg"
+        loading={closeCall.loading}
+        onCancel={() => {
+          setConfirmOpen(false);
+          setError("");
+        }}
+        onConfirm={() => void confirmClose()}
+      >
+        {preview ? (
+          <div className="space-y-3 text-sm">
+            {blocker || error ? (
+              <div
+                role="alert"
+                className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-on-error-container"
+              >
+                <AlertCircle className="size-4 shrink-0" />
+                <span>{blocker || error}</span>
+              </div>
+            ) : null}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-xs text-on-surface-variant">Invoices</p>
+                <p className="font-semibold">{preview.invoice_count}</p>
+              </div>
+              <div>
+                <p className="text-xs text-on-surface-variant">Grand total</p>
+                <p className="font-semibold">
+                  {money(preview.grand_total, currency)}
+                </p>
+              </div>
+            </div>
+            <div className="border-t border-outline-variant pt-3">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+                Counted amounts
+              </p>
+              {preview.payments.map((row) => {
+                const counted = parseAmountInput(
+                  countedAmount(row.mode_of_payment, row.expected_amount),
+                );
+                return (
+                  <div
+                    key={row.mode_of_payment}
+                    className="flex justify-between gap-3 py-1"
+                  >
+                    <span>{row.mode_of_payment}</span>
+                    <span className="text-right font-medium">
+                      {money(counted, currency)}{" "}
+                      <span className="text-xs font-normal text-on-surface-variant">
+                        ({money(counted - row.expected_amount, currency)}{" "}
+                        difference)
+                      </span>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+      </ConfirmDialog>
+    </section>
+  );
 }
 
 function Summary({ label, value }: { label: string; value: string }) {
-	return <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4"><p className="text-xs text-on-surface-variant">{label}</p><p className="mt-1 text-lg font-semibold">{value}</p></div>;
+  return (
+    <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
+      <p className="text-xs text-on-surface-variant">{label}</p>
+      <p className="mt-1 text-lg font-semibold">{value}</p>
+    </div>
+  );
 }
 
 function money(value: number, currency?: string) {
-	return formatCurrency(value, currency);
+  return formatCurrency(value, currency);
 }
 
 function parseAmountInput(value: string) {
-	return Number(value.replace(/,/g, ""));
+  return Number(value.replace(/,/g, ""));
 }
 
 function formatAmountInput(value: string | number) {
-	const normalized = String(value).replace(/,/g, "").replace(/[^\d.]/g, "");
-	if (!normalized) return "";
-	const [integer, ...decimalParts] = normalized.split(".");
-	const decimal = decimalParts.join("");
-	const formattedInteger = integer
-		? Number(integer).toLocaleString(undefined, { maximumFractionDigits: 0 })
-		: "0";
-	return decimalParts.length ? `${formattedInteger}.${decimal}` : formattedInteger;
+  const normalized = String(value)
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "");
+  if (!normalized) return "";
+  const [integer, ...decimalParts] = normalized.split(".");
+  const decimal = decimalParts.join("");
+  const formattedInteger = integer
+    ? Number(integer).toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : "0";
+  return decimalParts.length
+    ? `${formattedInteger}.${decimal}`
+    : formattedInteger;
 }

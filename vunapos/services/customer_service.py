@@ -4,6 +4,7 @@ from erpnext.accounts.doctype.loyalty_program.loyalty_program import (
 )
 from erpnext.accounts.utils import get_balance_on
 from frappe import _
+from frappe.contacts.doctype.contact.contact import get_default_contact
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
 from vunapos.dto.customer import customer_to_dict
@@ -39,10 +40,14 @@ def search_customers(query=None, limit=20, since=None):
 	return [customer_to_dict(frappe.get_doc("Customer", row.name)) for row in customers]
 
 
-def create_customer(customer_name, mobile_no=None, email_id=None):
+def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=None):
 	if not customer_name:
 		frappe.throw(_("Customer name is required"))
 
+	profile = resolve_pos_profile(pos_profile)
+	allow_creation = profile.get("vunapos_allow_customer_creation")
+	if allow_creation is not None and not cint(allow_creation):
+		frappe.throw(_("Customer creation is disabled for this POS Profile"), frappe.PermissionError)
 	require_create("Customer")
 	customer = frappe.get_doc(
 		{
@@ -56,6 +61,40 @@ def create_customer(customer_name, mobile_no=None, email_id=None):
 	customer.insert()
 	require_read("Customer", customer.name)
 	return customer_to_dict(customer)
+
+
+def get_customer_contact_phone(pos_profile=None, customer=None):
+	"""Resolve the preferred permitted phone number for a POS customer."""
+	resolve_pos_profile(pos_profile)
+	if not customer:
+		frappe.throw(_("Customer is required"))
+	require_read("Customer", customer)
+	customer_doc = frappe.get_doc("Customer", customer)
+	direct_mobile = (customer_doc.get("mobile_no") or "").strip()
+	if direct_mobile:
+		return {"customer": customer_doc.name, "mobile_no": direct_mobile, "source": "Customer"}
+
+	contact_name = customer_doc.get("customer_primary_contact") or get_default_contact(
+		"Customer", customer_doc.name
+	)
+	contact = _permitted_linked_doc("Contact", contact_name, ["mobile_no", "phone"])
+	contact_mobile = ((contact or {}).get("mobile_no") or (contact or {}).get("phone") or "").strip()
+	if contact and not contact_mobile:
+		phone_rows = frappe.get_all(
+			"Contact Phone",
+			filters={"parent": contact_name, "parenttype": "Contact"},
+			fields=["phone", "is_primary_mobile_no", "is_primary_phone", "idx"],
+			order_by="is_primary_mobile_no desc, is_primary_phone desc, idx asc",
+		)
+		contact_mobile = next(
+			((row.get("phone") or "").strip() for row in phone_rows if (row.get("phone") or "").strip()),
+			"",
+		)
+	return {
+		"customer": customer_doc.name,
+		"mobile_no": contact_mobile or None,
+		"source": "Contact" if contact_mobile else None,
+	}
 
 
 def get_customer_loyalty(pos_profile=None, customer=None):
@@ -107,6 +146,9 @@ def get_customer_directory(
 ):
 	"""Return a permission-filtered customer page with live accounting summaries."""
 	profile = resolve_pos_profile(pos_profile)
+	allow_management = profile.get("vunapos_allow_customer_management")
+	if allow_management is not None and not cint(allow_management):
+		frappe.throw(_("Customer management is disabled for this POS Profile"), frappe.PermissionError)
 	start = max(cint(start), 0)
 	limit = min(max(cint(limit) or 25, 1), 100)
 	filters = {"disabled": 0}
@@ -136,6 +178,7 @@ def get_customer_directory(
 		"territory",
 		"mobile_no",
 		"email_id",
+		"is_walkin",
 		"default_currency",
 		"loyalty_program",
 		"modified",
@@ -220,6 +263,7 @@ def get_customer_directory(
 				"territory": customer.territory,
 				"mobile_no": customer.mobile_no,
 				"email_id": customer.email_id,
+				"is_walkin": bool(customer.get("is_walkin")),
 				"currency": customer.default_currency or profile.currency,
 				"outstanding_balance": flt(customer_balance) if customer_balance is not None else None,
 				"invoice_count": cint(summary.invoice_count)
@@ -368,6 +412,7 @@ def get_customer_details(pos_profile=None, customer=None, invoice_limit=20, paym
 			"mobile_no": customer_doc.mobile_no,
 			"email_id": customer_doc.email_id,
 			"tax_id": customer_doc.get("tax_id"),
+			"is_walkin": bool(customer_doc.get("is_walkin")),
 			"currency": customer_doc.get("default_currency") or profile.currency,
 		},
 		"balance": flt(balance),

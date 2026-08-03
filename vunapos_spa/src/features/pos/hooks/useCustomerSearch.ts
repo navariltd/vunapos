@@ -8,7 +8,7 @@ import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
 // Search the current server-hydrated in-memory customer snapshot. Creating a customer
 // remains server-authoritative and requires connectivity.
-export function useCustomerSearch(query: string) {
+export function useCustomerSearch(query: string, posProfile?: string) {
 	const createCall = useFrappePostCall(vunaMethods.createCustomer);
 	const [isCreating, setIsCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
@@ -44,7 +44,7 @@ export function useCustomerSearch(query: string) {
 			setIsCreating(true);
 			setCreateError(null);
 			try {
-				const customer = await createCustomer(createCall.call, params);
+				const customer = await createCustomer(createCall.call, { ...params, pos_profile: posProfile });
 				setCreatedCustomers((current) => [
 					customer,
 					...current.filter((row) => row.customer !== customer.customer),
@@ -58,7 +58,7 @@ export function useCustomerSearch(query: string) {
 				setIsCreating(false);
 			}
 		},
-		[createCall.call],
+		[createCall.call, posProfile],
 	);
 
 	return {
@@ -67,6 +67,6 @@ export function useCustomerSearch(query: string) {
 		error: createError,
 		isCreating,
 		isLoading: query !== debouncedQuery || cachedCustomers === undefined,
-		search: () => {},
+		search: () => { },
 	};
 }

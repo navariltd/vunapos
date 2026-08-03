@@ -12,6 +12,7 @@ from vunapos.api.sales import (
 	checkout_invoice,
 	clear_invoice,
 	create_and_submit_invoice,
+	create_and_submit_sales_order,
 	create_invoice,
 	create_invoice_from_cart,
 	hold_invoice,
@@ -24,6 +25,10 @@ from vunapos.api.sales import (
 	update_item,
 )
 from vunapos.services.checkout_queue_service import process_queued_invoice
+from vunapos.services.gateway_payment_service import (
+	attach_c2b_gateway_payment,
+	search_c2b_gateway_payments,
+)
 from vunapos.services.invoice_service import validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
@@ -52,8 +57,112 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		frappe.db.set_value(
 			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
 		)
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		for row in profile_doc.get("payments", []):
+			row.payment_gateway = None
+		profile_doc.save(ignore_permissions=True)
 		frappe.clear_cache(doctype="POS Profile")
 		ensure_open_pos_opening_entry(profile)
+
+	def _ensure_payment_gateway(self, gateway="_Test VunaPOS Gateway"):
+		company = frappe.defaults.get_defaults().company or frappe.db.get_single_value(
+			"Global Defaults", "default_company"
+		)
+		currency = frappe.db.get_value("Company", company, "default_currency") or "KES"
+		account_name = f"{gateway} - {currency} - {frappe.db.get_value('Company', company, 'abbr')}"
+		if not frappe.db.exists("Payment Gateway Account", account_name):
+			account = frappe.db.get_value(
+				"Account",
+				{"company": company, "account_type": ["in", ("Cash", "Bank")], "is_group": 0},
+				"name",
+			)
+			if not account:
+				self.skipTest("No cash or bank account available for Payment Gateway Account fixture")
+			frappe.get_doc(
+				{
+					"doctype": "Payment Gateway Account",
+					"name": gateway,
+					"payment_gateway": gateway,
+					"company": company,
+					"payment_account": account,
+					"currency": currency,
+				}
+			).insert(ignore_permissions=True, ignore_links=True)
+		return account_name
+
+	def _set_profile_payment_gateway(self, profile, mode_of_payment, gateway):
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		for row in profile_doc.get("payments", []):
+			if row.mode_of_payment == mode_of_payment:
+				row.payment_gateway = gateway
+		profile_doc.save(ignore_permissions=True)
+		frappe.clear_cache(doctype="POS Profile")
+
+	def _make_ke_payment_request(self, gateway, amount, currency="KES"):
+		if not frappe.db.table_exists("KE Payment Request"):
+			self.skipTest("navari_ke_payments is not installed")
+		doc = frappe.get_doc(
+			{
+				"doctype": "KE Payment Request",
+				"provider": "Mpesa",
+				"status": "Completed",
+				"payment_gateway": gateway,
+				"amount": amount,
+				"currency": currency,
+				"phone_number": "254700000000",
+				"transaction_id": frappe.generate_hash(length=10),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc
+
+	def _make_c2b_payment(self, gateway, mode_of_payment, amount, currency="KES", customer=None, submit=True):
+		if not frappe.db.table_exists("KE C2B Payment Register"):
+			self.skipTest("navari_ke_payments is not installed")
+		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
+		source = frappe.get_doc(
+			{
+				"doctype": "KE C2B Payment Register",
+				"provider": "Mpesa",
+				"transaction_id": frappe.generate_hash(length=10).upper(),
+				"transaction_date": nowdate(),
+				"amount": amount,
+				"currency": currency,
+				"party_phone": "254700000000",
+				"party_name": "VunaPOS C2B Test Payer",
+				"status": "Received",
+				"payment_gateway": frappe.db.get_value("Payment Gateway Account", gateway, "payment_gateway"),
+				"company": profile.company,
+				"mode_of_payment": mode_of_payment,
+				"customer": customer,
+				"create_payment_entry": 0,
+			}
+		)
+		source.insert(ignore_permissions=True, ignore_links=True)
+		if submit and source.meta.is_submittable:
+			source.submit()
+		return source
+
+	def _make_gateway_payment_link(self, profile, mode_of_payment, gateway, amount, source):
+		opening_entry = ensure_open_pos_opening_entry(profile)
+		doc = frappe.get_doc(
+			{
+				"doctype": "VunaPOS Gateway Payment Link",
+				"source_doctype": source.doctype,
+				"source_name": source.name,
+				"payment_gateway": gateway,
+				"mode_of_payment": mode_of_payment,
+				"status": "Paid",
+				"pos_profile": profile,
+				"opening_entry": opening_entry,
+				"cashier": frappe.session.user,
+				"customer": frappe.db.get_value("POS Profile", profile, "customer"),
+				"amount": amount,
+				"currency": frappe.db.get_value("POS Profile", profile, "currency"),
+			}
+		)
+		doc.insert(ignore_permissions=True)
+		return doc.name
 
 	def _batch_profile_and_item(self, item_code="_Test Vuna Batch Item"):
 		profile = ensure_test_pos_profile()
@@ -90,6 +199,51 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		response = remove_item(invoice["doctype"], invoice["name"], row_name)
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
+
+	def test_create_and_submit_sales_order_from_cart(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		response = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 2}],
+			idempotency_key="sales-order-checkout-key",
+		)
+
+		self.assertTrue(response["ok"], response)
+		order = response["data"]
+		self.assertEqual(order["doctype"], "Sales Order")
+		self.assertEqual(order["docstatus"], 1)
+		self.assertEqual(order["items"][0]["item_code"], item_code)
+		self.assertEqual(order["items"][0]["qty"], 2)
+		self.assertEqual(frappe.db.get_value("Sales Order", order["name"], "vunapos_invoice"), 1)
+		self.assertEqual(
+			frappe.db.get_value("Sales Order", order["name"], "vunapos_pos_profile"),
+			profile,
+		)
+		self.assertEqual(
+			frappe.db.get_value("Sales Order", order["name"], "vunapos_session_cashier"),
+			frappe.session.user,
+		)
+
+	def test_sales_order_checkout_with_same_idempotency_key_does_not_duplicate(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		first = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="same-sales-order-key",
+		)
+		second = create_and_submit_sales_order(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="same-sales-order-key",
+		)
+
+		self.assertTrue(first["ok"], first)
+		self.assertTrue(second["ok"], second)
+		self.assertEqual(first["data"]["name"], second["data"]["name"])
 
 	def test_manual_rate_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()
@@ -148,6 +302,43 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(below_threshold["data"]["items"][0]["rate"], 100)
 		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
 		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
+
+	def test_checkout_allows_erpnext_pricing_rule_without_rate_change_permission(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		item_code = ensure_test_item()
+		frappe.db.set_value("POS Profile", profile_name, "allow_rate_change", 0, update_modified=False)
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Checkout Discount",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Discount Percentage",
+				"discount_percentage": 20,
+				"min_qty": 1,
+				"priority": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile_name)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": 80}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["rate"], 80)
+		self.assertEqual(response["data"]["items"][0]["discount_percentage"], 20)
 
 	def test_manual_discount_change_requires_profile_permission(self):
 		profile = ensure_test_pos_profile()
@@ -445,6 +636,52 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["data"]["docstatus"], 1)
 		self.assertEqual(response["data"]["payments"][0]["mode_of_payment"], "Cash")
 
+	def test_checkout_applies_tax_id_for_walkin_customer(self):
+		profile = ensure_test_pos_profile()
+		customer = frappe.db.get_value("POS Profile", profile, "customer")
+		frappe.db.set_value("Customer", customer, "is_walkin", 1, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount, "default": 1}],
+			tax_id="P051234567A",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["tax_id"], "P051234567A")
+		self.assertEqual(
+			frappe.db.get_value(response["data"]["doctype"], response["data"]["name"], "tax_id"),
+			"P051234567A",
+		)
+
+	def test_checkout_rejects_tax_id_for_non_walkin_customer(self):
+		profile = ensure_test_pos_profile()
+		customer = frappe.db.get_value("POS Profile", profile, "customer")
+		frappe.db.set_value("Customer", customer, "is_walkin", 0, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount, "default": 1}],
+			tax_id="P051234567A",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "CUSTOMER_TAX_ID_NOT_ALLOWED")
+
 	def test_submit_invoice_rejects_missing_payment_rows(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
@@ -569,6 +806,128 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 				self.assertFalse(response["ok"], response)
 				self.assertEqual(response["errors"][0]["code"], "INVALID_PAYMENT_AMOUNT")
 
+	def test_checkout_rejects_manual_amount_for_gateway_controlled_mode(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "amount": amount}],
+			idempotency_key="manual-gateway-rejected",
+		)
+
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "GATEWAY_PAYMENT_REQUIRED")
+
+	def test_checkout_consumes_verified_gateway_payment_link(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		source = self._make_ke_payment_request(
+			gateway, amount, frappe.db.get_value("POS Profile", profile, "currency")
+		)
+		link = self._make_gateway_payment_link(profile, mode, gateway, amount, source)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "gateway_payment_link": link}],
+			idempotency_key="verified-gateway-consumed",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(frappe.db.get_value("VunaPOS Gateway Payment Link", link, "consumed"), 1)
+		self.assertEqual(
+			frappe.db.get_value("VunaPOS Gateway Payment Link", link, "consumed_by_name"),
+			response["data"]["name"],
+		)
+
+	def test_c2b_search_excludes_reserved_gateway_payment(self):
+		profile = ensure_test_pos_profile()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		currency = frappe.db.get_value("POS Profile", profile, "currency")
+		source = self._make_c2b_payment(gateway, mode, 100, currency=currency)
+
+		before_attach = search_c2b_gateway_payments(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			query=source.transaction_id[:4],
+			currency=currency,
+		)
+		self.assertTrue(any(row["name"] == source.name for row in before_attach), before_attach)
+
+		attach_c2b_gateway_payment(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			transaction_reference=source.transaction_id,
+			amount=100,
+			currency=currency,
+			idempotency_key="reserved-c2b-search-hidden",
+		)
+
+		after_attach = search_c2b_gateway_payments(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			query=source.transaction_id[:4],
+			currency=currency,
+		)
+		self.assertFalse(any(row["name"] == source.name for row in after_attach), after_attach)
+
+	def test_checkout_consumes_c2b_source_and_disables_ke_payment_entry_creation(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		gateway = self._ensure_payment_gateway()
+		mode = frappe.get_doc("POS Profile", profile).get("payments")[0].mode_of_payment
+		self._set_profile_payment_gateway(profile, mode, gateway)
+		set_invoice_mode("Sales Invoice")
+		invoice = create_invoice(pos_profile=profile)["data"]
+		invoice = add_item(invoice["doctype"], invoice["name"], item_code, 1)["data"]
+		amount = invoice["totals"]["rounded_total"] or invoice["totals"]["grand_total"]
+		currency = frappe.db.get_value("POS Profile", profile, "currency")
+		source = self._make_c2b_payment(gateway, mode, amount, currency=currency, submit=False)
+		link = attach_c2b_gateway_payment(
+			pos_profile=profile,
+			mode_of_payment=mode,
+			transaction_reference=source.transaction_id,
+			amount=amount,
+			currency=currency,
+			idempotency_key="consume-c2b-source",
+		)
+
+		response = checkout_invoice(
+			invoice["doctype"],
+			invoice["name"],
+			payments=[{"mode_of_payment": mode, "gateway_payment_link": link["name"]}],
+			idempotency_key="consume-c2b-source-checkout",
+		)
+
+		self.assertTrue(response["ok"], response)
+		source.reload()
+		self.assertEqual(source.docstatus, 1)
+		self.assertEqual(source.reference_doctype, response["data"]["doctype"])
+		self.assertEqual(source.reference_docname, response["data"]["name"])
+		self.assertEqual(source.is_reconciled, 1)
+		self.assertEqual(source.reconciliation_status, "Reconciled")
+		self.assertEqual(source.create_payment_entry, 0)
+		self.assertEqual(flt(source.allocated_amount), flt(amount))
+		self.assertEqual(flt(source.unallocated_amount), 0)
+
 	def test_payment_validation_accepts_split_at_currency_precision(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
 		doc.precision = lambda _fieldname: 2
@@ -593,8 +952,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(
 			rows,
 			[
-				{"mode_of_payment": "Cash", "amount": 25.25, "default": None},
-				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None},
+				{"mode_of_payment": "Cash", "amount": 25.25, "default": None, "gateway_payment_link": None},
+				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None, "gateway_payment_link": None},
 			],
 		)
 
@@ -913,6 +1272,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def test_background_enabled_checkout_reserves_then_queues_submission(self, enqueue):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)
+		frappe.db.set_value("Customer", profile.customer, "is_walkin", 1, update_modified=False)
+		frappe.clear_cache(doctype="Customer")
 		item_code = ensure_test_stock_item("_Test VunaPOS Reserved Checkout Item")
 		set_invoice_mode("Sales Invoice")
 		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 1)
@@ -931,11 +1292,16 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			items=[{"item_code": item_code, "qty": 2}],
 			payments=[{"mode_of_payment": "Cash", "amount": 200}],
 			idempotency_key="reserved-synchronous-checkout",
+			tax_id="P051234567A",
 		)
 
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["docstatus"], 0)
 		self.assertEqual(response["data"]["queue_status"], "Queued")
+		self.assertEqual(response["data"]["tax_id"], "P051234567A")
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "tax_id"), "P051234567A"
+		)
 		reservations = frappe.get_all(
 			"Stock Reservation Entry",
 			filters={"voucher_type": "Sales Invoice", "voucher_no": response["data"]["name"]},
@@ -963,6 +1329,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		self.assertEqual(processed["status"], "Submitted")
 		self.assertEqual(frappe.db.get_value("Sales Invoice", response["data"]["name"], "docstatus"), 1)
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "tax_id"), "P051234567A"
+		)
 		self.assertEqual(
 			frappe.db.get_value("Sales Invoice", response["data"]["name"], "vunapos_queue_status"),
 			"Submitted",

@@ -2,11 +2,30 @@ from decimal import Decimal, InvalidOperation
 
 import frappe
 from erpnext.accounts.party import get_party_account
+from erpnext.accounts.utils import get_currency_precision
 from frappe import _
-from frappe.utils import flt, nowdate
+from frappe.utils import cint, flt, getdate, nowdate
 
+from vunapos.services.gateway_payment_service import (
+	consume_gateway_payment_links,
+	gateway_payment_metadata,
+	payment_mode_gateway,
+	validate_gateway_payment_link,
+)
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
+
+
+def _feature_disabled(code, message):
+	exc = frappe.ValidationError(message)
+	exc.vuna_error_code = code
+	raise exc
+
+
+def _require_profile_feature(profile, fieldname, code, message):
+	value = profile.get(fieldname)
+	if value is not None and not cint(value):
+		_feature_disabled(code, message)
 
 
 def _amount(value, label):
@@ -47,6 +66,7 @@ def receive_customer_payment(
 	reference_date=None,
 	remarks=None,
 	idempotency_key=None,
+	gateway_payment_link=None,
 ):
 	if not idempotency_key:
 		frappe.throw(_("An idempotency key is required"))
@@ -58,6 +78,12 @@ def receive_customer_payment(
 		return payment_entry_to_dict(frappe.get_doc("Payment Entry", existing), duplicate=True)
 
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
 	opening_entry = require_open_pos_session(profile.name)
 	require_create("Payment Entry")
 	if not frappe.has_permission("Payment Entry", "submit"):
@@ -67,6 +93,29 @@ def receive_customer_payment(
 		frappe.throw(_("Customer {0} is disabled").format(customer))
 
 	amount = _amount(amount, _("Payment amount"))
+	payment_gateway = payment_mode_gateway(profile, mode_of_payment)
+	gateway_link = None
+	gateway_metadata = {}
+	if payment_gateway:
+		precision = get_currency_precision() or 2
+		gateway_link = validate_gateway_payment_link(
+			gateway_payment_link,
+			profile=profile,
+			opening_entry=opening_entry,
+			mode_of_payment=mode_of_payment,
+			payment_gateway=payment_gateway,
+			customer=customer,
+			amount=amount,
+			currency=profile.currency,
+			precision=precision,
+		)
+		amount = flt(gateway_link.amount, precision)
+		gateway_metadata = gateway_payment_metadata(gateway_link.name)
+		reference_no = gateway_metadata.get("transaction_reference") or reference_no or gateway_link.name
+		if gateway_metadata.get("transaction_date"):
+			reference_date = getdate(gateway_metadata.get("transaction_date"))
+		else:
+			reference_date = reference_date or nowdate()
 	allocation = 0
 	invoice = None
 	if sales_invoice:
@@ -146,6 +195,8 @@ def receive_customer_payment(
 	doc.set_amounts()
 	doc.insert()
 	doc.submit()
+	if gateway_link:
+		consume_gateway_payment_links([gateway_link], doc)
 	return payment_entry_to_dict(doc)
 
 
@@ -183,6 +234,18 @@ def get_payment_history(
 	limit=100,
 ):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_history",
+		"PAYMENT_HISTORY_DISABLED",
+		_("Payment history is disabled for this POS Profile"),
+	)
 	filters = {"company": profile.company, "vunapos_payment": 1}
 	if customer:
 		filters["party"] = customer
@@ -232,6 +295,31 @@ def get_payment_history(
 	by_payment = {}
 	for row in references:
 		by_payment.setdefault(row.parent, []).append(row)
+	payment_names = [row.name for row in rows]
+	gateway_links = []
+	if payment_names:
+		gateway_links = frappe.get_all(
+			"VunaPOS Gateway Payment Link",
+			filters={
+				"pos_profile": profile.name,
+				"consumed_by_doctype": "Payment Entry",
+				"consumed_by_name": ["in", payment_names],
+			},
+			fields=[
+				"name",
+				"source_doctype",
+				"source_name",
+				"payment_gateway",
+				"mode_of_payment",
+				"status",
+				"transaction_reference",
+				"consumed_by_name",
+			],
+			order_by="creation desc",
+		)
+	gateway_by_payment = {}
+	for row in gateway_links:
+		gateway_by_payment.setdefault(row.consumed_by_name, []).append(row)
 	return {
 		"payments": [
 			{
@@ -239,6 +327,7 @@ def get_payment_history(
 				"status": "Cancelled" if row.docstatus == 2 else "Submitted",
 				"allocated_amount": flt(row.received_amount) - flt(row.unallocated_amount),
 				"references": by_payment.get(row.name, []),
+				"gateway_links": gateway_by_payment.get(row.name, []),
 			}
 			for row in rows
 		]
@@ -294,9 +383,21 @@ def _native_candidates(profile, customer, limit=100):
 
 def get_reconciliation_candidates(pos_profile=None, customer=None, limit=100):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	if not customer:
 		return {"payments": [], "invoices": []}
-	_, payments, invoices = _native_candidates(profile, customer, limit)
+	payments, invoices = _native_candidates(profile, customer, limit)[1:]
 	return {
 		"payments": [
 			{
@@ -323,6 +424,18 @@ def get_reconciliation_candidates(pos_profile=None, customer=None, limit=100):
 
 def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=None, invoices=None):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	if not payment_entries or not invoices:
 		frappe.throw(_("Select at least one payment and one invoice"))
 	doc, payments, invoice_rows = _native_candidates(profile, customer)
@@ -355,6 +468,18 @@ def allocate_customer_payments(pos_profile=None, customer=None, payment_entries=
 
 def reconcile_customer_payment(pos_profile=None, customer=None, payment_entries=None, invoices=None):
 	profile = resolve_pos_profile(pos_profile)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_customer_payments",
+		"CUSTOMER_PAYMENTS_DISABLED",
+		_("Customer payments are disabled for this POS Profile"),
+	)
+	_require_profile_feature(
+		profile,
+		"vunapos_allow_payment_reconciliation",
+		"PAYMENT_RECONCILIATION_DISABLED",
+		_("Payment reconciliation is disabled for this POS Profile"),
+	)
 	opening_entry = require_open_pos_session(profile.name)
 	for name in payment_entries or []:
 		require_read("Payment Entry", name)
