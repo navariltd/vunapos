@@ -4,6 +4,7 @@ from erpnext.accounts.doctype.loyalty_program.loyalty_program import (
 )
 from erpnext.accounts.utils import get_balance_on
 from frappe import _
+from frappe.contacts.doctype.contact.contact import get_default_contact
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
 from vunapos.dto.customer import customer_to_dict
@@ -60,6 +61,29 @@ def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=No
 	customer.insert()
 	require_read("Customer", customer.name)
 	return customer_to_dict(customer)
+
+
+def get_customer_contact_phone(pos_profile=None, customer=None):
+	"""Resolve the preferred permitted phone number for a POS customer."""
+	resolve_pos_profile(pos_profile)
+	if not customer:
+		frappe.throw(_("Customer is required"))
+	require_read("Customer", customer)
+	customer_doc = frappe.get_doc("Customer", customer)
+	direct_mobile = (customer_doc.get("mobile_no") or "").strip()
+	if direct_mobile:
+		return {"customer": customer_doc.name, "mobile_no": direct_mobile, "source": "Customer"}
+
+	contact_name = customer_doc.get("customer_primary_contact") or get_default_contact(
+		"Customer", customer_doc.name
+	)
+	contact = _permitted_linked_doc("Contact", contact_name, ["mobile_no", "phone"])
+	contact_mobile = ((contact or {}).get("mobile_no") or (contact or {}).get("phone") or "").strip()
+	return {
+		"customer": customer_doc.name,
+		"mobile_no": contact_mobile or None,
+		"source": "Contact" if contact_mobile else None,
+	}
 
 
 def get_customer_loyalty(pos_profile=None, customer=None):

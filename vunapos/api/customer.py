@@ -1,6 +1,7 @@
 import frappe
 
 from vunapos.services.customer_service import create_customer as create_customer_service
+from vunapos.services.customer_service import get_customer_contact_phone as get_customer_contact_phone_service
 from vunapos.services.customer_service import get_customer_details as get_customer_details_service
 from vunapos.services.customer_service import get_customer_directory as get_customer_directory_service
 from vunapos.services.customer_service import get_customer_loyalty as get_customer_loyalty_service
@@ -35,6 +36,14 @@ def get_customer_details(pos_profile=None, customer=None, invoice_limit=20, paym
 def get_customer_loyalty(pos_profile: str | None = None, customer: str | None = None):
 	try:
 		return success(get_customer_loyalty_service(pos_profile=pos_profile, customer=customer))
+	except Exception as exc:
+		return failure(str(exc), code=exc.__class__.__name__)
+
+
+@frappe.whitelist()
+def get_customer_contact_phone(pos_profile: str | None = None, customer: str | None = None):
+	try:
+		return success(get_customer_contact_phone_service(pos_profile=pos_profile, customer=customer))
 	except Exception as exc:
 		return failure(str(exc), code=exc.__class__.__name__)
 

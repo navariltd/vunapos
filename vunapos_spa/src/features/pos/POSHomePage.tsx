@@ -938,6 +938,7 @@ export function POSHomePage({
           })
         }
         onCheckGatewayPayment={gatewayPayments.getGatewayPaymentStatus}
+        onResolveCustomerPhone={gatewayPayments.getCustomerContactPhone}
         onCancelGatewayPayment={gatewayPayments.cancelGatewayPaymentLink}
         onInitiateGatewayPayment={(params) =>
           gatewayPayments.initiateStkPayment({

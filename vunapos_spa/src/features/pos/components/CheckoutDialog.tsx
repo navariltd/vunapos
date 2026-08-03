@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Award,
@@ -28,8 +28,10 @@ import {
   totalToMinorUnits,
 } from "../paymentAllocation";
 import { useCartStore } from "../stores/cartStore";
+import { useUiFeedbackStore } from "../stores/uiFeedbackStore";
 import type {
   CustomerDTO,
+  CustomerContactPhoneDTO,
   CustomerLoyaltyDTO,
   C2BGatewayPaymentDTO,
   GatewayPaymentLinkDTO,
@@ -75,6 +77,10 @@ type CheckoutDialogProps = {
   onCheckGatewayPayment?: (
     gatewayPaymentLink: string,
   ) => Promise<GatewayPaymentLinkDTO>;
+  onResolveCustomerPhone?: (params: {
+    pos_profile?: string;
+    customer: string;
+  }) => Promise<CustomerContactPhoneDTO>;
   onCancelGatewayPayment?: (
     gatewayPaymentLink: string,
   ) => Promise<GatewayPaymentLinkDTO>;
@@ -108,6 +114,10 @@ function isSuccessfulGatewayLink(link?: GatewayPaymentLinkDTO) {
   return link?.status === "Paid" || link?.status === "Authorized";
 }
 
+function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
+  return link?.status === "Draft" || link?.status === "Pending";
+}
+
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
@@ -126,6 +136,7 @@ export function CheckoutDialog({
   onAttachC2bGatewayPayment,
   onSearchC2bGatewayPayments,
   onCheckGatewayPayment,
+  onResolveCustomerPhone,
   onCancelGatewayPayment,
   onInitiateGatewayPayment,
   onPreviewLoyalty,
@@ -155,6 +166,7 @@ export function CheckoutDialog({
       onAttachC2bGatewayPayment={onAttachC2bGatewayPayment}
       onSearchC2bGatewayPayments={onSearchC2bGatewayPayments}
       onCheckGatewayPayment={onCheckGatewayPayment}
+      onResolveCustomerPhone={onResolveCustomerPhone}
       onCancelGatewayPayment={onCancelGatewayPayment}
       onInitiateGatewayPayment={onInitiateGatewayPayment}
       onPreviewLoyalty={onPreviewLoyalty}
@@ -181,6 +193,7 @@ function CheckoutDialogContent({
   onAttachC2bGatewayPayment,
   onSearchC2bGatewayPayments,
   onCheckGatewayPayment,
+  onResolveCustomerPhone,
   onCancelGatewayPayment,
   onInitiateGatewayPayment,
   onPreviewLoyalty,
@@ -189,6 +202,7 @@ function CheckoutDialogContent({
 }: Omit<CheckoutDialogProps, "isOpen">) {
   const invoice = useCartStore((s) => s.invoice);
   const isSubmitting = useCartStore((s) => s.isMutating);
+  const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
@@ -246,7 +260,14 @@ function CheckoutDialogContent({
     Record<string, GatewayPaymentLinkDTO | undefined>
   >({});
   const [gatewayPhones, setGatewayPhones] = useState<Record<string, string>>(
-    {},
+    () =>
+      customer?.mobile_no
+        ? Object.fromEntries(
+            availableModes
+              .filter((mode) => mode.payment_gateway)
+              .map((mode) => [mode.mode_of_payment, customer.mobile_no || ""]),
+          )
+        : {},
   );
   const [gatewayErrors, setGatewayErrors] = useState<
     Record<string, string | undefined>
@@ -261,7 +282,54 @@ function CheckoutDialogContent({
   const [c2bLoading, setC2bLoading] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
   const searchC2bGatewayPaymentsRef = useRef(onSearchC2bGatewayPayments);
+  const checkGatewayPaymentRef = useRef(onCheckGatewayPayment);
+  const notifiedGatewayLinksRef = useRef(new Set<string>());
+  const resolvedPhoneCustomerRef = useRef<string | undefined>(undefined);
   const isWalkinCustomer = Boolean(customer?.is_walkin);
+  useEffect(() => {
+    const customerName = customer?.customer;
+    if (
+      !customerName ||
+      customer.mobile_no ||
+      !onResolveCustomerPhone ||
+      resolvedPhoneCustomerRef.current === customerName
+    ) {
+      return;
+    }
+    resolvedPhoneCustomerRef.current = customerName;
+    let cancelled = false;
+    void onResolveCustomerPhone({
+      pos_profile: posProfile,
+      customer: customerName,
+    })
+      .then((resolved) => {
+        const phone = resolved.mobile_no?.trim();
+        if (cancelled || !phone) return;
+        setGatewayPhones((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            availableModes
+              .filter(
+                (mode) =>
+                  mode.payment_gateway && !current[mode.mode_of_payment],
+              )
+              .map((mode) => [mode.mode_of_payment, phone]),
+          ),
+        }));
+      })
+      .catch((phoneError) => {
+        console.error("Unable to resolve the customer contact phone", phoneError);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    availableModes,
+    customer?.customer,
+    customer?.mobile_no,
+    onResolveCustomerPhone,
+    posProfile,
+  ]);
   const allocation = calculatePaymentAllocation(
     availableModes,
     amounts,
@@ -367,13 +435,15 @@ function CheckoutDialogContent({
               ? "Partial payment"
               : "Payment incomplete";
 
-  const setPaidGatewayLink = (
-    modeOfPayment: string,
-    link: GatewayPaymentLinkDTO,
-  ) => {
-    setGatewayLinks((current) => ({ ...current, [modeOfPayment]: link }));
-    setGatewayErrors((current) => ({ ...current, [modeOfPayment]: undefined }));
-    if (isSuccessfulGatewayLink(link)) {
+  const setPaidGatewayLink = useCallback(
+    (modeOfPayment: string, link: GatewayPaymentLinkDTO) => {
+      setGatewayLinks((current) => ({ ...current, [modeOfPayment]: link }));
+      setGatewayErrors((current) => ({
+        ...current,
+        [modeOfPayment]: undefined,
+      }));
+      if (!isSuccessfulGatewayLink(link)) return;
+
       setAmounts((current) => ({
         ...current,
         [modeOfPayment]: minorUnitsToInput(
@@ -381,33 +451,50 @@ function CheckoutDialogContent({
           precision,
         ),
       }));
-    }
-  };
+      setActiveGatewayMode((current) =>
+        current?.mode_of_payment === modeOfPayment ? null : current,
+      );
+      if (!notifiedGatewayLinksRef.current.has(link.name)) {
+        notifiedGatewayLinksRef.current.add(link.name);
+        showToast({
+          type: "info",
+          message: `${modeOfPayment} payment verified successfully.`,
+        });
+      }
+    },
+    [precision, showToast],
+  );
   const clearGatewayVerification = (modeOfPayment: string) => {
     setGatewayLinks((current) => ({ ...current, [modeOfPayment]: undefined }));
     setGatewayErrors((current) => ({ ...current, [modeOfPayment]: undefined }));
-  };
-  const gatewayRemainingMinor = (modeOfPayment: string) => {
-    const currentModeMinor =
-      parsePaymentAmount(amounts[modeOfPayment] || "", precision) || 0;
-    return Math.max(
-      payableMinor - allocation.allocatedMinor + currentModeMinor,
-      0,
-    );
   };
   const gatewayAmountMinor = (modeOfPayment: string) =>
     parsePaymentAmount(amounts[modeOfPayment] || "", precision) || 0;
   const openGatewayDialog = (mode: ModeOfPaymentDTO) => {
     if (!mode.payment_gateway) return;
-    const currentAmountMinor = gatewayAmountMinor(mode.mode_of_payment);
-    if (currentAmountMinor <= 0) {
-      const nextAmountMinor = gatewayRemainingMinor(mode.mode_of_payment);
-      if (nextAmountMinor > 0) {
-        setAmounts((current) => ({
-          ...current,
-          [mode.mode_of_payment]: minorUnitsToInput(nextAmountMinor, precision),
-        }));
-      }
+    const currentLink = gatewayLinks[mode.mode_of_payment];
+    if (
+      currentLink &&
+      totalToMinorUnits(Number(currentLink.amount || 0), precision) !==
+        payableMinor
+    ) {
+      clearGatewayVerification(mode.mode_of_payment);
+    }
+    setAmounts(
+      allocateAllToMode(
+        availableModes,
+        mode.mode_of_payment,
+        payableMinor,
+        precision,
+      ),
+    );
+    const customerPhone = customer?.mobile_no?.trim();
+    if (customerPhone) {
+      setGatewayPhones((current) => ({
+        ...current,
+        [mode.mode_of_payment]:
+          current[mode.mode_of_payment] || customerPhone,
+      }));
     }
     setC2bQuery("");
     setC2bResults([]);
@@ -458,6 +545,53 @@ function CheckoutDialogContent({
       return;
     setPaidGatewayLink(matchingMode.mode_of_payment, event);
   });
+  const activeGatewayLink = activeGatewayMode
+    ? gatewayLinks[activeGatewayMode.mode_of_payment]
+    : undefined;
+  const activeGatewayLinkName = activeGatewayLink?.name;
+  const activeGatewayLinkStatus = activeGatewayLink?.status;
+  useEffect(() => {
+    checkGatewayPaymentRef.current = onCheckGatewayPayment;
+  }, [onCheckGatewayPayment]);
+  useEffect(() => {
+    const modeOfPayment = activeGatewayMode?.mode_of_payment;
+    const linkName = activeGatewayLinkName;
+    if (
+      !modeOfPayment ||
+      !linkName ||
+      (activeGatewayLinkStatus !== "Draft" &&
+        activeGatewayLinkStatus !== "Pending") ||
+      !checkGatewayPaymentRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: number | undefined;
+    const poll = async () => {
+      try {
+        const link = await checkGatewayPaymentRef.current?.(linkName);
+        if (!cancelled && link) setPaidGatewayLink(modeOfPayment, link);
+      } catch (pollError) {
+        // Realtime remains the primary confirmation path. A temporary polling
+        // failure should not present a payment failure to the cashier.
+        console.error("Unable to refresh gateway payment status", pollError);
+      } finally {
+        if (!cancelled) timeoutId = window.setTimeout(poll, 3000);
+      }
+    };
+
+    timeoutId = window.setTimeout(poll, 2500);
+    return () => {
+      cancelled = true;
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    };
+  }, [
+    activeGatewayLinkName,
+    activeGatewayLinkStatus,
+    activeGatewayMode?.mode_of_payment,
+    setPaidGatewayLink,
+  ]);
   useEffect(() => {
     searchC2bGatewayPaymentsRef.current = onSearchC2bGatewayPayments;
   }, [onSearchC2bGatewayPayments]);
@@ -762,13 +896,16 @@ function CheckoutDialogContent({
                           </button>
                           <input
                             aria-label={`${mode.mode_of_payment} amount`}
-                            className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+                            className={`h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm ${isGatewayControlled ? "cursor-pointer" : ""}`}
                             inputMode="decimal"
                             placeholder={minorUnitsToInput(0, precision)}
+                            readOnly={isGatewayControlled}
                             value={amount}
+                            onClick={() => {
+                              if (isGatewayControlled) openGatewayDialog(mode);
+                            }}
                             onChange={(event) => {
-                              if (isGatewayControlled)
-                                clearGatewayVerification(mode.mode_of_payment);
+                              if (isGatewayControlled) return;
                               setAmounts((current) => ({
                                 ...current,
                                 [mode.mode_of_payment]: event.target.value,
@@ -786,8 +923,10 @@ function CheckoutDialogContent({
                                 : "bg-surface-container text-on-surface hover:bg-surface-container-high"
                             }`}
                             onClick={() => {
-                              if (isGatewayControlled)
-                                clearGatewayVerification(mode.mode_of_payment);
+                              if (isGatewayControlled) {
+                                openGatewayDialog(mode);
+                                return;
+                              }
                               setAmounts(
                                 allocateAllToMode(
                                   availableModes,
@@ -845,7 +984,7 @@ function CheckoutDialogContent({
                     <PaymentSummary
                       label="Status"
                       value={paymentStatus}
-                      invalid={!isPayable}
+                      invalid={!isPayable && !hasUnverifiedGatewayPayment}
                       compact
                     />
                   </div>
@@ -864,9 +1003,10 @@ function CheckoutDialogContent({
                 </div>
               ) : null}
               {!isSalesOrder && hasUnverifiedGatewayPayment ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
-                  <AlertCircle className="size-4 shrink-0" /> Gateway payments
-                  must be verified before checkout.
+                <div className="flex gap-2 rounded-md border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
+                  <Smartphone className="size-4 shrink-0" /> Verify the selected
+                  gateway payment to continue. Checkout will unlock
+                  automatically after confirmation.
                 </div>
               ) : null}
               {/* {allocation.remainingMinor > 0 && isCreditSale ? (
@@ -1185,15 +1325,20 @@ function GatewayPaymentDialog({
   const [activeTab, setActiveTab] = useState<"stk" | "c2b">(
     gatewayLink?.source_doctype === "KE C2B Payment Register" ? "c2b" : "stk",
   );
-  const blocking =
-    Boolean(busy) ||
-    gatewayLink?.status === "Draft" ||
-    gatewayLink?.status === "Pending";
+  const pendingGateway = isPendingGatewayLink(gatewayLink);
+  const blocking = Boolean(busy) || pendingGateway;
+  const [showManualCheck, setShowManualCheck] = useState(false);
   const c2bSearchReady = c2bQuery.trim().length >= 3;
   const selectedC2bName =
     gatewayLink?.source_doctype === "KE C2B Payment Register"
       ? gatewayLink.source_name
       : undefined;
+
+  useEffect(() => {
+    if (!pendingGateway) return;
+    const timeoutId = window.setTimeout(() => setShowManualCheck(true), 15000);
+    return () => window.clearTimeout(timeoutId);
+  }, [gatewayLink?.name, pendingGateway]);
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
@@ -1271,6 +1416,15 @@ function GatewayPaymentDialog({
                     value={phone}
                     onChange={(event) => onPhoneChange(event.target.value)}
                   />
+                  <label className="mt-3 block text-xs font-medium text-on-surface-variant">
+                    Amount
+                    <input
+                      aria-label={`${mode.mode_of_payment} gateway amount`}
+                      className="mt-1 h-touch w-full cursor-default rounded-md border border-outline-variant bg-surface-container px-3 text-right text-sm font-medium text-on-surface"
+                      readOnly
+                      value={formatCurrency(amount, currency, precision)}
+                    />
+                  </label>
                   <Button
                     className="mt-3 w-full gap-2"
                     disabled={!amountMinor || Boolean(busy) || blocking}
@@ -1411,34 +1565,38 @@ function GatewayPaymentDialog({
           </div>
           {blocking ? (
             <p className="mt-3 text-xs text-on-surface-variant">
-              This dialog will stay open while the gateway payment is pending.
-              Wait for realtime confirmation or check the status.
+              Waiting for payment confirmation. This dialog will close
+              automatically when the gateway confirms the payment.
             </p>
           ) : null}
           {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
         </div>
         <div className="flex flex-wrap justify-end gap-3 border-t border-outline-variant px-5 py-4">
-          <Button
-            variant="ghost"
-            disabled={!gatewayLink || Boolean(busy)}
-            onClick={onCheckStatus}
-          >
-            {busy === "status" ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-2 size-4" />
-            )}
-            Check
-          </Button>
+          {showManualCheck && pendingGateway ? (
+            <Button
+              variant="ghost"
+              disabled={!gatewayLink || Boolean(busy)}
+              onClick={onCheckStatus}
+            >
+              {busy === "status" ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-2 size-4" />
+              )}
+              Check status
+            </Button>
+          ) : pendingGateway ? (
+            <span className="flex items-center gap-2 px-2 text-sm text-on-surface-variant">
+              <Loader2 className="size-4 animate-spin" /> Waiting for
+              confirmation
+            </span>
+          ) : null}
           <Button
             variant="ghost"
             disabled={!gatewayLink || paid || Boolean(busy)}
             onClick={onCancel}
           >
             {busy === "cancel" ? "Cancelling..." : "Cancel"}
-          </Button>
-          <Button disabled={!paid || blocking} onClick={onClose}>
-            Use payment
           </Button>
         </div>
       </div>

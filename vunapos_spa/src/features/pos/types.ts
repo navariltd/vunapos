@@ -40,6 +40,12 @@ export type CustomerDTO = {
 	tax_id?: string | null;
 };
 
+export type CustomerContactPhoneDTO = {
+	customer: string;
+	mobile_no?: string | null;
+	source?: "Customer" | "Contact" | null;
+};
+
 export type CustomerLoyaltyDTO = {
 	customer: string;
 	enrolled: boolean;
