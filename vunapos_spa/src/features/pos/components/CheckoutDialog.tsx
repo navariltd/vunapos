@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Award,
   Check,
+  CreditCard,
   Loader2,
   Pause,
   RefreshCw,
@@ -1181,14 +1182,22 @@ function GatewayPaymentDialog({
   const scale = currencyScale(precision);
   const amount = amountMinor / scale;
   const paid = isSuccessfulGatewayLink(gatewayLink);
+  const [activeTab, setActiveTab] = useState<"stk" | "c2b">(
+    gatewayLink?.source_doctype === "KE C2B Payment Register" ? "c2b" : "stk",
+  );
   const blocking =
     Boolean(busy) ||
     gatewayLink?.status === "Draft" ||
     gatewayLink?.status === "Pending";
   const c2bSearchReady = c2bQuery.trim().length >= 3;
+  const selectedC2bName =
+    gatewayLink?.source_doctype === "KE C2B Payment Register"
+      ? gatewayLink.source_name
+      : undefined;
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-3">
-      <div className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface shadow-2xl">
+      <div className="flex h-[calc(100dvh-1.5rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface shadow-2xl sm:h-[48rem] sm:max-h-[calc(100dvh-2rem)]">
         <div className="flex items-start justify-between gap-4 border-b border-outline-variant px-5 py-4">
           <div>
             <h3 className="text-lg font-semibold text-on-surface">
@@ -1213,156 +1222,224 @@ function GatewayPaymentDialog({
             <X className="size-5" />
           </button>
         </div>
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-          <div className="rounded-lg border border-outline-variant bg-surface-container-low p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-on-surface-variant">
-                  Status
-                </p>
-                <p
-                  className={`mt-1 font-semibold ${paid ? "text-secondary" : gatewayLink ? "text-on-surface" : "text-on-surface-variant"}`}
-                >
-                  {paid
-                    ? `Paid${gatewayLink?.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
-                    : gatewayLink
-                      ? gatewayLink.status
-                      : "No gateway payment selected"}
-                </p>
+        <div className="grid grid-cols-2 border-b border-outline-variant px-5 pt-4">
+          <button
+            type="button"
+            className={`flex h-12 items-center justify-center gap-2 rounded-t-lg border border-b-0 text-sm font-medium transition-colors ${
+              activeTab === "stk"
+                ? "border-primary bg-primary-container/20 text-primary"
+                : "border-transparent text-on-surface-variant hover:bg-surface-container"
+            }`}
+            onClick={() => setActiveTab("stk")}
+          >
+            <Smartphone className="size-4" />
+            STK Push
+          </button>
+          <button
+            type="button"
+            className={`flex h-12 items-center justify-center gap-2 rounded-t-lg border border-b-0 text-sm font-medium transition-colors ${
+              activeTab === "c2b"
+                ? "border-primary bg-primary-container/20 text-primary"
+                : "border-transparent text-on-surface-variant hover:bg-surface-container"
+            }`}
+            onClick={() => setActiveTab("c2b")}
+          >
+            <CreditCard className="size-4" />
+            C2B Payment
+          </button>
+        </div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-5">
+          {activeTab === "stk" ? (
+            <section className="flex min-h-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-low p-4">
+              <div className="flex min-h-0 w-full gap-4">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-container/30 text-primary">
+                  <Smartphone className="size-5" />
+                </div>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <h4 className="font-medium text-on-surface">
+                    Send prompt to customer
+                  </h4>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Enter the customer's phone number to send an STK push
+                    request.
+                  </p>
+                  <input
+                    aria-label={`${mode.mode_of_payment} phone number`}
+                    className="mt-4 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                    inputMode="tel"
+                    placeholder="Phone number"
+                    value={phone}
+                    onChange={(event) => onPhoneChange(event.target.value)}
+                  />
+                  <Button
+                    className="mt-3 w-full gap-2"
+                    disabled={!amountMinor || Boolean(busy) || blocking}
+                    onClick={onInitiateStk}
+                  >
+                    {busy === "stk" ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Smartphone className="size-4" />
+                    )}
+                    {gatewayLink && !paid ? "Retry STK" : "Send STK"}
+                  </Button>
+                  <p className="mt-3 text-xs text-on-surface-variant">
+                    An STK prompt will be sent to the customer's phone.
+                  </p>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="ghost"
-                  disabled={!gatewayLink || Boolean(busy)}
-                  onClick={onCheckStatus}
-                >
-                  {busy === "status" ? (
-                    <Loader2 className="mr-2 size-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-2 size-4" />
-                  )}
-                  Check
-                </Button>
-                <Button
-                  variant="ghost"
-                  disabled={!gatewayLink || paid || Boolean(busy)}
-                  onClick={onCancel}
-                >
-                  {busy === "cancel" ? "Cancelling..." : "Cancel"}
-                </Button>
-                <Button disabled={!paid || blocking} onClick={onClose}>
-                  Use payment
-                </Button>
-              </div>
-            </div>
-            {blocking ? (
-              <p className="mt-3 text-xs text-on-surface-variant">
-                This dialog will stay open while the gateway payment is pending.
-                Wait for realtime confirmation or check the status.
-              </p>
-            ) : null}
-            {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
-          </div>
-          <div className="grid gap-5 md:grid-cols-2">
-            <section className="rounded-lg border border-outline-variant p-4">
-              <h4 className="font-medium text-on-surface">STK push</h4>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Send a prompt to the customer's phone.
-              </p>
-              <input
-                aria-label={`${mode.mode_of_payment} phone number`}
-                className="mt-4 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                inputMode="tel"
-                placeholder="Phone number"
-                value={phone}
-                onChange={(event) => onPhoneChange(event.target.value)}
-              />
-              <Button
-                className="mt-3 w-full gap-2"
-                disabled={!amountMinor || Boolean(busy) || blocking}
-                onClick={onInitiateStk}
-              >
-                {busy === "stk" ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Smartphone className="size-4" />
-                )}
-                {gatewayLink && !paid ? "Retry STK" : "Send STK"}
-              </Button>
             </section>
-            <section className="rounded-lg border border-outline-variant p-4">
-              <h4 className="font-medium text-on-surface">C2B payment</h4>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Search by customer name, transaction ID, or phone number. Enter
-                at least 3 characters.
-              </p>
-              <div className="relative mt-4">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
-                <input
-                  aria-label={`${mode.mode_of_payment} C2B search`}
-                  className="h-touch w-full rounded-md border border-outline-variant bg-surface pl-9 pr-3 text-sm"
-                  placeholder="Search C2B payments"
-                  value={c2bQuery}
-                  onChange={(event) => onSearchChange(event.target.value)}
-                />
-              </div>
-              <div className="mt-3 max-h-64 space-y-2 overflow-y-auto">
-                {!c2bSearchReady ? (
-                  <p className="rounded-md bg-surface-container-low p-3 text-sm text-on-surface-variant">
-                    Enter at least 3 characters to search.
+          ) : (
+            <section className="flex min-h-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-low p-4">
+              <div className="flex min-h-0 w-full gap-4">
+                <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary-container/30 text-primary">
+                  <CreditCard className="size-5" />
+                </div>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <h4 className="font-medium text-on-surface">
+                    Find customer payment
+                  </h4>
+                  <p className="mt-1 text-sm text-on-surface-variant">
+                    Search by customer name, transaction ID, or phone number to
+                    find C2B payments.
                   </p>
-                ) : c2bLoading ? (
-                  <p className="rounded-md bg-surface-container-low p-3 text-sm text-on-surface-variant">
-                    Searching...
-                  </p>
-                ) : c2bResults.length ? (
-                  c2bResults.map((payment) => {
-                    const matchesAmount =
-                      totalToMinorUnits(
-                        Number(payment.amount || 0),
-                        precision,
-                      ) === amountMinor;
-                    return (
-                      <button
-                        type="button"
-                        key={payment.name}
-                        className="w-full rounded-md border border-outline-variant p-3 text-left hover:border-primary disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!matchesAmount || Boolean(busy)}
-                        onClick={() => onAttachC2b(payment)}
-                      >
-                        <span className="flex items-center justify-between gap-3 text-sm font-medium text-on-surface">
-                          <span>{payment.transaction_id}</span>
-                          <span>
-                            {formatCurrency(
-                              payment.amount,
-                              payment.currency || currency,
+                  <div className="relative mt-4">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
+                    <input
+                      aria-label={`${mode.mode_of_payment} C2B search`}
+                      className="h-touch w-full rounded-md border border-outline-variant bg-surface pl-9 pr-3 text-sm"
+                      placeholder="Search C2B payments"
+                      value={c2bQuery}
+                      onChange={(event) => onSearchChange(event.target.value)}
+                    />
+                  </div>
+                  <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-lg border border-outline-variant bg-surface">
+                    {!c2bSearchReady ? (
+                      <p className="p-3 text-sm text-on-surface-variant">
+                        Enter at least 3 characters to search.
+                      </p>
+                    ) : c2bLoading ? (
+                      <p className="p-3 text-sm text-on-surface-variant">
+                        Searching...
+                      </p>
+                    ) : c2bResults.length ? (
+                      <div className="divide-y divide-outline-variant">
+                        {c2bResults.map((payment) => {
+                          const matchesAmount =
+                            totalToMinorUnits(
+                              Number(payment.amount || 0),
                               precision,
-                            )}
-                          </span>
-                        </span>
-                        <span className="mt-1 block text-xs text-on-surface-variant">
-                          {payment.party_name ||
-                            payment.customer ||
-                            "Unknown payer"}{" "}
-                          · {payment.party_phone || "No phone"} ·{" "}
-                          {payment.transaction_date || "No date"}
-                        </span>
-                        {!matchesAmount ? (
-                          <span className="mt-1 block text-xs text-error">
-                            Amount does not match this allocation.
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <p className="rounded-md bg-surface-container-low p-3 text-sm text-on-surface-variant">
-                    No matching C2B payments found.
-                  </p>
-                )}
+                            ) === amountMinor;
+                          const selected = selectedC2bName === payment.name;
+                          return (
+                            <button
+                              type="button"
+                              key={payment.name}
+                              className={`grid w-full grid-cols-[auto_1fr] gap-3 px-3 py-3 text-left transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-60 md:grid-cols-[auto_1.2fr_1fr_1fr] ${
+                                selected ? "bg-primary-container/20" : ""
+                              }`}
+                              disabled={!matchesAmount || Boolean(busy)}
+                              onClick={() => onAttachC2b(payment)}
+                            >
+                              <span
+                                className={`mt-1 flex size-4 items-center justify-center rounded-full border ${
+                                  selected
+                                    ? "border-primary bg-primary text-on-primary"
+                                    : "border-outline"
+                                }`}
+                              >
+                                {selected ? <Check className="size-3" /> : null}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-medium text-on-surface">
+                                  {payment.party_name ||
+                                    payment.customer ||
+                                    "Unknown payer"}
+                                </span>
+                                <span className="block truncate text-xs text-on-surface-variant">
+                                  {payment.party_phone || "No phone"}
+                                </span>
+                              </span>
+                              <span className="min-w-0 text-sm text-on-surface md:pt-1">
+                                {payment.transaction_id}
+                              </span>
+                              <span className="text-sm font-medium text-on-surface md:pt-1">
+                                {formatCurrency(
+                                  payment.amount,
+                                  payment.currency || currency,
+                                  precision,
+                                )}
+                              </span>
+                              {!matchesAmount ? (
+                                <span className="col-span-full pl-7 text-xs text-error">
+                                  Amount does not match this allocation.
+                                </span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="p-3 text-sm text-on-surface-variant">
+                        No matching C2B payments found.
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </section>
+          )}
+          <div className="mt-4 grid shrink-0 gap-3 rounded-lg border border-outline-variant bg-primary-container/10 p-4 text-sm sm:grid-cols-3">
+            <div>
+              <p className="text-xs text-on-surface-variant">Amount</p>
+              <p className="mt-1 font-medium text-on-surface">
+                {formatCurrency(amount, currency, precision)}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-on-surface-variant">Channel</p>
+              <p className="mt-1 font-medium text-on-surface">
+                {mode.mode_of_payment}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-on-surface-variant">Gateway</p>
+              <p className="mt-1 font-medium text-on-surface">
+                {mode.payment_gateway}
+              </p>
+            </div>
           </div>
+          {blocking ? (
+            <p className="mt-3 text-xs text-on-surface-variant">
+              This dialog will stay open while the gateway payment is pending.
+              Wait for realtime confirmation or check the status.
+            </p>
+          ) : null}
+          {error ? <p className="mt-3 text-sm text-error">{error}</p> : null}
+        </div>
+        <div className="flex flex-wrap justify-end gap-3 border-t border-outline-variant px-5 py-4">
+          <Button
+            variant="ghost"
+            disabled={!gatewayLink || Boolean(busy)}
+            onClick={onCheckStatus}
+          >
+            {busy === "status" ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCw className="mr-2 size-4" />
+            )}
+            Check
+          </Button>
+          <Button
+            variant="ghost"
+            disabled={!gatewayLink || paid || Boolean(busy)}
+            onClick={onCancel}
+          >
+            {busy === "cancel" ? "Cancelling..." : "Cancel"}
+          </Button>
+          <Button disabled={!paid || blocking} onClick={onClose}>
+            Use payment
+          </Button>
         </div>
       </div>
     </div>

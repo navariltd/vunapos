@@ -40,7 +40,7 @@ describe("payment allocation", () => {
 		});
 	});
 
-	it("does not manually allocate gateway-controlled modes", () => {
+	it("does not allocate gateway modes initially but allows explicit all allocation", () => {
 		const gatewayModes: ModeOfPaymentDTO[] = [
 			{ mode_of_payment: "M-Pesa", default: 1, type: "Phone", payment_gateway: "Mpesa-Test" },
 			{ mode_of_payment: "Cash", type: "Cash" },
@@ -50,7 +50,7 @@ describe("payment allocation", () => {
 			Cash: "1500.00",
 		});
 		expect(allocateAllToMode(gatewayModes, "M-Pesa", 150000, 2)).toEqual({
-			"M-Pesa": "",
+			"M-Pesa": "1500.00",
 			Cash: "",
 		});
 	});

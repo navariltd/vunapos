@@ -70,7 +70,7 @@ export function allocateAllToMode(
 	return Object.fromEntries(
 		modes.map((mode) => [
 			mode.mode_of_payment,
-			mode.mode_of_payment === modeOfPayment && !mode.payment_gateway ? minorUnitsToInput(totalMinor, precision) : "",
+			mode.mode_of_payment === modeOfPayment ? minorUnitsToInput(totalMinor, precision) : "",
 		]),
 	);
 }
