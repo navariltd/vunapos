@@ -25,6 +25,7 @@ It provides cashiers with a fast and focused interface for finding items, select
 * **Flexible Invoicing** - Create either a **Sales Invoice** or **POS Invoice**, depending on the configured POS Settings.
 * **Tax Handling** - Support ERPNext inclusive and exclusive tax calculations.
 * **Batch Allocation** - Automatically allocate stock from valid batches, including quantities distributed across multiple batches.
+* **Serial Number Allocation** - Automatically allocate available serial numbers for serialised items during checkout.
 * **Multiple Payment Modes** - Use the payment methods configured in the ERPNext POS Profile.
 * **M-Pesa Payments** - Verify payments using STK Push or existing C2B transactions.
 * **Receipt Printing** - Render and print receipts using ERPNext Print Formats.
