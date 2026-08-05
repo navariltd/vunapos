@@ -13,6 +13,7 @@ type ItemCardProps = {
 
 export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
   const outOfStock =
+    !item.has_variants &&
     Boolean(item.is_stock_item ?? true) &&
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&

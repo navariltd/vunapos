@@ -595,8 +595,12 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	query = (query or "").strip()
 
 	barcode_item_code = _get_item_code_from_barcode(query) if query else None
+	# Keep variant children out of the main catalogue. Cashiers select a template
+	# first and choose its concrete variant in the variant picker; barcode scans
+	# still resolve an exact variant through the separate fallback lookup below.
 	filters = {"disabled": 0, "is_sales_item": 1}
 	query_filters = dict(filters)
+	query_filters["variant_of"] = ["is", "not set"]
 	if since:
 		# Item.modified alone misses rate and stock changes: Item Price and Bin are
 		# separate doctypes and neither bumps the parent Item's modified timestamp.

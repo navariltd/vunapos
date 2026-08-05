@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFrappePostCall } from "frappe-react-sdk";
 import { ShoppingCart, X } from "lucide-react";
 
 import type {
@@ -18,7 +19,11 @@ import {
   navigateToPosPage,
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
-import { VunaApiError } from "../../services/vunaApi";
+import {
+  getTemplateVariants,
+  vunaMethods,
+  VunaApiError,
+} from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -33,6 +38,10 @@ import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
+import {
+  VariantPickerDialog,
+  type TemplateVariant,
+} from "./components/VariantPickerDialog";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -123,6 +132,9 @@ export function POSHomePage({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [variantPickerItem, setVariantPickerItem] = useState<ItemDTO | null>(null);
+  const [variantOptions, setVariantOptions] = useState<TemplateVariant[]>([]);
+  const [variantError, setVariantError] = useState<string | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [clearCartConfirmation, setClearCartConfirmation] = useState<{
     closeCheckout: boolean;
@@ -171,6 +183,7 @@ export function POSHomePage({
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
   const cartActions = useCartActions();
+  const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const gatewayPayments = useGatewayPayments();
   const { isReachable } = useConnectivity();
   const customerLoyalty = useCustomerLoyalty(
@@ -359,7 +372,36 @@ export function POSHomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrap.data?.pos_profile, isReachable, showToast]);
 
-  const handleAddItem = useCallback(
+  const openVariantPicker = useCallback(
+    async (item: ItemDTO) => {
+      setVariantPickerItem(item);
+      setVariantOptions([]);
+      setVariantError(null);
+      try {
+        const result = await getTemplateVariants(templateVariantsCall.call, {
+          template_item_code: item.item_code,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list:
+            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        setVariantOptions(result.variants || []);
+      } catch (error) {
+        setVariantError(
+          error instanceof Error ? error.message : "Unable to load item variants.",
+        );
+      }
+    },
+    [
+      activeCustomer,
+      bootstrap.data,
+      cartInvoice,
+      selectedPriceList,
+      templateVariantsCall.call,
+    ],
+  );
+
+  const addConcreteItem = useCallback(
     async (item: ItemDTO) => {
       setPageError(null);
       clearToast();
@@ -376,6 +418,26 @@ export function POSHomePage({
       }
     },
     [cartActions, clearToast, setPageError, showToast],
+  );
+
+  const handleAddItem = useCallback(
+    async (item: ItemDTO) => {
+      if (item.has_variants) {
+        await openVariantPicker(item);
+        return;
+      }
+      await addConcreteItem(item);
+    },
+    [addConcreteItem, openVariantPicker],
+  );
+
+  const handleSelectVariant = useCallback(
+    (variant: TemplateVariant) => {
+      setVariantPickerItem(null);
+      setVariantOptions([]);
+      void addConcreteItem(variant);
+    },
+    [addConcreteItem],
   );
 
   useEffect(() => {
@@ -1025,6 +1087,21 @@ export function POSHomePage({
           <strong>{cartInvoice?.items?.length || 0}</strong>
         </div>
       </ConfirmDialog>
+      <VariantPickerDialog
+        key={variantPickerItem?.item_code || "variant-picker"}
+        currency={bootstrap.data?.currency}
+        error={variantError}
+        isLoading={templateVariantsCall.loading}
+        isOpen={Boolean(variantPickerItem)}
+        template={variantPickerItem}
+        variants={variantOptions}
+        onClose={() => {
+          setVariantPickerItem(null);
+          setVariantOptions([]);
+          setVariantError(null);
+        }}
+        onSelect={handleSelectVariant}
+      />
       <BarcodeScannerDialog
         open={isBarcodeScannerOpen}
         onClose={() => setIsBarcodeScannerOpen(false)}

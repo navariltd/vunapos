@@ -239,6 +239,7 @@ export type ItemDTO = {
 		has_batch_no?: boolean;
 		has_serial_no?: boolean;
 	}>;
+	has_variants?: boolean | number;
 	variant_count?: number;
 	variant_based_on?: string | null;
 	variant_of?: string | null;
