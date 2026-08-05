@@ -84,6 +84,7 @@ def checkout_invoice(
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
 	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -97,6 +98,7 @@ def checkout_invoice(
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
 				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:
@@ -253,6 +255,7 @@ def submit_invoice(
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
 	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -265,6 +268,7 @@ def submit_invoice(
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
 				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:
@@ -284,6 +288,7 @@ def create_and_submit_invoice(
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
 	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -299,6 +304,7 @@ def create_and_submit_invoice(
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
 				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:

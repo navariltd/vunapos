@@ -33,7 +33,7 @@ function AuthenticatedApp() {
     defaultOrderType: OrderType;
     value: OrderType;
   } | null>(null);
-  const [salesperson, setSalesperson] = useState<{ name: string; displayName: string } | null>(null);
+  const [salesperson, setSalesperson] = useState<{ name: string; displayName: string; token: string } | null>(null);
   const [salespersonUnlocked, setSalespersonUnlocked] = useState(false);
   const orderType =
     selectedOrderType?.defaultOrderType === defaultOrderType

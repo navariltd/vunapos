@@ -61,6 +61,22 @@ def _issue_token(profile, purpose, subject=None):
 	return token
 
 
+def validate_pin_token(token, profile, purpose, subject=None):
+	if not token or not isinstance(token, str):
+		_failure("PIN_TOKEN_REQUIRED", _("PIN verification is required before this action."))
+	state = frappe.cache().get_value(f"vunapos:pin-token:{token}")
+	if (
+		not state
+		or state.get("user") != frappe.session.user
+		or state.get("pos_profile") != profile.name
+		or state.get("purpose") != purpose
+	):
+		_failure("PIN_TOKEN_INVALID", _("The PIN verification has expired or is no longer valid."))
+	if subject and state.get("subject") != subject:
+		_failure("PIN_TOKEN_INVALID", _("The PIN verification does not match the selected identity."))
+	return state
+
+
 def verify_salesperson_pin(pos_profile: str, salesperson: str, pin: str) -> dict:
 	profile = resolve_pos_profile(pos_profile)
 	require_pos_profile_assignment(profile.name)

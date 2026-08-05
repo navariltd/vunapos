@@ -67,9 +67,9 @@ import type { OrderType } from "../../components/layout/Header";
 type POSHomePageProps = {
   bootstrap?: ReturnType<typeof useBootstrapData>;
   orderType?: OrderType;
-  salesperson?: { name: string; displayName: string } | null;
+  salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonLocked?: boolean;
-  onSalespersonVerified?: (salesperson: { name: string; displayName: string }) => void;
+  onSalespersonVerified?: (salesperson: { name: string; displayName: string; token: string }) => void;
   onLockSalesperson?: () => void;
 };
 
@@ -785,6 +785,7 @@ export function POSHomePage({
         taxId,
         orderType,
         salesperson?.name,
+        salesperson?.token,
       );
       setIsCheckoutOpen(false);
       if (bootstrap.data?.require_pin_before_every_sale) {
@@ -1162,8 +1163,8 @@ export function POSHomePage({
         enabled={Boolean(bootstrap.data?.enable_salesperson_pin && salespersonLocked)}
         posProfile={bootstrap.data?.pos_profile}
         pinUsers={bootstrap.data?.pin_users}
-        onVerified={(name, displayName) => {
-          onSalespersonVerified?.({ name, displayName });
+        onVerified={(name, displayName, token) => {
+          onSalespersonVerified?.({ name, displayName, token });
           showToast({ type: "info", message: `${displayName} is ready to sell.` });
         }}
       />

@@ -375,6 +375,7 @@ export function submitInvoice(
 		loyalty_points?: number;
 		tax_id?: string;
 		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -395,6 +396,7 @@ export function checkoutInvoice(
 		loyalty_points?: number;
 		tax_id?: string;
 		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -428,6 +430,7 @@ export function createAndSubmitInvoice(
 		due_date?: string;
 		tax_id?: string;
 		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -448,6 +451,7 @@ export function createAndSubmitSalesOrder(
 		delivery_date?: string;
 		tax_id?: string;
 		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {

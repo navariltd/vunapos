@@ -8,7 +8,7 @@ type HeaderProps = {
   allowOrderTypeChange?: boolean;
   orderType: OrderType;
   onOrderTypeChange: (orderType: OrderType) => void;
-  salesperson?: { name: string; displayName: string } | null;
+  salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonPinEnabled?: boolean;
   salespersonLocked?: boolean;
   onLockSalesperson?: () => void;

@@ -11,7 +11,7 @@ type SalespersonPinLockProps = {
   enabled?: boolean;
   posProfile?: string;
   pinUsers?: PinUser[];
-  onVerified: (salesperson: string, displayName: string) => void;
+  onVerified: (salesperson: string, displayName: string, token: string) => void;
 };
 
 export function SalespersonPinLock({
@@ -49,7 +49,7 @@ export function SalespersonPinLock({
         salesperson: selectedSalesperson,
         pin,
       });
-      onVerified(result.salesperson, result.display_name);
+      onVerified(result.salesperson, result.display_name, result.token);
       setPin("");
     } catch (reason) {
       setError(reason instanceof VunaApiError ? reason.message : "PIN verification failed.");

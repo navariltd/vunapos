@@ -13,7 +13,7 @@ type AppShellProps = {
   orderType: OrderType;
   posProfile?: string;
   warehouse?: string;
-  salesperson?: { name: string; displayName: string } | null;
+  salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonPinEnabled?: boolean;
   salespersonLocked?: boolean;
   onLockSalesperson?: () => void;
