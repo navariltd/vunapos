@@ -326,6 +326,13 @@ export type InvoiceItemDTO = {
 	allow_negative_stock?: boolean | number;
 	has_batch_no?: boolean | number;
 	has_serial_no?: boolean | number;
+	is_product_bundle?: boolean | number;
+	bundle_items?: Array<{
+		item_code: string;
+		item_name?: string;
+		qty: number;
+		uom?: string | null;
+	}>;
 	warehouse?: string;
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
