@@ -264,6 +264,9 @@ function CheckoutDialogContent({
         )
       : createInitialPaymentAmounts(availableModes, payableMinor, precision),
   );
+  const [focusedPaymentMode, setFocusedPaymentMode] = useState<string | null>(
+    null,
+  );
   const [isCreditSale, setIsCreditSale] = useState(
     Boolean(
       allowCreditSales &&
@@ -747,20 +750,17 @@ function CheckoutDialogContent({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
           <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)] lg:divide-x lg:divide-outline-variant">
-            <section className="flex min-h-0 flex-col p-4 sm:p-6">
+            <section className="flex min-h-0 flex-col overflow-y-auto p-4 sm:p-6">
               {allowCreditSales && !isSalesOrder ? (
-                <div
-                  className="mb-5 grid grid-cols-2 rounded-lg bg-surface-container p-1"
-                  role="group"
-                  aria-label="Sale type"
-                >
-                  {([false, true] as const).map((credit) => (
+                <div className="order-3 my-3 flex flex-wrap items-center gap-4 rounded-md bg-surface-container-low px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-on-surface">
                     <button
                       type="button"
-                      key={String(credit)}
-                      aria-pressed={isCreditSale === credit}
-                      className={`rounded-md px-3 py-2 text-sm font-medium ${isCreditSale === credit ? "bg-surface text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+                      role="switch"
+                      aria-checked={isCreditSale}
+                      aria-label="Enable credit sale"
                       onClick={() => {
+                        const credit = !isCreditSale;
                         setIsCreditSale(credit);
                         setAmounts(
                           credit
@@ -777,30 +777,36 @@ function CheckoutDialogContent({
                               ),
                         );
                       }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${isCreditSale ? "bg-secondary" : "bg-outline"}`}
                     >
-                      {credit ? "Credit Sale" : "Cash Sale"}
+                      <span
+                        className={`inline-block size-5 rounded-full bg-white shadow transition-transform ${isCreditSale ? "translate-x-5" : "translate-x-0.5"}`}
+                      />
                     </button>
-                  ))}
+                    Credit sale
+                  </div>
+                  {isCreditSale ? (
+                    <label className="flex min-w-48 flex-1 items-center gap-2 text-sm font-medium text-on-surface">
+                      Due date
+                      <input
+                        type="date"
+                        min={today}
+                        required
+                        value={dueDate}
+                        onChange={(event) => setDueDate(event.target.value)}
+                        className={`h-touch min-w-0 flex-1 rounded-md border bg-surface px-3 text-sm ${isCreditSale ? "border-error" : "border-outline-variant"}`}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
-              {isCreditSale ? (
-                <label className="mb-5 block text-sm font-medium text-on-surface">
-                  Payment due date
-                  <input
-                    type="date"
-                    min={today}
-                    required
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                    className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                  />
-                </label>
-              ) : null}
               {isWalkinCustomer || (allowDeliveryCharges && deliveryChargeItem) ? (
-                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="order-4 mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {isWalkinCustomer ? (
-                    <label className="block text-sm font-medium text-on-surface">
-                      Customer Tax ID
+                    <div className="relative">
+                      <span className="pointer-events-none absolute -top-2 left-2 z-10 bg-surface px-1 text-[10px] font-medium text-on-surface-variant">
+                        Customer Tax ID
+                      </span>
                       <input
                         type="text"
                         value={checkoutTaxId}
@@ -809,18 +815,20 @@ function CheckoutDialogContent({
                         placeholder={
                           customer?.tax_id || "PIN / Tax ID for this receipt"
                         }
-                        className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                        className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
                       />
                       <span className="mt-1 block text-xs font-normal text-on-surface-variant">
                         Printed on this invoice only.
                       </span>
-                    </label>
+                    </div>
                   ) : null}
                   {allowDeliveryCharges && deliveryChargeItem ? (
-                    <label className="block text-sm font-medium text-on-surface">
-                      Delivery charge
+                    <div className="relative">
+                      <span className="pointer-events-none absolute -top-2 left-2 z-10 bg-surface px-1 text-[10px] font-medium text-on-surface-variant">
+                        Delivery charge
+                      </span>
                       <input
-                        className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+                        className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
                         type="number"
                         min="0"
                         step="0.01"
@@ -829,50 +837,35 @@ function CheckoutDialogContent({
                         disabled={allowDeliveryChargeChange === false}
                         onChange={(event) => setDeliveryAmount(event.target.value)}
                       />
-                    </label>
+                    </div>
                   ) : null}
                 </div>
               ) : null}
               {customerLoyalty?.enrolled && !isSalesOrder ? (
-                <div className="mb-5 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-4">
-                  <div className="flex items-start gap-3">
-                    <Award className="mt-0.5 size-5 shrink-0 text-tertiary" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-on-surface">
-                            Redeem loyalty points
-                          </p>
-                          <p className="text-xs text-on-surface-variant">
-                            {customerLoyalty.tier || customerLoyalty.program}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-on-surface">
-                            {availableLoyaltyPoints.toLocaleString()} pts
-                          </p>
-                          <p className="text-xs text-on-surface-variant">
-                            {formatCurrency(
-                              customerLoyalty.redemption_value,
-                              currency,
-                              precision,
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex gap-2">
-                        <input
-                          aria-label="Loyalty points to redeem"
-                          className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                          inputMode="numeric"
-                          placeholder="Points to redeem"
-                          value={loyaltyInput}
-                          onChange={(event) =>
-                            setLoyaltyInput(event.target.value)
-                          }
-                        />
+                <div className="order-3 mb-4 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Award className="mt-0.5 size-4 shrink-0 text-tertiary" />
+                    <span className="text-xs text-on-surface-variant">
+                      {availableLoyaltyPoints.toLocaleString()} pts · {formatCurrency(customerLoyalty.redemption_value, currency, precision)}
+                    </span>
+                    <div className="relative min-w-32 flex-1">
+                      <span className="pointer-events-none absolute -top-2 left-2 bg-tertiary-container px-1 text-[10px] font-medium text-on-surface-variant">
+                        Loyalty points
+                      </span>
+                      <input
+                        aria-label="Loyalty points to redeem"
+                        className="h-9 w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                        inputMode="numeric"
+                        placeholder="Enter points"
+                        value={loyaltyInput}
+                        onChange={(event) =>
+                          setLoyaltyInput(event.target.value)
+                        }
+                      />
+                    </div>
                         <Button
                           variant="ghost"
+                          className="h-9 px-2 text-xs"
                           disabled={!maximumLoyaltyPoints || isApplyingLoyalty}
                           onClick={() =>
                             void applyLoyaltyPoints(maximumLoyaltyPoints)
@@ -881,6 +874,7 @@ function CheckoutDialogContent({
                           Maximum
                         </Button>
                         <Button
+                          className="h-9 px-3 text-xs"
                           disabled={
                             Boolean(loyaltyInputError) ||
                             !loyaltyInputPoints ||
@@ -892,7 +886,7 @@ function CheckoutDialogContent({
                         >
                           {isApplyingLoyalty ? "Checking..." : "Apply"}
                         </Button>
-                      </div>
+                  </div>
                       {loyaltyInputError ? (
                         <p className="mt-2 text-xs text-error">
                           Enter between 1 and{" "}
@@ -930,140 +924,20 @@ function CheckoutDialogContent({
                           </button>
                         </div>
                       ) : null}
-                    </div>
-                  </div>
                 </div>
               ) : null}
-              {isSalesOrder ? (
-                <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
-                  This checkout will create a submitted Sales Order. No payment
-                  will be collected in this step.
-                </div>
-              ) : (
-                <>
-                  <div className="mb-3 flex items-center justify-between rounded-md bg-surface-container-low px-3 py-2 text-sm">
-                    <span className="text-on-surface-variant">Amount due</span>
-                    <span className="font-semibold text-on-surface">
-                      {formatCurrency(payableMinor / scale, currency, precision)}
-                    </span>
+              <div className="order-1">
+                {isSalesOrder ? (
+                  <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
+                    This checkout will create a submitted Sales Order. No payment
+                    will be collected in this step.
                   </div>
-                  <div className="mt-2 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
-                    {availableModes.map((mode) => {
-                      const isGatewayControlled = Boolean(mode.payment_gateway);
-                      const amount = amounts[mode.mode_of_payment] ?? "";
-                      const gatewayLink = gatewayLinks[mode.mode_of_payment];
-                      const gatewayError = gatewayErrors[mode.mode_of_payment];
-                      const gatewayPaid = isSuccessfulGatewayLink(gatewayLink);
-                      const isAll =
-                        parsePaymentAmount(amount, precision) ===
-                          payableMinor &&
-                        availableModes.every(
-                          (other) =>
-                            other.mode_of_payment === mode.mode_of_payment ||
-                            parsePaymentAmount(
-                              amounts[other.mode_of_payment] || "",
-                              precision,
-                            ) === 0,
-                        );
-                      return (
-                        <div
-                          key={mode.mode_of_payment}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto] sm:p-3"
-                        >
-                          <button
-                            type="button"
-                            className={`col-span-2 text-left text-sm font-medium text-on-surface sm:col-span-1 ${isGatewayControlled ? "cursor-pointer hover:text-primary" : ""}`}
-                            onClick={() => openGatewayDialog(mode)}
-                          >
-                            {mode.mode_of_payment}
-                            {mode.default ? (
-                              <span className="ml-2 text-xs text-on-surface-variant">
-                                Default
-                              </span>
-                            ) : null}
-                            {isGatewayControlled ? (
-                              <span className="ml-2 text-xs text-primary">
-                                Gateway
-                              </span>
-                            ) : null}
-                            {isGatewayControlled && gatewayLink ? (
-                              <span
-                                className={
-                                  gatewayPaid
-                                    ? "ml-2 text-xs text-secondary"
-                                    : "ml-2 text-xs text-on-surface-variant"
-                                }
-                              >
-                                {gatewayPaid
-                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
-                                  : `Status: ${gatewayLink.status}`}
-                              </span>
-                            ) : null}
-                          </button>
-                          <input
-                            aria-label={`${mode.mode_of_payment} amount`}
-                            className={`h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm ${isGatewayControlled ? "cursor-pointer" : ""}`}
-                            inputMode="decimal"
-                            placeholder={minorUnitsToInput(0, precision)}
-                            readOnly={isGatewayControlled}
-                            value={amount}
-                            onClick={() => {
-                              if (isGatewayControlled) openGatewayDialog(mode);
-                            }}
-                            onChange={(event) => {
-                              if (isGatewayControlled) return;
-                              setAmounts((current) => ({
-                                ...current,
-                                [mode.mode_of_payment]: event.target.value,
-                              }));
-                            }}
-                          />
-                          <button
-                            type="button"
-                            aria-label={`Allocate all to ${mode.mode_of_payment}`}
-                            aria-pressed={isAll}
-                            title={`Allocate the full amount to ${mode.mode_of_payment}`}
-                            className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
-                              isAll
-                                ? "bg-secondary text-on-secondary"
-                                : "bg-surface-container text-on-surface hover:bg-surface-container-high"
-                            }`}
-                            onClick={() => {
-                              if (isGatewayControlled) {
-                                openGatewayDialog(mode);
-                                return;
-                              }
-                              setAmounts(
-                                allocateAllToMode(
-                                  availableModes,
-                                  mode.mode_of_payment,
-                                  payableMinor,
-                                  precision,
-                                ),
-                              );
-                            }}
-                          >
-                            <Check className="size-4" />
-                          </button>
-                          {isGatewayControlled ? (
-                            <div className="col-span-2 flex items-center justify-between gap-2 text-xs text-on-surface-variant sm:col-span-3">
-                              <span>
-                                {gatewayPaid
-                                  ? "Verified gateway payment"
-                                  : "Click the mode name to verify through the gateway."}
-                              </span>
-                              {gatewayError ? (
-                                <span className="text-error">
-                                  {gatewayError}
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                ) : (
+                  <>
+                  <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">
+                    Payment methods
+                  </h3>
+                  <div className="mb-3 grid grid-cols-3 gap-2 [&>div]:p-2">
                     <PaymentSummary
                       label="Allocated"
                       value={formatCurrency(
@@ -1094,25 +968,155 @@ function CheckoutDialogContent({
                       compact
                     />
                   </div>
-                </>
-              )}
+                  <div className="my-3 h-64 max-h-64 shrink-0 overflow-y-auto rounded-md bg-surface-container-low/70 px-2 shadow-sm lg:h-72 lg:max-h-72">
+                    {availableModes.map((mode) => {
+                      const isGatewayControlled = Boolean(mode.payment_gateway);
+                      const amount = amounts[mode.mode_of_payment] ?? "";
+                      const gatewayLink = gatewayLinks[mode.mode_of_payment];
+                      const gatewayError = gatewayErrors[mode.mode_of_payment];
+                      const gatewayPaid = isSuccessfulGatewayLink(gatewayLink);
+                      const isAll =
+                        parsePaymentAmount(amount, precision) ===
+                          payableMinor &&
+                        availableModes.every(
+                          (other) =>
+                            other.mode_of_payment === mode.mode_of_payment ||
+                            parsePaymentAmount(
+                              amounts[other.mode_of_payment] || "",
+                              precision,
+                            ) === 0,
+                        );
+                      return (
+                        <div
+                          key={mode.mode_of_payment}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-outline-variant/40 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,15rem)] sm:py-3"
+                        >
+                          <button
+                            type="button"
+                            aria-pressed={isAll}
+                            className={`order-2 col-span-1 inline-flex h-touch min-w-44 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold shadow-sm transition-colors sm:col-span-1 ${isAll ? "border-secondary bg-secondary/80 text-on-secondary" : "border-transparent bg-surface-container-highest text-on-surface hover:bg-surface-container-high"} ${isGatewayControlled ? "cursor-pointer" : ""}`}
+                            onClick={() => {
+                              if (isGatewayControlled) {
+                                openGatewayDialog(mode);
+                                return;
+                              }
+                              setAmounts(
+                                allocateAllToMode(
+                                  availableModes,
+                                  mode.mode_of_payment,
+                                  payableMinor,
+                                  precision,
+                                ),
+                              );
+                            }}
+                          >
+                            {isAll && !isGatewayControlled ? (
+                              <Check className="size-4" />
+                            ) : null}
+                            {mode.mode_of_payment}
+                            {mode.default ? (
+                              <span className="ml-2 text-xs text-on-surface-variant">
+                                Default
+                              </span>
+                            ) : null}
+                            {isGatewayControlled ? (
+                              <span className="ml-2 text-xs text-primary">
+                                Gateway
+                              </span>
+                            ) : null}
+                            {isGatewayControlled && gatewayLink ? (
+                              <span
+                                className={
+                                  gatewayPaid
+                                    ? "ml-2 text-xs text-secondary"
+                                    : "ml-2 text-xs text-on-surface-variant"
+                                }
+                              >
+                                {gatewayPaid
+                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
+                                  : `Status: ${gatewayLink.status}`}
+                              </span>
+                            ) : null}
+                          </button>
+                          <div className="order-1 relative">
+                            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs text-on-surface-variant">
+                              {currency}
+                            </span>
+                            <input
+                              aria-label={`${mode.mode_of_payment} amount`}
+                              className={`h-touch w-full rounded-md border border-outline-variant bg-surface pl-12 pr-3 text-left text-sm ${isGatewayControlled ? "cursor-pointer" : ""}`}
+                              inputMode="decimal"
+                              placeholder={minorUnitsToInput(0, precision)}
+                              readOnly={isGatewayControlled}
+                              value={
+                                focusedPaymentMode === mode.mode_of_payment
+                                  ? amount
+                                  : amount
+                                    ? Number.isFinite(Number(amount))
+                                      ? new Intl.NumberFormat(undefined, {
+                                          useGrouping: true,
+                                          minimumFractionDigits: 0,
+                                          maximumFractionDigits: precision,
+                                        }).format(Number(amount))
+                                      : amount
+                                    : ""
+                              }
+                              onFocus={() => {
+                                if (!isGatewayControlled) {
+                                  setFocusedPaymentMode(mode.mode_of_payment);
+                                }
+                              }}
+                              onBlur={() => setFocusedPaymentMode(null)}
+                              onClick={() => {
+                                if (isGatewayControlled) openGatewayDialog(mode);
+                              }}
+                              onChange={(event) => {
+                                if (isGatewayControlled) return;
+                                setAmounts((current) => ({
+                                  ...current,
+                                  [mode.mode_of_payment]: event.target.value,
+                                }));
+                              }}
+                            />
+                          </div>
+                          {isGatewayControlled ? (
+                            <div className="order-3 col-span-2 flex items-center justify-between gap-2 text-xs text-on-surface-variant sm:col-span-2">
+                              <span>
+                                {gatewayPaid
+                                  ? "Verified gateway payment"
+                                  : "Click the mode name to verify through the gateway."}
+                              </span>
+                              {gatewayError ? (
+                                <span className="text-error">
+                                  {gatewayError}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {hasUnverifiedGatewayPayment ? (
+                    <div className="mt-2 flex gap-2 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-2 text-xs text-on-tertiary-container">
+                      <Smartphone className="size-4 shrink-0" /> Verify the
+                      selected gateway payment to continue. Checkout will
+                      unlock automatically after confirmation.
+                    </div>
+                  ) : null}
+                  </>
+                )}
+              </div>
               {!isSalesOrder && allocation.hasInvalidAmount ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Enter valid
                   amounts with no more than {precision} decimal places.
                 </div>
               ) : null}
               {!isSalesOrder && hasNonCashOverpayment ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Electronic
                   payments cannot exceed the amount due.
-                </div>
-              ) : null}
-              {!isSalesOrder && hasUnverifiedGatewayPayment ? (
-                <div className="flex gap-2 rounded-md border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
-                  <Smartphone className="size-4 shrink-0" /> Verify the selected
-                  gateway payment to continue. Checkout will unlock
-                  automatically after confirmation.
                 </div>
               ) : null}
               {/* {allocation.remainingMinor > 0 && isCreditSale ? (
@@ -1125,7 +1129,7 @@ function CheckoutDialogContent({
 						</p>
 					) : null} */}
               {error ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> {error}
                 </div>
               ) : null}
