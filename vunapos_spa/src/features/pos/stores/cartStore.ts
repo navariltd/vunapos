@@ -607,7 +607,7 @@ type CartActions = {
 		isOnline: boolean,
 		api: CartApi,
 	) => Promise<ItemBatchesDTO>;
-	removeCartItem: (rowName: string, api: CartApi) => Promise<void>;
+	removeCartItem: (rowName: string, api: CartApi, managerPinToken?: string) => Promise<void>;
 	listHeld: (api: CartApi) => Promise<HeldInvoiceDTO[]>;
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
@@ -970,7 +970,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return { ...fresh, verified_at: new Date().toISOString() };
 		},
 
-		removeCartItem: async (rowName, api) => {
+		removeCartItem: async (rowName, api, managerPinToken) => {
 			const invoice = get().invoice;
 			if (!invoice) {
 				return;
@@ -992,6 +992,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					row_name: rowName,
+					manager_pin_token: managerPinToken,
 				}),
 			);
 			set({ invoice: updatedInvoice });

@@ -359,7 +359,7 @@ export function updateItem(
 
 export function removeItem(
 	call: FrappeCall,
-	params: { invoice_doctype: string; invoice_name: string; row_name: string },
+	params: { invoice_doctype: string; invoice_name: string; row_name: string; manager_pin_token?: string },
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, params);
 }

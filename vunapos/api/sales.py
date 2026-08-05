@@ -232,13 +232,14 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 
 
 @frappe.whitelist()
-def remove_item(invoice_doctype, invoice_name, row_name):
+def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token: str | None = None):
 	try:
 		return success(
 			remove_item_service(
 				invoice_doctype=invoice_doctype,
 				invoice_name=invoice_name,
 				row_name=row_name,
+				manager_pin_token=manager_pin_token,
 			)
 		)
 	except Exception as exc:

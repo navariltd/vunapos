@@ -46,7 +46,7 @@ export function useCartActions() {
 				updateCartItemSerialAllocationsAction(rowName, allocations, api),
 			loadItemBatches: (itemCode: string, warehouse: string, isOnline: boolean) =>
 				loadItemBatchesAction(itemCode, warehouse, isOnline, api),
-			removeCartItem: (rowName: string) => removeCartItemAction(rowName, api),
+			removeCartItem: (rowName: string, managerPinToken?: string) => removeCartItemAction(rowName, api, managerPinToken),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),

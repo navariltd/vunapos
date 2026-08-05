@@ -1145,11 +1145,11 @@ export function POSHomePage({
         isOpen={Boolean(managerPinTarget)}
         posProfile={bootstrap.data?.pos_profile}
         onCancel={() => setManagerPinTarget(null)}
-        onApproved={() => {
+        onApproved={(managerPinToken) => {
           const rowName = managerPinTarget;
           setManagerPinTarget(null);
           if (rowName) {
-            void cartActions.removeCartItem(rowName).catch((reason: unknown) => {
+            void cartActions.removeCartItem(rowName, managerPinToken).catch((reason: unknown) => {
               showToast({
                 type: "error",
                 message: reason instanceof Error ? reason.message : "Unable to remove item.",

@@ -8,7 +8,7 @@ type ManagerPinDialogProps = {
   isOpen: boolean;
   posProfile?: string;
   onCancel: () => void;
-  onApproved: () => void;
+  onApproved: (token: string) => void;
 };
 
 export function ManagerPinDialog({ isOpen, posProfile, onCancel, onApproved }: ManagerPinDialogProps) {
@@ -26,9 +26,9 @@ export function ManagerPinDialog({ isOpen, posProfile, onCancel, onApproved }: M
     setIsSubmitting(true);
     setError(null);
     try {
-      await verifyManagerPin(call.call, { pos_profile: posProfile, pin, action: "item_removal" });
+      const result = await verifyManagerPin(call.call, { pos_profile: posProfile, pin, action: "item_removal" });
       setPin("");
-      onApproved();
+      onApproved(result.token);
     } catch (reason) {
       setError(reason instanceof VunaApiError ? reason.message : "Manager PIN verification failed.");
     } finally {

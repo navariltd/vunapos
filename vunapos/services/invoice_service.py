@@ -1343,8 +1343,11 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 	return invoice_to_dict(doc)
 
 
-def remove_item(invoice_doctype, invoice_name, row_name):
+def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token=None):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	if profile.get("vunapos_require_manager_pin_item_removal"):
+		validate_pin_token(manager_pin_token, profile, "manager")
 	row = next((item for item in doc.get("items", []) if item.name == row_name), None)
 	if not row:
 		frappe.throw(_("Invoice item row {0} was not found").format(row_name))
