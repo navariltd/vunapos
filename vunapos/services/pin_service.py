@@ -77,6 +77,12 @@ def validate_pin_token(token, profile, purpose, subject=None):
 	return state
 
 
+def consume_pin_token(token, profile, purpose, subject=None):
+	state = validate_pin_token(token, profile, purpose, subject)
+	frappe.cache().delete_value(f"vunapos:pin-token:{token}")
+	return state
+
+
 def verify_salesperson_pin(pos_profile: str, salesperson: str, pin: str) -> dict:
 	profile = resolve_pos_profile(pos_profile)
 	require_pos_profile_assignment(profile.name)

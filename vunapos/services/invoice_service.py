@@ -35,7 +35,7 @@ from vunapos.services.gateway_payment_service import (
 	payment_mode_gateway,
 	validate_gateway_payment_link,
 )
-from vunapos.services.pin_service import validate_pin_token
+from vunapos.services.pin_service import consume_pin_token, validate_pin_token
 from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
 	get_invoice_mode,
@@ -1346,13 +1346,20 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token=None):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	manager_identity = None
 	if profile.get("vunapos_require_manager_pin_item_removal"):
-		validate_pin_token(manager_pin_token, profile, "manager")
+		manager_state = consume_pin_token(manager_pin_token, profile, "manager")
+		manager_identity = manager_state.get("subject")
 	row = next((item for item in doc.get("items", []) if item.name == row_name), None)
 	if not row:
 		frappe.throw(_("Invoice item row {0} was not found").format(row_name))
 	doc.remove(row)
 	_save_invoice(doc)
+	if manager_identity:
+		doc.add_comment(
+			"Info",
+			_("Item {0} removed with manager PIN approval by {1}.").format(row_name, manager_identity),
+		)
 	return invoice_to_dict(doc)
 
 
