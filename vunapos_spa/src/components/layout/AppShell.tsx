@@ -13,6 +13,10 @@ type AppShellProps = {
   orderType: OrderType;
   posProfile?: string;
   warehouse?: string;
+  salesperson?: { name: string; displayName: string } | null;
+  salespersonPinEnabled?: boolean;
+  salespersonLocked?: boolean;
+  onLockSalesperson?: () => void;
 };
 
 export function AppShell({
@@ -24,6 +28,10 @@ export function AppShell({
   orderType,
   posProfile,
   warehouse,
+  salesperson,
+  salespersonPinEnabled,
+  salespersonLocked,
+  onLockSalesperson,
 }: AppShellProps) {
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-surface text-on-background">
@@ -31,6 +39,10 @@ export function AppShell({
         allowOrderTypeChange={allowOrderTypeChange}
         orderType={orderType}
         onOrderTypeChange={onOrderTypeChange}
+        salesperson={salesperson}
+        salespersonPinEnabled={salespersonPinEnabled}
+        salespersonLocked={salespersonLocked}
+        onLockSalesperson={onLockSalesperson}
       />
       <div className="flex min-h-0 flex-1">
         <Sidebar

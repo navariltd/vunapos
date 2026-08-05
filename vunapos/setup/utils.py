@@ -195,6 +195,15 @@ def ensure_vunapos_custom_fields():
 					"depends_on": "eval:doc.vunapos_enable_salesperson_pin || doc.vunapos_require_manager_pin_item_removal",
 				},
 				{
+					"fieldname": "vunapos_require_pin_before_every_sale",
+					"label": "Require PIN Before Every Sale",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_pin_lockout_minutes",
+					"description": "Automatically lock the POS after each completed sale and require salesperson verification before the next sale.",
+					"default": "0",
+					"depends_on": "eval:doc.vunapos_enable_salesperson_pin",
+				},
+				{
 					"fieldname": "vunapos_default_order_type",
 					"label": "Default Order Type",
 					"fieldtype": "Select",

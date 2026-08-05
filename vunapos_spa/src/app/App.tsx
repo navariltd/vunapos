@@ -33,10 +33,14 @@ function AuthenticatedApp() {
     defaultOrderType: OrderType;
     value: OrderType;
   } | null>(null);
+  const [salesperson, setSalesperson] = useState<{ name: string; displayName: string } | null>(null);
+  const [salespersonUnlocked, setSalespersonUnlocked] = useState(false);
   const orderType =
     selectedOrderType?.defaultOrderType === defaultOrderType
       ? selectedOrderType.value
       : defaultOrderType;
+  const salespersonPinEnabled = Boolean(bootstrap.data?.enable_salesperson_pin);
+  const salespersonLocked = salespersonPinEnabled && !salespersonUnlocked;
 
   return (
     <>
@@ -54,8 +58,21 @@ function AuthenticatedApp() {
         }
         posProfile={bootstrap.data?.pos_profile}
         warehouse={bootstrap.data?.warehouse}
+        salesperson={salesperson}
+        salespersonPinEnabled={salespersonPinEnabled}
+        salespersonLocked={salespersonLocked}
+        onLockSalesperson={() => setSalespersonUnlocked(false)}
       >
-        <POSHomePage bootstrap={bootstrap} orderType={orderType} />
+        <POSHomePage
+          bootstrap={bootstrap}
+          orderType={orderType}
+          salespersonLocked={salespersonLocked}
+          onSalespersonVerified={(verified) => {
+            setSalesperson(verified);
+            setSalespersonUnlocked(true);
+          }}
+          onLockSalesperson={() => setSalespersonUnlocked(false)}
+        />
       </AppShell>
       <InstallPrompt />
     </>

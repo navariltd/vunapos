@@ -94,6 +94,7 @@ def profile_to_dict(profile, invoice_mode):
 		"require_manager_pin_item_removal": bool(profile.get("vunapos_require_manager_pin_item_removal")),
 		"pin_max_attempts": max(cint(profile.get("vunapos_pin_max_attempts")) or 5, 1),
 		"pin_lockout_minutes": max(cint(profile.get("vunapos_pin_lockout_minutes")) or 5, 1),
+		"require_pin_before_every_sale": bool(profile.get("vunapos_require_pin_before_every_sale")),
 		"pin_users": pin_users,
 		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),

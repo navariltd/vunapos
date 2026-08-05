@@ -67,6 +67,9 @@ import type { OrderType } from "../../components/layout/Header";
 type POSHomePageProps = {
   bootstrap?: ReturnType<typeof useBootstrapData>;
   orderType?: OrderType;
+  salespersonLocked?: boolean;
+  onSalespersonVerified?: (salesperson: { name: string; displayName: string }) => void;
+  onLockSalesperson?: () => void;
 };
 
 function printInvoiceHtml(printPayload: PrintPayload) {
@@ -144,6 +147,9 @@ function FeatureDisabled({
 export function POSHomePage({
   bootstrap: providedBootstrap,
   orderType = "Sales Invoice",
+  salespersonLocked = false,
+  onSalespersonVerified,
+  onLockSalesperson,
 }: POSHomePageProps) {
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -160,11 +166,6 @@ export function POSHomePage({
     closeCheckout: boolean;
   } | null>(null);
   const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
-  const [verifiedSalesperson, setVerifiedSalesperson] = useState<{
-    name: string;
-    displayName: string;
-    profileKey: string;
-  } | null>(null);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -783,6 +784,9 @@ export function POSHomePage({
         orderType,
       );
       setIsCheckoutOpen(false);
+      if (bootstrap.data?.require_pin_before_every_sale) {
+        onLockSalesperson?.();
+      }
       void handleSelectCustomer(undefined, false);
       if (result?.invoice) {
         const queued =
@@ -1152,18 +1156,11 @@ export function POSHomePage({
       />
 
       <SalespersonPinLock
-        enabled={Boolean(
-          bootstrap.data?.enable_salesperson_pin
-          && verifiedSalesperson?.profileKey !== `${bootstrap.data?.pos_profile || ""}:pin`,
-        )}
+        enabled={Boolean(bootstrap.data?.enable_salesperson_pin && salespersonLocked)}
         posProfile={bootstrap.data?.pos_profile}
         pinUsers={bootstrap.data?.pin_users}
         onVerified={(name, displayName) => {
-          setVerifiedSalesperson({
-            name,
-            displayName,
-            profileKey: `${bootstrap.data?.pos_profile || ""}:pin`,
-          });
+          onSalespersonVerified?.({ name, displayName });
           showToast({ type: "info", message: `${displayName} is ready to sell.` });
         }}
       />
