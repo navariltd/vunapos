@@ -489,6 +489,10 @@ export function POSHomePage({
       const itemCode = bootstrap.data?.delivery_charge_item;
       if (!itemCode) return;
       let row = useCartStore.getState().invoice?.items.find((item) => item.item_code === itemCode);
+      if (amount === undefined || amount <= 0) {
+        if (row) await cartActions.removeCartItem(row.row_name);
+        return;
+      }
       if (!row) {
         const item = await getItemDetails(itemDetailsCall.call, {
           item_code: itemCode,

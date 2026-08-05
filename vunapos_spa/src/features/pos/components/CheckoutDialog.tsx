@@ -220,6 +220,7 @@ function CheckoutDialogContent({
   const isSubmitting = useCartStore((s) => s.isMutating);
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
+
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
   const availableModes = useMemo(
@@ -271,9 +272,40 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
-  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const deliveryEnabled = Boolean(deliveryChargeItem);
   const [deliveryAmount, setDeliveryAmount] = useState("");
   const [deliveryApplying, setDeliveryApplying] = useState(false);
+  const deliveryAppliedAmountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      allowDeliveryChargeChange === false ||
+      !onApplyDeliveryCharge
+    ) {
+      return;
+    }
+    const rawAmount = deliveryAmount.trim();
+    const amount = rawAmount ? Number(rawAmount) : 0;
+    if (rawAmount && (!Number.isFinite(amount) || amount < 0)) return;
+    if (deliveryAppliedAmountRef.current === amount) return;
+
+    // Apply after the cashier pauses briefly, rather than waiting for the
+    // input to lose focus. This keeps the invoice total and payment allocation
+    // in sync while preserving a responsive numeric input.
+    const timer = window.setTimeout(() => {
+      deliveryAppliedAmountRef.current = amount;
+      setDeliveryApplying(true);
+      void onApplyDeliveryCharge(amount)
+        .catch(() => {
+          deliveryAppliedAmountRef.current = null;
+        })
+        .finally(() => setDeliveryApplying(false));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    allowDeliveryChargeChange,
+    deliveryAmount,
+    onApplyDeliveryCharge,
+  ]);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [gatewayLinks, setGatewayLinks] = useState<
     Record<string, GatewayPaymentLinkDTO | undefined>
@@ -355,6 +387,42 @@ function CheckoutDialogContent({
     payableMinor,
     precision,
   );
+  const previousPayableMinor = useRef(payableMinor);
+  useEffect(() => {
+    const previous = previousPayableMinor.current;
+    previousPayableMinor.current = payableMinor;
+    if (previous === payableMinor || isCreditSale || !availableModes.length) {
+      return;
+    }
+
+    // A delivery charge changes the amount due after the cashier has already
+    // allocated payment. Keep a fully-paid cash sale fully paid by applying
+    // the same delta to the default payment mode. Do not overwrite deliberate
+    // partial/split allocations.
+    setAmounts((current) => {
+      const previousAllocation = calculatePaymentAllocation(
+        availableModes,
+        current,
+        previous,
+        precision,
+      );
+      if (previousAllocation.remainingMinor !== 0) return current;
+      const mode =
+        availableModes.find((candidate) => candidate.default) ||
+        availableModes[0];
+      const currentMinor = parsePaymentAmount(
+        current[mode.mode_of_payment] || "",
+        precision,
+      );
+      return {
+        ...current,
+        [mode.mode_of_payment]: minorUnitsToInput(
+          Math.max(currentMinor + payableMinor - previous, 0),
+          precision,
+        ),
+      };
+    });
+  }, [availableModes, isCreditSale, payableMinor, precision]);
   const hasUnverifiedGatewayPayment = availableModes.some((mode) => {
     if (!mode.payment_gateway) return false;
     const amountMinor = parsePaymentAmount(
@@ -678,7 +746,7 @@ function CheckoutDialogContent({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-          <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-2 lg:divide-x lg:divide-outline-variant">
+          <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)] lg:divide-x lg:divide-outline-variant">
             <section className="flex min-h-0 flex-col p-4 sm:p-6">
               {allowCreditSales && !isSalesOrder ? (
                 <div
@@ -728,23 +796,42 @@ function CheckoutDialogContent({
                   />
                 </label>
               ) : null}
-              {isWalkinCustomer ? (
-                <label className="mb-5 block text-sm font-medium text-on-surface">
-                  Customer Tax ID
-                  <input
-                    type="text"
-                    value={checkoutTaxId}
-                    onChange={(event) => setCheckoutTaxId(event.target.value)}
-                    maxLength={140}
-                    placeholder={
-                      customer?.tax_id || "PIN / Tax ID for this receipt"
-                    }
-                    className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                  />
-                  <span className="mt-1 block text-xs font-normal text-on-surface-variant">
-                    This Tax ID will be printed on this invoice only.
-                  </span>
-                </label>
+              {isWalkinCustomer || (allowDeliveryCharges && deliveryChargeItem) ? (
+                <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {isWalkinCustomer ? (
+                    <label className="block text-sm font-medium text-on-surface">
+                      Customer Tax ID
+                      <input
+                        type="text"
+                        value={checkoutTaxId}
+                        onChange={(event) => setCheckoutTaxId(event.target.value)}
+                        maxLength={140}
+                        placeholder={
+                          customer?.tax_id || "PIN / Tax ID for this receipt"
+                        }
+                        className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                      />
+                      <span className="mt-1 block text-xs font-normal text-on-surface-variant">
+                        Printed on this invoice only.
+                      </span>
+                    </label>
+                  ) : null}
+                  {allowDeliveryCharges && deliveryChargeItem ? (
+                    <label className="block text-sm font-medium text-on-surface">
+                      Delivery charge
+                      <input
+                        className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Optional"
+                        value={deliveryAmount}
+                        disabled={allowDeliveryChargeChange === false}
+                        onChange={(event) => setDeliveryAmount(event.target.value)}
+                      />
+                    </label>
+                  ) : null}
+                </div>
               ) : null}
               {customerLoyalty?.enrolled && !isSalesOrder ? (
                 <div className="mb-5 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-4">
@@ -847,51 +934,6 @@ function CheckoutDialogContent({
                   </div>
                 </div>
               ) : null}
-              <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
-                Amount due
-              </p>
-              <p className="mt-1 text-3xl font-semibold text-on-surface">
-                {formatCurrency(payableMinor / scale, currency, precision)}
-              </p>
-              {!isSalesOrder && allowDeliveryCharges && deliveryChargeItem ? (
-                <div className="mt-5 rounded-md border border-outline-variant bg-surface-container-low p-3">
-                  <label className="flex items-center gap-2 text-sm font-medium text-on-surface">
-                    <input
-                      type="checkbox"
-                      checked={deliveryEnabled}
-                      disabled={!allowDeliveryChargeChange || deliveryApplying}
-                      onChange={(event) => {
-                        const enabled = event.target.checked;
-                        setDeliveryEnabled(enabled);
-                        if (!enabled) setDeliveryAmount("");
-                        if (enabled && !allowDeliveryChargeChange && onApplyDeliveryCharge) {
-                          setDeliveryApplying(true);
-                          void onApplyDeliveryCharge().finally(() => setDeliveryApplying(false));
-                        }
-                      }}
-                    />
-                    Delivery required
-                  </label>
-                  {deliveryEnabled ? (
-                    <input
-                      className="mt-3 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      placeholder="Delivery charge"
-                      value={deliveryAmount}
-                      disabled={!allowDeliveryChargeChange || deliveryApplying}
-                      onChange={(event) => setDeliveryAmount(event.target.value)}
-                      onBlur={() => {
-                        const amount = Number(deliveryAmount);
-                        if (!Number.isFinite(amount) || amount <= 0 || !onApplyDeliveryCharge) return;
-                        setDeliveryApplying(true);
-                        void onApplyDeliveryCharge(amount).finally(() => setDeliveryApplying(false));
-                      }}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
               {isSalesOrder ? (
                 <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
                   This checkout will create a submitted Sales Order. No payment
@@ -899,7 +941,13 @@ function CheckoutDialogContent({
                 </div>
               ) : (
                 <>
-                  <div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
+                  <div className="mb-3 flex items-center justify-between rounded-md bg-surface-container-low px-3 py-2 text-sm">
+                    <span className="text-on-surface-variant">Amount due</span>
+                    <span className="font-semibold text-on-surface">
+                      {formatCurrency(payableMinor / scale, currency, precision)}
+                    </span>
+                  </div>
+                  <div className="mt-2 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
                     {availableModes.map((mode) => {
                       const isGatewayControlled = Boolean(mode.payment_gateway);
                       const amount = amounts[mode.mode_of_payment] ?? "";
@@ -1126,8 +1174,24 @@ function CheckoutDialogContent({
             <Pause className="size-4" /> Hold
           </Button>
           <Button
-            disabled={!isPayable || isSubmitting}
-            onClick={() =>
+            disabled={!isPayable || isSubmitting || deliveryApplying}
+            onClick={async () => {
+              if (
+                deliveryEnabled &&
+                onApplyDeliveryCharge &&
+                Number.isFinite(Number(deliveryAmount)) &&
+                Number(deliveryAmount) > 0
+              ) {
+                const amount = Number(deliveryAmount);
+                setDeliveryApplying(true);
+                try {
+                  await onApplyDeliveryCharge(
+                    Number.isFinite(amount) && amount > 0 ? amount : undefined,
+                  );
+                } finally {
+                  setDeliveryApplying(false);
+                }
+              }
               onConfirm(
                 isSalesOrder
                   ? []
@@ -1151,8 +1215,8 @@ function CheckoutDialogContent({
                 isWalkinCustomer
                   ? checkoutTaxId.trim() || undefined
                   : undefined,
-              )
-            }
+              );
+            }}
           >
             <span className="sm:hidden">
               {isSubmitting ? "..." : isSalesOrder ? "Order" : "Complete"}
