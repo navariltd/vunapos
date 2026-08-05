@@ -106,6 +106,15 @@ function getCheckoutErrorMessage(error: unknown) {
     if (error.code === "EMPTY_INVOICE") {
       return "Add at least one item before checkout.";
     }
+    if (error.code === "SERVICE_ITEMS_DISABLED") {
+      return "Service items are disabled for this POS Profile.";
+    }
+    if (error.code === "INVALID_DELIVERY_CHARGE_ITEM") {
+      return "The configured Delivery Charge Item must have Maintain Stock disabled.";
+    }
+    if (error.code === "DUPLICATE_DELIVERY_CHARGE") {
+      return "Only one Delivery Charge line is allowed on an invoice.";
+    }
   }
   return error instanceof Error ? error.message : "Checkout failed";
 }
@@ -486,6 +495,13 @@ export function POSHomePage({
 
   const handleAddConfiguredItem = useCallback(
     async (itemCode: string) => {
+      if (cartInvoice?.items.some((item) => item.item_code === itemCode)) {
+        showToast({
+          type: "info",
+          message: "The delivery charge is already in the cart.",
+        });
+        return;
+      }
       try {
         const item = await getItemDetails(itemDetailsCall.call, {
           item_code: itemCode,

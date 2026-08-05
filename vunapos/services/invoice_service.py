@@ -536,6 +536,14 @@ def _get_actual_qty(item_code, warehouse):
 
 
 def validate_cart_items(items, profile):
+	delivery_charge_item = profile.get("vunapos_delivery_charge_item")
+	if delivery_charge_item:
+		matches = [item for item in items if item.get("item_code") == delivery_charge_item]
+		if len(matches) > 1:
+			_throw(
+				"DUPLICATE_DELIVERY_CHARGE",
+				_("Only one Delivery Charge line is allowed on an invoice"),
+			)
 	item_qtys = _get_cart_item_qtys(items)
 	_validate_stock_qtys(item_qtys, profile)
 	return item_qtys
