@@ -601,6 +601,33 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	filters = {"disabled": 0, "is_sales_item": 1}
 	query_filters = dict(filters)
 	query_filters["variant_of"] = ["is", "not set"]
+	or_filters = []
+	if query:
+		or_filters = [
+			["Item", "item_code", "like", f"%{query}%"],
+			["Item", "item_name", "like", f"%{query}%"],
+		]
+	search_or_filters = list(or_filters)
+	if not profile.get("vunapos_allow_service_items"):
+		delivery_codes = []
+		if profile.get("vunapos_allow_delivery_items"):
+			delivery_codes = [
+				code
+				for code in (
+					profile.get("vunapos_delivery_item"),
+					profile.get("vunapos_delivery_charge_item"),
+				)
+				if code
+			]
+		if delivery_codes:
+			search_or_filters.extend(
+				[
+					["Item", "is_stock_item", "=", 1],
+					["Item", "name", "in", delivery_codes],
+				]
+			)
+		else:
+			query_filters["is_stock_item"] = 1
 	if since:
 		# Item.modified alone misses rate and stock changes: Item Price and Bin are
 		# separate doctypes and neither bumps the parent Item's modified timestamp.
@@ -622,17 +649,10 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 				)
 			)
 		query_filters["name"] = ["in", list(changed_item_codes) or [""]]
-	or_filters = []
-	if query:
-		or_filters = [
-			["Item", "item_code", "like", f"%{query}%"],
-			["Item", "item_name", "like", f"%{query}%"],
-		]
-
 	get_all_args = {
 		"doctype": "Item",
 		"filters": query_filters,
-		"or_filters": or_filters,
+		"or_filters": search_or_filters,
 		"fields": [
 			"name",
 			"item_code",
@@ -671,7 +691,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	if barcode_item_code and barcode_item_code not in item_by_code:
 		barcode_item = frappe.get_value(
 			"Item",
-			{"name": barcode_item_code, **filters},
+			{"name": barcode_item_code, **query_filters},
 			get_all_args["fields"],
 			as_dict=True,
 		)

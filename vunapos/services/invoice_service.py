@@ -589,6 +589,18 @@ def _apply_pricing_override(row, item, profile):
 
 
 def _get_item_row(item_code, qty, doc, profile, item_tax_template=None, pricing_item=None):
+	item = frappe.get_cached_doc("Item", item_code)
+	if not item.is_stock_item and not profile.get("vunapos_allow_service_items"):
+		allowed_delivery_items = {
+			value
+			for value in (
+				profile.get("vunapos_delivery_item"),
+				profile.get("vunapos_delivery_charge_item"),
+			)
+			if value
+		}
+		if not (profile.get("vunapos_allow_delivery_items") and item_code in allowed_delivery_items):
+			_throw("SERVICE_ITEMS_DISABLED", _("Service items are disabled for this POS Profile"))
 	uom, conversion_factor = _resolve_item_uom(item_code, (pricing_item or {}).get("uom"))
 	ctx = frappe._dict(
 		{
