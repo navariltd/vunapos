@@ -58,6 +58,34 @@ SESSION_CASHIER_FIELD = "vunapos_session_cashier"
 SESSION_VERIFIED_AT_FIELD = "vunapos_session_verified_at"
 
 
+def _stamp_salesperson(doc, profile, salesperson=None):
+	if not profile.get("vunapos_enable_salesperson_pin"):
+		return
+	if not salesperson and _has_field(doc.doctype, "sales_team") and doc.get("sales_team"):
+		salesperson = doc.sales_team[0].get("sales_person")
+	if not salesperson:
+		_throw("SALESPERSON_REQUIRED", _("Verify a salesperson PIN before completing this sale."))
+	if not frappe.db.exists("Sales Person", salesperson):
+		_throw("INVALID_SALESPERSON", _("The selected salesperson does not exist."))
+	row = next(
+		(
+			row
+			for row in profile.get("vunapos_pin_users", [])
+			if row.get("enabled")
+			and row.get("role") == "Salesperson"
+			and row.get("sales_person") == salesperson
+		),
+		None,
+	)
+	if not row:
+		_throw("INVALID_SALESPERSON", _("The selected salesperson is not enabled for this POS Profile."))
+	if _has_field(doc.doctype, "sales_team"):
+		doc.set("sales_team", [])
+		team_row = doc.append("sales_team", {})
+		team_row.sales_person = salesperson
+		team_row.allocated_percentage = 100
+
+
 def _throw(code, message, meta=None):
 	exc = frappe.ValidationError(message)
 	exc.vuna_error_code = code
@@ -1389,6 +1417,7 @@ def submit_invoice(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	salesperson=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
@@ -1409,6 +1438,7 @@ def submit_invoice(
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
+	_stamp_salesperson(doc, profile, salesperson)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
 		doc.set_paid_amount()
@@ -1429,6 +1459,7 @@ def checkout_invoice(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	salesperson=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1452,6 +1483,7 @@ def checkout_invoice(
 		due_date=due_date,
 		loyalty_points=loyalty_points,
 		tax_id=tax_id,
+		salesperson=salesperson,
 	)
 	doc.submit()
 	consume_gateway_payment_links(getattr(doc, "_vunapos_gateway_payment_links", []), doc)
@@ -1467,6 +1499,7 @@ def _prepare_invoice_for_checkout(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	salesperson=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1486,6 +1519,7 @@ def _prepare_invoice_for_checkout(
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
+	_stamp_salesperson(doc, profile, salesperson)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1545,6 +1579,7 @@ def create_and_submit_invoice(
 	price_list=None,
 	loyalty_points=None,
 	tax_id=None,
+	salesperson=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1572,6 +1607,7 @@ def create_and_submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				salesperson=salesperson,
 			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
@@ -1589,6 +1625,7 @@ def create_and_submit_invoice(
 			due_date=due_date,
 			loyalty_points=loyalty_points,
 			tax_id=tax_id,
+			salesperson=salesperson,
 		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
@@ -1624,6 +1661,7 @@ def create_and_submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				salesperson=salesperson,
 			)
 			create_invoice_stock_reservations(doc)
 			enqueue_invoice_submission(doc)
@@ -1638,6 +1676,7 @@ def create_and_submit_invoice(
 			due_date=due_date,
 			loyalty_points=loyalty_points,
 			tax_id=tax_id,
+			salesperson=salesperson,
 		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
@@ -1652,6 +1691,7 @@ def create_and_submit_sales_order(
 	price_list=None,
 	delivery_date=None,
 	tax_id=None,
+	salesperson=None,
 ):
 	existing = _find_submitted_order_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1677,6 +1717,7 @@ def create_and_submit_sales_order(
 		_recalculate(doc)
 		validate_invoice_batch_allocations(doc)
 		_stamp_validated_session(doc, opening_entry)
+		_stamp_salesperson(doc, profile, salesperson)
 		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 		if idempotency_key:
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())

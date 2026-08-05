@@ -66,6 +66,7 @@ function AuthenticatedApp() {
         <POSHomePage
           bootstrap={bootstrap}
           orderType={orderType}
+          salesperson={salesperson}
           salespersonLocked={salespersonLocked}
           onSalespersonVerified={(verified) => {
             setSalesperson(verified);

@@ -67,6 +67,7 @@ import type { OrderType } from "../../components/layout/Header";
 type POSHomePageProps = {
   bootstrap?: ReturnType<typeof useBootstrapData>;
   orderType?: OrderType;
+  salesperson?: { name: string; displayName: string } | null;
   salespersonLocked?: boolean;
   onSalespersonVerified?: (salesperson: { name: string; displayName: string }) => void;
   onLockSalesperson?: () => void;
@@ -147,6 +148,7 @@ function FeatureDisabled({
 export function POSHomePage({
   bootstrap: providedBootstrap,
   orderType = "Sales Invoice",
+  salesperson,
   salespersonLocked = false,
   onSalespersonVerified,
   onLockSalesperson,
@@ -782,6 +784,7 @@ export function POSHomePage({
         loyaltyPoints,
         taxId,
         orderType,
+        salesperson?.name,
       );
       setIsCheckoutOpen(false);
       if (bootstrap.data?.require_pin_before_every_sale) {
