@@ -607,24 +607,10 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			["Item", "item_code", "like", f"%{query}%"],
 			["Item", "item_name", "like", f"%{query}%"],
 		]
-	search_or_filters = list(or_filters)
 	if not profile.get("vunapos_allow_service_items"):
-		delivery_codes = []
-		if profile.get("vunapos_allow_delivery_charges"):
-			delivery_codes = (
-				[profile.get("vunapos_delivery_charge_item")]
-				if profile.get("vunapos_delivery_charge_item")
-				else []
-			)
-		if delivery_codes:
-			search_or_filters.extend(
-				[
-					["Item", "is_stock_item", "=", 1],
-					["Item", "name", "in", delivery_codes],
-				]
-			)
-		else:
-			query_filters["is_stock_item"] = 1
+		# Delivery Charge Item is an internal checkout line, not a catalogue item.
+		# It is loaded directly by checkout when delivery is enabled.
+		query_filters["is_stock_item"] = 1
 	if since:
 		# Item.modified alone misses rate and stock changes: Item Price and Bin are
 		# separate doctypes and neither bumps the parent Item's modified timestamp.
@@ -649,7 +635,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	get_all_args = {
 		"doctype": "Item",
 		"filters": query_filters,
-		"or_filters": search_or_filters,
+		"or_filters": or_filters,
 		"fields": [
 			"name",
 			"item_code",
