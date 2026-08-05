@@ -22,7 +22,12 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
   const isDisabled = disabled || outOfStock;
 
   return (
-    <div className="flex min-h-40 flex-col overflow-hidden rounded-md border border-outline-variant bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44">
+    <div className="relative flex min-h-40 flex-col overflow-hidden rounded-md border border-outline-variant bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44">
+      {item.is_product_bundle ? (
+        <span className="pointer-events-none absolute left-[-29px] top-3 z-10 w-24 -rotate-45 bg-secondary-container py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-on-secondary-container shadow-sm">
+          Bundle
+        </span>
+      ) : null}
       <div
         className={`flex flex-1 flex-col text-left ${isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
         role="button"

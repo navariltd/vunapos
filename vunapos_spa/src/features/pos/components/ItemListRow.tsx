@@ -37,6 +37,11 @@ export function ItemListRow({
         <span className="block truncate text-sm font-semibold text-on-surface">
           {item.item_name}
         </span>
+        {item.is_product_bundle ? (
+          <span className="mt-1 inline-flex rounded-full bg-secondary-container px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-on-secondary-container">
+            Bundle
+          </span>
+        ) : null}
         <span className="block truncate text-xs text-on-surface-variant">
           {[item.item_code, item.item_group, item.stock_uom]
             .filter(Boolean)
