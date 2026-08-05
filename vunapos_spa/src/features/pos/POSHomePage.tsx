@@ -20,6 +20,7 @@ import {
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
 import {
+  getItemDetails,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -193,6 +194,7 @@ export function POSHomePage({
   const cartActions = useCartActions();
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
+  const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const gatewayPayments = useGatewayPayments();
   const { isReachable } = useConnectivity();
   const customerLoyalty = useCustomerLoyalty(
@@ -480,6 +482,35 @@ export function POSHomePage({
       void addConcreteItem(variant);
     },
     [addConcreteItem],
+  );
+
+  const handleAddConfiguredItem = useCallback(
+    async (itemCode: string) => {
+      try {
+        const item = await getItemDetails(itemDetailsCall.call, {
+          item_code: itemCode,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list:
+            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        await addConcreteItem(item);
+      } catch (error) {
+        showToast({
+          type: "error",
+          message: error instanceof Error ? error.message : "Unable to add delivery item.",
+        });
+      }
+    },
+    [
+      activeCustomer,
+      addConcreteItem,
+      bootstrap.data,
+      cartInvoice,
+      itemDetailsCall.call,
+      selectedPriceList,
+      showToast,
+    ],
   );
 
   useEffect(() => {
@@ -875,6 +906,8 @@ export function POSHomePage({
             className="hidden xl:flex"
             allowDiscountChange={bootstrap.data?.allow_discount_change}
             allowRateChange={bootstrap.data?.allow_rate_change}
+            allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
+            deliveryChargeItem={bootstrap.data?.delivery_charge_item}
             currency={bootstrap.data?.currency}
             customerLoyalty={customerLoyalty.data}
             customerLoyaltyError={customerLoyalty.error}
@@ -889,6 +922,7 @@ export function POSHomePage({
             warehouse={bootstrap.data?.warehouse}
             isOnline={isReachable && navigator.onLine !== false}
             onCheckout={handleOpenCheckout}
+            onAddConfiguredItem={(itemCode) => void handleAddConfiguredItem(itemCode)}
             onClearCustomer={() => void handleSelectCustomer(null)}
             onClearCart={() => handleClearCart(false)}
             onHold={handleHoldCart}
@@ -962,6 +996,8 @@ export function POSHomePage({
               className="flex-1 border-0"
               allowDiscountChange={bootstrap.data?.allow_discount_change}
               allowRateChange={bootstrap.data?.allow_rate_change}
+              allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
+              deliveryChargeItem={bootstrap.data?.delivery_charge_item}
               currency={bootstrap.data?.currency}
               customerLoyalty={customerLoyalty.data}
               customerLoyaltyError={customerLoyalty.error}
@@ -976,6 +1012,7 @@ export function POSHomePage({
               warehouse={bootstrap.data?.warehouse}
               isOnline={isReachable && navigator.onLine !== false}
               onCheckout={handleOpenCheckout}
+              onAddConfiguredItem={(itemCode) => void handleAddConfiguredItem(itemCode)}
               onClearCustomer={() => void handleSelectCustomer(null)}
               onClearCart={() => handleClearCart(false)}
               onHold={handleHoldCart}

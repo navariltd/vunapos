@@ -23,6 +23,8 @@ type CartPanelProps = {
   allowedPriceLists?: Array<{ name: string; currency?: string }>;
   allowDiscountChange?: boolean;
   allowRateChange?: boolean;
+  allowDeliveryCharges?: boolean;
+  deliveryChargeItem?: string | null;
   className?: string;
   currency?: string;
   customerLoyalty?: CustomerLoyaltyDTO | null;
@@ -30,6 +32,7 @@ type CartPanelProps = {
   isCustomerLoyaltyLoading?: boolean;
   defaultPriceList?: string;
   onCheckout: () => void;
+  onAddConfiguredItem: (itemCode: string) => void;
   onClearCustomer: () => void;
   onClearCart: () => void;
   onHold: () => void;
@@ -70,6 +73,8 @@ export function CartPanel({
   allowDiscountChange,
   allowCustomerCreation,
   allowRateChange,
+  allowDeliveryCharges,
+  deliveryChargeItem,
   allowPriceListSwitching,
   allowedPriceLists = [],
   className,
@@ -79,6 +84,7 @@ export function CartPanel({
   isCustomerLoyaltyLoading,
   defaultPriceList,
   onCheckout,
+  onAddConfiguredItem,
   onClearCustomer,
   onClearCart,
   onHold,
@@ -131,6 +137,22 @@ export function CartPanel({
           error={customerLoyaltyError}
           isLoading={isCustomerLoyaltyLoading}
         />
+        {allowDeliveryCharges && deliveryChargeItem ? (
+          <div className="mt-3 rounded-md border border-outline-variant bg-surface-container-low p-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+              Delivery
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => onAddConfiguredItem(deliveryChargeItem)}
+              >
+                Add delivery charge
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {allowPriceListSwitching && allowedPriceLists.length ? (
           <select
             aria-label="Price list for this sale"

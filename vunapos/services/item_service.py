@@ -610,15 +610,12 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	search_or_filters = list(or_filters)
 	if not profile.get("vunapos_allow_service_items"):
 		delivery_codes = []
-		if profile.get("vunapos_allow_delivery_items"):
-			delivery_codes = [
-				code
-				for code in (
-					profile.get("vunapos_delivery_item"),
-					profile.get("vunapos_delivery_charge_item"),
-				)
-				if code
-			]
+		if profile.get("vunapos_allow_delivery_charges"):
+			delivery_codes = (
+				[profile.get("vunapos_delivery_charge_item")]
+				if profile.get("vunapos_delivery_charge_item")
+				else []
+			)
 		if delivery_codes:
 			search_or_filters.extend(
 				[

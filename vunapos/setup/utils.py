@@ -5,6 +5,10 @@ from frappe.utils import now_datetime
 
 
 def ensure_vunapos_custom_fields():
+	for fieldname in ("vunapos_allow_delivery_items", "vunapos_delivery_item"):
+		custom_field = f"POS Profile-{fieldname}"
+		if frappe.db.exists("Custom Field", custom_field):
+			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
 	create_custom_fields(
 		{
 			"POS Settings": [
@@ -160,28 +164,21 @@ def ensure_vunapos_custom_fields():
 					"default": "0",
 				},
 				{
-					"fieldname": "vunapos_allow_delivery_items",
-					"label": "Allow Delivery Items",
+					"fieldname": "vunapos_allow_delivery_charges",
+					"label": "Allow Delivery Charges",
 					"fieldtype": "Check",
 					"insert_after": "vunapos_allow_service_items",
-					"description": "Allow configured delivery and delivery-charge items in VunaPOS.",
+					"description": "Allow the configured delivery-charge service item in VunaPOS.",
 					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_delivery_item",
-					"label": "Delivery Item",
-					"fieldtype": "Link",
-					"options": "Item",
-					"insert_after": "vunapos_allow_delivery_items",
-					"depends_on": "eval:doc.vunapos_allow_delivery_items",
 				},
 				{
 					"fieldname": "vunapos_delivery_charge_item",
 					"label": "Delivery Charge Item",
 					"fieldtype": "Link",
 					"options": "Item",
-					"insert_after": "vunapos_delivery_item",
-					"depends_on": "eval:doc.vunapos_allow_delivery_items",
+					"link_filters": '[["Item","is_stock_item","=",0],["Item","is_sales_item","=",1]]',
+					"insert_after": "vunapos_allow_delivery_charges",
+					"depends_on": "eval:doc.vunapos_allow_delivery_charges",
 				},
 				{
 					"fieldname": "vunapos_allow_order_type_change",
