@@ -184,6 +184,7 @@ export type BootstrapData = {
 	allow_service_items?: boolean;
 	allow_delivery_charges?: boolean;
 	allow_delivery_charge_change?: boolean;
+	delivery_charge_item?: string | null;
 	allow_order_type_change?: boolean;
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;
