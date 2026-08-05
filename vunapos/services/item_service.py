@@ -77,14 +77,22 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
 	rate = _get_rate(item.item_code, profile, price_list)
+	bundle = _get_product_bundle_map([item.item_code], profile.warehouse).get(item.item_code, {})
+	variant_count = _get_variant_count_map([item.item_code]).get(item.item_code, 0)
+	actual_qty = _get_actual_qty(item.item_code, profile.warehouse)
+	if bundle.get("available_qty") is not None:
+		actual_qty = bundle["available_qty"]
 	return item_to_dict(
 		item,
 		rate=rate,
-		actual_qty=_get_actual_qty(item.item_code, profile.warehouse),
+		actual_qty=actual_qty,
 		barcode=barcode or _get_barcode(item.item_code),
 		item_tax_template=item_tax_template,
 		item_tax=_with_item_tax_prices(item_tax_summary.get(item_tax_template), rate),
 		uoms=uoms,
+		is_product_bundle=bool(bundle),
+		bundle_items=bundle.get("items", []),
+		variant_count=variant_count,
 	)
 
 
@@ -200,6 +208,78 @@ def _get_actual_qty_map(item_codes, warehouse):
 	return {item_code: _get_actual_qty(item_code, warehouse) for item_code in item_codes}
 
 
+def _get_product_bundle_map(item_codes, warehouse=None):
+	"""Return active Product Bundle components and sellable bundle quantity."""
+	if not item_codes:
+		return {}
+	bundles = frappe.get_all(
+		"Product Bundle",
+		filters={"new_item_code": ["in", item_codes], "disabled": 0},
+		fields=["name", "new_item_code"],
+	)
+	if not bundles:
+		return {}
+	bundle_by_name = {row.name: row.new_item_code for row in bundles}
+	children = frappe.get_all(
+		"Product Bundle Item",
+		filters={"parent": ["in", list(bundle_by_name)]},
+		fields=["parent", "item_code", "qty", "uom", "idx"],
+		order_by="parent asc, idx asc",
+	)
+	component_codes = list({row.item_code for row in children})
+	component_items = {
+		row.name: row
+		for row in frappe.get_all(
+			"Item",
+			filters={"name": ["in", component_codes]} if component_codes else {"name": ""},
+			fields=["name", "item_name", "stock_uom", "is_stock_item", "has_batch_no", "has_serial_no"],
+		)
+	}
+	stock_map = _get_actual_qty_map(component_codes, warehouse) if warehouse else {}
+	result = {}
+	for row in children:
+		component = component_items.get(row.item_code)
+		result.setdefault(bundle_by_name[row.parent], []).append(
+			{
+				"item_code": row.item_code,
+				"item_name": component.item_name if component else row.item_code,
+				"qty": flt(row.qty),
+				"uom": row.uom or (component.stock_uom if component else None),
+				"available_qty": flt(stock_map.get(row.item_code))
+				if component and component.is_stock_item
+				else None,
+				"is_stock_item": bool(component.is_stock_item) if component else False,
+				"has_batch_no": bool(component.has_batch_no) if component else False,
+				"has_serial_no": bool(component.has_serial_no) if component else False,
+			}
+		)
+	for bundle_code, components in result.items():
+		limits = [
+			flt(row["available_qty"]) / row["qty"]
+			for row in components
+			if row["is_stock_item"] and row["qty"] > 0
+		]
+		result[bundle_code] = {
+			"items": components,
+			"available_qty": max(0, int(min(limits))) if limits else None,
+		}
+	return result
+
+
+def _get_variant_count_map(item_codes):
+	if not item_codes:
+		return {}
+	rows = frappe.get_all(
+		"Item",
+		filters={"variant_of": ["in", item_codes], "disabled": 0, "is_sales_item": 1},
+		fields=["variant_of"],
+	)
+	counts = {}
+	for row in rows:
+		counts[row.variant_of] = counts.get(row.variant_of, 0) + 1
+	return counts
+
+
 def _get_uom_rate_map(item_codes, price_list, customer=None):
 	if not item_codes or not price_list:
 		return {}
@@ -243,13 +323,18 @@ def _to_item_payload_from_row(
 	item_tax_summary_map=None,
 	uom_map=None,
 	pricing_rule_map=None,
+	bundle_map=None,
+	variant_count_map=None,
 ):
 	price_list_rate = rate_map.get(item.name)
 	if price_list_rate is None:
 		price_list_rate = flt(item.standard_rate)
 	pricing_rule = (pricing_rule_map or {}).get(item.name)
 	rate = flt(pricing_rule.get("rate")) if pricing_rule else price_list_rate
+	bundle = (bundle_map or {}).get(item.name, {})
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
+	if bundle.get("available_qty") is not None:
+		actual_qty = bundle["available_qty"]
 
 	item_tax_template = (item_tax_template_map or {}).get(item.name)
 	return item_to_dict(
@@ -262,6 +347,9 @@ def _to_item_payload_from_row(
 		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
 		uoms=(uom_map or {}).get(item.name, []),
 		pricing_rule=pricing_rule,
+		is_product_bundle=bool(bundle),
+		bundle_items=bundle.get("items", []),
+		variant_count=(variant_count_map or {}).get(item.name, 0),
 	)
 
 
@@ -507,7 +595,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	query = (query or "").strip()
 
 	barcode_item_code = _get_item_code_from_barcode(query) if query else None
-	filters = {"disabled": 0, "is_sales_item": 1, "has_variants": 0}
+	filters = {"disabled": 0, "is_sales_item": 1}
 	query_filters = dict(filters)
 	if since:
 		# Item.modified alone misses rate and stock changes: Item Price and Bin are
@@ -555,6 +643,9 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			"allow_negative_stock",
 			"has_batch_no",
 			"has_serial_no",
+			"has_variants",
+			"variant_based_on",
+			"variant_of",
 			"modified",
 		],
 		"order_by": "item_name asc",
@@ -602,6 +693,8 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
 	uom_map = _get_uom_map(item_codes, uom_rate_map)
+	bundle_map = _get_product_bundle_map(item_codes, profile.warehouse)
+	variant_count_map = _get_variant_count_map(item_codes)
 	pricing_rule_map = _get_catalogue_pricing_rule_map(
 		[item_by_code[item_code] for item_code in item_codes],
 		rate_map,
@@ -622,6 +715,8 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			item_tax_summary_map,
 			uom_map,
 			pricing_rule_map,
+			bundle_map,
+			variant_count_map,
 		)
 		for item_code in item_codes
 	]
@@ -639,3 +734,62 @@ def get_item_details_for_pos(item_code, pos_profile=None, customer=None, price_l
 	if not frappe.db.exists("Item", item_code):
 		frappe.throw(_("Item {0} does not exist").format(item_code))
 	return _to_item_payload(item_code, profile, price_list=price_list)
+
+
+def get_product_bundle_details(item_code, pos_profile=None, customer=None, price_list=None):
+	profile = resolve_pos_profile(pos_profile)
+	price_list = resolve_price_list(
+		profile, customer=customer or profile.customer, requested_price_list=price_list
+	)
+	bundle = _get_product_bundle_map([item_code], profile.warehouse).get(item_code)
+	if not bundle:
+		frappe.throw(_("Item {0} is not an active Product Bundle").format(item_code))
+	return {
+		"item_code": item_code,
+		"price_list": price_list,
+		"warehouse": profile.warehouse,
+		"available_qty": bundle.get("available_qty"),
+		"items": bundle.get("items", []),
+	}
+
+
+def get_template_variants(template_item_code, pos_profile=None, customer=None, price_list=None):
+	profile = resolve_pos_profile(pos_profile)
+	price_list = resolve_price_list(
+		profile, customer=customer or profile.customer, requested_price_list=price_list
+	)
+	template = frappe.get_cached_doc("Item", template_item_code)
+	if not template.has_variants:
+		frappe.throw(_("Item {0} is not a variant template").format(template_item_code))
+	variants = frappe.get_all(
+		"Item",
+		filters={"variant_of": template_item_code, "disabled": 0, "is_sales_item": 1},
+		fields=["name", "item_name", "description", "item_group", "variant_based_on"],
+		order_by="item_name asc",
+	)
+	attribute_rows = frappe.get_all(
+		"Item Variant Attribute",
+		filters={"parent": ["in", [row.name for row in variants]]} if variants else {"parent": ""},
+		fields=["parent", "attribute", "attribute_value", "idx"],
+		order_by="parent asc, idx asc",
+	)
+	attributes = {}
+	for row in attribute_rows:
+		attributes.setdefault(row.parent, []).append(
+			{"attribute": row.attribute, "value": row.attribute_value}
+		)
+	return {
+		"template": {
+			"item_code": template.name,
+			"item_name": template.item_name,
+			"description": template.description,
+			"variant_based_on": template.variant_based_on,
+		},
+		"variants": [
+			{
+				**_to_item_payload(row.name, profile, price_list=price_list),
+				"attributes": attributes.get(row.name, []),
+			}
+			for row in variants
+		],
+	}

@@ -51,6 +51,8 @@ export const vunaMethods = {
 	searchItems: "vunapos.api.item.search_items",
 	resolveBarcode: "vunapos.api.item.resolve_barcode",
 	getItemDetails: "vunapos.api.item.get_item_details",
+	getProductBundle: "vunapos.api.item.get_product_bundle",
+	getTemplateVariants: "vunapos.api.item.get_template_variants",
 	getItemBatches: "vunapos.api.batch.get_item_batches",
 	allocateBatches: "vunapos.api.batch.allocate_batches",
 	searchCustomers: "vunapos.api.customer.search_customers",
@@ -162,6 +164,29 @@ export function getItemDetails(
 	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
 ) {
 	return callAndUnwrap<ItemDTO>(call, params);
+}
+
+export function getProductBundle(
+	call: FrappeCall,
+	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
+) {
+	return callAndUnwrap<{
+		item_code: string;
+		price_list?: string;
+		warehouse?: string;
+		available_qty?: number | null;
+		items: NonNullable<ItemDTO["bundle_items"]>;
+	}>(call, params);
+}
+
+export function getTemplateVariants(
+	call: FrappeCall,
+	params: { template_item_code: string; pos_profile?: string; customer?: string; price_list?: string },
+) {
+	return callAndUnwrap<{
+		template: Pick<ItemDTO, "item_code" | "item_name" | "description" | "variant_based_on">;
+		variants: Array<ItemDTO & { attributes: Array<{ attribute: string; value: string }> }>;
+	}>(call, params);
 }
 
 export function getItemBatches(

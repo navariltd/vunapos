@@ -228,6 +228,20 @@ export type ItemDTO = {
 	allow_negative_stock?: boolean | number;
 	has_batch_no?: boolean | number;
 	has_serial_no?: boolean | number;
+	is_product_bundle?: boolean;
+	bundle_items?: Array<{
+		item_code: string;
+		item_name?: string;
+		qty: number;
+		uom?: string | null;
+		available_qty?: number | null;
+		is_stock_item?: boolean;
+		has_batch_no?: boolean;
+		has_serial_no?: boolean;
+	}>;
+	variant_count?: number;
+	variant_based_on?: string | null;
+	variant_of?: string | null;
 	barcode?: string | null;
 	scan_tracking?: {
 		type: "serial" | "batch";
