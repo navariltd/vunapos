@@ -257,10 +257,22 @@ def ensure_vunapos_custom_fields():
 			],
 			"Sales Invoice": [
 				{
+					"fieldname": "vunapos_tab",
+					"label": "VunaPOS",
+					"fieldtype": "Tab Break",
+					"insert_after": "more_info_tab",
+				},
+				{
+					"fieldname": "vunapos_transaction_section",
+					"label": "VunaPOS Transaction",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_tab",
+				},
+				{
 					"fieldname": "vunapos_invoice",
 					"label": "VunaPOS Invoice",
 					"fieldtype": "Check",
-					"insert_after": "is_pos",
+					"insert_after": "vunapos_transaction_section",
 					"hidden": 1,
 					"allow_on_submit": 1,
 				},
@@ -332,11 +344,17 @@ def ensure_vunapos_custom_fields():
 					"no_copy": 1,
 				},
 				{
+					"fieldname": "vunapos_queue_section",
+					"label": "Background Submission",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_closing_entry",
+				},
+				{
 					"fieldname": "vunapos_queue_status",
 					"label": "VunaPOS Queue Status",
 					"fieldtype": "Select",
 					"options": "\nQueued\nProcessing\nSubmitted\nFailed\nRequires Review\nCancelled",
-					"insert_after": "vunapos_closing_entry",
+					"insert_after": "vunapos_queue_section",
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
@@ -410,10 +428,22 @@ def ensure_vunapos_custom_fields():
 			],
 			"Sales Order": [
 				{
+					"fieldname": "vunapos_tab",
+					"label": "VunaPOS",
+					"fieldtype": "Tab Break",
+					"insert_after": "more_info",
+				},
+				{
+					"fieldname": "vunapos_transaction_section",
+					"label": "VunaPOS Transaction",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_tab",
+				},
+				{
 					"fieldname": "vunapos_invoice",
 					"label": "VunaPOS Order",
 					"fieldtype": "Check",
-					"insert_after": "customer",
+					"insert_after": "vunapos_transaction_section",
 					"hidden": 1,
 					"allow_on_submit": 1,
 				},
@@ -470,10 +500,22 @@ def ensure_vunapos_custom_fields():
 			],
 			"POS Invoice": [
 				{
+					"fieldname": "vunapos_tab",
+					"label": "VunaPOS",
+					"fieldtype": "Tab Break",
+					"insert_after": "more_info_tab",
+				},
+				{
+					"fieldname": "vunapos_transaction_section",
+					"label": "VunaPOS Transaction",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_tab",
+				},
+				{
 					"fieldname": "vunapos_invoice",
 					"label": "VunaPOS Invoice",
 					"fieldtype": "Check",
-					"insert_after": "pos_profile",
+					"insert_after": "vunapos_transaction_section",
 					"hidden": 1,
 					"allow_on_submit": 1,
 				},
@@ -545,11 +587,17 @@ def ensure_vunapos_custom_fields():
 					"no_copy": 1,
 				},
 				{
+					"fieldname": "vunapos_queue_section",
+					"label": "Background Submission",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_closing_entry",
+				},
+				{
 					"fieldname": "vunapos_queue_status",
 					"label": "VunaPOS Queue Status",
 					"fieldtype": "Select",
 					"options": "\nQueued\nProcessing\nSubmitted\nFailed\nRequires Review\nCancelled",
-					"insert_after": "vunapos_closing_entry",
+					"insert_after": "vunapos_queue_section",
 					"read_only": 1,
 					"allow_on_submit": 1,
 					"no_copy": 1,
@@ -623,10 +671,17 @@ def ensure_vunapos_custom_fields():
 			],
 			"Payment Entry": [
 				{
+					"fieldname": "vunapos_payment_section",
+					"label": "VunaPOS",
+					"fieldtype": "Section Break",
+					"insert_after": "section_break_12",
+					"collapsible": 1,
+				},
+				{
 					"fieldname": "vunapos_payment",
 					"label": "VunaPOS Payment",
 					"fieldtype": "Check",
-					"insert_after": "mode_of_payment",
+					"insert_after": "vunapos_payment_section",
 					"hidden": 1,
 					"allow_on_submit": 1,
 				},
