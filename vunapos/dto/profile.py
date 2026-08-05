@@ -40,6 +40,15 @@ def profile_to_dict(profile, invoice_mode):
 	if not allow_credit_sales or default_sale_type != "Credit Sale":
 		default_sale_type = "Cash Sale"
 	queue = get_queue_limits(profile)
+	pin_users = [
+		{
+			"sales_person": row.sales_person,
+			"display_name": row.get("display_name") or row.sales_person,
+			"role": row.get("role") or "Salesperson",
+		}
+		for row in profile.get("vunapos_pin_users", [])
+		if row.get("enabled")
+	]
 	default_order_type = profile.get("vunapos_default_order_type") or "Sales Invoice"
 	if default_order_type not in ("Sales Invoice", "Sales Order"):
 		default_order_type = "Sales Invoice"
@@ -81,6 +90,11 @@ def profile_to_dict(profile, invoice_mode):
 		and enabled("vunapos_allow_payment_reconciliation"),
 		"allow_payment_history": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_payment_history"),
+		"enable_salesperson_pin": bool(profile.get("vunapos_enable_salesperson_pin")),
+		"require_manager_pin_item_removal": bool(profile.get("vunapos_require_manager_pin_item_removal")),
+		"pin_max_attempts": max(cint(profile.get("vunapos_pin_max_attempts")) or 5, 1),
+		"pin_lockout_minutes": max(cint(profile.get("vunapos_pin_lockout_minutes")) or 5, 1),
+		"pin_users": pin_users,
 		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

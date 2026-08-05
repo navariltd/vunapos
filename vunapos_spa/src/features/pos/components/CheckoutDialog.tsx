@@ -413,10 +413,8 @@ function CheckoutDialogContent({
       const mode =
         availableModes.find((candidate) => candidate.default) ||
         availableModes[0];
-      const currentMinor = parsePaymentAmount(
-        current[mode.mode_of_payment] || "",
-        precision,
-      );
+      const currentMinor =
+        parsePaymentAmount(current[mode.mode_of_payment] || "", precision) ?? 0;
       return {
         ...current,
         [mode.mode_of_payment]: minorUnitsToInput(
