@@ -20,6 +20,7 @@ import {
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
 import {
+  getProductBundle,
   getTemplateVariants,
   vunaMethods,
   VunaApiError,
@@ -42,6 +43,10 @@ import {
   VariantPickerDialog,
   type TemplateVariant,
 } from "./components/VariantPickerDialog";
+import {
+  ProductBundleDialog,
+  type ProductBundleDetails,
+} from "./components/ProductBundleDialog";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -135,6 +140,9 @@ export function POSHomePage({
   const [variantPickerItem, setVariantPickerItem] = useState<ItemDTO | null>(null);
   const [variantOptions, setVariantOptions] = useState<TemplateVariant[]>([]);
   const [variantError, setVariantError] = useState<string | null>(null);
+  const [bundleItem, setBundleItem] = useState<ItemDTO | null>(null);
+  const [bundleDetails, setBundleDetails] = useState<ProductBundleDetails | null>(null);
+  const [bundleError, setBundleError] = useState<string | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [clearCartConfirmation, setClearCartConfirmation] = useState<{
     closeCheckout: boolean;
@@ -184,6 +192,7 @@ export function POSHomePage({
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
   const cartActions = useCartActions();
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
+  const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const gatewayPayments = useGatewayPayments();
   const { isReachable } = useConnectivity();
   const customerLoyalty = useCustomerLoyalty(
@@ -420,15 +429,48 @@ export function POSHomePage({
     [cartActions, clearToast, setPageError, showToast],
   );
 
+  const openProductBundle = useCallback(
+    async (item: ItemDTO) => {
+      setBundleItem(item);
+      setBundleDetails(null);
+      setBundleError(null);
+      try {
+        const result = await getProductBundle(productBundleCall.call, {
+          item_code: item.item_code,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list:
+            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        setBundleDetails(result);
+      } catch (error) {
+        setBundleError(
+          error instanceof Error ? error.message : "Unable to load bundle components.",
+        );
+      }
+    },
+    [
+      activeCustomer,
+      bootstrap.data,
+      cartInvoice,
+      productBundleCall.call,
+      selectedPriceList,
+    ],
+  );
+
   const handleAddItem = useCallback(
     async (item: ItemDTO) => {
       if (item.has_variants) {
         await openVariantPicker(item);
         return;
       }
+      if (item.is_product_bundle) {
+        await openProductBundle(item);
+        return;
+      }
       await addConcreteItem(item);
     },
-    [addConcreteItem, openVariantPicker],
+    [addConcreteItem, openProductBundle, openVariantPicker],
   );
 
   const handleSelectVariant = useCallback(
@@ -1101,6 +1143,27 @@ export function POSHomePage({
           setVariantError(null);
         }}
         onSelect={handleSelectVariant}
+      />
+      <ProductBundleDialog
+        key={bundleItem?.item_code || "product-bundle"}
+        bundle={bundleItem}
+        currency={bootstrap.data?.currency}
+        details={bundleDetails}
+        error={bundleError}
+        isLoading={productBundleCall.loading}
+        isOpen={Boolean(bundleItem)}
+        onClose={() => {
+          setBundleItem(null);
+          setBundleDetails(null);
+          setBundleError(null);
+        }}
+        onConfirm={() => {
+          if (!bundleItem) return;
+          setBundleItem(null);
+          setBundleDetails(null);
+          setBundleError(null);
+          void addConcreteItem(bundleItem);
+        }}
       />
       <BarcodeScannerDialog
         open={isBarcodeScannerOpen}
