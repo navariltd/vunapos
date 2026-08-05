@@ -44,6 +44,9 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+  allowDeliveryCharges?: boolean;
+  allowDeliveryChargeChange?: boolean;
+  deliveryChargeItem?: string | null;
   currency?: string;
   currencyPrecision?: number;
   customer?: CustomerDTO | null;
@@ -53,6 +56,7 @@ type CheckoutDialogProps = {
   isOpen: boolean;
   modesOfPayment: ModeOfPaymentDTO[];
   onClear: () => void;
+  onApplyDeliveryCharge?: (amount?: number) => Promise<void>;
   onClose: () => void;
   onConfirm: (
     payments: PaymentInput[],
@@ -121,6 +125,9 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+  allowDeliveryCharges,
+  allowDeliveryChargeChange,
+  deliveryChargeItem,
   currency,
   currencyPrecision,
   customer,
@@ -130,6 +137,7 @@ export function CheckoutDialog({
   isOpen,
   modesOfPayment,
   onClear,
+  onApplyDeliveryCharge,
   onClose,
   onConfirm,
   onHold,
@@ -152,6 +160,9 @@ export function CheckoutDialog({
       key={allowCreditSales ? "credit-enabled" : "credit-disabled"}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+      allowDeliveryCharges={allowDeliveryCharges}
+      allowDeliveryChargeChange={allowDeliveryChargeChange}
+      deliveryChargeItem={deliveryChargeItem}
       currency={currency}
       currencyPrecision={currencyPrecision}
       customer={customer}
@@ -160,6 +171,7 @@ export function CheckoutDialog({
       error={error}
       modesOfPayment={modesOfPayment}
       onClear={onClear}
+      onApplyDeliveryCharge={onApplyDeliveryCharge}
       onClose={onClose}
       onConfirm={onConfirm}
       onHold={onHold}
@@ -179,6 +191,9 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+  allowDeliveryCharges,
+  allowDeliveryChargeChange,
+  deliveryChargeItem,
   currency,
   currencyPrecision,
   customer,
@@ -187,6 +202,7 @@ function CheckoutDialogContent({
   error,
   modesOfPayment,
   onClear,
+  onApplyDeliveryCharge,
   onClose,
   onConfirm,
   onHold,
@@ -255,6 +271,9 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
+  const [deliveryAmount, setDeliveryAmount] = useState("");
+  const [deliveryApplying, setDeliveryApplying] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [gatewayLinks, setGatewayLinks] = useState<
     Record<string, GatewayPaymentLinkDTO | undefined>
@@ -834,6 +853,45 @@ function CheckoutDialogContent({
               <p className="mt-1 text-3xl font-semibold text-on-surface">
                 {formatCurrency(payableMinor / scale, currency, precision)}
               </p>
+              {!isSalesOrder && allowDeliveryCharges && deliveryChargeItem ? (
+                <div className="mt-5 rounded-md border border-outline-variant bg-surface-container-low p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-on-surface">
+                    <input
+                      type="checkbox"
+                      checked={deliveryEnabled}
+                      disabled={!allowDeliveryChargeChange || deliveryApplying}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setDeliveryEnabled(enabled);
+                        if (!enabled) setDeliveryAmount("");
+                        if (enabled && !allowDeliveryChargeChange && onApplyDeliveryCharge) {
+                          setDeliveryApplying(true);
+                          void onApplyDeliveryCharge().finally(() => setDeliveryApplying(false));
+                        }
+                      }}
+                    />
+                    Delivery required
+                  </label>
+                  {deliveryEnabled ? (
+                    <input
+                      className="mt-3 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Delivery charge"
+                      value={deliveryAmount}
+                      disabled={!allowDeliveryChargeChange || deliveryApplying}
+                      onChange={(event) => setDeliveryAmount(event.target.value)}
+                      onBlur={() => {
+                        const amount = Number(deliveryAmount);
+                        if (!Number.isFinite(amount) || amount <= 0 || !onApplyDeliveryCharge) return;
+                        setDeliveryApplying(true);
+                        void onApplyDeliveryCharge(amount).finally(() => setDeliveryApplying(false));
+                      }}
+                    />
+                  ) : null}
+                </div>
+              ) : null}
               {isSalesOrder ? (
                 <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
                   This checkout will create a submitted Sales Order. No payment
@@ -1026,6 +1084,7 @@ function CheckoutDialogContent({
             </section>
             <InvoiceSummary
               invoice={invoice}
+              hiddenItemCode={deliveryChargeItem}
               currency={currency}
               precision={precision}
               allocatedMinor={isSalesOrder ? 0 : allocation.allocatedMinor}
@@ -1183,6 +1242,7 @@ function CheckoutDialogContent({
 
 function InvoiceSummary({
   invoice,
+  hiddenItemCode,
   currency,
   precision,
   allocatedMinor,
@@ -1190,6 +1250,7 @@ function InvoiceSummary({
   loyaltyAmountMinor,
 }: {
   invoice: ReturnType<typeof useCartStore.getState>["invoice"];
+  hiddenItemCode?: string | null;
   currency?: string;
   precision: number;
   allocatedMinor: number;
@@ -1212,7 +1273,7 @@ function InvoiceSummary({
           Items
         </p>
         <div className="mt-2 max-h-56 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
-          {invoice?.items?.map((item) => (
+          {invoice?.items?.filter((item) => item.item_code !== hiddenItemCode).map((item) => (
             <div
               key={item.row_name}
               className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 text-sm"

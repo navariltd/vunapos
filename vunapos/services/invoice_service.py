@@ -570,7 +570,10 @@ def _apply_pricing_override(row, item, profile):
 	value = float(value)
 	price_list_rate = flt(row.get("price_list_rate") or row.get("rate"))
 	if kind == "rate":
-		if not profile.get("allow_rate_change"):
+		is_delivery_charge = item.get("item_code") == profile.get("vunapos_delivery_charge_item")
+		if not profile.get("allow_rate_change") and not (
+			is_delivery_charge and profile.get("vunapos_allow_delivery_charge_change")
+		):
 			_throw("RATE_CHANGE_NOT_ALLOWED", _("Rate changes are not allowed for this POS Profile"))
 		row["rate"] = value
 		row["discount_percentage"] = 0

@@ -183,6 +183,7 @@ export type BootstrapData = {
 	default_order_type?: "Sales Invoice" | "Sales Order";
 	allow_service_items?: boolean;
 	allow_delivery_charges?: boolean;
+	allow_delivery_charge_change?: boolean;
 	allow_order_type_change?: boolean;
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;

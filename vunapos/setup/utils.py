@@ -181,6 +181,15 @@ def ensure_vunapos_custom_fields():
 					"depends_on": "eval:doc.vunapos_allow_delivery_charges",
 				},
 				{
+					"fieldname": "vunapos_allow_delivery_charge_change",
+					"label": "Allow Delivery Charge Change",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_delivery_charge_item",
+					"description": "Allow cashiers to enter or change the delivery amount during checkout.",
+					"default": "1",
+					"depends_on": "eval:doc.vunapos_allow_delivery_charges",
+				},
+				{
 					"fieldname": "vunapos_allow_order_type_change",
 					"label": "Allow Order Type Change",
 					"fieldtype": "Check",

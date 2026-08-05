@@ -71,6 +71,7 @@ def profile_to_dict(profile, invoice_mode):
 		"default_order_type": default_order_type,
 		"allow_service_items": bool(profile.get("vunapos_allow_service_items")),
 		"allow_delivery_charges": bool(profile.get("vunapos_allow_delivery_charges")),
+		"allow_delivery_charge_change": bool(profile.get("vunapos_allow_delivery_charge_change")),
 		"delivery_charge_item": profile.get("vunapos_delivery_charge_item"),
 		"allow_order_type_change": enabled("vunapos_allow_order_type_change"),
 		"allow_customer_management": enabled("vunapos_allow_customer_management"),

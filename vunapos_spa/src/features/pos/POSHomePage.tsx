@@ -484,6 +484,36 @@ export function POSHomePage({
     [addConcreteItem, openProductBundle, openVariantPicker],
   );
 
+  const applyDeliveryCharge = useCallback(
+    async (amount?: number) => {
+      const itemCode = bootstrap.data?.delivery_charge_item;
+      if (!itemCode) return;
+      let row = useCartStore.getState().invoice?.items.find((item) => item.item_code === itemCode);
+      if (!row) {
+        const item = await getItemDetails(itemDetailsCall.call, {
+          item_code: itemCode,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list: selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        await cartActions.addCartItem(item);
+        row = useCartStore.getState().invoice?.items.find((item) => item.item_code === itemCode);
+      }
+      const rate = amount && Number.isFinite(amount) && amount > 0 ? amount : Number(row?.rate || 0);
+      if (row && rate > 0 && Number(row.rate) !== rate) {
+        await cartActions.updateCartItemPricing(row.row_name, { type: "rate", value: rate });
+      }
+    },
+    [
+      activeCustomer?.customer,
+      bootstrap.data,
+      cartActions,
+      cartInvoice?.selling_price_list,
+      itemDetailsCall.call,
+      selectedPriceList,
+    ],
+  );
+
   const handleSelectVariant = useCallback(
     (variant: TemplateVariant) => {
       setVariantPickerItem(null);
@@ -493,41 +523,6 @@ export function POSHomePage({
     [addConcreteItem],
   );
 
-  const handleAddConfiguredItem = useCallback(
-    async (itemCode: string) => {
-      if (cartInvoice?.items.some((item) => item.item_code === itemCode)) {
-        showToast({
-          type: "info",
-          message: "The delivery charge is already in the cart.",
-        });
-        return;
-      }
-      try {
-        const item = await getItemDetails(itemDetailsCall.call, {
-          item_code: itemCode,
-          pos_profile: bootstrap.data?.pos_profile,
-          customer: activeCustomer?.customer,
-          price_list:
-            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
-        });
-        await addConcreteItem(item);
-      } catch (error) {
-        showToast({
-          type: "error",
-          message: error instanceof Error ? error.message : "Unable to add delivery item.",
-        });
-      }
-    },
-    [
-      activeCustomer,
-      addConcreteItem,
-      bootstrap.data,
-      cartInvoice,
-      itemDetailsCall.call,
-      selectedPriceList,
-      showToast,
-    ],
-  );
 
   useEffect(() => {
     const query = itemSearchQuery.trim();
@@ -922,8 +917,6 @@ export function POSHomePage({
             className="hidden xl:flex"
             allowDiscountChange={bootstrap.data?.allow_discount_change}
             allowRateChange={bootstrap.data?.allow_rate_change}
-            allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
-            deliveryChargeItem={bootstrap.data?.delivery_charge_item}
             currency={bootstrap.data?.currency}
             customerLoyalty={customerLoyalty.data}
             customerLoyaltyError={customerLoyalty.error}
@@ -938,7 +931,6 @@ export function POSHomePage({
             warehouse={bootstrap.data?.warehouse}
             isOnline={isReachable && navigator.onLine !== false}
             onCheckout={handleOpenCheckout}
-            onAddConfiguredItem={(itemCode) => void handleAddConfiguredItem(itemCode)}
             onClearCustomer={() => void handleSelectCustomer(null)}
             onClearCart={() => handleClearCart(false)}
             onHold={handleHoldCart}
@@ -1012,8 +1004,6 @@ export function POSHomePage({
               className="flex-1 border-0"
               allowDiscountChange={bootstrap.data?.allow_discount_change}
               allowRateChange={bootstrap.data?.allow_rate_change}
-              allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
-              deliveryChargeItem={bootstrap.data?.delivery_charge_item}
               currency={bootstrap.data?.currency}
               customerLoyalty={customerLoyalty.data}
               customerLoyaltyError={customerLoyalty.error}
@@ -1028,7 +1018,6 @@ export function POSHomePage({
               warehouse={bootstrap.data?.warehouse}
               isOnline={isReachable && navigator.onLine !== false}
               onCheckout={handleOpenCheckout}
-              onAddConfiguredItem={(itemCode) => void handleAddConfiguredItem(itemCode)}
               onClearCustomer={() => void handleSelectCustomer(null)}
               onClearCart={() => handleClearCart(false)}
               onHold={handleHoldCart}
@@ -1060,6 +1049,9 @@ export function POSHomePage({
       <CheckoutDialog
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
+        allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
+        allowDeliveryChargeChange={bootstrap.data?.allow_delivery_charge_change}
+        deliveryChargeItem={bootstrap.data?.delivery_charge_item}
         currency={bootstrap.data?.currency}
         currencyPrecision={bootstrap.data?.currency_precision}
         customer={activeCustomer}
@@ -1071,6 +1063,7 @@ export function POSHomePage({
         onClear={() => {
           if (handleClearCart(true)) setIsCheckoutOpen(false);
         }}
+        onApplyDeliveryCharge={applyDeliveryCharge}
         onClose={() => setIsCheckoutOpen(false)}
         onConfirm={handleCheckout}
         onHold={() => {
