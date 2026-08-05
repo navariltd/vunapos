@@ -86,6 +86,8 @@ def profile_to_dict(profile, invoice_mode):
 		"allow_customer_management": enabled("vunapos_allow_customer_management"),
 		"allow_customer_creation": enabled("vunapos_allow_customer_creation"),
 		"allow_customer_payments": enabled("vunapos_allow_customer_payments"),
+		"allow_sales_order_payments": enabled("vunapos_allow_customer_payments")
+		and enabled("vunapos_allow_sales_order_payments"),
 		"allow_payment_reconciliation": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_payment_reconciliation"),
 		"allow_payment_history": enabled("vunapos_allow_customer_payments")

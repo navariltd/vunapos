@@ -136,6 +136,7 @@ export type CachedProfile = {
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;
 	allow_customer_payments?: boolean;
+	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
 	default_customer?: unknown;
