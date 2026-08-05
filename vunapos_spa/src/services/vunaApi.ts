@@ -98,6 +98,8 @@ export const vunaMethods = {
 	getCsrfToken: "vunapos.api.auth.get_csrf_token",
 	getClosingPreview: "vunapos.api.pos_closing.get_preview",
 	closePosSession: "vunapos.api.pos_closing.close_session",
+	verifySalespersonPin: "vunapos.api.pin.verify_salesperson",
+	verifyManagerPin: "vunapos.api.pin.verify_manager",
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
@@ -143,6 +145,23 @@ export function closePosSession(
 	params: { pos_profile: string; closing_balances: { mode_of_payment: string; closing_amount: number }[] },
 ) {
 	return callAndUnwrap<POSClosingPreviewDTO>(call, params);
+}
+
+export function verifySalespersonPin(
+	call: FrappeCall,
+	params: { pos_profile: string; salesperson: string; pin: string },
+) {
+	return callAndUnwrap<{ token: string; salesperson: string; display_name: string; expires_in: number }>(
+		call,
+		params,
+	);
+}
+
+export function verifyManagerPin(
+	call: FrappeCall,
+	params: { pos_profile: string; pin: string; action?: string },
+) {
+	return callAndUnwrap<{ token: string; manager: string; display_name: string; expires_in: number }>(call, params);
 }
 
 export function searchItems(

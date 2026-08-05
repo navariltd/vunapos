@@ -203,6 +203,11 @@ export type BootstrapData = {
 		max_attempts: number;
 		processing_timeout_minutes: number;
 	};
+	enable_salesperson_pin?: boolean;
+	require_manager_pin_item_removal?: boolean;
+	pin_max_attempts?: number;
+	pin_lockout_minutes?: number;
+	pin_users?: Array<{ sales_person: string; display_name?: string; role: "Salesperson" | "Manager" }>;
 	session?: POSSessionDTO;
 };
 

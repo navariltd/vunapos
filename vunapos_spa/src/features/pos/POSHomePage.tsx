@@ -48,6 +48,8 @@ import {
   ProductBundleDialog,
   type ProductBundleDetails,
 } from "./components/ProductBundleDialog";
+import { ManagerPinDialog } from "./components/ManagerPinDialog";
+import { SalespersonPinLock } from "./components/SalespersonPinLock";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -157,6 +159,12 @@ export function POSHomePage({
   const [clearCartConfirmation, setClearCartConfirmation] = useState<{
     closeCheckout: boolean;
   } | null>(null);
+  const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
+  const [verifiedSalesperson, setVerifiedSalesperson] = useState<{
+    name: string;
+    displayName: string;
+    profileKey: string;
+  } | null>(null);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -204,6 +212,22 @@ export function POSHomePage({
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
+
+  const handleRemoveItem = useCallback(
+    (rowName: string) => {
+      if (bootstrap.data?.require_manager_pin_item_removal) {
+        setManagerPinTarget(rowName);
+        return;
+      }
+      void cartActions.removeCartItem(rowName).catch((reason: unknown) => {
+        showToast({
+          type: "error",
+          message: reason instanceof Error ? reason.message : "Unable to remove item.",
+        });
+      });
+    },
+    [bootstrap.data?.require_manager_pin_item_removal, cartActions, showToast],
+  );
   const gatewayPayments = useGatewayPayments();
   const { isReachable } = useConnectivity();
   const customerLoyalty = useCustomerLoyalty(
@@ -939,7 +963,7 @@ export function POSHomePage({
             onClearCart={() => handleClearCart(false)}
             onHold={handleHoldCart}
             onLoadBatches={cartActions.loadItemBatches}
-            onRemoveItem={cartActions.removeCartItem}
+            onRemoveItem={handleRemoveItem}
             onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
             onSelectPriceList={(priceList) =>
               void handleSelectPriceList(priceList)
@@ -1026,7 +1050,7 @@ export function POSHomePage({
               onClearCart={() => handleClearCart(false)}
               onHold={handleHoldCart}
               onLoadBatches={cartActions.loadItemBatches}
-              onRemoveItem={cartActions.removeCartItem}
+              onRemoveItem={handleRemoveItem}
               onSelectCustomer={(customer) =>
                 void handleSelectCustomer(customer)
               }
@@ -1107,6 +1131,41 @@ export function POSHomePage({
         }
         orderType={orderType}
         posProfile={bootstrap.data?.pos_profile}
+      />
+
+      <ManagerPinDialog
+        isOpen={Boolean(managerPinTarget)}
+        posProfile={bootstrap.data?.pos_profile}
+        onCancel={() => setManagerPinTarget(null)}
+        onApproved={() => {
+          const rowName = managerPinTarget;
+          setManagerPinTarget(null);
+          if (rowName) {
+            void cartActions.removeCartItem(rowName).catch((reason: unknown) => {
+              showToast({
+                type: "error",
+                message: reason instanceof Error ? reason.message : "Unable to remove item.",
+              });
+            });
+          }
+        }}
+      />
+
+      <SalespersonPinLock
+        enabled={Boolean(
+          bootstrap.data?.enable_salesperson_pin
+          && verifiedSalesperson?.profileKey !== `${bootstrap.data?.pos_profile || ""}:pin`,
+        )}
+        posProfile={bootstrap.data?.pos_profile}
+        pinUsers={bootstrap.data?.pin_users}
+        onVerified={(name, displayName) => {
+          setVerifiedSalesperson({
+            name,
+            displayName,
+            profileKey: `${bootstrap.data?.pos_profile || ""}:pin`,
+          });
+          showToast({ type: "info", message: `${displayName} is ready to sell.` });
+        }}
       />
 
       {toast?.type === "queued" ? (
