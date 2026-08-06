@@ -3,11 +3,17 @@
     <p align="center">
         <p>Fast, flexible point-of-sale for ERPNext</p>
     </p>
+
+[![CI](https://github.com/navariltd/vunapos/actions/workflows/ci.yml/badge.svg?event=schedule)](https://github.com/navariltd/vunapos/actions/workflows/ci.yml)
+
 </div>
 
 <div align="center">
-	<!-- <img src="./frappoint/public/images/hero_image.png"/> -->
-    <!-- Include a calendar image showcassing the booked appointments, dashboard sort of -->
+	<img width="1562" height="1036" alt="image" src="https://github.com/user-attachments/assets/1f9d65a1-e68e-4c2d-a642-b892342c0d98" />
+</div>
+
+<div align="center">
+	<a href="https://docs.navari.co.ke/vunapos/">Documentation</a>
 </div>
 
 ## VunaPOS
