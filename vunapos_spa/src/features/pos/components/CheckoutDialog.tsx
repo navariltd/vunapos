@@ -44,6 +44,7 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+  allowSalesOrderPayments?: boolean;
   allowDeliveryCharges?: boolean;
   allowDeliveryChargeChange?: boolean;
   deliveryChargeItem?: string | null;
@@ -125,6 +126,7 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+  allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
   deliveryChargeItem,
@@ -157,9 +159,10 @@ export function CheckoutDialog({
 
   return (
     <CheckoutDialogContent
-      key={allowCreditSales ? "credit-enabled" : "credit-disabled"}
+      key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+      allowSalesOrderPayments={allowSalesOrderPayments}
       allowDeliveryCharges={allowDeliveryCharges}
       allowDeliveryChargeChange={allowDeliveryChargeChange}
       deliveryChargeItem={deliveryChargeItem}
@@ -191,6 +194,7 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+  allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
   deliveryChargeItem,
@@ -220,6 +224,7 @@ function CheckoutDialogContent({
   const isSubmitting = useCartStore((s) => s.isMutating);
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
+  const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
 
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
@@ -258,7 +263,8 @@ function CheckoutDialogContent({
   const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
   const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
   const [amounts, setAmounts] = useState(() =>
-    allowCreditSales && defaultSaleType === "Credit Sale"
+    (allowCreditSales && defaultSaleType === "Credit Sale") ||
+    (isSalesOrder && Boolean(allowSalesOrderPayments))
       ? Object.fromEntries(
           availableModes.map((mode) => [mode.mode_of_payment, ""]),
         )
@@ -436,7 +442,7 @@ function CheckoutDialogContent({
   const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
   const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
   const isPayable =
-    isSalesOrder ||
+    (isSalesOrder && (!showSalesOrderPayments || (!allocation.hasInvalidAmount && !hasNonCashOverpayment))) ||
     (!hasUnverifiedGatewayPayment &&
       !isApplyingLoyalty &&
       isLoyaltySelectionValid &&
@@ -925,7 +931,7 @@ function CheckoutDialogContent({
                 </div>
               ) : null}
               <div className="order-1">
-                {isSalesOrder ? (
+                {isSalesOrder && !showSalesOrderPayments ? (
                   <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
                     This checkout will create a submitted Sales Order. No payment
                     will be collected in this step.
@@ -1105,13 +1111,13 @@ function CheckoutDialogContent({
                   </>
                 )}
               </div>
-              {!isSalesOrder && allocation.hasInvalidAmount ? (
+              {(!isSalesOrder || showSalesOrderPayments) && allocation.hasInvalidAmount ? (
                 <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Enter valid
                   amounts with no more than {precision} decimal places.
                 </div>
               ) : null}
-              {!isSalesOrder && hasNonCashOverpayment ? (
+              {(!isSalesOrder || showSalesOrderPayments) && hasNonCashOverpayment ? (
                 <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Electronic
                   payments cannot exceed the amount due.
@@ -1137,9 +1143,9 @@ function CheckoutDialogContent({
               hiddenItemCode={deliveryChargeItem}
               currency={currency}
               precision={precision}
-              allocatedMinor={isSalesOrder ? 0 : allocation.allocatedMinor}
+              allocatedMinor={isSalesOrder && !showSalesOrderPayments ? 0 : allocation.allocatedMinor}
               remainingMinor={
-                isSalesOrder ? payableMinor : allocation.remainingMinor
+                isSalesOrder && !showSalesOrderPayments ? payableMinor : allocation.remainingMinor
               }
               loyaltyAmountMinor={isSalesOrder ? 0 : loyaltyAmountMinor}
             />
@@ -1195,7 +1201,7 @@ function CheckoutDialogContent({
                 }
               }
               onConfirm(
-                isSalesOrder
+                isSalesOrder && !showSalesOrderPayments
                   ? []
                   : buildPaymentInputs(availableModes, amounts, precision).map(
                       (payment) => {

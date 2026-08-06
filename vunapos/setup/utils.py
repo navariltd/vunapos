@@ -294,12 +294,12 @@ def ensure_vunapos_custom_fields():
 				},
 				{
 					"fieldname": "vunapos_allow_sales_order_payments",
-					"label": "Allow Sales Order Deposits",
+					"label": "Allow Sales Order Advance Payments",
 					"fieldtype": "Check",
 					"insert_after": "vunapos_allow_customer_payments",
-					"description": "Allow cashiers to collect deposits against submitted Sales Orders during checkout.",
+					"description": "Allow cashiers to collect advance payments against submitted Sales Orders during checkout.",
 					"default": "0",
-					"depends_on": "eval:doc.vunapos_allow_customer_payments && doc.vunapos_default_order_type == 'Sales Order'",
+					"depends_on": "eval:doc.vunapos_allow_customer_payments",
 				},
 				{
 					"fieldname": "vunapos_allow_payment_history",

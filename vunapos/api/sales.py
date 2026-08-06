@@ -322,6 +322,7 @@ def create_and_submit_sales_order(
 	delivery_date: str | None = None,
 	tax_id: str | None = None,
 	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -334,6 +335,7 @@ def create_and_submit_sales_order(
 				delivery_date=delivery_date,
 				tax_id=tax_id,
 				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:

@@ -140,10 +140,11 @@ def _reset_invoice_totals(doc):
 
 
 def _apply_item_tax_inclusivity(doc):
-	if not doc.get("pos_profile"):
+	profile_name = doc.get("pos_profile") or doc.get("vunapos_pos_profile")
+	if not profile_name:
 		return
 	prices_include_tax = bool(
-		frappe.get_cached_value("POS Profile", doc.pos_profile, "vunapos_item_prices_include_tax")
+		frappe.get_cached_value("POS Profile", profile_name, "vunapos_item_prices_include_tax")
 	)
 	for tax in doc.get("taxes", []):
 		if tax.get("set_by_item_tax_template"):

@@ -1083,6 +1083,7 @@ export function POSHomePage({
       ) : null}
 
       <CheckoutDialog
+        allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
         allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}

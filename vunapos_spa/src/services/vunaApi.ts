@@ -452,11 +452,13 @@ export function createAndSubmitSalesOrder(
 		tax_id?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		payments?: PaymentInput[];
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
+		payments: JSON.stringify(params.payments || []),
 	});
 }
 
