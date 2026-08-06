@@ -155,6 +155,7 @@ export type CachedProfile = {
 	require_pin_before_every_sale?: boolean;
 	pin_max_attempts?: number;
 	pin_lockout_minutes?: number;
+	salesperson_pin_session_minutes?: number;
 	pin_users?: Array<{ sales_person: string; display_name?: string; role: "Salesperson" | "Manager" }>;
 	taxes_and_charges?: string | null;
 };

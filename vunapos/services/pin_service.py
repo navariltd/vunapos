@@ -5,10 +5,10 @@ import secrets
 import frappe
 from frappe import _
 
+from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.profile_service import require_pos_profile_assignment, resolve_pos_profile
 
 PIN_PATTERN = re.compile(r"^\d{4,6}$")
-TOKEN_TTL_SECONDS = 15 * 60
 
 
 def _failure(code, message):
@@ -47,6 +47,7 @@ def _clear_failures(profile, purpose):
 
 
 def _issue_token(profile, purpose, subject=None):
+	ttl_seconds = get_salesperson_pin_session_minutes() * 60
 	token = secrets.token_urlsafe(32)
 	frappe.cache().set_value(
 		f"vunapos:pin-token:{token}",
@@ -56,7 +57,7 @@ def _issue_token(profile, purpose, subject=None):
 			"purpose": purpose,
 			"subject": subject,
 		},
-		expires_in_sec=TOKEN_TTL_SECONDS,
+		expires_in_sec=ttl_seconds,
 	)
 	return token
 
@@ -123,7 +124,42 @@ def verify_salesperson_pin(pos_profile: str, salesperson: str, pin: str) -> dict
 		"salesperson": salesperson,
 		"sales_person": salesperson,
 		"display_name": row.get("display_name") or salesperson,
-		"expires_in": TOKEN_TTL_SECONDS,
+		"expires_in": get_salesperson_pin_session_minutes() * 60,
+	}
+
+
+def refresh_salesperson_pin(pos_profile: str, token: str) -> dict:
+	"""Rotate an unexpired salesperson token for an active POS session.
+
+	The caller must present the existing server-issued token.  The token is
+	rotated rather than extending a client-supplied identity, so a cashier
+	cannot refresh a forged or expired session.
+	"""
+	profile = resolve_pos_profile(pos_profile)
+	require_pos_profile_assignment(profile.name)
+	if not profile.get("vunapos_enable_salesperson_pin"):
+		_failure("PIN_NOT_ENABLED", _("Salesperson PIN verification is not enabled for this POS Profile."))
+	state = validate_pin_token(token, profile, "salesperson")
+	salesperson = state.get("subject")
+	row = next(
+		(
+			row
+			for row in profile.get("vunapos_pin_users", [])
+			if row.get("enabled")
+			and row.get("role") == "Salesperson"
+			and row.get("sales_person") == salesperson
+		),
+		None,
+	)
+	if not row:
+		_failure("PIN_TOKEN_INVALID", _("The salesperson PIN session is no longer valid."))
+	new_token = _issue_token(profile, "salesperson", salesperson)
+	return {
+		"token": new_token,
+		"salesperson": salesperson,
+		"sales_person": salesperson,
+		"display_name": row.get("display_name") or salesperson,
+		"expires_in": get_salesperson_pin_session_minutes() * 60,
 	}
 
 
@@ -154,5 +190,5 @@ def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal")
 		"manager": valid_manager.get("sales_person"),
 		"sales_person": valid_manager.get("sales_person"),
 		"display_name": valid_manager.get("display_name") or valid_manager.get("sales_person"),
-		"expires_in": TOKEN_TTL_SECONDS,
+		"expires_in": get_salesperson_pin_session_minutes() * 60,
 	}

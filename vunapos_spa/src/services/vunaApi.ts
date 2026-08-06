@@ -99,6 +99,7 @@ export const vunaMethods = {
 	getClosingPreview: "vunapos.api.pos_closing.get_preview",
 	closePosSession: "vunapos.api.pos_closing.close_session",
 	verifySalespersonPin: "vunapos.api.pin.verify_salesperson",
+	refreshSalespersonPin: "vunapos.api.pin.refresh_salesperson",
 	verifyManagerPin: "vunapos.api.pin.verify_manager",
 } as const;
 
@@ -151,6 +152,13 @@ export function verifySalespersonPin(
 	call: FrappeCall,
 	params: { pos_profile: string; salesperson: string; pin: string },
 ) {
+	return callAndUnwrap<{ token: string; salesperson: string; display_name: string; expires_in: number }>(
+		call,
+		params,
+	);
+}
+
+export function refreshSalespersonPin(call: FrappeCall, params: { pos_profile: string; token: string }) {
 	return callAndUnwrap<{ token: string; salesperson: string; display_name: string; expires_in: number }>(
 		call,
 		params,

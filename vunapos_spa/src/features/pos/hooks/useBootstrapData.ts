@@ -62,6 +62,7 @@ export function useBootstrapData() {
 			require_pin_before_every_sale: profile.require_pin_before_every_sale,
 			pin_max_attempts: profile.pin_max_attempts,
 			pin_lockout_minutes: profile.pin_lockout_minutes,
+			salesperson_pin_session_minutes: profile.salesperson_pin_session_minutes,
 			pin_users: profile.pin_users,
 			default_customer: profile.default_customer as BootstrapData["default_customer"],
 			modes_of_payment: profile.modes_of_payment,

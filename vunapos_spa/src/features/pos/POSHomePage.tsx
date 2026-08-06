@@ -70,7 +70,7 @@ type POSHomePageProps = {
   orderType?: OrderType;
   salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonLocked?: boolean;
-  onSalespersonVerified?: (salesperson: { name: string; displayName: string; token: string }) => void;
+	onSalespersonVerified?: (salesperson: { name: string; displayName: string; token: string; expiresIn: number }) => void;
   onLockSalesperson?: () => void;
 };
 
@@ -823,6 +823,20 @@ export function POSHomePage({
       }
     } catch (err) {
       customerLoyalty.refresh();
+      if (
+        err instanceof VunaApiError &&
+        ["PIN_TOKEN_INVALID", "PIN_TOKEN_REQUIRED", "SALESPERSON_REQUIRED"].includes(
+          err.code || "",
+        )
+      ) {
+        setIsCheckoutOpen(false);
+        onLockSalesperson?.();
+        showToast({
+          type: "info",
+          message: "Your salesperson PIN session expired. Verify your PIN to continue.",
+        });
+        return;
+      }
       showToast({ type: "error", message: getCheckoutErrorMessage(err) });
     }
   };
@@ -1166,8 +1180,8 @@ export function POSHomePage({
         enabled={Boolean(bootstrap.data?.enable_salesperson_pin && salespersonLocked)}
         posProfile={bootstrap.data?.pos_profile}
         pinUsers={bootstrap.data?.pin_users}
-        onVerified={(name, displayName, token) => {
-          onSalespersonVerified?.({ name, displayName, token });
+			onVerified={(name, displayName, token, expiresIn) => {
+				onSalespersonVerified?.({ name, displayName, token, expiresIn });
           showToast({ type: "info", message: `${displayName} is ready to sell.` });
         }}
       />

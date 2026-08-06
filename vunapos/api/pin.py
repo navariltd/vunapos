@@ -1,6 +1,6 @@
 import frappe
 
-from vunapos.services.pin_service import verify_manager_pin, verify_salesperson_pin
+from vunapos.services.pin_service import refresh_salesperson_pin, verify_manager_pin, verify_salesperson_pin
 from vunapos.utils.response import success
 
 
@@ -18,6 +18,16 @@ def verify_salesperson(pos_profile: str, salesperson: str, pin: str):
 def verify_manager(pos_profile: str, pin: str, action: str = "item_removal"):
 	try:
 		return success(verify_manager_pin(pos_profile, pin, action))
+	except Exception as exc:
+		from vunapos.api.sales import _failure_from_exception
+
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_salesperson(pos_profile: str, token: str):
+	try:
+		return success(refresh_salesperson_pin(pos_profile, token))
 	except Exception as exc:
 		from vunapos.api.sales import _failure_from_exception
 

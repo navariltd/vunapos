@@ -13,6 +13,17 @@ def ensure_vunapos_custom_fields():
 		{
 			"POS Settings": [
 				{
+					"fieldname": "vunapos_salesperson_pin_session_minutes",
+					"label": "Salesperson PIN Session Duration (Minutes)",
+					"fieldtype": "Int",
+					"insert_after": "vunapos_gateway_payment_timeout_minutes",
+					"description": (
+						"How long a verified salesperson session remains valid. Active sessions are refreshed "
+						"before expiry; inactive sessions are locked when this duration elapses. Maximum: 1440 minutes."
+					),
+					"default": "15",
+				},
+				{
 					"fieldname": "vunapos_gateway_payment_timeout_minutes",
 					"label": "VunaPOS Gateway Payment Timeout (Minutes)",
 					"fieldtype": "Int",
