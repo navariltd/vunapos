@@ -60,6 +60,7 @@ def receive_customer_payment(
 	amount=None,
 	mode_of_payment=None,
 	sales_invoice=None,
+	sales_order=None,
 	allocated_amount=None,
 	posting_date=None,
 	reference_no=None,
@@ -84,6 +85,15 @@ def receive_customer_payment(
 		"CUSTOMER_PAYMENTS_DISABLED",
 		_("Customer payments are disabled for this POS Profile"),
 	)
+	if sales_invoice and sales_order:
+		frappe.throw(_("Select either a Sales Invoice or a Sales Order, not both"))
+	if sales_order:
+		_require_profile_feature(
+			profile,
+			"vunapos_allow_sales_order_payments",
+			"SALES_ORDER_PAYMENTS_DISABLED",
+			_("Sales Order advance payments are disabled for this POS Profile"),
+		)
 	opening_entry = require_open_pos_session(profile.name)
 	require_create("Payment Entry")
 	if not frappe.has_permission("Payment Entry", "submit"):
@@ -117,24 +127,46 @@ def receive_customer_payment(
 		else:
 			reference_date = reference_date or nowdate()
 	allocation = 0
-	invoice = None
+	reference_doc = None
+	reference_doctype = None
 	if sales_invoice:
 		invoice_doctype = get_invoice_mode()
 		require_read(invoice_doctype, sales_invoice)
-		invoice = frappe.get_doc(invoice_doctype, sales_invoice)
-		if invoice.docstatus != 1 or invoice.is_return:
+		reference_doc = frappe.get_doc(invoice_doctype, sales_invoice)
+		if reference_doc.docstatus != 1 or reference_doc.is_return:
 			frappe.throw(_("Only submitted sales invoices can receive payments"))
-		if invoice.customer != customer or invoice.company != profile.company:
+		if reference_doc.customer != customer or reference_doc.company != profile.company:
 			frappe.throw(_("Invoice does not belong to this customer and company"))
-		if flt(invoice.outstanding_amount) <= 0:
-			frappe.throw(_("Invoice {0} has no outstanding balance").format(invoice.name))
+		reference_doctype = reference_doc.doctype
+		outstanding_amount = flt(reference_doc.outstanding_amount)
+		if outstanding_amount <= 0:
+			frappe.throw(_("Invoice {0} has no outstanding balance").format(reference_doc.name))
 		allocation = _amount(
 			allocated_amount if allocated_amount is not None else amount, _("Allocated amount")
 		)
 		if allocation > amount:
 			frappe.throw(_("Allocated amount cannot exceed the payment amount"))
-		if allocation > flt(invoice.outstanding_amount):
+		if allocation > outstanding_amount:
 			frappe.throw(_("Allocated amount cannot exceed the invoice outstanding balance"))
+	elif sales_order:
+		require_read("Sales Order", sales_order)
+		reference_doc = frappe.get_doc("Sales Order", sales_order)
+		if reference_doc.docstatus != 1:
+			frappe.throw(_("Only submitted Sales Orders can receive advance payments"))
+		if reference_doc.customer != customer or reference_doc.company != profile.company:
+			frappe.throw(_("Sales Order does not belong to this customer and company"))
+		reference_doctype = "Sales Order"
+		order_total = flt(reference_doc.rounded_total or reference_doc.grand_total)
+		outstanding_amount = max(order_total - flt(reference_doc.advance_paid), 0)
+		if outstanding_amount <= 0:
+			frappe.throw(_("Sales Order {0} has no outstanding advance balance").format(reference_doc.name))
+		allocation = _amount(
+			allocated_amount if allocated_amount is not None else amount, _("Allocated amount")
+		)
+		if allocation > amount:
+			frappe.throw(_("Allocated amount cannot exceed the payment amount"))
+		if allocation > outstanding_amount:
+			frappe.throw(_("Allocated amount cannot exceed the Sales Order outstanding balance"))
 
 	paid_to = _mode_account(profile, mode_of_payment)
 	if frappe.get_cached_value("Account", paid_to, "account_type") == "Bank":
@@ -172,18 +204,24 @@ def receive_customer_payment(
 			"vunapos_idempotency_key": idempotency_key,
 			"vunapos_opening_entry": opening_entry.name,
 			"vunapos_session_cashier": frappe.session.user,
-			"vunapos_receipt_type": "Outstanding Invoice Payment" if invoice else "Customer Advance",
+			"vunapos_receipt_type": (
+				"Outstanding Invoice Payment"
+				if sales_invoice
+				else "Sales Order Advance"
+				if sales_order
+				else "Customer Advance"
+			),
 		}
 	)
-	if invoice:
+	if reference_doc:
 		doc.append(
 			"references",
 			{
-				"reference_doctype": invoice.doctype,
-				"reference_name": invoice.name,
-				"due_date": invoice.due_date,
-				"total_amount": invoice.grand_total,
-				"outstanding_amount": invoice.outstanding_amount,
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_doc.name,
+				"due_date": reference_doc.get("due_date"),
+				"total_amount": reference_doc.get("grand_total"),
+				"outstanding_amount": outstanding_amount,
 				"allocated_amount": allocation,
 			},
 		)

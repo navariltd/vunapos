@@ -1236,6 +1236,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						customer: selectedCustomer?.customer,
 						price_list: get().selectedPriceList,
 						items: cartItemsPayload(invoice.items),
+						payments,
 						idempotency_key: idempotencyKey,
 						delivery_date: dueDate,
 						tax_id: taxId,

@@ -400,7 +400,14 @@ def _apply_credit_sale_fields(doc, is_credit_sale, due_date=None):
 	return doc
 
 
-def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False, opening_entry=None):
+def validate_payment_rows(
+	doc,
+	payments=None,
+	profile=None,
+	is_credit_sale=False,
+	opening_entry=None,
+	allow_partial_override=False,
+):
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	rows = _payment_rows(payments)
 	precision = _currency_precision(doc)
@@ -409,7 +416,7 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 		_throw("NO_PAYMENT_ROWS", _("Payment rows must be a list"))
 	if not rows and expected_total <= 0:
 		return []
-	if not rows and is_credit_sale:
+	if not rows and (is_credit_sale or allow_partial_override):
 		return []
 	if not rows:
 		_throw("NO_PAYMENT_ROWS", _("At least one payment row is required"))
@@ -489,7 +496,7 @@ def validate_payment_rows(doc, payments=None, profile=None, is_credit_sale=False
 
 	paid_total = flt(total_paid, precision)
 	non_cash_total = flt(non_cash_paid, precision)
-	allow_partial_payment = bool(profile and profile.get("allow_partial_payment"))
+	allow_partial_payment = bool(profile and profile.get("allow_partial_payment")) or allow_partial_override
 	if non_cash_total > expected_total:
 		_throw(
 			"NON_CASH_OVERPAYMENT",
@@ -1712,6 +1719,7 @@ def create_and_submit_sales_order(
 	pos_profile=None,
 	customer=None,
 	items=None,
+	payments=None,
 	idempotency_key=None,
 	price_list=None,
 	delivery_date=None,
@@ -1742,6 +1750,26 @@ def create_and_submit_sales_order(
 		_append_cart_items(doc, profile, cart_items)
 		_recalculate(doc)
 		validate_invoice_batch_allocations(doc)
+		payment_rows = validate_payment_rows(
+			doc,
+			payments,
+			profile=profile,
+			opening_entry=opening_entry,
+			allow_partial_override=True,
+		)
+		if payment_rows and not str(idempotency_key or "").strip():
+			_throw(
+				"SALES_ORDER_PAYMENT_IDEMPOTENCY_REQUIRED",
+				_("An idempotency key is required when collecting a Sales Order advance"),
+			)
+		order_total = flt(doc.get("rounded_total") or doc.get("grand_total") or 0)
+		paid_total = sum(flt(row.get("amount")) for row in payment_rows)
+		if paid_total > order_total:
+			_throw(
+				"SALES_ORDER_ADVANCE_OVERPAYMENT",
+				_("Sales Order advance payments cannot exceed the order total"),
+				{"order_total": order_total, "paid_total": paid_total},
+			)
 		_stamp_validated_session(doc, opening_entry)
 		_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 		_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1753,7 +1781,29 @@ def create_and_submit_sales_order(
 		_materialize_batch_bundles(doc)
 		_apply_checkout_tax_id(doc, tax_id, persist=True)
 		doc.submit()
-		return invoice_to_dict(doc)
+		advance_payments = []
+		if payment_rows:
+			from vunapos.services.payment_service import receive_customer_payment
+
+			for index, payment in enumerate(payment_rows):
+				amount = flt(payment.get("amount"))
+				if amount <= 0:
+					continue
+				advance_payments.append(
+					receive_customer_payment(
+						pos_profile=profile.name,
+						customer=doc.customer,
+						amount=amount,
+						mode_of_payment=payment.get("mode_of_payment"),
+						sales_order=doc.name,
+						allocated_amount=amount,
+						idempotency_key=f"{idempotency_key}:advance:{index}",
+						gateway_payment_link=payment.get("gateway_payment_link"),
+					)
+				)
+		result = invoice_to_dict(doc)
+		result["advance_payments"] = advance_payments
+		return result
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise

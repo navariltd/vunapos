@@ -833,7 +833,7 @@ def ensure_vunapos_custom_fields():
 					"fieldname": "vunapos_receipt_type",
 					"label": "VunaPOS Receipt Type",
 					"fieldtype": "Select",
-					"options": "Outstanding Invoice Payment\nCustomer Advance",
+					"options": "Outstanding Invoice Payment\nCustomer Advance\nSales Order Advance",
 					"insert_after": "vunapos_closing_entry",
 					"read_only": 1,
 					"allow_on_submit": 1,
