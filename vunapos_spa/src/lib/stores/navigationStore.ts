@@ -66,15 +66,20 @@ export function navigateToCustomer(customer: string) {
 	useNavigationStore.getState().setActivePage("Customers");
 }
 
-export function navigateToInvoice(invoice: string) {
-	const path = `/vunapos/invoices/${encodeURIComponent(invoice)}`;
-	window.history.pushState({ vunaposPage: "Invoices", invoice }, "", path);
+export function navigateToInvoice(invoice: string, invoiceDoctype?: string) {
+	const prefix = invoiceDoctype === "Sales Order" ? "/order" : "";
+	const path = `/vunapos/invoices${prefix}/${encodeURIComponent(invoice)}`;
+	window.history.pushState({ vunaposPage: "Invoices", invoice, invoiceDoctype }, "", path);
 	useNavigationStore.getState().setActivePage("Invoices");
 }
 
 export function getInvoiceFromPath(pathname = window.location.pathname): string | null {
-	const match = pathname.match(/^\/vunapos\/invoices\/([^/]+)\/?$/);
+	const match = pathname.match(/^\/vunapos\/invoices\/(?:order\/)?([^/]+)\/?$/);
 	return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function getInvoiceDoctypeFromPath(pathname = window.location.pathname): string {
+	return /^\/vunapos\/invoices\/order\//.test(pathname) ? "Sales Order" : "";
 }
 
 export function getCustomerFromPath(pathname = window.location.pathname): string | null {

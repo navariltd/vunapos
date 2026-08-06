@@ -607,7 +607,7 @@ type CartActions = {
 		isOnline: boolean,
 		api: CartApi,
 	) => Promise<ItemBatchesDTO>;
-	removeCartItem: (rowName: string, api: CartApi) => Promise<void>;
+	removeCartItem: (rowName: string, api: CartApi, managerPinToken?: string) => Promise<void>;
 	listHeld: (api: CartApi) => Promise<HeldInvoiceDTO[]>;
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
@@ -628,6 +628,8 @@ type CartActions = {
 		loyaltyPoints?: number,
 		taxId?: string,
 		orderType?: "Sales Invoice" | "Sales Order",
+		salesperson?: string,
+		salespersonToken?: string,
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
@@ -968,7 +970,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return { ...fresh, verified_at: new Date().toISOString() };
 		},
 
-		removeCartItem: async (rowName, api) => {
+		removeCartItem: async (rowName, api, managerPinToken) => {
 			const invoice = get().invoice;
 			if (!invoice) {
 				return;
@@ -990,6 +992,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					row_name: rowName,
+					manager_pin_token: managerPinToken,
 				}),
 			);
 			set({ invoice: updatedInvoice });
@@ -1193,6 +1196,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 			loyaltyPoints,
 			taxId,
 			orderType = "Sales Invoice",
+			salesperson,
+			salespersonToken,
 		) => {
 			if (!isOnline) {
 				throw new Error("VunaPOS is online-only. Reconnect before completing this sale.");
@@ -1231,9 +1236,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 						customer: selectedCustomer?.customer,
 						price_list: get().selectedPriceList,
 						items: cartItemsPayload(invoice.items),
+						payments,
 						idempotency_key: idempotencyKey,
 						delivery_date: dueDate,
 						tax_id: taxId,
+						salesperson,
+						salesperson_token: salespersonToken,
 					}),
 				);
 				try {
@@ -1266,6 +1274,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 						due_date: dueDate,
 						loyalty_points: loyaltyPoints,
 						tax_id: taxId,
+						salesperson,
+						salesperson_token: salespersonToken,
 					}),
 				);
 				await refreshSoldItemStock(
@@ -1307,6 +1317,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 							due_date: dueDate,
 							loyalty_points: loyaltyPoints,
 							tax_id: taxId,
+							 salesperson,
+							salesperson_token: salespersonToken,
 						}),
 					);
 				}
@@ -1320,6 +1332,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 					due_date: dueDate,
 					loyalty_points: loyaltyPoints,
 					tax_id: taxId,
+						salesperson,
+						salesperson_token: salespersonToken,
 				});
 			});
 			await refreshSoldItemStock(

@@ -4,6 +4,7 @@ from frappe.utils import cint
 
 from vunapos.dto.customer import customer_to_dict
 from vunapos.services.checkout_queue_service import get_queue_limits
+from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
 
 
@@ -40,6 +41,15 @@ def profile_to_dict(profile, invoice_mode):
 	if not allow_credit_sales or default_sale_type != "Credit Sale":
 		default_sale_type = "Cash Sale"
 	queue = get_queue_limits(profile)
+	pin_users = [
+		{
+			"sales_person": row.sales_person,
+			"display_name": row.get("display_name") or row.sales_person,
+			"role": row.get("role") or "Salesperson",
+		}
+		for row in profile.get("vunapos_pin_users", [])
+		if row.get("enabled")
+	]
 	default_order_type = profile.get("vunapos_default_order_type") or "Sales Invoice"
 	if default_order_type not in ("Sales Invoice", "Sales Order"):
 		default_order_type = "Sales Invoice"
@@ -69,14 +79,27 @@ def profile_to_dict(profile, invoice_mode):
 		"ignore_pricing_rule": bool(profile.get("ignore_pricing_rule")),
 		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
 		"default_order_type": default_order_type,
+		"allow_service_items": bool(profile.get("vunapos_allow_service_items")),
+		"allow_delivery_charges": bool(profile.get("vunapos_allow_delivery_charges")),
+		"allow_delivery_charge_change": bool(profile.get("vunapos_allow_delivery_charge_change")),
+		"delivery_charge_item": profile.get("vunapos_delivery_charge_item"),
 		"allow_order_type_change": enabled("vunapos_allow_order_type_change"),
 		"allow_customer_management": enabled("vunapos_allow_customer_management"),
 		"allow_customer_creation": enabled("vunapos_allow_customer_creation"),
 		"allow_customer_payments": enabled("vunapos_allow_customer_payments"),
+		"allow_sales_order_payments": enabled("vunapos_allow_customer_payments")
+		and enabled("vunapos_allow_sales_order_payments"),
 		"allow_payment_reconciliation": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_payment_reconciliation"),
 		"allow_payment_history": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_payment_history"),
+		"enable_salesperson_pin": bool(profile.get("vunapos_enable_salesperson_pin")),
+		"require_manager_pin_item_removal": bool(profile.get("vunapos_require_manager_pin_item_removal")),
+		"pin_max_attempts": max(cint(profile.get("vunapos_pin_max_attempts")) or 5, 1),
+		"pin_lockout_minutes": max(cint(profile.get("vunapos_pin_lockout_minutes")) or 5, 1),
+		"salesperson_pin_session_minutes": get_salesperson_pin_session_minutes(),
+		"require_pin_before_every_sale": bool(profile.get("vunapos_require_pin_before_every_sale")),
+		"pin_users": pin_users,
 		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),
 		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],

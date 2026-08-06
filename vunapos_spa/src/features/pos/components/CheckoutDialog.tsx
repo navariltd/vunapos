@@ -44,6 +44,10 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+  allowSalesOrderPayments?: boolean;
+  allowDeliveryCharges?: boolean;
+  allowDeliveryChargeChange?: boolean;
+  deliveryChargeItem?: string | null;
   currency?: string;
   currencyPrecision?: number;
   customer?: CustomerDTO | null;
@@ -53,6 +57,7 @@ type CheckoutDialogProps = {
   isOpen: boolean;
   modesOfPayment: ModeOfPaymentDTO[];
   onClear: () => void;
+  onApplyDeliveryCharge?: (amount?: number) => Promise<void>;
   onClose: () => void;
   onConfirm: (
     payments: PaymentInput[],
@@ -121,6 +126,10 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+  allowSalesOrderPayments,
+  allowDeliveryCharges,
+  allowDeliveryChargeChange,
+  deliveryChargeItem,
   currency,
   currencyPrecision,
   customer,
@@ -130,6 +139,7 @@ export function CheckoutDialog({
   isOpen,
   modesOfPayment,
   onClear,
+  onApplyDeliveryCharge,
   onClose,
   onConfirm,
   onHold,
@@ -149,9 +159,13 @@ export function CheckoutDialog({
 
   return (
     <CheckoutDialogContent
-      key={allowCreditSales ? "credit-enabled" : "credit-disabled"}
+      key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+      allowSalesOrderPayments={allowSalesOrderPayments}
+      allowDeliveryCharges={allowDeliveryCharges}
+      allowDeliveryChargeChange={allowDeliveryChargeChange}
+      deliveryChargeItem={deliveryChargeItem}
       currency={currency}
       currencyPrecision={currencyPrecision}
       customer={customer}
@@ -160,6 +174,7 @@ export function CheckoutDialog({
       error={error}
       modesOfPayment={modesOfPayment}
       onClear={onClear}
+      onApplyDeliveryCharge={onApplyDeliveryCharge}
       onClose={onClose}
       onConfirm={onConfirm}
       onHold={onHold}
@@ -179,6 +194,10 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+  allowSalesOrderPayments,
+  allowDeliveryCharges,
+  allowDeliveryChargeChange,
+  deliveryChargeItem,
   currency,
   currencyPrecision,
   customer,
@@ -187,6 +206,7 @@ function CheckoutDialogContent({
   error,
   modesOfPayment,
   onClear,
+  onApplyDeliveryCharge,
   onClose,
   onConfirm,
   onHold,
@@ -204,6 +224,8 @@ function CheckoutDialogContent({
   const isSubmitting = useCartStore((s) => s.isMutating);
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
+  const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
+
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
   const availableModes = useMemo(
@@ -241,11 +263,15 @@ function CheckoutDialogContent({
   const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
   const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
   const [amounts, setAmounts] = useState(() =>
-    allowCreditSales && defaultSaleType === "Credit Sale"
+    (allowCreditSales && defaultSaleType === "Credit Sale") ||
+    (isSalesOrder && Boolean(allowSalesOrderPayments))
       ? Object.fromEntries(
           availableModes.map((mode) => [mode.mode_of_payment, ""]),
         )
       : createInitialPaymentAmounts(availableModes, payableMinor, precision),
+  );
+  const [focusedPaymentMode, setFocusedPaymentMode] = useState<string | null>(
+    null,
   );
   const [isCreditSale, setIsCreditSale] = useState(
     Boolean(
@@ -255,6 +281,40 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
+  const deliveryEnabled = Boolean(deliveryChargeItem);
+  const [deliveryAmount, setDeliveryAmount] = useState("");
+  const [deliveryApplying, setDeliveryApplying] = useState(false);
+  const deliveryAppliedAmountRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (
+      allowDeliveryChargeChange === false ||
+      !onApplyDeliveryCharge
+    ) {
+      return;
+    }
+    const rawAmount = deliveryAmount.trim();
+    const amount = rawAmount ? Number(rawAmount) : 0;
+    if (rawAmount && (!Number.isFinite(amount) || amount < 0)) return;
+    if (deliveryAppliedAmountRef.current === amount) return;
+
+    // Apply after the cashier pauses briefly, rather than waiting for the
+    // input to lose focus. This keeps the invoice total and payment allocation
+    // in sync while preserving a responsive numeric input.
+    const timer = window.setTimeout(() => {
+      deliveryAppliedAmountRef.current = amount;
+      setDeliveryApplying(true);
+      void onApplyDeliveryCharge(amount)
+        .catch(() => {
+          deliveryAppliedAmountRef.current = null;
+        })
+        .finally(() => setDeliveryApplying(false));
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    allowDeliveryChargeChange,
+    deliveryAmount,
+    onApplyDeliveryCharge,
+  ]);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [gatewayLinks, setGatewayLinks] = useState<
     Record<string, GatewayPaymentLinkDTO | undefined>
@@ -336,6 +396,40 @@ function CheckoutDialogContent({
     payableMinor,
     precision,
   );
+  const previousPayableMinor = useRef(payableMinor);
+  useEffect(() => {
+    const previous = previousPayableMinor.current;
+    previousPayableMinor.current = payableMinor;
+    if (previous === payableMinor || isCreditSale || !availableModes.length) {
+      return;
+    }
+
+    // A delivery charge changes the amount due after the cashier has already
+    // allocated payment. Keep a fully-paid cash sale fully paid by applying
+    // the same delta to the default payment mode. Do not overwrite deliberate
+    // partial/split allocations.
+    setAmounts((current) => {
+      const previousAllocation = calculatePaymentAllocation(
+        availableModes,
+        current,
+        previous,
+        precision,
+      );
+      if (previousAllocation.remainingMinor !== 0) return current;
+      const mode =
+        availableModes.find((candidate) => candidate.default) ||
+        availableModes[0];
+      const currentMinor =
+        parsePaymentAmount(current[mode.mode_of_payment] || "", precision) ?? 0;
+      return {
+        ...current,
+        [mode.mode_of_payment]: minorUnitsToInput(
+          Math.max(currentMinor + payableMinor - previous, 0),
+          precision,
+        ),
+      };
+    });
+  }, [availableModes, isCreditSale, payableMinor, precision]);
   const hasUnverifiedGatewayPayment = availableModes.some((mode) => {
     if (!mode.payment_gateway) return false;
     const amountMinor = parsePaymentAmount(
@@ -348,7 +442,7 @@ function CheckoutDialogContent({
   const hasNonCashOverpayment = allocation.nonCashMinor > payableMinor;
   const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
   const isPayable =
-    isSalesOrder ||
+    (isSalesOrder && (!showSalesOrderPayments || (!allocation.hasInvalidAmount && !hasNonCashOverpayment))) ||
     (!hasUnverifiedGatewayPayment &&
       !isApplyingLoyalty &&
       isLoyaltySelectionValid &&
@@ -659,21 +753,18 @@ function CheckoutDialogContent({
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-          <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-2 lg:divide-x lg:divide-outline-variant">
-            <section className="flex min-h-0 flex-col p-4 sm:p-6">
+          <div className="grid min-h-full lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1.4fr)_minmax(18rem,0.6fr)] lg:divide-x lg:divide-outline-variant">
+            <section className="flex min-h-0 flex-col overflow-y-auto p-4 sm:p-6">
               {allowCreditSales && !isSalesOrder ? (
-                <div
-                  className="mb-5 grid grid-cols-2 rounded-lg bg-surface-container p-1"
-                  role="group"
-                  aria-label="Sale type"
-                >
-                  {([false, true] as const).map((credit) => (
+                <div className="order-3 my-3 flex flex-wrap items-center gap-4 rounded-md bg-surface-container-low px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-on-surface">
                     <button
                       type="button"
-                      key={String(credit)}
-                      aria-pressed={isCreditSale === credit}
-                      className={`rounded-md px-3 py-2 text-sm font-medium ${isCreditSale === credit ? "bg-surface text-on-surface shadow-sm" : "text-on-surface-variant hover:text-on-surface"}`}
+                      role="switch"
+                      aria-checked={isCreditSale}
+                      aria-label="Enable credit sale"
                       onClick={() => {
+                        const credit = !isCreditSale;
                         setIsCreditSale(credit);
                         setAmounts(
                           credit
@@ -690,83 +781,95 @@ function CheckoutDialogContent({
                               ),
                         );
                       }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${isCreditSale ? "bg-secondary" : "bg-outline"}`}
                     >
-                      {credit ? "Credit Sale" : "Cash Sale"}
+                      <span
+                        className={`inline-block size-5 rounded-full bg-white shadow transition-transform ${isCreditSale ? "translate-x-5" : "translate-x-0.5"}`}
+                      />
                     </button>
-                  ))}
+                    Credit sale
+                  </div>
+                  {isCreditSale ? (
+                    <label className="flex min-w-48 flex-1 items-center gap-2 text-sm font-medium text-on-surface">
+                      Due date
+                      <input
+                        type="date"
+                        min={today}
+                        required
+                        value={dueDate}
+                        onChange={(event) => setDueDate(event.target.value)}
+                        className={`h-touch min-w-0 flex-1 rounded-md border bg-surface px-3 text-sm ${isCreditSale ? "border-error" : "border-outline-variant"}`}
+                      />
+                    </label>
+                  ) : null}
                 </div>
               ) : null}
-              {isCreditSale ? (
-                <label className="mb-5 block text-sm font-medium text-on-surface">
-                  Payment due date
-                  <input
-                    type="date"
-                    min={today}
-                    required
-                    value={dueDate}
-                    onChange={(event) => setDueDate(event.target.value)}
-                    className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                  />
-                </label>
-              ) : null}
-              {isWalkinCustomer ? (
-                <label className="mb-5 block text-sm font-medium text-on-surface">
-                  Customer Tax ID
-                  <input
-                    type="text"
-                    value={checkoutTaxId}
-                    onChange={(event) => setCheckoutTaxId(event.target.value)}
-                    maxLength={140}
-                    placeholder={
-                      customer?.tax_id || "PIN / Tax ID for this receipt"
-                    }
-                    className="mt-2 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                  />
-                  <span className="mt-1 block text-xs font-normal text-on-surface-variant">
-                    This Tax ID will be printed on this invoice only.
-                  </span>
-                </label>
+              {isWalkinCustomer || (allowDeliveryCharges && deliveryChargeItem) ? (
+                <div className="order-4 mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {isWalkinCustomer ? (
+                    <div className="relative">
+                      <span className="pointer-events-none absolute -top-2 left-2 z-10 bg-surface px-1 text-[10px] font-medium text-on-surface-variant">
+                        Customer Tax ID
+                      </span>
+                      <input
+                        type="text"
+                        value={checkoutTaxId}
+                        onChange={(event) => setCheckoutTaxId(event.target.value)}
+                        maxLength={140}
+                        placeholder={
+                          customer?.tax_id || "PIN / Tax ID for this receipt"
+                        }
+                        className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                      />
+                      <span className="mt-1 block text-xs font-normal text-on-surface-variant">
+                        Printed on this invoice only.
+                      </span>
+                    </div>
+                  ) : null}
+                  {allowDeliveryCharges && deliveryChargeItem ? (
+                    <div className="relative">
+                      <span className="pointer-events-none absolute -top-2 left-2 z-10 bg-surface px-1 text-[10px] font-medium text-on-surface-variant">
+                        Delivery charge
+                      </span>
+                      <input
+                        className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder="Optional"
+                        value={deliveryAmount}
+                        disabled={allowDeliveryChargeChange === false}
+                        onChange={(event) => setDeliveryAmount(event.target.value)}
+                      />
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {customerLoyalty?.enrolled && !isSalesOrder ? (
-                <div className="mb-5 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-4">
-                  <div className="flex items-start gap-3">
-                    <Award className="mt-0.5 size-5 shrink-0 text-tertiary" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-on-surface">
-                            Redeem loyalty points
-                          </p>
-                          <p className="text-xs text-on-surface-variant">
-                            {customerLoyalty.tier || customerLoyalty.program}
-                          </p>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-on-surface">
-                            {availableLoyaltyPoints.toLocaleString()} pts
-                          </p>
-                          <p className="text-xs text-on-surface-variant">
-                            {formatCurrency(
-                              customerLoyalty.redemption_value,
-                              currency,
-                              precision,
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex gap-2">
-                        <input
-                          aria-label="Loyalty points to redeem"
-                          className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm"
-                          inputMode="numeric"
-                          placeholder="Points to redeem"
-                          value={loyaltyInput}
-                          onChange={(event) =>
-                            setLoyaltyInput(event.target.value)
-                          }
-                        />
+                <div className="order-3 mb-4 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Award className="mt-0.5 size-4 shrink-0 text-tertiary" />
+                    <span className="text-xs text-on-surface-variant">
+                      {availableLoyaltyPoints.toLocaleString()} pts · {formatCurrency(customerLoyalty.redemption_value, currency, precision)}
+                    </span>
+                    <div className="relative min-w-32 flex-1">
+                      <span className="pointer-events-none absolute -top-2 left-2 bg-tertiary-container px-1 text-[10px] font-medium text-on-surface-variant">
+                        Loyalty points
+                      </span>
+                      <input
+                        aria-label="Loyalty points to redeem"
+                        className="h-9 w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                        inputMode="numeric"
+                        placeholder="Enter points"
+                        value={loyaltyInput}
+                        onChange={(event) =>
+                          setLoyaltyInput(event.target.value)
+                        }
+                      />
+                    </div>
                         <Button
                           variant="ghost"
+                          className="h-9 px-2 text-xs"
                           disabled={!maximumLoyaltyPoints || isApplyingLoyalty}
                           onClick={() =>
                             void applyLoyaltyPoints(maximumLoyaltyPoints)
@@ -775,6 +878,7 @@ function CheckoutDialogContent({
                           Maximum
                         </Button>
                         <Button
+                          className="h-9 px-3 text-xs"
                           disabled={
                             Boolean(loyaltyInputError) ||
                             !loyaltyInputPoints ||
@@ -786,7 +890,7 @@ function CheckoutDialogContent({
                         >
                           {isApplyingLoyalty ? "Checking..." : "Apply"}
                         </Button>
-                      </div>
+                  </div>
                       {loyaltyInputError ? (
                         <p className="mt-2 text-xs text-error">
                           Enter between 1 and{" "}
@@ -824,140 +928,20 @@ function CheckoutDialogContent({
                           </button>
                         </div>
                       ) : null}
-                    </div>
-                  </div>
                 </div>
               ) : null}
-              <p className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
-                Amount due
-              </p>
-              <p className="mt-1 text-3xl font-semibold text-on-surface">
-                {formatCurrency(payableMinor / scale, currency, precision)}
-              </p>
-              {isSalesOrder ? (
-                <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
-                  This checkout will create a submitted Sales Order. No payment
-                  will be collected in this step.
-                </div>
-              ) : (
-                <>
-                  <div className="mt-6 max-h-64 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
-                    {availableModes.map((mode) => {
-                      const isGatewayControlled = Boolean(mode.payment_gateway);
-                      const amount = amounts[mode.mode_of_payment] ?? "";
-                      const gatewayLink = gatewayLinks[mode.mode_of_payment];
-                      const gatewayError = gatewayErrors[mode.mode_of_payment];
-                      const gatewayPaid = isSuccessfulGatewayLink(gatewayLink);
-                      const isAll =
-                        parsePaymentAmount(amount, precision) ===
-                          payableMinor &&
-                        availableModes.every(
-                          (other) =>
-                            other.mode_of_payment === mode.mode_of_payment ||
-                            parsePaymentAmount(
-                              amounts[other.mode_of_payment] || "",
-                              precision,
-                            ) === 0,
-                        );
-                      return (
-                        <div
-                          key={mode.mode_of_payment}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low p-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,12rem)_auto] sm:p-3"
-                        >
-                          <button
-                            type="button"
-                            className={`col-span-2 text-left text-sm font-medium text-on-surface sm:col-span-1 ${isGatewayControlled ? "cursor-pointer hover:text-primary" : ""}`}
-                            onClick={() => openGatewayDialog(mode)}
-                          >
-                            {mode.mode_of_payment}
-                            {mode.default ? (
-                              <span className="ml-2 text-xs text-on-surface-variant">
-                                Default
-                              </span>
-                            ) : null}
-                            {isGatewayControlled ? (
-                              <span className="ml-2 text-xs text-primary">
-                                Gateway
-                              </span>
-                            ) : null}
-                            {isGatewayControlled && gatewayLink ? (
-                              <span
-                                className={
-                                  gatewayPaid
-                                    ? "ml-2 text-xs text-secondary"
-                                    : "ml-2 text-xs text-on-surface-variant"
-                                }
-                              >
-                                {gatewayPaid
-                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
-                                  : `Status: ${gatewayLink.status}`}
-                              </span>
-                            ) : null}
-                          </button>
-                          <input
-                            aria-label={`${mode.mode_of_payment} amount`}
-                            className={`h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-sm ${isGatewayControlled ? "cursor-pointer" : ""}`}
-                            inputMode="decimal"
-                            placeholder={minorUnitsToInput(0, precision)}
-                            readOnly={isGatewayControlled}
-                            value={amount}
-                            onClick={() => {
-                              if (isGatewayControlled) openGatewayDialog(mode);
-                            }}
-                            onChange={(event) => {
-                              if (isGatewayControlled) return;
-                              setAmounts((current) => ({
-                                ...current,
-                                [mode.mode_of_payment]: event.target.value,
-                              }));
-                            }}
-                          />
-                          <button
-                            type="button"
-                            aria-label={`Allocate all to ${mode.mode_of_payment}`}
-                            aria-pressed={isAll}
-                            title={`Allocate the full amount to ${mode.mode_of_payment}`}
-                            className={`inline-flex h-10 w-10 items-center justify-center rounded-md text-xs font-medium ${
-                              isAll
-                                ? "bg-secondary text-on-secondary"
-                                : "bg-surface-container text-on-surface hover:bg-surface-container-high"
-                            }`}
-                            onClick={() => {
-                              if (isGatewayControlled) {
-                                openGatewayDialog(mode);
-                                return;
-                              }
-                              setAmounts(
-                                allocateAllToMode(
-                                  availableModes,
-                                  mode.mode_of_payment,
-                                  payableMinor,
-                                  precision,
-                                ),
-                              );
-                            }}
-                          >
-                            <Check className="size-4" />
-                          </button>
-                          {isGatewayControlled ? (
-                            <div className="col-span-2 flex items-center justify-between gap-2 text-xs text-on-surface-variant sm:col-span-3">
-                              <span>
-                                {gatewayPaid
-                                  ? "Verified gateway payment"
-                                  : "Click the mode name to verify through the gateway."}
-                              </span>
-                              {gatewayError ? (
-                                <span className="text-error">
-                                  {gatewayError}
-                                </span>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
+              <div className="order-1">
+                {isSalesOrder && !showSalesOrderPayments ? (
+                  <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4 text-sm text-on-surface-variant">
+                    This checkout will create a submitted Sales Order. No payment
+                    will be collected in this step.
                   </div>
-                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                ) : (
+                  <>
+                  <h3 className="mb-2 text-sm font-semibold uppercase tracking-wide text-primary">
+                    Payment methods
+                  </h3>
+                  <div className="mb-3 grid grid-cols-3 gap-2 [&>div]:p-2">
                     <PaymentSummary
                       label="Allocated"
                       value={formatCurrency(
@@ -988,25 +972,155 @@ function CheckoutDialogContent({
                       compact
                     />
                   </div>
-                </>
-              )}
-              {!isSalesOrder && allocation.hasInvalidAmount ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+                  <div className="my-3 h-64 max-h-64 shrink-0 overflow-y-auto rounded-md bg-surface-container-low/70 px-2 shadow-sm lg:h-72 lg:max-h-72">
+                    {availableModes.map((mode) => {
+                      const isGatewayControlled = Boolean(mode.payment_gateway);
+                      const amount = amounts[mode.mode_of_payment] ?? "";
+                      const gatewayLink = gatewayLinks[mode.mode_of_payment];
+                      const gatewayError = gatewayErrors[mode.mode_of_payment];
+                      const gatewayPaid = isSuccessfulGatewayLink(gatewayLink);
+                      const isAll =
+                        parsePaymentAmount(amount, precision) ===
+                          payableMinor &&
+                        availableModes.every(
+                          (other) =>
+                            other.mode_of_payment === mode.mode_of_payment ||
+                            parsePaymentAmount(
+                              amounts[other.mode_of_payment] || "",
+                              precision,
+                            ) === 0,
+                        );
+                      return (
+                        <div
+                          key={mode.mode_of_payment}
+                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-outline-variant/40 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,15rem)] sm:py-3"
+                        >
+                          <button
+                            type="button"
+                            aria-pressed={isAll}
+                            className={`order-2 col-span-1 inline-flex h-touch min-w-44 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold shadow-sm transition-colors sm:col-span-1 ${isAll ? "border-secondary bg-secondary/80 text-on-secondary" : "border-transparent bg-surface-container-highest text-on-surface hover:bg-surface-container-high"} ${isGatewayControlled ? "cursor-pointer" : ""}`}
+                            onClick={() => {
+                              if (isGatewayControlled) {
+                                openGatewayDialog(mode);
+                                return;
+                              }
+                              setAmounts(
+                                allocateAllToMode(
+                                  availableModes,
+                                  mode.mode_of_payment,
+                                  payableMinor,
+                                  precision,
+                                ),
+                              );
+                            }}
+                          >
+                            {isAll && !isGatewayControlled ? (
+                              <Check className="size-4" />
+                            ) : null}
+                            {mode.mode_of_payment}
+                            {mode.default ? (
+                              <span className="ml-2 text-xs text-on-surface-variant">
+                                Default
+                              </span>
+                            ) : null}
+                            {isGatewayControlled ? (
+                              <span className="ml-2 text-xs text-primary">
+                                Gateway
+                              </span>
+                            ) : null}
+                            {isGatewayControlled && gatewayLink ? (
+                              <span
+                                className={
+                                  gatewayPaid
+                                    ? "ml-2 text-xs text-secondary"
+                                    : "ml-2 text-xs text-on-surface-variant"
+                                }
+                              >
+                                {gatewayPaid
+                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
+                                  : `Status: ${gatewayLink.status}`}
+                              </span>
+                            ) : null}
+                          </button>
+                          <div className="order-1 relative">
+                            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs text-on-surface-variant">
+                              {currency}
+                            </span>
+                            <input
+                              aria-label={`${mode.mode_of_payment} amount`}
+                              className={`h-touch w-full rounded-md border border-outline-variant bg-surface pl-12 pr-3 text-left text-sm ${isGatewayControlled ? "cursor-pointer" : ""}`}
+                              inputMode="decimal"
+                              placeholder={minorUnitsToInput(0, precision)}
+                              readOnly={isGatewayControlled}
+                              value={
+                                focusedPaymentMode === mode.mode_of_payment
+                                  ? amount
+                                  : amount
+                                    ? Number.isFinite(Number(amount))
+                                      ? new Intl.NumberFormat(undefined, {
+                                          useGrouping: true,
+                                          minimumFractionDigits: 0,
+                                          maximumFractionDigits: precision,
+                                        }).format(Number(amount))
+                                      : amount
+                                    : ""
+                              }
+                              onFocus={() => {
+                                if (!isGatewayControlled) {
+                                  setFocusedPaymentMode(mode.mode_of_payment);
+                                }
+                              }}
+                              onBlur={() => setFocusedPaymentMode(null)}
+                              onClick={() => {
+                                if (isGatewayControlled) openGatewayDialog(mode);
+                              }}
+                              onChange={(event) => {
+                                if (isGatewayControlled) return;
+                                setAmounts((current) => ({
+                                  ...current,
+                                  [mode.mode_of_payment]: event.target.value,
+                                }));
+                              }}
+                            />
+                          </div>
+                          {isGatewayControlled ? (
+                            <div className="order-3 col-span-2 flex items-center justify-between gap-2 text-xs text-on-surface-variant sm:col-span-2">
+                              <span>
+                                {gatewayPaid
+                                  ? "Verified gateway payment"
+                                  : "Click the mode name to verify through the gateway."}
+                              </span>
+                              {gatewayError ? (
+                                <span className="text-error">
+                                  {gatewayError}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {hasUnverifiedGatewayPayment ? (
+                    <div className="mt-2 flex gap-2 rounded-md border border-tertiary/40 bg-tertiary-container/30 p-2 text-xs text-on-tertiary-container">
+                      <Smartphone className="size-4 shrink-0" /> Verify the
+                      selected gateway payment to continue. Checkout will
+                      unlock automatically after confirmation.
+                    </div>
+                  ) : null}
+                  </>
+                )}
+              </div>
+              {(!isSalesOrder || showSalesOrderPayments) && allocation.hasInvalidAmount ? (
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Enter valid
                   amounts with no more than {precision} decimal places.
                 </div>
               ) : null}
-              {!isSalesOrder && hasNonCashOverpayment ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+              {(!isSalesOrder || showSalesOrderPayments) && hasNonCashOverpayment ? (
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> Electronic
                   payments cannot exceed the amount due.
-                </div>
-              ) : null}
-              {!isSalesOrder && hasUnverifiedGatewayPayment ? (
-                <div className="flex gap-2 rounded-md border border-outline-variant bg-surface-container-low p-3 text-sm text-on-surface-variant">
-                  <Smartphone className="size-4 shrink-0" /> Verify the selected
-                  gateway payment to continue. Checkout will unlock
-                  automatically after confirmation.
                 </div>
               ) : null}
               {/* {allocation.remainingMinor > 0 && isCreditSale ? (
@@ -1019,18 +1133,19 @@ function CheckoutDialogContent({
 						</p>
 					) : null} */}
               {error ? (
-                <div className="flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
+                <div className="order-2 flex gap-2 rounded-md border border-error bg-error-container p-3 text-sm text-on-error-container">
                   <AlertCircle className="size-4 shrink-0" /> {error}
                 </div>
               ) : null}
             </section>
             <InvoiceSummary
               invoice={invoice}
+              hiddenItemCode={deliveryChargeItem}
               currency={currency}
               precision={precision}
-              allocatedMinor={isSalesOrder ? 0 : allocation.allocatedMinor}
+              allocatedMinor={isSalesOrder && !showSalesOrderPayments ? 0 : allocation.allocatedMinor}
               remainingMinor={
-                isSalesOrder ? payableMinor : allocation.remainingMinor
+                isSalesOrder && !showSalesOrderPayments ? payableMinor : allocation.remainingMinor
               }
               loyaltyAmountMinor={isSalesOrder ? 0 : loyaltyAmountMinor}
             />
@@ -1067,10 +1182,26 @@ function CheckoutDialogContent({
             <Pause className="size-4" /> Hold
           </Button>
           <Button
-            disabled={!isPayable || isSubmitting}
-            onClick={() =>
+            disabled={!isPayable || isSubmitting || deliveryApplying}
+            onClick={async () => {
+              if (
+                deliveryEnabled &&
+                onApplyDeliveryCharge &&
+                Number.isFinite(Number(deliveryAmount)) &&
+                Number(deliveryAmount) > 0
+              ) {
+                const amount = Number(deliveryAmount);
+                setDeliveryApplying(true);
+                try {
+                  await onApplyDeliveryCharge(
+                    Number.isFinite(amount) && amount > 0 ? amount : undefined,
+                  );
+                } finally {
+                  setDeliveryApplying(false);
+                }
+              }
               onConfirm(
-                isSalesOrder
+                isSalesOrder && !showSalesOrderPayments
                   ? []
                   : buildPaymentInputs(availableModes, amounts, precision).map(
                       (payment) => {
@@ -1092,8 +1223,8 @@ function CheckoutDialogContent({
                 isWalkinCustomer
                   ? checkoutTaxId.trim() || undefined
                   : undefined,
-              )
-            }
+              );
+            }}
           >
             <span className="sm:hidden">
               {isSubmitting ? "..." : isSalesOrder ? "Order" : "Complete"}
@@ -1183,6 +1314,7 @@ function CheckoutDialogContent({
 
 function InvoiceSummary({
   invoice,
+  hiddenItemCode,
   currency,
   precision,
   allocatedMinor,
@@ -1190,6 +1322,7 @@ function InvoiceSummary({
   loyaltyAmountMinor,
 }: {
   invoice: ReturnType<typeof useCartStore.getState>["invoice"];
+  hiddenItemCode?: string | null;
   currency?: string;
   precision: number;
   allocatedMinor: number;
@@ -1212,7 +1345,7 @@ function InvoiceSummary({
           Items
         </p>
         <div className="mt-2 max-h-56 min-h-0 space-y-2 overflow-y-auto pr-1 lg:max-h-none lg:flex-1">
-          {invoice?.items?.map((item) => (
+          {invoice?.items?.filter((item) => item.item_code !== hiddenItemCode).map((item) => (
             <div
               key={item.row_name}
               className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 text-sm"

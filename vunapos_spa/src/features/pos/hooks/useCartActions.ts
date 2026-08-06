@@ -46,7 +46,7 @@ export function useCartActions() {
 				updateCartItemSerialAllocationsAction(rowName, allocations, api),
 			loadItemBatches: (itemCode: string, warehouse: string, isOnline: boolean) =>
 				loadItemBatchesAction(itemCode, warehouse, isOnline, api),
-			removeCartItem: (rowName: string) => removeCartItemAction(rowName, api),
+			removeCartItem: (rowName: string, managerPinToken?: string) => removeCartItemAction(rowName, api, managerPinToken),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
 			validateCart: () => validateCartAction(api),
@@ -65,8 +65,10 @@ export function useCartActions() {
 				loyaltyPoints?: number,
 				taxId?: string,
 				orderType?: "Sales Invoice" | "Sales Order",
+				salesperson?: string,
+				salespersonToken?: string,
 			) => submitCartAction(
-				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, orderType,
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, orderType, salesperson, salespersonToken,
 			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
