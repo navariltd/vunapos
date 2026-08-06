@@ -99,6 +99,9 @@ def ensure_test_customer():
 def ensure_test_pos_profile():
 	if frappe.db.exists("POS Profile", "_Test VunaPOS Profile"):
 		profile = frappe.get_doc("POS Profile", "_Test VunaPOS Profile")
+		if profile.meta.has_field("vunapos_allow_service_items") and not profile.vunapos_allow_service_items:
+			profile.vunapos_allow_service_items = 1
+			profile.save(ignore_permissions=True)
 		if not any(row.user == frappe.session.user for row in profile.get("applicable_for_users", [])):
 			profile.append("applicable_for_users", {"user": frappe.session.user, "default": 0})
 			profile.save(ignore_permissions=True)
@@ -122,6 +125,7 @@ def ensure_test_pos_profile():
 			"expense_account": _account(company, root_type="Expense"),
 			"cost_center": _cost_center(company),
 			"write_off_limit": 1,
+			"vunapos_allow_service_items": 1,
 		}
 	)
 	profile.append("payments", {"mode_of_payment": mode_of_payment, "default": 1})

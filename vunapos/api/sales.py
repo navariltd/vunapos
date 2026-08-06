@@ -244,7 +244,12 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 
 
 @frappe.whitelist()
-def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token: str | None = None):
+def remove_item(
+	invoice_doctype: str,
+	invoice_name: str,
+	row_name: str,
+	manager_pin_token: str | None = None,
+):
 	try:
 		return success(
 			remove_item_service(
