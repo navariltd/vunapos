@@ -64,14 +64,16 @@ type ReturnPreview = {
   }>;
 };
 type Props = {
-  invoice: string;
+	invoice: string;
+	invoiceDoctype?: string;
   posProfile?: string;
   isOnline: boolean;
   onStartSale: (customer: CustomerDTO) => void;
 };
 
 export function InvoiceDetailsPage({
-  invoice,
+	invoice,
+	invoiceDoctype,
   posProfile,
   isOnline,
   onStartSale,
@@ -84,8 +86,8 @@ export function InvoiceDetailsPage({
   const [printError, setPrintError] = useState("");
   const call = useFrappeGetCall<unknown>(
     vunaMethods.getInvoiceDetails,
-    { pos_profile: posProfile, invoice_name: invoice },
-    posProfile ? ["vunapos_invoice_details", posProfile, invoice] : null,
+    { pos_profile: posProfile, invoice_name: invoice, invoice_doctype: invoiceDoctype || undefined },
+    posProfile ? ["vunapos_invoice_details", posProfile, invoiceDoctype, invoice] : null,
   );
   const printCall = useFrappePostCall(vunaMethods.renderInvoice);
   const previewCall = useFrappeGetCall<unknown>(
@@ -229,7 +231,7 @@ export function InvoiceDetailsPage({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {details.docstatus === 1 && !details.is_return ? (
+            {details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
               <Button
                 variant="secondary"
                 disabled={!isOnline}
@@ -310,7 +312,7 @@ export function InvoiceDetailsPage({
                 <UserRound className="mr-1 size-4" />
                 Customer
               </Button>
-              <Button
+              {details.doctype !== "Sales Order" ? <Button
                 size="sm"
                 variant="ghost"
                 disabled={!Number(details.totals.outstanding_amount)}
@@ -323,7 +325,7 @@ export function InvoiceDetailsPage({
               >
                 <CreditCard className="mr-1 size-4" />
                 Receive payment
-              </Button>
+              </Button> : null}
               <Button
                 size="sm"
                 onClick={() =>

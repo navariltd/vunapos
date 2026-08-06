@@ -123,6 +123,7 @@ def get_invoice_history(
 	status: str | None = None,
 	payment_mode: str | None = None,
 	sale_type: str | None = None,
+	document_type: str = "Invoice",
 	current_shift: int | str = 1,
 	start: int | str = 0,
 	page_length: int | str = 50,
@@ -138,6 +139,7 @@ def get_invoice_history(
 				status=status,
 				payment_mode=payment_mode,
 				sale_type=sale_type,
+				document_type=document_type,
 				current_shift=current_shift,
 				start=start,
 				page_length=page_length,
@@ -164,9 +166,19 @@ def retry_queued_invoice(pos_profile: str, invoice_name: str):
 
 
 @frappe.whitelist()
-def get_invoice_details(pos_profile: str | None = None, invoice_name: str | None = None):
+def get_invoice_details(
+	pos_profile: str | None = None,
+	invoice_name: str | None = None,
+	invoice_doctype: str | None = None,
+):
 	try:
-		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
+		return success(
+			get_invoice_details_service(
+				pos_profile=pos_profile,
+				invoice_name=invoice_name,
+				invoice_doctype=invoice_doctype,
+			)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

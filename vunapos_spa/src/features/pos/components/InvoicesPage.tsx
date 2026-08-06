@@ -84,7 +84,7 @@ export function InvoicesPage({
   onRefreshHeld,
   onRestoreHeld,
 }: Props) {
-  const [tab, setTab] = useState<"history" | "queue" | "issues">("history");
+  const [tab, setTab] = useState<"history" | "orders" | "queue" | "issues">("history");
   const [filters, setFilters] = useState<Filters>({
     invoice: "",
     customer: "",
@@ -98,9 +98,15 @@ export function InvoicesPage({
   const [start, setStart] = useState(0);
   const call = useFrappeGetCall<unknown>(
     vunaMethods.getInvoiceHistory,
-    { pos_profile: posProfile, ...filters, start, page_length: 50 },
-    posProfile && tab === "history"
-      ? ["vunapos_invoice_history", posProfile, filters, start]
+    {
+      pos_profile: posProfile,
+      document_type: tab === "orders" ? "Order" : "Invoice",
+      ...filters,
+      start,
+      page_length: 50,
+    },
+    posProfile && (tab === "history" || tab === "orders")
+      ? ["vunapos_invoice_history", posProfile, tab, filters, start]
       : null,
   );
   let history: History | null = null;
@@ -134,7 +140,10 @@ export function InvoicesPage({
     );
     if (!link) return;
     event.preventDefault();
-    navigateToInvoice(decodeURIComponent(link.pathname.split("/").pop() || ""));
+    const parts = link.pathname.split("/").filter(Boolean);
+    const invoiceName = parts.pop() || "";
+    const invoiceDoctype = link.pathname.includes("sales-order") ? "Sales Order" : undefined;
+    navigateToInvoice(decodeURIComponent(invoiceName), invoiceDoctype);
   };
 
   return (
@@ -155,6 +164,9 @@ export function InvoicesPage({
         <div className="flex border-b border-outline-variant">
           <Tab active={tab === "history"} onClick={() => setTab("history")}>
             Sales History
+          </Tab>
+          <Tab active={tab === "orders"} onClick={() => setTab("orders")}>
+            Sales Orders
           </Tab>
           <Tab active={tab === "queue"} onClick={() => setTab("queue")}>
             Checkout Queue
@@ -253,9 +265,9 @@ export function InvoicesPage({
             {error ? <Notice>{error}</Notice> : null}
             {history ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <Summary
-                    label="Invoices"
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Summary
+                    label={tab === "orders" ? "Orders" : "Invoices"}
                     value={String(history.summary.invoice_count)}
                   />
                   <Summary
@@ -283,7 +295,7 @@ export function InvoicesPage({
                   <table className="w-full min-w-[1050px] text-left text-sm">
                     <thead className="bg-surface-container-low text-xs text-on-surface-variant">
                       <tr>
-                        <th className="px-3 py-3">Invoice</th>
+                        <th className="px-3 py-3">{tab === "orders" ? "Order" : "Invoice"}</th>
                         <th>Date / time</th>
                         <th>Customer</th>
                         <th>Cashier / shift</th>
@@ -304,7 +316,7 @@ export function InvoicesPage({
                             <td className="px-3 py-3">
                               <a
                                 className="font-medium text-primary hover:underline"
-                                href={`/app/${row.doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(row.name)}`}
+                                  href={`/app/${row.doctype.toLowerCase().replaceAll(" ", "-")}/${encodeURIComponent(row.name)}`}
                                 target="_blank"
                                 rel="noreferrer"
                               >
@@ -375,7 +387,7 @@ export function InvoicesPage({
                             colSpan={9}
                             className="p-8 text-center text-on-surface-variant"
                           >
-                            No invoices match these filters.
+                            No {tab === "orders" ? "orders" : "invoices"} match these filters.
                           </td>
                         </tr>
                       )}

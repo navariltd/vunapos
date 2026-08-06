@@ -14,8 +14,9 @@ import {
   normalizeDefaultCustomer,
 } from "./utils";
 import {
-  getCustomerFromPath,
-  getInvoiceFromPath,
+	getCustomerFromPath,
+	getInvoiceDoctypeFromPath,
+	getInvoiceFromPath,
   navigateToPosPage,
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
@@ -848,6 +849,7 @@ export function POSHomePage({
         getInvoiceFromPath(currentPath) ? (
           <InvoiceDetailsPage
             invoice={getInvoiceFromPath(currentPath) || ""}
+            invoiceDoctype={getInvoiceDoctypeFromPath(currentPath)}
             posProfile={bootstrap.data?.pos_profile}
             isOnline={isReachable && navigator.onLine !== false}
             onStartSale={(customer) => {

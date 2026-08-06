@@ -60,7 +60,9 @@ export function Header({
                 }
               >
                 {orderTypes.map((type) => (
-                  <option key={type}>{type}</option>
+                  <option key={type} value={type}>
+                    {type === "Sales Invoice" ? "Invoice" : "Order"}
+                  </option>
                 ))}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
