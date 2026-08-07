@@ -798,6 +798,7 @@ export function POSHomePage({
     dueDate?: string,
     loyaltyPoints?: number,
     taxId?: string,
+    shippingAddressName?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -818,6 +819,7 @@ export function POSHomePage({
         dueDate,
         loyaltyPoints,
         taxId,
+        shippingAddressName,
         orderType,
         salesperson?.name,
         salesperson?.token,

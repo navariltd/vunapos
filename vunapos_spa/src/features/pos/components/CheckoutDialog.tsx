@@ -72,6 +72,7 @@ type CheckoutDialogProps = {
     dueDate?: string,
     loyaltyPoints?: number,
     taxId?: string,
+    shippingAddressName?: string,
   ) => void;
   onHold: () => void;
   onAttachC2bGatewayPayment?: (params: {
@@ -1301,6 +1302,7 @@ function CheckoutDialogContent({
                 isWalkinCustomer
                   ? checkoutTaxId.trim() || undefined
                   : undefined,
+                shippingAddressName || undefined,
               );
             }}
           >

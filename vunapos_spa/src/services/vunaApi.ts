@@ -73,6 +73,7 @@ export const vunaMethods = {
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
 	searchC2bGatewayPayments: "vunapos.api.gateway.search_c2b_gateway_payments",
 	createCustomer: "vunapos.api.customer.create_customer",
+	getCustomerAddresses: "vunapos.api.customer.get_customer_addresses",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
 	getInvoice: "vunapos.api.sales.get_invoice",
@@ -391,6 +392,7 @@ export function submitInvoice(
 		due_date?: string;
 		loyalty_points?: number;
 		tax_id?: string;
+		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
 	},
@@ -412,6 +414,7 @@ export function checkoutInvoice(
 		due_date?: string;
 		loyalty_points?: number;
 		tax_id?: string;
+		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
 	},
@@ -446,6 +449,7 @@ export function createAndSubmitInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		tax_id?: string;
+		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
 	},
@@ -467,6 +471,7 @@ export function createAndSubmitSalesOrder(
 		idempotency_key?: string;
 		delivery_date?: string;
 		tax_id?: string;
+		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
 		payments?: PaymentInput[];

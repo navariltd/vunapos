@@ -408,6 +408,7 @@ export type InvoiceDTO = {
 	customer?: string;
 	customer_name?: string;
 	tax_id?: string | null;
+	shipping_address_name?: string | null;
 	selling_price_list?: string;
 	price_list_currency?: string;
 	redeem_loyalty_points?: boolean;
