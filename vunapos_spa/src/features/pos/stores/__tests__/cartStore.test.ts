@@ -111,6 +111,7 @@ beforeEach(async () => {
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
 		selectedPriceList: undefined,
+		newItemPosition: "Bottom",
 	});
 });
 
@@ -151,6 +152,17 @@ describe("addCartItem", () => {
 		const invoice = useCartStore.getState().invoice;
 		expect(invoice?.items).toHaveLength(1);
 		expect(invoice?.items[0].qty).toBe(2);
+	});
+
+	it("places newly added rows at the top when configured", async () => {
+		useCartStore.getState().setNewItemPosition("Top");
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		await useCartStore.getState().addCartItem(makeItem({ item_code: "ITEM-2" }), makeApi());
+
+		expect(useCartStore.getState().invoice?.items.map((item) => item.item_code)).toEqual([
+			"ITEM-2",
+			"ITEM-1",
+		]);
 	});
 
 	it("rejects when requested qty exceeds available stock for a stock-controlled item", async () => {

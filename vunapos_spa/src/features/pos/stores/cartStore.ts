@@ -575,6 +575,7 @@ export type CartState = {
 	// preserved exactly from the old POSHomePage-local tri-state (not redesigned).
 	selectedCustomerOverride: CustomerDTO | null | undefined;
 	selectedPriceList: string | undefined;
+	newItemPosition: "Top" | "Bottom";
 };
 
 export function getActiveCustomer(
@@ -587,6 +588,7 @@ export type SubmitCartResult = { invoice: InvoiceDTO; printPayload: PrintPayload
 
 type CartActions = {
 	setPosProfile: (posProfile: string | undefined) => void;
+	setNewItemPosition: (position: "Top" | "Bottom" | undefined) => void;
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
@@ -723,8 +725,10 @@ export const useCartStore = create<CartStore>((set, get) => {
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
 		selectedPriceList: undefined,
+		newItemPosition: "Bottom",
 
 		setPosProfile: (posProfile) => set({ posProfile }),
+		setNewItemPosition: (position) => set({ newItemPosition: position === "Top" ? "Top" : "Bottom" }),
 		setDefaultCustomer: (defaultCustomer) => set({ defaultCustomer }),
 		setSelectedCustomer: (selectedCustomerOverride) => set({ selectedCustomerOverride }),
 
@@ -751,7 +755,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 						}
 						return row;
 					})
-					: [...currentItems, itemToCartRow(item)];
+					: get().newItemPosition === "Top"
+						? [itemToCartRow(item), ...currentItems]
+						: [...currentItems, itemToCartRow(item)];
 				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
 				set({ invoice: preview });
 				return;

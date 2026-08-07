@@ -1316,6 +1316,10 @@ def add_item(invoice_doctype, invoice_name, item_code, qty=1):
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": item_code, "qty": qty}], profile)
 	_append_cart_items(doc, profile, [{"item_code": item_code, "qty": qty}])
+	if profile.get("vunapos_new_item_position") == "Top" and len(doc.get("items")) > 1:
+		doc.items = [doc.items[-1], *doc.items[:-1]]
+		for index, row in enumerate(doc.items, start=1):
+			row.idx = index
 	_save_invoice(doc)
 	return invoice_to_dict(doc)
 

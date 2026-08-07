@@ -99,6 +99,15 @@ def ensure_vunapos_custom_fields():
 					"default": "0",
 				},
 				{
+					"fieldname": "vunapos_new_item_position",
+					"label": "New Cart Item Position",
+					"fieldtype": "Select",
+					"options": "Bottom\nTop",
+					"insert_after": "vunapos_auto_allocate_payment_balance",
+					"description": "Choose where newly added cart items appear.",
+					"default": "Bottom",
+				},
+				{
 					"fieldname": "vunapos_default_sale_type",
 					"label": "Default Sale Type",
 					"fieldtype": "Select",

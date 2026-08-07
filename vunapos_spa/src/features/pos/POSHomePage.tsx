@@ -210,8 +210,13 @@ export function POSHomePage({
   const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
   const cartError = useCartStore((s) => s.error);
   const setCartPosProfile = useCartStore((s) => s.setPosProfile);
+  const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+
+  useEffect(() => {
+    setCartNewItemPosition(bootstrap.data?.new_item_position);
+  }, [bootstrap.data?.new_item_position, setCartNewItemPosition]);
   const cartActions = useCartActions();
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
