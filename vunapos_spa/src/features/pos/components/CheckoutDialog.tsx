@@ -809,6 +809,22 @@ function CheckoutDialogContent({
                   ) : null}
                 </div>
               ) : null}
+              {isSalesOrder ? (
+                <div className="order-3 my-3 rounded-md bg-surface-container-low px-3 py-2">
+                  <label className="flex min-w-48 items-center gap-2 text-sm font-medium text-on-surface">
+                    Delivery date
+                    <input
+                      type="date"
+                      min={today}
+                      required
+                      aria-label="Sales Order delivery date"
+                      value={dueDate}
+                      onChange={(event) => setDueDate(event.target.value)}
+                      className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                    />
+                  </label>
+                </div>
+              ) : null}
               {isWalkinCustomer || (allowDeliveryCharges && deliveryChargeItem) ? (
                 <div className="order-4 mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {isWalkinCustomer ? (
@@ -1234,7 +1250,7 @@ function CheckoutDialogContent({
                     ),
                 idempotencyKey.current,
                 isSalesOrder ? false : isCreditSale,
-                isSalesOrder ? undefined : isCreditSale ? dueDate : undefined,
+                isSalesOrder || isCreditSale ? dueDate : undefined,
                 isSalesOrder ? undefined : appliedLoyaltyPoints || undefined,
                 isWalkinCustomer
                   ? checkoutTaxId.trim() || undefined
