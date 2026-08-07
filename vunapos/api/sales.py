@@ -83,6 +83,7 @@ def checkout_invoice(
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
 ):
@@ -97,6 +98,7 @@ def checkout_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)
@@ -272,6 +274,7 @@ def submit_invoice(
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
 ):
@@ -285,6 +288,7 @@ def submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)
@@ -305,6 +309,7 @@ def create_and_submit_invoice(
 	price_list: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
 ):
@@ -321,6 +326,7 @@ def create_and_submit_invoice(
 				price_list=price_list,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)
@@ -339,6 +345,7 @@ def create_and_submit_sales_order(
 	price_list: str | None = None,
 	delivery_date: str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
 ):
@@ -353,6 +360,7 @@ def create_and_submit_sales_order(
 				price_list=price_list,
 				delivery_date=delivery_date,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)

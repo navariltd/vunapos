@@ -3,6 +3,7 @@ import { useFrappePostCall } from "frappe-react-sdk";
 import { ShoppingCart, X } from "lucide-react";
 
 import type {
+	CustomerAddressDTO,
   HeldInvoiceDTO,
   ItemDTO,
   PaymentInput,
@@ -22,6 +23,7 @@ import {
 } from "../../lib/stores/navigationStore";
 import {
   getItemDetails,
+  getCustomerAddresses,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -169,6 +171,9 @@ export function POSHomePage({
     closeCheckout: boolean;
   } | null>(null);
   const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
+  const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
+  const [customerAddressesCustomer, setCustomerAddressesCustomer] = useState<string | null>(null);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -221,6 +226,36 @@ export function POSHomePage({
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
+  const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+  const activeCustomerName = activeCustomer?.customer;
+
+  useEffect(() => {
+    if (!isCheckoutOpen || !activeCustomerName) return;
+    let cancelled = false;
+    void getCustomerAddresses(customerAddressesCall.call, {
+      pos_profile: bootstrap.data?.pos_profile,
+      customer: activeCustomerName,
+      limit: 100,
+    })
+      .then((addresses) => {
+        if (!cancelled) {
+          setCustomerAddresses(addresses);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomerAddresses([]);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCustomerAddressesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
 
   const handleRemoveItem = useCallback(
     (rowName: string) => {
@@ -467,6 +502,10 @@ export function POSHomePage({
           message: err instanceof Error ? err.message : "Failed to add item",
         });
       } finally {
+        // The cart update is optimistic and can complete before the browser has
+        // painted a loading state. Keep the clicked row visibly active briefly
+        // so the cashier receives reliable feedback even on fast connections.
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
         setPendingItemCode(null);
       }
     },
@@ -650,6 +689,9 @@ export function POSHomePage({
         return;
       }
       setIsCartOpen(false);
+      setCustomerAddresses([]);
+      setCustomerAddressesCustomer(null);
+      setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
       showToast({
@@ -769,6 +811,7 @@ export function POSHomePage({
     dueDate?: string,
     loyaltyPoints?: number,
     taxId?: string,
+    shippingAddressName?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -789,6 +832,7 @@ export function POSHomePage({
         dueDate,
         loyaltyPoints,
         taxId,
+        shippingAddressName,
         orderType,
         salesperson?.name,
         salesperson?.token,
@@ -1114,6 +1158,12 @@ export function POSHomePage({
         currency={bootstrap.data?.currency}
         currencyPrecision={bootstrap.data?.currency_precision}
         customer={activeCustomer}
+        customerAddresses={
+          customerAddressesCustomer === activeCustomer?.customer
+            ? customerAddresses
+            : []
+        }
+        customerAddressesLoading={customerAddressesLoading}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
         isOpen={isCheckoutOpen}

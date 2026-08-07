@@ -29,6 +29,7 @@ from vunapos.services.checkout_queue_service import (
 	find_invoice_by_idempotency_key,
 	get_queue_limits,
 )
+from vunapos.services.customer_service import validate_customer_address
 from vunapos.services.gateway_payment_service import (
 	consume_gateway_payment_links,
 	gateway_payment_metadata,
@@ -386,6 +387,23 @@ def _apply_checkout_tax_id(doc, tax_id=None, *, persist=False):
 	_set_if_has_field(doc, "tax_id", tax_id)
 	if persist and _has_field(doc.doctype, "tax_id") and doc.get("name"):
 		doc.db_set("tax_id", tax_id, update_modified=False)
+	return doc
+
+
+def _apply_shipping_address(doc, shipping_address_name=None, *, persist=False):
+	"""Validate and apply a customer-linked shipping address to a transaction."""
+	address_name = cstr(shipping_address_name or "").strip()
+	if not address_name:
+		return doc
+	profile_name = doc.get("pos_profile")
+	validate_customer_address(
+		pos_profile=profile_name,
+		customer=doc.get("customer"),
+		address_name=address_name,
+	)
+	_set_if_has_field(doc, "shipping_address_name", address_name)
+	if persist and _has_field(doc.doctype, "shipping_address_name") and doc.get("name"):
+		doc.db_set("shipping_address_name", address_name, update_modified=False)
 	return doc
 
 
@@ -1458,6 +1476,7 @@ def submit_invoice(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
 ):
@@ -1480,6 +1499,7 @@ def submit_invoice(
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
+	_apply_shipping_address(doc, shipping_address_name)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
@@ -1487,6 +1507,7 @@ def submit_invoice(
 	doc.flags.ignore_mandatory = False
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
+	_apply_shipping_address(doc, shipping_address_name, persist=True)
 	doc.submit()
 	consume_gateway_payment_links(gateway_links, doc)
 	return invoice_to_dict(doc)
@@ -1501,6 +1522,7 @@ def checkout_invoice(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
 ):
@@ -1526,6 +1548,7 @@ def checkout_invoice(
 		due_date=due_date,
 		loyalty_points=loyalty_points,
 		tax_id=tax_id,
+		shipping_address_name=shipping_address_name,
 		salesperson=salesperson,
 		salesperson_token=salesperson_token,
 	)
@@ -1543,6 +1566,7 @@ def _prepare_invoice_for_checkout(
 	due_date=None,
 	loyalty_points=None,
 	tax_id=None,
+	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
 ):
@@ -1564,6 +1588,7 @@ def _prepare_invoice_for_checkout(
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
+	_apply_shipping_address(doc, shipping_address_name)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1575,6 +1600,7 @@ def _prepare_invoice_for_checkout(
 	doc.flags.ignore_mandatory = False
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
+	_apply_shipping_address(doc, shipping_address_name, persist=True)
 	return doc
 
 
@@ -1624,6 +1650,7 @@ def create_and_submit_invoice(
 	price_list=None,
 	loyalty_points=None,
 	tax_id=None,
+	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
 ):
@@ -1653,6 +1680,7 @@ def create_and_submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)
@@ -1662,6 +1690,7 @@ def create_and_submit_invoice(
 				create_invoice_stock_reservations(existing)
 			enqueue_invoice_submission(existing)
 			_apply_checkout_tax_id(existing, tax_id, persist=True)
+			_apply_shipping_address(existing, shipping_address_name, persist=True)
 			return invoice_to_dict(existing)
 		return checkout_invoice(
 			existing.doctype,
@@ -1672,6 +1701,7 @@ def create_and_submit_invoice(
 			due_date=due_date,
 			loyalty_points=loyalty_points,
 			tax_id=tax_id,
+			shipping_address_name=shipping_address_name,
 			salesperson=salesperson,
 			salesperson_token=salesperson_token,
 		)
@@ -1709,12 +1739,14 @@ def create_and_submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 			)
 			create_invoice_stock_reservations(doc)
 			enqueue_invoice_submission(doc)
 			_apply_checkout_tax_id(doc, tax_id, persist=True)
+			_apply_shipping_address(doc, shipping_address_name, persist=True)
 			return invoice_to_dict(doc)
 		return checkout_invoice(
 			doc.doctype,
@@ -1725,6 +1757,7 @@ def create_and_submit_invoice(
 			due_date=due_date,
 			loyalty_points=loyalty_points,
 			tax_id=tax_id,
+			shipping_address_name=shipping_address_name,
 			salesperson=salesperson,
 			salesperson_token=salesperson_token,
 		)
@@ -1742,6 +1775,7 @@ def create_and_submit_sales_order(
 	price_list=None,
 	delivery_date=None,
 	tax_id=None,
+	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
 ):
@@ -1797,10 +1831,12 @@ def create_and_submit_sales_order(
 		if idempotency_key:
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 		_apply_checkout_tax_id(doc, tax_id)
+		_apply_shipping_address(doc, shipping_address_name)
 		doc.flags.ignore_mandatory = False
 		doc.insert()
 		_materialize_batch_bundles(doc)
 		_apply_checkout_tax_id(doc, tax_id, persist=True)
+		_apply_shipping_address(doc, shipping_address_name, persist=True)
 		doc.submit()
 		advance_payments = []
 		if payment_rows:

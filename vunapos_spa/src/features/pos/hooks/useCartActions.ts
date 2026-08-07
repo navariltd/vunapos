@@ -64,11 +64,12 @@ export function useCartActions() {
 				dueDate?: string,
 				loyaltyPoints?: number,
 				taxId?: string,
+				shippingAddressName?: string,
 				orderType?: "Sales Invoice" | "Sales Order",
 				salesperson?: string,
 				salespersonToken?: string,
 			) => submitCartAction(
-				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, orderType, salesperson, salespersonToken,
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, shippingAddressName, orderType, salesperson, salespersonToken,
 			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),

@@ -45,6 +45,7 @@ export function ItemGrid({
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}
+          pending={pendingItemCode === item.item_code}
           item={item}
           onAdd={onAddItem}
         />
@@ -57,6 +58,7 @@ export function ItemGrid({
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}
+          pending={pendingItemCode === item.item_code}
           item={item}
           onAdd={onAddItem}
         />
