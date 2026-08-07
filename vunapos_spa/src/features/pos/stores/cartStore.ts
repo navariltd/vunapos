@@ -640,6 +640,30 @@ type CartActions = {
 export type CartStore = CartState & CartActions;
 
 export const useCartStore = create<CartStore>((set, get) => {
+	let localAddQueue = Promise.resolve();
+	let localCartRevision = 0;
+	let localPreviewTimer: ReturnType<typeof setTimeout> | undefined;
+	const pricingPreviewCache = new Map<string, { expiresAt: number; invoice: InvoiceDTO }>();
+	const previewApiIds = new WeakMap<object, number>();
+	let nextPreviewApiId = 1;
+
+	function pricingPreviewKey(items: InvoiceItemDTO[], api: CartApi) {
+		const state = get();
+		const apiFunction = api.previewInvoice as unknown as object;
+		let apiId = previewApiIds.get(apiFunction);
+		if (!apiId) {
+			apiId = nextPreviewApiId++;
+			previewApiIds.set(apiFunction, apiId);
+		}
+		return JSON.stringify({
+			apiId,
+			posProfile: state.posProfile,
+			customer: getActiveCustomer(state)?.customer,
+			priceList: state.selectedPriceList,
+			items: cartItemsPayload(items),
+		});
+	}
+
 	async function runMutation<T>(mutation: () => Promise<T>): Promise<T> {
 		set({ isMutating: true, error: null });
 		try {
@@ -682,6 +706,58 @@ export const useCartStore = create<CartStore>((set, get) => {
 			loyalty_points: currentInvoice?.loyalty_points || undefined,
 		});
 		return localizePreviewInvoice(authoritative, items, selectedCustomer, sourceInvoice);
+	}
+
+	function scheduleBackgroundPricing(
+		nextItems: InvoiceItemDTO[],
+		optimistic: InvoiceDTO,
+		api: CartApi,
+		revision: number,
+	) {
+		if (!getActiveCustomer(get())) return;
+		if (localPreviewTimer) clearTimeout(localPreviewTimer);
+		localPreviewTimer = setTimeout(() => {
+			const latestInvoice = get().invoice;
+			if (revision !== localCartRevision || latestInvoice !== optimistic) return;
+			const cacheKey = pricingPreviewKey(nextItems, api);
+			const cached = pricingPreviewCache.get(cacheKey);
+			if (cached && cached.expiresAt > Date.now()) {
+				if (revision === localCartRevision && get().invoice === optimistic) {
+					set({ invoice: cached.invoice });
+				}
+				return;
+			}
+			void previewCartWithPricingRules(nextItems, optimistic, api)
+				.then((authoritative) => {
+					pricingPreviewCache.set(cacheKey, {
+						expiresAt: Date.now() + 5000,
+						invoice: authoritative,
+					});
+					if (pricingPreviewCache.size > 50) {
+						pricingPreviewCache.delete(pricingPreviewCache.keys().next().value as string);
+					}
+					if (revision === localCartRevision && get().invoice === optimistic) {
+						set({ invoice: authoritative });
+					}
+				})
+				.catch((error) => console.error("Unable to refresh cart pricing", error));
+		}, 120);
+	}
+
+	async function applyOptimisticLocalCart(
+		nextItems: InvoiceItemDTO[],
+		currentInvoice: InvoiceDTO,
+		api: CartApi,
+	) {
+		// Publish the changed rows before the asynchronous local tax/total pass so
+		// serial and batch selections are immediately visible to Hold and Checkout.
+		const pendingInvoice = { ...currentInvoice, items: nextItems };
+		set({ invoice: pendingInvoice, error: null });
+		const optimistic = await previewLocalCart(nextItems, pendingInvoice);
+		const revision = ++localCartRevision;
+		if (get().invoice === pendingInvoice) set({ invoice: optimistic, error: null });
+		scheduleBackgroundPricing(nextItems, optimistic, api, revision);
+		return optimistic;
 	}
 
 	async function syncLocalCartToSource(cart: InvoiceDTO, api: CartApi) {
@@ -733,33 +809,55 @@ export const useCartStore = create<CartStore>((set, get) => {
 		setSelectedCustomer: (selectedCustomerOverride) => set({ selectedCustomerOverride }),
 
 		addCartItem: async (item, api) => {
+			const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
 			if (isStockControlled(item)) {
 				validateAvailableQty(item, 1);
 			}
 
 			const invoice = get().invoice;
 			if (!invoice || isLocalCart(invoice) || invoice.docstatus !== 0) {
-				const currentItems = invoice && isLocalCart(invoice) && invoice.docstatus === 0 ? invoice.items : [];
-				const itemUom = item.uom || item.stock_uom;
-				const itemConversionFactor = Number(item.conversion_factor || 1);
-				const existingItem = currentItems.find((row) =>
-					row.item_code === item.item_code
-					&& (row.uom || row.stock_uom) === itemUom
-					&& Number(row.conversion_factor || 1) === itemConversionFactor,
-				);
-				const nextItems = existingItem
-					? currentItems.map((row) => {
-						if (row.item_code === item.item_code) {
-							validateAvailableQty(row, row.qty + 1);
-							return mergeScannedTracking(row, item);
-						}
-						return row;
-					})
-					: get().newItemPosition === "Top"
-						? [itemToCartRow(item), ...currentItems]
-						: [...currentItems, itemToCartRow(item)];
-				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
-				set({ invoice: preview });
+				// Serialize local additions so rapid clicks cannot read the same stale
+				// cart before the previous optimistic update has been applied.
+				localAddQueue = localAddQueue.catch(() => undefined).then(async () => {
+					const currentInvoice = get().invoice;
+					const currentItems = currentInvoice && isLocalCart(currentInvoice) && currentInvoice.docstatus === 0
+						? currentInvoice.items
+						: [];
+					const itemUom = item.uom || item.stock_uom;
+					const itemConversionFactor = Number(item.conversion_factor || 1);
+					const existingItem = currentItems.find((row) =>
+						row.item_code === item.item_code
+						&& (row.uom || row.stock_uom) === itemUom
+						&& Number(row.conversion_factor || 1) === itemConversionFactor,
+					);
+					const nextItems = existingItem
+						? currentItems.map((row) => {
+							if (
+								row.item_code === item.item_code
+								&& (row.uom || row.stock_uom) === itemUom
+								&& Number(row.conversion_factor || 1) === itemConversionFactor
+							) {
+								validateAvailableQty(row, row.qty + 1);
+								return mergeScannedTracking(row, item);
+							}
+							return row;
+						})
+						: get().newItemPosition === "Top"
+							? [itemToCartRow(item), ...currentItems]
+							: [...currentItems, itemToCartRow(item)];
+
+					await applyOptimisticLocalCart(nextItems, currentInvoice, api);
+				}).catch((error) => {
+					set({ error: error instanceof Error ? error.message : "Failed to add item" });
+					throw error;
+				});
+				await localAddQueue;
+				if (import.meta.env.DEV && startedAt) {
+					console.debug("[VunaPOS] item added", {
+						itemCode: item.item_code,
+						milliseconds: Math.round(performance.now() - startedAt),
+					});
+				}
 				return;
 			}
 
@@ -810,8 +908,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
-				set({ invoice: preview });
+				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
 
@@ -852,8 +949,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				throw new Error("Discount changes are not allowed for this POS Profile.");
 			}
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
-				set({ invoice: preview });
+				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
 			const updatedInvoice = await runMutation(() =>
@@ -876,9 +972,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
 			);
-			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
-				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+			if (isLocalCart(invoice)) {
+				await applyOptimisticLocalCart(nextItems, invoice, api);
+				return;
+			}
+			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
@@ -902,9 +1000,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 					pricing_override: undefined, batch_allocations: [], serial_allocations: []
 				};
 			});
-			const updated = isLocalCart(invoice)
-				? await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api))
-				: await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+			if (isLocalCart(invoice)) {
+				await applyOptimisticLocalCart(nextItems, invoice, api);
+				return;
+			}
+			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
 					price_list: get().selectedPriceList || invoice.selling_price_list,
 					items: cartItemsPayload(nextItems),
@@ -921,15 +1021,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				// Store the selected serials before recalculating the preview. This closes the
 				// gap where Hold could run after the checkbox changed but before the preview
 				// promise updated the cart, incorrectly observing no serial allocation.
-				const optimisticInvoice = { ...invoice, items: nextItems };
-				set({ invoice: optimisticInvoice });
-				try {
-					const updated = await runMutation(() => previewCartWithPricingRules(nextItems, optimisticInvoice, api));
-					if (get().invoice === optimisticInvoice) set({ invoice: updated });
-				} catch (error) {
-					if (get().invoice === optimisticInvoice) set({ invoice });
-					throw error;
-				}
+				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
@@ -948,8 +1040,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			);
 			validateManualBatchAllocations(nextItems);
 			if (isLocalCart(invoice)) {
-				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
-				set({ invoice: preview });
+				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
 			const updatedInvoice = await runMutation(() =>
@@ -988,8 +1079,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					set({ invoice: null });
 					return;
 				}
-				const preview = await runMutation(() => previewCartWithPricingRules(nextItems, invoice, api));
-				set({ invoice: preview });
+				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
 

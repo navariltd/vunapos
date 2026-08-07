@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -11,7 +12,7 @@ type ItemCardProps = {
   onAdd: (item: ItemDTO) => void;
 };
 
-export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
+export const ItemCard = memo(function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
   const outOfStock =
     !item.has_variants &&
     !item.is_product_bundle &&
@@ -99,4 +100,4 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
       </div>
     </div>
   );
-}
+});

@@ -416,8 +416,10 @@ describe("live cart pricing rules", () => {
 		const api = makeApi({ previewInvoice });
 
 		await useCartStore.getState().addCartItem(makeItem(), api);
+		await vi.waitFor(() => expect(previewInvoice).toHaveBeenCalledTimes(1));
 		const rowName = useCartStore.getState().invoice!.items[0].row_name;
 		await useCartStore.getState().updateCartItemQty(rowName, 5, api);
+		await vi.waitFor(() => expect(previewInvoice).toHaveBeenCalledTimes(2));
 
 		expect(previewInvoice).toHaveBeenCalledTimes(2);
 		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
@@ -449,7 +451,9 @@ describe("live cart pricing rules", () => {
 		const api = makeApi({ previewInvoice });
 
 		await useCartStore.getState().addCartItem(makeItem(), api);
+		await vi.waitFor(() => expect(previewInvoice).toHaveBeenCalledTimes(1));
 		await useCartStore.getState().updateCartItemNote("paid", "Packed", api);
+		await vi.waitFor(() => expect(previewInvoice).toHaveBeenCalledTimes(2));
 
 		const secondPayload = JSON.parse(previewInvoice.mock.calls[1][0].items) as Array<{ item_code: string }>;
 		expect(secondPayload).toEqual([expect.objectContaining({ item_code: "ITEM-1" })]);
