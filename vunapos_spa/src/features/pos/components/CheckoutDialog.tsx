@@ -33,6 +33,7 @@ import { useCartStore } from "../stores/cartStore";
 import { useUiFeedbackStore } from "../stores/uiFeedbackStore";
 import type {
   CustomerDTO,
+  CustomerAddressDTO,
   CustomerContactPhoneDTO,
   CustomerLoyaltyDTO,
   C2BGatewayPaymentDTO,
@@ -54,6 +55,8 @@ type CheckoutDialogProps = {
   currency?: string;
   currencyPrecision?: number;
   customer?: CustomerDTO | null;
+  customerAddresses?: CustomerAddressDTO[];
+  customerAddressesLoading?: boolean;
   customerLoyalty?: CustomerLoyaltyDTO | null;
   defaultSaleType?: "Cash Sale" | "Credit Sale";
   error?: string | null;
@@ -138,6 +141,8 @@ export function CheckoutDialog({
   currency,
   currencyPrecision,
   customer,
+  customerAddresses,
+  customerAddressesLoading,
   customerLoyalty,
   defaultSaleType,
   error,
@@ -175,6 +180,8 @@ export function CheckoutDialog({
       currency={currency}
       currencyPrecision={currencyPrecision}
       customer={customer}
+      customerAddresses={customerAddresses}
+      customerAddressesLoading={customerAddressesLoading}
       customerLoyalty={customerLoyalty}
       defaultSaleType={defaultSaleType}
       error={error}
@@ -208,6 +215,8 @@ function CheckoutDialogContent({
   currency,
   currencyPrecision,
   customer,
+  customerAddresses,
+  customerAddressesLoading,
   customerLoyalty,
   defaultSaleType,
   error,
@@ -288,6 +297,15 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
+  const [shippingAddressName, setShippingAddressName] = useState<string>("");
+
+  useEffect(() => {
+    const defaultAddress = customerAddresses?.find((address) => address.is_default);
+    setShippingAddressName(defaultAddress?.name || customerAddresses?.[0]?.name || "");
+  }, [customer?.customer, customerAddresses]);
+  const selectedShippingAddress = customerAddresses?.find(
+    (address) => address.name === shippingAddressName,
+  );
   const deliveryEnabled = Boolean(deliveryChargeItem);
   const [deliveryAmount, setDeliveryAmount] = useState("");
   const [deliveryApplying, setDeliveryApplying] = useState(false);
@@ -865,6 +883,32 @@ function CheckoutDialogContent({
                         onChange={(event) => setDeliveryAmount(event.target.value)}
                       />
                     </div>
+                  ) : null}
+                </div>
+              ) : null}
+              {customerAddressesLoading || customerAddresses?.length ? (
+                <div className="order-4 mb-4 rounded-md bg-surface-container-low px-3 py-2">
+                  <label className="block text-sm font-medium text-on-surface">
+                    Shipping address
+                    <select
+                      aria-label="Shipping address"
+                      value={shippingAddressName}
+                      disabled={customerAddressesLoading}
+                      onChange={(event) => setShippingAddressName(event.target.value)}
+                      className="mt-1 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                    >
+                      {customerAddresses?.map((address) => (
+                        <option key={address.name} value={address.name}>
+                          {address.address_title || address.name}
+                          {address.city ? ` · ${address.city}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {selectedShippingAddress?.formatted_address ? (
+                    <p className="mt-1 text-xs text-on-surface-variant">
+                      {selectedShippingAddress.formatted_address}
+                    </p>
                   ) : null}
                 </div>
               ) : null}

@@ -3,6 +3,7 @@ import { useFrappePostCall } from "frappe-react-sdk";
 import { ShoppingCart, X } from "lucide-react";
 
 import type {
+	CustomerAddressDTO,
   HeldInvoiceDTO,
   ItemDTO,
   PaymentInput,
@@ -22,6 +23,7 @@ import {
 } from "../../lib/stores/navigationStore";
 import {
   getItemDetails,
+  getCustomerAddresses,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -169,6 +171,8 @@ export function POSHomePage({
     closeCheckout: boolean;
   } | null>(null);
   const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
+  const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -221,6 +225,29 @@ export function POSHomePage({
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
+  const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+
+  useEffect(() => {
+    if (!isCheckoutOpen || !activeCustomer?.customer) return;
+    let cancelled = false;
+    void getCustomerAddresses(customerAddressesCall.call, {
+      pos_profile: bootstrap.data?.pos_profile,
+      customer: activeCustomer.customer,
+      limit: 100,
+    })
+      .then((addresses) => {
+        if (!cancelled) setCustomerAddresses(addresses);
+      })
+      .catch(() => {
+        if (!cancelled) setCustomerAddresses([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCustomerAddressesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCustomer?.customer, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
 
   const handleRemoveItem = useCallback(
     (rowName: string) => {
@@ -650,6 +677,8 @@ export function POSHomePage({
         return;
       }
       setIsCartOpen(false);
+      setCustomerAddresses([]);
+      setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
       showToast({
@@ -1114,6 +1143,8 @@ export function POSHomePage({
         currency={bootstrap.data?.currency}
         currencyPrecision={bootstrap.data?.currency_precision}
         customer={activeCustomer}
+        customerAddresses={customerAddresses}
+        customerAddressesLoading={customerAddressesLoading}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
         isOpen={isCheckoutOpen}
