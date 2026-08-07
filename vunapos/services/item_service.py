@@ -607,6 +607,26 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			["Item", "item_code", "like", f"%{query}%"],
 			["Item", "item_name", "like", f"%{query}%"],
 		]
+		# Serial and batch identifiers are inventory records, not Item fields.
+		# Resolve matching item codes server-side so the browser does not need to
+		# preload the complete serial/batch catalogue.
+		tracked_item_codes = set(
+			frappe.get_all(
+				"Batch",
+				filters={"name": ["like", f"%{query}%"], "disabled": 0},
+				pluck="item",
+			)
+		)
+		tracked_item_codes.update(
+			frappe.get_all(
+				"Serial No",
+				filters={"name": ["like", f"%{query}%"]},
+				pluck="item_code",
+			)
+		)
+		tracked_item_codes.discard(None)
+		if tracked_item_codes:
+			or_filters.append(["Item", "name", "in", list(tracked_item_codes)])
 	if not profile.get("vunapos_allow_service_items"):
 		# Delivery Charge Item is an internal checkout line, not a catalogue item.
 		# It is loaded directly by checkout when delivery is enabled.

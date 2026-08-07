@@ -70,6 +70,8 @@ def profile_to_dict(profile, invoice_mode):
 		"rounding_method": frappe.get_system_settings("rounding_method") or "Banker's Rounding (legacy)",
 		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
 		"allow_credit_sales": allow_credit_sales,
+		"auto_allocate_payment_balance": bool(profile.get("vunapos_auto_allocate_payment_balance")),
+		"new_item_position": profile.get("vunapos_new_item_position") or "Bottom",
 		"default_sale_type": default_sale_type,
 		"allow_rate_change": bool(profile.get("allow_rate_change")),
 		"allow_discount_change": bool(profile.get("allow_discount_change")),

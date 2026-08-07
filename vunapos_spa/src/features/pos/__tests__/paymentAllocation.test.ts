@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	allocateAllToMode,
+	allocatePaymentRemainderToNextMode,
 	buildPaymentInputs,
 	canCompletePaymentAllocation,
 	calculatePaymentAllocation,
@@ -38,6 +39,35 @@ describe("payment allocation", () => {
 			"M-Pesa": "1500.00",
 			Card: "",
 		});
+	});
+
+	it("allocates the remaining balance to the next manual mode", () => {
+		expect(
+			allocatePaymentRemainderToNextMode(
+				modes,
+				{ Cash: "500", "M-Pesa": "", Card: "" },
+				"Cash",
+				150000,
+				2,
+			),
+		).toEqual({ Cash: "500", "M-Pesa": "1000.00", Card: "" });
+	});
+
+	it("skips gateway modes when finding the next automatic allocation target", () => {
+		const gatewayModes: ModeOfPaymentDTO[] = [
+			{ mode_of_payment: "Cash", default: 1, type: "Cash" },
+			{ mode_of_payment: "M-Pesa", type: "Phone", payment_gateway: "Mpesa-Test" },
+			{ mode_of_payment: "Card", type: "Bank" },
+		];
+		expect(
+			allocatePaymentRemainderToNextMode(
+				gatewayModes,
+				{ Cash: "500", "M-Pesa": "", Card: "" },
+				"Cash",
+				150000,
+				2,
+			),
+		).toEqual({ Cash: "500", "M-Pesa": "", Card: "1000.00" });
 	});
 
 	it("does not allocate gateway modes initially but allows explicit all allocation", () => {

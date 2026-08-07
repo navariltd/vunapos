@@ -1030,7 +1030,10 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	doc.customer = customer
 	doc.company = profile.company
 	doc.transaction_date = nowdate()
-	doc.delivery_date = delivery_date or nowdate()
+	requested_delivery_date = getdate(delivery_date or nowdate())
+	if requested_delivery_date < getdate(nowdate()):
+		_throw("INVALID_DELIVERY_DATE", _("Sales Order delivery date cannot be before today."))
+	doc.delivery_date = requested_delivery_date
 	_set_if_has_field(doc, "order_type", "Sales")
 	_set_if_has_field(doc, "set_warehouse", profile.warehouse)
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
@@ -1040,6 +1043,17 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
 	_reset_invoice_totals(doc)
 	return doc, profile
+
+
+def _apply_sales_order_delivery_date(doc, delivery_date):
+	"""Keep the requested schedule on both Sales Order headers and item rows."""
+	requested_delivery_date = getdate(delivery_date or nowdate())
+	if requested_delivery_date < getdate(nowdate()):
+		_throw("INVALID_DELIVERY_DATE", _("Sales Order delivery date cannot be before today."))
+	doc.delivery_date = requested_delivery_date
+	for row in doc.get("items", []):
+		if _has_field(row.doctype, "delivery_date"):
+			row.delivery_date = requested_delivery_date
 
 
 def _append_cart_items(doc, profile, items):
@@ -1316,6 +1330,10 @@ def add_item(invoice_doctype, invoice_name, item_code, qty=1):
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": item_code, "qty": qty}], profile)
 	_append_cart_items(doc, profile, [{"item_code": item_code, "qty": qty}])
+	if profile.get("vunapos_new_item_position") == "Top" and len(doc.get("items")) > 1:
+		doc.items = [doc.items[-1], *doc.items[:-1]]
+		for index, row in enumerate(doc.items, start=1):
+			row.idx = index
 	_save_invoice(doc)
 	return invoice_to_dict(doc)
 
@@ -1748,7 +1766,10 @@ def create_and_submit_sales_order(
 			delivery_date=delivery_date,
 		)
 		_append_cart_items(doc, profile, cart_items)
+		_apply_sales_order_delivery_date(doc, delivery_date)
 		_recalculate(doc)
+		# ERPNext may populate child dates during recalculation; restore the cashier's date.
+		_apply_sales_order_delivery_date(doc, delivery_date)
 		validate_invoice_batch_allocations(doc)
 		payment_rows = validate_payment_rows(
 			doc,

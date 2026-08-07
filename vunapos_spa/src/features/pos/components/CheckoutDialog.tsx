@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Award,
   Check,
+  CheckCircle2,
   CreditCard,
   Loader2,
   Pause,
@@ -17,6 +18,7 @@ import { Button } from "../../../components/ui/Button";
 import { useGatewayPaymentRealtime } from "../hooks/useGatewayPaymentRealtime";
 import {
   allocateAllToMode,
+	allocatePaymentRemainderToNextMode,
   buildPaymentInputs,
   canCompletePaymentAllocation,
   calculatePaymentAllocation,
@@ -44,6 +46,7 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+	autoAllocatePaymentBalance?: boolean;
   allowSalesOrderPayments?: boolean;
   allowDeliveryCharges?: boolean;
   allowDeliveryChargeChange?: boolean;
@@ -92,8 +95,9 @@ type CheckoutDialogProps = {
   onInitiateGatewayPayment?: (params: {
     mode_of_payment: string;
     amount: number;
-    phone_number: string;
-    idempotency_key: string;
+		phone_number: string;
+		idempotency_key: string;
+		account_reference?: string;
   }) => Promise<GatewayPaymentLinkDTO>;
   onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
   orderType?: "Sales Invoice" | "Sales Order";
@@ -126,6 +130,7 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
@@ -162,6 +167,7 @@ export function CheckoutDialog({
       key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+	  autoAllocatePaymentBalance={autoAllocatePaymentBalance}
       allowSalesOrderPayments={allowSalesOrderPayments}
       allowDeliveryCharges={allowDeliveryCharges}
       allowDeliveryChargeChange={allowDeliveryChargeChange}
@@ -194,6 +200,7 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
@@ -804,6 +811,22 @@ function CheckoutDialogContent({
                   ) : null}
                 </div>
               ) : null}
+              {isSalesOrder ? (
+                <div className="order-3 my-3 rounded-md bg-surface-container-low px-3 py-2">
+                  <label className="flex min-w-48 items-center gap-2 text-sm font-medium text-on-surface">
+                    Delivery date
+                    <input
+                      type="date"
+                      min={today}
+                      required
+                      aria-label="Sales Order delivery date"
+                      value={dueDate}
+                      onChange={(event) => setDueDate(event.target.value)}
+                      className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                    />
+                  </label>
+                </div>
+              ) : null}
               {isWalkinCustomer || (allowDeliveryCharges && deliveryChargeItem) ? (
                 <div className="order-4 mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {isWalkinCustomer ? (
@@ -1076,10 +1099,21 @@ function CheckoutDialogContent({
                               }}
                               onChange={(event) => {
                                 if (isGatewayControlled) return;
-                                setAmounts((current) => ({
-                                  ...current,
-                                  [mode.mode_of_payment]: event.target.value,
-                                }));
+                                setAmounts((current) => {
+                                  const next = {
+                                    ...current,
+                                    [mode.mode_of_payment]: event.target.value,
+                                  };
+                                  return autoAllocatePaymentBalance
+                                    ? allocatePaymentRemainderToNextMode(
+                                        availableModes,
+                                        next,
+                                        mode.mode_of_payment,
+                                        payableMinor,
+                                        precision,
+                                      )
+                                    : next;
+                                });
                               }}
                             />
                           </div>
@@ -1218,7 +1252,7 @@ function CheckoutDialogContent({
                     ),
                 idempotencyKey.current,
                 isSalesOrder ? false : isCreditSale,
-                isSalesOrder ? undefined : isCreditSale ? dueDate : undefined,
+                isSalesOrder || isCreditSale ? dueDate : undefined,
                 isSalesOrder ? undefined : appliedLoyaltyPoints || undefined,
                 isWalkinCustomer
                   ? checkoutTaxId.trim() || undefined
@@ -1296,6 +1330,7 @@ function CheckoutDialogContent({
                   phone_number:
                     gatewayPhones[activeGatewayMode.mode_of_payment] || "",
                   idempotency_key: `${idempotencyKey.current}:${activeGatewayMode.mode_of_payment}:stk`,
+	                  account_reference: invoice?.name,
                 }) as Promise<GatewayPaymentLinkDTO>,
             )
           }
@@ -1560,15 +1595,21 @@ function GatewayPaymentDialog({
                   </label>
                   <Button
                     className="mt-3 w-full gap-2"
-                    disabled={!amountMinor || Boolean(busy) || blocking}
+                    disabled={!amountMinor || paid || Boolean(busy) || blocking}
                     onClick={onInitiateStk}
                   >
-                    {busy === "stk" ? (
+                    {paid ? (
+                      <CheckCircle2 className="size-4" />
+                    ) : busy === "stk" ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : (
                       <Smartphone className="size-4" />
                     )}
-                    {gatewayLink && !paid ? "Retry STK" : "Send STK"}
+                    {paid
+                      ? "Payment verified"
+                      : gatewayLink
+                        ? "Retry STK"
+                        : "Send STK"}
                   </Button>
                   <p className="mt-3 text-xs text-on-surface-variant">
                     An STK prompt will be sent to the customer's phone.

@@ -35,6 +35,7 @@ def initiate_stk_gateway_payment(
 	customer: str | None = None,
 	currency: str | None = None,
 	idempotency_key: str | None = None,
+	account_reference: str | None = None,
 ):
 	try:
 		return success(
@@ -46,6 +47,7 @@ def initiate_stk_gateway_payment(
 				customer=customer,
 				currency=currency,
 				idempotency_key=idempotency_key,
+				account_reference=account_reference,
 			)
 		)
 	except Exception as exc:

@@ -91,6 +91,23 @@ def ensure_vunapos_custom_fields():
 					"default": "0",
 				},
 				{
+					"fieldname": "vunapos_auto_allocate_payment_balance",
+					"label": "Automatically Allocate Payment Balance",
+					"fieldtype": "Check",
+					"insert_after": "vunapos_allow_credit_sales",
+					"description": "Assign the remaining balance to the next eligible manual payment mode while entering payments.",
+					"default": "0",
+				},
+				{
+					"fieldname": "vunapos_new_item_position",
+					"label": "New Cart Item Position",
+					"fieldtype": "Select",
+					"options": "Bottom\nTop",
+					"insert_after": "vunapos_auto_allocate_payment_balance",
+					"description": "Choose where newly added cart items appear.",
+					"default": "Bottom",
+				},
+				{
 					"fieldname": "vunapos_default_sale_type",
 					"label": "Default Sale Type",
 					"fieldtype": "Select",

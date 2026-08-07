@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -11,7 +12,7 @@ type ItemListRowProps = {
   onAdd: (item: ItemDTO) => void;
 };
 
-export function ItemListRow({
+export const ItemListRow = memo(function ItemListRow({
   currency,
   disabled,
   item,
@@ -90,4 +91,4 @@ export function ItemListRow({
       </Button>
     </div>
   );
-}
+});

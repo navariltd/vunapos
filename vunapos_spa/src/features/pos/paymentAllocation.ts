@@ -75,6 +75,33 @@ export function allocateAllToMode(
 	);
 }
 
+export function allocatePaymentRemainderToNextMode(
+	modes: ModeOfPaymentDTO[],
+	amounts: PaymentAmounts,
+	editedMode: string,
+	totalMinor: number,
+	precision: number,
+): PaymentAmounts {
+	const editedIndex = modes.findIndex((mode) => mode.mode_of_payment === editedMode);
+	const nextMode = modes
+		.slice(editedIndex + 1)
+		.find((mode) => !mode.payment_gateway);
+	if (!nextMode) return amounts;
+	const editedAmount = parsePaymentAmount(amounts[editedMode] || "", precision);
+	if (editedAmount === null) return amounts;
+	const otherMinor = modes.reduce((sum, mode) => {
+		if (mode.mode_of_payment === editedMode || mode.mode_of_payment === nextMode.mode_of_payment) {
+			return sum;
+		}
+		return sum + (parsePaymentAmount(amounts[mode.mode_of_payment] || "", precision) || 0);
+	}, 0);
+	const remaining = Math.max(totalMinor - otherMinor - editedAmount, 0);
+	return {
+		...amounts,
+		[nextMode.mode_of_payment]: minorUnitsToInput(remaining, precision),
+	};
+}
+
 export function calculatePaymentAllocation(
 	modes: ModeOfPaymentDTO[],
 	amounts: PaymentAmounts,

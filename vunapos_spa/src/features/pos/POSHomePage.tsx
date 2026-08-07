@@ -210,8 +210,13 @@ export function POSHomePage({
   const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
   const cartError = useCartStore((s) => s.error);
   const setCartPosProfile = useCartStore((s) => s.setPosProfile);
+  const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+
+  useEffect(() => {
+    setCartNewItemPosition(bootstrap.data?.new_item_position);
+  }, [bootstrap.data?.new_item_position, setCartNewItemPosition]);
   const cartActions = useCartActions();
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
@@ -1102,6 +1107,7 @@ export function POSHomePage({
         allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
+		    autoAllocatePaymentBalance={bootstrap.data?.auto_allocate_payment_balance}
         allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
         allowDeliveryChargeChange={bootstrap.data?.allow_delivery_charge_change}
         deliveryChargeItem={bootstrap.data?.delivery_charge_item}
