@@ -173,6 +173,7 @@ export function POSHomePage({
   const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
   const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
   const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
+  const [customerAddressesCustomer, setCustomerAddressesCustomer] = useState<string | null>(null);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -226,20 +227,27 @@ export function POSHomePage({
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+  const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
-    if (!isCheckoutOpen || !activeCustomer?.customer) return;
+    if (!isCheckoutOpen || !activeCustomerName) return;
     let cancelled = false;
     void getCustomerAddresses(customerAddressesCall.call, {
       pos_profile: bootstrap.data?.pos_profile,
-      customer: activeCustomer.customer,
+      customer: activeCustomerName,
       limit: 100,
     })
       .then((addresses) => {
-        if (!cancelled) setCustomerAddresses(addresses);
+        if (!cancelled) {
+          setCustomerAddresses(addresses);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
       })
       .catch(() => {
-        if (!cancelled) setCustomerAddresses([]);
+        if (!cancelled) {
+          setCustomerAddresses([]);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
       })
       .finally(() => {
         if (!cancelled) setCustomerAddressesLoading(false);
@@ -247,7 +255,7 @@ export function POSHomePage({
     return () => {
       cancelled = true;
     };
-  }, [activeCustomer?.customer, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
+  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
 
   const handleRemoveItem = useCallback(
     (rowName: string) => {
@@ -678,6 +686,7 @@ export function POSHomePage({
       }
       setIsCartOpen(false);
       setCustomerAddresses([]);
+      setCustomerAddressesCustomer(null);
       setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
@@ -1145,7 +1154,11 @@ export function POSHomePage({
         currency={bootstrap.data?.currency}
         currencyPrecision={bootstrap.data?.currency_precision}
         customer={activeCustomer}
-        customerAddresses={customerAddresses}
+        customerAddresses={
+          customerAddressesCustomer === activeCustomer?.customer
+            ? customerAddresses
+            : []
+        }
         customerAddressesLoading={customerAddressesLoading}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
