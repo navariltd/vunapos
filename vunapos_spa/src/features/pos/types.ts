@@ -46,6 +46,25 @@ export type CustomerContactPhoneDTO = {
 	source?: "Customer" | "Contact" | null;
 };
 
+export type CustomerAddressDTO = {
+	name: string;
+	customer: string;
+	address_title?: string | null;
+	address_type?: string | null;
+	address_line1?: string | null;
+	address_line2?: string | null;
+	city?: string | null;
+	state?: string | null;
+	country?: string | null;
+	pincode?: string | null;
+	phone?: string | null;
+	email_id?: string | null;
+	is_primary_address?: boolean | number;
+	is_shipping_address?: boolean | number;
+	is_default?: boolean;
+	formatted_address?: string;
+};
+
 export type CustomerLoyaltyDTO = {
 	customer: string;
 	enrolled: boolean;

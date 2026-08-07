@@ -3,6 +3,7 @@ import type {
 	BootstrapData,
 	C2BGatewayPaymentDTO,
 	CustomerContactPhoneDTO,
+	CustomerAddressDTO,
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
@@ -261,6 +262,13 @@ export function getCustomerContactPhone(
 	params: { pos_profile?: string; customer: string },
 ) {
 	return callAndUnwrap<CustomerContactPhoneDTO>(call, params);
+}
+
+export function getCustomerAddresses(
+	call: FrappeCall,
+	params: { pos_profile?: string; customer: string; limit?: number },
+) {
+	return callAndUnwrap<CustomerAddressDTO[]>(call, params);
 }
 
 export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
