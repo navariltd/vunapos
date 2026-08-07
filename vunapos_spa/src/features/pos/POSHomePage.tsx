@@ -502,6 +502,10 @@ export function POSHomePage({
           message: err instanceof Error ? err.message : "Failed to add item",
         });
       } finally {
+        // The cart update is optimistic and can complete before the browser has
+        // painted a loading state. Keep the clicked row visibly active briefly
+        // so the cashier receives reliable feedback even on fast connections.
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
         setPendingItemCode(null);
       }
     },

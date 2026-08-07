@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
@@ -8,6 +8,7 @@ import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 type ItemListRowProps = {
   currency?: string;
   disabled?: boolean;
+  pending?: boolean;
   item: ItemDTO;
   onAdd: (item: ItemDTO) => void;
 };
@@ -17,6 +18,7 @@ export const ItemListRow = memo(function ItemListRow({
   disabled,
   item,
   onAdd,
+  pending,
 }: ItemListRowProps) {
   const outOfStock =
     !item.has_variants &&
@@ -28,12 +30,20 @@ export const ItemListRow = memo(function ItemListRow({
   const isDisabled = disabled || outOfStock;
 
   return (
-    <div className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b border-outline-variant px-3 py-3 transition-colors hover:bg-surface-container sm:grid-cols-[minmax(0,1fr)_12rem_8rem_5rem] sm:px-4 md:grid-cols-[20rem_12rem_minmax(7rem,1fr)_5rem]">
+    <div
+      className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-3 py-3 transition-colors hover:bg-surface-container sm:grid-cols-[minmax(0,1fr)_12rem_8rem_5rem] sm:px-4 md:grid-cols-[20rem_12rem_minmax(7rem,1fr)_5rem] ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}
+      onClick={() => {
+        if (!isDisabled) onAdd(item);
+      }}
+    >
       <button
         type="button"
         className="min-w-0 cursor-pointer text-left disabled:cursor-not-allowed"
         disabled={isDisabled}
-        onClick={() => onAdd(item)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onAdd(item);
+        }}
       >
         <span className="block truncate text-sm font-semibold text-on-surface">
           {item.item_name}
@@ -81,13 +91,16 @@ export const ItemListRow = memo(function ItemListRow({
       </p>
       <Button
         size="sm"
-        className="flex size-9 shrink-0 gap-1 p-0 sm:h-9 sm:w-auto sm:px-2"
+        className={`flex size-9 shrink-0 gap-1 p-0 sm:h-9 sm:w-auto sm:px-2 ${pending ? "bg-primary-container text-on-primary-container" : ""}`}
         disabled={isDisabled}
-        onClick={() => onAdd(item)}
+        onClick={(event) => {
+          event.stopPropagation();
+          onAdd(item);
+        }}
         aria-label={`Add ${item.item_name}`}
       >
-        <Plus className="size-4" />{" "}
-        <span className="hidden sm:inline">Add</span>
+        {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}{" "}
+        <span className="hidden sm:inline">{pending ? "Adding" : "Add"}</span>
       </Button>
     </div>
   );
