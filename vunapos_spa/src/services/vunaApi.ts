@@ -284,6 +284,7 @@ export function initiateStkGatewayPayment(
 		customer?: string;
 		currency?: string;
 		idempotency_key?: string;
+		account_reference?: string;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);

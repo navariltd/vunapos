@@ -638,6 +638,7 @@ def initiate_stk_gateway_payment(
 	customer=None,
 	currency=None,
 	idempotency_key=None,
+	account_reference=None,
 ):
 	_require_navari_ke_payments("KE Payment Request")
 	profile = resolve_pos_profile(pos_profile)
@@ -651,6 +652,7 @@ def initiate_stk_gateway_payment(
 	precision = get_currency_precision() or 2
 	amount = _normalize_amount(amount, precision)
 	currency = currency or profile.currency
+	account_reference = (account_reference or idempotency_key or "").strip()
 
 	existing = _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key)
 	if existing:
@@ -670,7 +672,7 @@ def initiate_stk_gateway_payment(
 			"party_name": frappe.db.get_value("Customer", customer, "customer_name") if customer else None,
 			"payment_gateway_account": payment_gateway_account,
 			"mode_of_payment": mode_of_payment,
-			"account_reference": idempotency_key,
+			"account_reference": account_reference,
 			"transaction_description": _("VunaPOS checkout payment"),
 		}
 	)

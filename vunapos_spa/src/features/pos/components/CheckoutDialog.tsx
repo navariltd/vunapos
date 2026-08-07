@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Award,
   Check,
+  CheckCircle2,
   CreditCard,
   Loader2,
   Pause,
@@ -94,8 +95,9 @@ type CheckoutDialogProps = {
   onInitiateGatewayPayment?: (params: {
     mode_of_payment: string;
     amount: number;
-    phone_number: string;
-    idempotency_key: string;
+		phone_number: string;
+		idempotency_key: string;
+		account_reference?: string;
   }) => Promise<GatewayPaymentLinkDTO>;
   onPreviewLoyalty: (loyaltyPoints: number) => Promise<InvoiceDTO | null>;
   orderType?: "Sales Invoice" | "Sales Order";
@@ -1328,6 +1330,7 @@ function CheckoutDialogContent({
                   phone_number:
                     gatewayPhones[activeGatewayMode.mode_of_payment] || "",
                   idempotency_key: `${idempotencyKey.current}:${activeGatewayMode.mode_of_payment}:stk`,
+	                  account_reference: invoice?.name,
                 }) as Promise<GatewayPaymentLinkDTO>,
             )
           }
@@ -1592,15 +1595,21 @@ function GatewayPaymentDialog({
                   </label>
                   <Button
                     className="mt-3 w-full gap-2"
-                    disabled={!amountMinor || Boolean(busy) || blocking}
+                    disabled={!amountMinor || paid || Boolean(busy) || blocking}
                     onClick={onInitiateStk}
                   >
-                    {busy === "stk" ? (
+                    {paid ? (
+                      <CheckCircle2 className="size-4" />
+                    ) : busy === "stk" ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : (
                       <Smartphone className="size-4" />
                     )}
-                    {gatewayLink && !paid ? "Retry STK" : "Send STK"}
+                    {paid
+                      ? "Payment verified"
+                      : gatewayLink
+                        ? "Retry STK"
+                        : "Send STK"}
                   </Button>
                   <p className="mt-3 text-xs text-on-surface-variant">
                     An STK prompt will be sent to the customer's phone.
