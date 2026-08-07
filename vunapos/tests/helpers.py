@@ -96,6 +96,39 @@ def ensure_test_customer():
 	return customer.name
 
 
+def ensure_test_shipping_address(customer=None):
+	"""Create a reusable customer-linked shipping address for POS checkout tests."""
+	customer = customer or ensure_test_customer()
+	address_title = f"_Test Vuna Shipping Address {customer}"
+	address_name = frappe.db.get_value(
+		"Address",
+		{"address_title": address_title, "address_type": "Shipping"},
+		"name",
+	)
+	if address_name:
+		address = frappe.get_doc("Address", address_name)
+		if not any(
+			link.link_doctype == "Customer" and link.link_name == customer
+			for link in address.get("links", [])
+		):
+			address.append("links", {"link_doctype": "Customer", "link_name": customer})
+			address.save(ignore_permissions=True)
+		return address.name
+	address = frappe.get_doc(
+		{
+			"doctype": "Address",
+			"address_title": address_title,
+			"address_type": "Shipping",
+			"address_line1": "1 Vuna Way",
+			"city": "Nairobi",
+			"country": "Kenya",
+			"links": [{"link_doctype": "Customer", "link_name": customer}],
+		}
+	)
+	address.insert(ignore_permissions=True)
+	return address.name
+
+
 def ensure_test_pos_profile():
 	if frappe.db.exists("POS Profile", "_Test VunaPOS Profile"):
 		profile = frappe.get_doc("POS Profile", "_Test VunaPOS Profile")
