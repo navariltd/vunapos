@@ -17,6 +17,7 @@ import { Button } from "../../../components/ui/Button";
 import { useGatewayPaymentRealtime } from "../hooks/useGatewayPaymentRealtime";
 import {
   allocateAllToMode,
+	allocatePaymentRemainderToNextMode,
   buildPaymentInputs,
   canCompletePaymentAllocation,
   calculatePaymentAllocation,
@@ -44,6 +45,7 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+	autoAllocatePaymentBalance?: boolean;
   allowSalesOrderPayments?: boolean;
   allowDeliveryCharges?: boolean;
   allowDeliveryChargeChange?: boolean;
@@ -126,6 +128,7 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
@@ -162,6 +165,7 @@ export function CheckoutDialog({
       key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+	  autoAllocatePaymentBalance={autoAllocatePaymentBalance}
       allowSalesOrderPayments={allowSalesOrderPayments}
       allowDeliveryCharges={allowDeliveryCharges}
       allowDeliveryChargeChange={allowDeliveryChargeChange}
@@ -194,6 +198,7 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
   allowDeliveryChargeChange,
@@ -1076,10 +1081,21 @@ function CheckoutDialogContent({
                               }}
                               onChange={(event) => {
                                 if (isGatewayControlled) return;
-                                setAmounts((current) => ({
-                                  ...current,
-                                  [mode.mode_of_payment]: event.target.value,
-                                }));
+                                setAmounts((current) => {
+                                  const next = {
+                                    ...current,
+                                    [mode.mode_of_payment]: event.target.value,
+                                  };
+                                  return autoAllocatePaymentBalance
+                                    ? allocatePaymentRemainderToNextMode(
+                                        availableModes,
+                                        next,
+                                        mode.mode_of_payment,
+                                        payableMinor,
+                                        precision,
+                                      )
+                                    : next;
+                                });
                               }}
                             />
                           </div>

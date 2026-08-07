@@ -119,6 +119,7 @@ export type CachedProfile = {
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
 	allow_credit_sales?: boolean;
+	auto_allocate_payment_balance?: boolean;
 	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;

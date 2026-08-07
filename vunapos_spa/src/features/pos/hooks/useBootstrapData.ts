@@ -37,6 +37,7 @@ export function useBootstrapData() {
 			rounding_method: profile.rounding_method,
 			allow_partial_payment: profile.allow_partial_payment,
 			allow_credit_sales: profile.allow_credit_sales,
+			auto_allocate_payment_balance: profile.auto_allocate_payment_balance,
 			default_sale_type: profile.default_sale_type,
 			allow_rate_change: profile.allow_rate_change,
 			allow_discount_change: profile.allow_discount_change,
