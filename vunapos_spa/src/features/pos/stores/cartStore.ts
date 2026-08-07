@@ -746,12 +746,20 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 	async function applyOptimisticLocalCart(
 		nextItems: InvoiceItemDTO[],
-		currentInvoice: InvoiceDTO,
+		currentInvoice: InvoiceDTO | null,
 		api: CartApi,
 	) {
 		// Publish the changed rows before the asynchronous local tax/total pass so
 		// serial and batch selections are immediately visible to Hold and Checkout.
-		const pendingInvoice = { ...currentInvoice, items: nextItems };
+		const pendingInvoice: InvoiceDTO = currentInvoice
+			? { ...currentInvoice, items: nextItems }
+			: {
+				doctype: "Sales Invoice",
+				name: "Not invoiced yet",
+				docstatus: 0,
+				items: nextItems,
+				totals: {},
+			};
 		set({ invoice: pendingInvoice, error: null });
 		const optimistic = await previewLocalCart(nextItems, pendingInvoice);
 		const revision = ++localCartRevision;
