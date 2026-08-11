@@ -46,6 +46,25 @@ export type CustomerContactPhoneDTO = {
 	source?: "Customer" | "Contact" | null;
 };
 
+export type CustomerAddressDTO = {
+	name: string;
+	customer: string;
+	address_title?: string | null;
+	address_type?: string | null;
+	address_line1?: string | null;
+	address_line2?: string | null;
+	city?: string | null;
+	state?: string | null;
+	country?: string | null;
+	pincode?: string | null;
+	phone?: string | null;
+	email_id?: string | null;
+	is_primary_address?: boolean | number;
+	is_shipping_address?: boolean | number;
+	is_default?: boolean;
+	formatted_address?: string;
+};
+
 export type CustomerLoyaltyDTO = {
 	customer: string;
 	enrolled: boolean;
@@ -172,6 +191,8 @@ export type BootstrapData = {
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
 	allow_credit_sales?: boolean;
+	auto_allocate_payment_balance?: boolean;
+	new_item_position?: "Top" | "Bottom";
 	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
@@ -181,10 +202,15 @@ export type BootstrapData = {
 	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
 	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_service_items?: boolean;
+	allow_delivery_charges?: boolean;
+	allow_delivery_charge_change?: boolean;
+	delivery_charge_item?: string | null;
 	allow_order_type_change?: boolean;
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;
 	allow_customer_payments?: boolean;
+	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
 	default_customer?: CustomerDTO | string | null;
@@ -199,6 +225,13 @@ export type BootstrapData = {
 		max_attempts: number;
 		processing_timeout_minutes: number;
 	};
+	enable_salesperson_pin?: boolean;
+	require_manager_pin_item_removal?: boolean;
+	require_pin_before_every_sale?: boolean;
+	pin_max_attempts?: number;
+	pin_lockout_minutes?: number;
+	salesperson_pin_session_minutes?: number;
+	pin_users?: Array<{ sales_person: string; display_name?: string; role: "Salesperson" | "Manager" }>;
 	session?: POSSessionDTO;
 };
 
@@ -228,6 +261,21 @@ export type ItemDTO = {
 	allow_negative_stock?: boolean | number;
 	has_batch_no?: boolean | number;
 	has_serial_no?: boolean | number;
+	is_product_bundle?: boolean;
+	bundle_items?: Array<{
+		item_code: string;
+		item_name?: string;
+		qty: number;
+		uom?: string | null;
+		available_qty?: number | null;
+		is_stock_item?: boolean;
+		has_batch_no?: boolean;
+		has_serial_no?: boolean;
+	}>;
+	has_variants?: boolean | number;
+	variant_count?: number;
+	variant_based_on?: string | null;
+	variant_of?: string | null;
 	barcode?: string | null;
 	scan_tracking?: {
 		type: "serial" | "batch";
@@ -311,6 +359,13 @@ export type InvoiceItemDTO = {
 	allow_negative_stock?: boolean | number;
 	has_batch_no?: boolean | number;
 	has_serial_no?: boolean | number;
+	is_product_bundle?: boolean | number;
+	bundle_items?: Array<{
+		item_code: string;
+		item_name?: string;
+		qty: number;
+		uom?: string | null;
+	}>;
 	warehouse?: string;
 	batch_no?: string | null;
 	serial_and_batch_bundle?: string | null;
@@ -353,6 +408,7 @@ export type InvoiceDTO = {
 	customer?: string;
 	customer_name?: string;
 	tax_id?: string | null;
+	shipping_address_name?: string | null;
 	selling_price_list?: string;
 	price_list_currency?: string;
 	redeem_loyalty_points?: boolean;

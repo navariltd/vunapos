@@ -97,6 +97,98 @@ def get_customer_contact_phone(pos_profile=None, customer=None):
 	}
 
 
+def get_customer_addresses(pos_profile=None, customer=None, limit=100):
+	"""Return permission-filtered ERPNext Address records linked to a customer."""
+	resolve_pos_profile(pos_profile)
+	if not customer:
+		frappe.throw(_("Customer is required"))
+	require_read("Customer", customer)
+	customer_doc = frappe.get_doc("Customer", customer)
+	require_read("Address")
+	limit = min(max(cint(limit) or 100, 1), 100)
+
+	links = frappe.get_all(
+		"Dynamic Link",
+		filters={"parenttype": "Address", "link_doctype": "Customer", "link_name": customer_doc.name},
+		pluck="parent",
+	)
+	if not links:
+		return []
+
+	address_meta = frappe.get_meta("Address")
+	available_fields = {field.fieldname for field in address_meta.fields if field.fieldname}
+	requested_fields = [
+		"name",
+		"address_title",
+		"address_type",
+		"address_line1",
+		"address_line2",
+		"city",
+		"state",
+		"country",
+		"pincode",
+		"phone",
+		"email_id",
+		"is_primary_address",
+		"is_shipping_address",
+		"disabled",
+	]
+	fields = [field for field in requested_fields if field == "name" or field in available_fields]
+	rows = frappe.get_list(
+		"Address",
+		filters={"name": ["in", links], "disabled": 0}
+		if "disabled" in available_fields
+		else {"name": ["in", links]},
+		fields=fields,
+		order_by="address_title asc, name asc",
+		limit_page_length=limit,
+	)
+	primary_name = customer_doc.get("customer_primary_address")
+	result = []
+	for row in rows:
+		values = dict(row)
+		lines = [
+			values.get("address_line1"),
+			values.get("address_line2"),
+			values.get("city"),
+			values.get("state"),
+			values.get("pincode"),
+			values.get("country"),
+		]
+		values["customer"] = customer_doc.name
+		values["is_default"] = values.get("name") == primary_name or bool(values.get("is_primary_address"))
+		values["formatted_address"] = ", ".join(
+			str(line).strip() for line in lines if line and str(line).strip()
+		)
+		result.append(values)
+	result.sort(
+		key=lambda row: (not row.get("is_default"), row.get("address_title") or row.get("name") or "")
+	)
+	return result
+
+
+def validate_customer_address(pos_profile=None, customer=None, address_name=None):
+	"""Validate and return one customer-linked Address for document submission."""
+	resolve_pos_profile(pos_profile)
+	if not customer or not address_name:
+		frappe.throw(_("Customer and shipping address are required"))
+	require_read("Customer", customer)
+	require_read("Address", address_name)
+	if not frappe.db.exists(
+		"Dynamic Link",
+		{"parent": address_name, "parenttype": "Address", "link_doctype": "Customer", "link_name": customer},
+	):
+		frappe.throw(_("Address {0} is not linked to customer {1}").format(address_name, customer))
+	return next(
+		(
+			row
+			for row in get_customer_addresses(pos_profile=pos_profile, customer=customer)
+			if row.get("name") == address_name
+		),
+		None,
+	)
+
+
 def get_customer_loyalty(pos_profile=None, customer=None):
 	"""Return the customer's live ERPNext loyalty ledger balance for the active company."""
 	profile = resolve_pos_profile(pos_profile)

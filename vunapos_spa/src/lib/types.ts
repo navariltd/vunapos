@@ -119,6 +119,8 @@ export type CachedProfile = {
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
 	allow_credit_sales?: boolean;
+	auto_allocate_payment_balance?: boolean;
+	new_item_position?: "Top" | "Bottom";
 	default_sale_type?: "Cash Sale" | "Credit Sale";
 	allow_rate_change?: boolean;
 	allow_discount_change?: boolean;
@@ -128,10 +130,15 @@ export type CachedProfile = {
 	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
 	default_order_type?: "Sales Invoice" | "Sales Order";
+	allow_service_items?: boolean;
+	allow_delivery_charges?: boolean;
+	allow_delivery_charge_change?: boolean;
+	delivery_charge_item?: string | null;
 	allow_order_type_change?: boolean;
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;
 	allow_customer_payments?: boolean;
+	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
 	default_customer?: unknown;
@@ -145,6 +152,13 @@ export type CachedProfile = {
 		max_attempts: number;
 		processing_timeout_minutes: number;
 	};
+	enable_salesperson_pin?: boolean;
+	require_manager_pin_item_removal?: boolean;
+	require_pin_before_every_sale?: boolean;
+	pin_max_attempts?: number;
+	pin_lockout_minutes?: number;
+	salesperson_pin_session_minutes?: number;
+	pin_users?: Array<{ sales_person: string; display_name?: string; role: "Salesperson" | "Manager" }>;
 	taxes_and_charges?: string | null;
 };
 

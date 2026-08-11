@@ -186,6 +186,11 @@ export function CartItemRow({
                     Free item
                   </span>
                 ) : null}
+                {item.is_product_bundle ? (
+                  <span className="rounded-full bg-secondary-container px-2 py-0.5 text-[10px] font-semibold uppercase text-on-secondary-container">
+                    Bundle
+                  </span>
+                ) : null}
               </span>
               <span className="block text-xs text-on-surface-variant">
                 {item.item_code}
@@ -272,6 +277,27 @@ export function CartItemRow({
             <p className="rounded-md bg-surface px-3 py-2 text-xs leading-5 text-on-surface-variant">
               {description}
             </p>
+          ) : null}
+
+          {item.is_product_bundle && item.bundle_items?.length ? (
+            <div className="rounded-md border border-outline-variant bg-surface p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+                Bundle components
+              </p>
+              <div className="mt-2 space-y-1">
+                {item.bundle_items.map((component) => (
+                  <div
+                    key={component.item_code}
+                    className="flex justify-between gap-3 text-xs text-on-surface"
+                  >
+                    <span>{component.item_name || component.item_code}</span>
+                    <span className="text-on-surface-variant">
+                      {component.qty * item.qty} {component.uom || "units"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           ) : null}
 
           <PricingEditor

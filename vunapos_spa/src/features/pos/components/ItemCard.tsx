@@ -1,4 +1,5 @@
-import { Plus } from "lucide-react";
+import { memo } from "react";
+import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
@@ -7,12 +8,15 @@ import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 type ItemCardProps = {
   currency?: string;
   disabled?: boolean;
+  pending?: boolean;
   item: ItemDTO;
   onAdd: (item: ItemDTO) => void;
 };
 
-export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
+export const ItemCard = memo(function ItemCard({ currency, disabled, item, onAdd, pending }: ItemCardProps) {
   const outOfStock =
+    !item.has_variants &&
+    !item.is_product_bundle &&
     Boolean(item.is_stock_item ?? true) &&
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&
@@ -20,7 +24,12 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
   const isDisabled = disabled || outOfStock;
 
   return (
-    <div className="flex min-h-40 flex-col overflow-hidden rounded-md border border-outline-variant bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44">
+    <div className={`relative flex min-h-40 flex-col overflow-hidden rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}>
+      {item.is_product_bundle ? (
+        <span className="pointer-events-none absolute left-[-29px] top-3 z-10 w-24 -rotate-45 bg-secondary-container py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-on-secondary-container shadow-sm">
+          Bundle
+        </span>
+      ) : null}
       <div
         className={`flex flex-1 flex-col text-left ${isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
         role="button"
@@ -76,7 +85,7 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
             </div>
             <Button
               size="sm"
-              className="size-9 shrink-0 p-0"
+              className={`size-9 shrink-0 p-0 ${pending ? "bg-primary-container text-on-primary-container" : ""}`}
               disabled={isDisabled}
               title={`Add ${item.item_name}`}
               aria-label={`Add ${item.item_name}`}
@@ -85,11 +94,11 @@ export function ItemCard({ currency, disabled, item, onAdd }: ItemCardProps) {
                 onAdd(item);
               }}
             >
-              <Plus className="size-4" />
+              {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             </Button>
           </div>
         </div>
       </div>
     </div>
   );
-}
+});

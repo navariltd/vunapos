@@ -8,6 +8,11 @@ def item_to_dict(
 	item_tax=None,
 	uoms=None,
 	pricing_rule=None,
+	is_product_bundle=False,
+	bundle_items=None,
+	variant_count=0,
+	variant_based_on=None,
+	variant_of=None,
 ):
 	price_list_rate = rate if price_list_rate is None else price_list_rate
 	uoms = uoms if uoms is not None else item.get("uoms", [])
@@ -35,6 +40,12 @@ def item_to_dict(
 		"rate": rate,
 		"price_list_rate": price_list_rate,
 		"pricing_rule": pricing_rule,
+		"is_product_bundle": bool(is_product_bundle),
+		"bundle_items": bundle_items or [],
+		"has_variants": bool(item.get("has_variants")),
+		"variant_count": int(variant_count or 0),
+		"variant_based_on": variant_based_on or item.get("variant_based_on"),
+		"variant_of": variant_of or item.get("variant_of"),
 		"actual_qty": actual_qty,
 		"is_stock_item": item.is_stock_item,
 		"allow_negative_stock": item.allow_negative_stock,

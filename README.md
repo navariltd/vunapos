@@ -3,11 +3,17 @@
     <p align="center">
         <p>Fast, flexible point-of-sale for ERPNext</p>
     </p>
+
+[![CI](https://github.com/navariltd/vunapos/actions/workflows/ci.yml/badge.svg?event=schedule)](https://github.com/navariltd/vunapos/actions/workflows/ci.yml)
+
 </div>
 
 <div align="center">
-	<!-- <img src="./frappoint/public/images/hero_image.png"/> -->
-    <!-- Include a calendar image showcassing the booked appointments, dashboard sort of -->
+	<img width="1562" height="1036" alt="image" src="https://github.com/user-attachments/assets/1f9d65a1-e68e-4c2d-a642-b892342c0d98" />
+</div>
+
+<div align="center">
+	<a href="https://docs.navari.co.ke/vunapos/">Documentation</a>
 </div>
 
 ## VunaPOS
@@ -25,6 +31,7 @@ It provides cashiers with a fast and focused interface for finding items, select
 * **Flexible Invoicing** - Create either a **Sales Invoice** or **POS Invoice**, depending on the configured POS Settings.
 * **Tax Handling** - Support ERPNext inclusive and exclusive tax calculations.
 * **Batch Allocation** - Automatically allocate stock from valid batches, including quantities distributed across multiple batches.
+* **Serial Number Allocation** - Automatically allocate available serial numbers for serialised items during checkout.
 * **Multiple Payment Modes** - Use the payment methods configured in the ERPNext POS Profile.
 * **M-Pesa Payments** - Verify payments using STK Push or existing C2B transactions.
 * **Receipt Printing** - Render and print receipts using ERPNext Print Formats.

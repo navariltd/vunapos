@@ -83,6 +83,9 @@ def checkout_invoice(
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -95,6 +98,9 @@ def checkout_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:
@@ -119,6 +125,7 @@ def get_invoice_history(
 	status: str | None = None,
 	payment_mode: str | None = None,
 	sale_type: str | None = None,
+	document_type: str = "Invoice",
 	current_shift: int | str = 1,
 	start: int | str = 0,
 	page_length: int | str = 50,
@@ -134,6 +141,7 @@ def get_invoice_history(
 				status=status,
 				payment_mode=payment_mode,
 				sale_type=sale_type,
+				document_type=document_type,
 				current_shift=current_shift,
 				start=start,
 				page_length=page_length,
@@ -160,9 +168,19 @@ def retry_queued_invoice(pos_profile: str, invoice_name: str):
 
 
 @frappe.whitelist()
-def get_invoice_details(pos_profile: str | None = None, invoice_name: str | None = None):
+def get_invoice_details(
+	pos_profile: str | None = None,
+	invoice_name: str | None = None,
+	invoice_doctype: str | None = None,
+):
 	try:
-		return success(get_invoice_details_service(pos_profile=pos_profile, invoice_name=invoice_name))
+		return success(
+			get_invoice_details_service(
+				pos_profile=pos_profile,
+				invoice_name=invoice_name,
+				invoice_doctype=invoice_doctype,
+			)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
@@ -228,13 +246,19 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 
 
 @frappe.whitelist()
-def remove_item(invoice_doctype, invoice_name, row_name):
+def remove_item(
+	invoice_doctype: str,
+	invoice_name: str,
+	row_name: str,
+	manager_pin_token: str | None = None,
+):
 	try:
 		return success(
 			remove_item_service(
 				invoice_doctype=invoice_doctype,
 				invoice_name=invoice_name,
 				row_name=row_name,
+				manager_pin_token=manager_pin_token,
 			)
 		)
 	except Exception as exc:
@@ -250,6 +274,9 @@ def submit_invoice(
 	due_date: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -261,6 +288,9 @@ def submit_invoice(
 				due_date=due_date,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:
@@ -279,6 +309,9 @@ def create_and_submit_invoice(
 	price_list: str | None = None,
 	loyalty_points: int | str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -293,6 +326,9 @@ def create_and_submit_invoice(
 				price_list=price_list,
 				loyalty_points=loyalty_points,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:
@@ -304,10 +340,14 @@ def create_and_submit_sales_order(
 	pos_profile: str | None = None,
 	customer: str | None = None,
 	items: list | str | None = None,
+	payments: list | str | None = None,
 	idempotency_key: str | None = None,
 	price_list: str | None = None,
 	delivery_date: str | None = None,
 	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	salesperson: str | None = None,
+	salesperson_token: str | None = None,
 ):
 	try:
 		return success(
@@ -315,10 +355,14 @@ def create_and_submit_sales_order(
 				pos_profile=pos_profile,
 				customer=customer,
 				items=items,
+				payments=payments,
 				idempotency_key=idempotency_key,
 				price_list=price_list,
 				delivery_date=delivery_date,
 				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				salesperson=salesperson,
+				salesperson_token=salesperson_token,
 			)
 		)
 	except Exception as exc:

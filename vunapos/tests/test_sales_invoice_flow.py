@@ -36,8 +36,10 @@ from vunapos.tests.helpers import (
 	ensure_open_pos_opening_entry,
 	ensure_sales_tax_template,
 	ensure_test_batch_item,
+	ensure_test_customer,
 	ensure_test_item,
 	ensure_test_pos_profile,
+	ensure_test_shipping_address,
 	ensure_test_stock_item,
 	set_invoice_mode,
 	set_profile_tax_template,
@@ -203,11 +205,15 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def test_create_and_submit_sales_order_from_cart(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
+		customer = ensure_test_customer()
+		address = ensure_test_shipping_address(customer)
 
 		response = create_and_submit_sales_order(
 			pos_profile=profile,
+			customer=customer,
 			items=[{"item_code": item_code, "qty": 2}],
 			idempotency_key="sales-order-checkout-key",
+			shipping_address_name=address,
 		)
 
 		self.assertTrue(response["ok"], response)
@@ -216,6 +222,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(order["docstatus"], 1)
 		self.assertEqual(order["items"][0]["item_code"], item_code)
 		self.assertEqual(order["items"][0]["qty"], 2)
+		self.assertEqual(order["shipping_address_name"], address)
 		self.assertEqual(frappe.db.get_value("Sales Order", order["name"], "vunapos_invoice"), 1)
 		self.assertEqual(
 			frappe.db.get_value("Sales Order", order["name"], "vunapos_pos_profile"),
@@ -225,6 +232,50 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			frappe.db.get_value("Sales Order", order["name"], "vunapos_session_cashier"),
 			frappe.session.user,
 		)
+
+	def test_checkout_persists_customer_shipping_address(self):
+		profile = ensure_test_pos_profile()
+		customer = ensure_test_customer()
+		address = ensure_test_shipping_address(customer)
+		item_code = ensure_test_item()
+
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			customer=customer,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="shipping-address-checkout-key",
+			shipping_address_name=address,
+		)
+
+		self.assertTrue(response["ok"], response)
+		invoice = response["data"]
+		self.assertEqual(invoice["shipping_address_name"], address)
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", invoice["name"], "shipping_address_name"),
+			address,
+		)
+
+	def test_checkout_rejects_shipping_address_for_another_customer(self):
+		profile = ensure_test_pos_profile()
+		customer = ensure_test_customer()
+		other_customer = frappe.db.get_value("Customer", {"name": ["!=", customer]}, "name")
+		if not other_customer:
+			self.skipTest("A second customer is required for address ownership coverage")
+		address = ensure_test_shipping_address(other_customer)
+		item_code = ensure_test_item()
+
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			customer=customer,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="shipping-address-ownership-key",
+			shipping_address_name=address,
+		)
+
+		self.assertFalse(response["ok"])
+		self.assertEqual(response["errors"][0]["code"], "ValidationError")
 
 	def test_sales_order_checkout_with_same_idempotency_key_does_not_duplicate(self):
 		profile = ensure_test_pos_profile()

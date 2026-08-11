@@ -65,7 +65,13 @@ def invoice_to_dict(doc):
 		row.item_code: frappe.get_cached_value(
 			"Item",
 			row.item_code,
-			["is_stock_item", "allow_negative_stock", "has_batch_no", "has_serial_no"],
+			[
+				"is_stock_item",
+				"allow_negative_stock",
+				"has_batch_no",
+				"has_serial_no",
+				"is_product_bundle",
+			],
 			as_dict=True,
 		)
 		for row in doc.get("items", [])
@@ -80,6 +86,27 @@ def invoice_to_dict(doc):
 		]
 		for row in doc.get("items", [])
 	}
+	bundle_codes = [
+		row.item_code
+		for row in doc.get("items", [])
+		if (item_tracking.get(row.item_code) or {}).get("is_product_bundle")
+	]
+	bundle_map = {}
+	if bundle_codes:
+		for component in frappe.get_all(
+			"Product Bundle Item",
+			filters={"parent": ["in", bundle_codes], "parenttype": "Product Bundle"},
+			fields=["parent", "item_code", "item_name", "qty", "uom"],
+			order_by="idx asc",
+		):
+			bundle_map.setdefault(component.parent, []).append(
+				{
+					"item_code": component.item_code,
+					"item_name": component.item_name,
+					"qty": component.qty,
+					"uom": component.uom,
+				}
+			)
 	return {
 		"doctype": doc.doctype,
 		"name": doc.name,
@@ -94,6 +121,7 @@ def invoice_to_dict(doc):
 		"customer": _value(doc, "customer"),
 		"customer_name": _value(doc, "customer_name"),
 		"tax_id": _value(doc, "tax_id"),
+		"shipping_address_name": _value(doc, "shipping_address_name"),
 		"selling_price_list": _value(doc, "selling_price_list"),
 		"price_list_currency": _value(doc, "price_list_currency"),
 		"redeem_loyalty_points": bool(_value(doc, "redeem_loyalty_points", 0)),
@@ -125,6 +153,8 @@ def invoice_to_dict(doc):
 				"allow_negative_stock": (item_tracking.get(row.item_code) or {}).get("allow_negative_stock"),
 				"has_batch_no": (item_tracking.get(row.item_code) or {}).get("has_batch_no"),
 				"has_serial_no": (item_tracking.get(row.item_code) or {}).get("has_serial_no"),
+				"is_product_bundle": bool((item_tracking.get(row.item_code) or {}).get("is_product_bundle")),
+				"bundle_items": bundle_map.get(row.item_code, []),
 				"batch_no": row.get("batch_no"),
 				"serial_and_batch_bundle": row.get("serial_and_batch_bundle"),
 				"batch_allocations": _batch_allocations(row),

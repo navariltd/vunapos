@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFrappePostCall } from "frappe-react-sdk";
 import { ShoppingCart, X } from "lucide-react";
 
 import type {
+	CustomerAddressDTO,
   HeldInvoiceDTO,
   ItemDTO,
   PaymentInput,
@@ -13,12 +15,20 @@ import {
   normalizeDefaultCustomer,
 } from "./utils";
 import {
-  getCustomerFromPath,
-  getInvoiceFromPath,
+	getCustomerFromPath,
+	getInvoiceDoctypeFromPath,
+	getInvoiceFromPath,
   navigateToPosPage,
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
-import { VunaApiError } from "../../services/vunaApi";
+import {
+  getItemDetails,
+  getCustomerAddresses,
+  getProductBundle,
+  getTemplateVariants,
+  vunaMethods,
+  VunaApiError,
+} from "../../services/vunaApi";
 import { CartPanel } from "./components/CartPanel";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
@@ -33,6 +43,16 @@ import { ItemGrid } from "./components/ItemGrid";
 import { ItemSearch } from "./components/ItemSearch";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
+import {
+  VariantPickerDialog,
+  type TemplateVariant,
+} from "./components/VariantPickerDialog";
+import {
+  ProductBundleDialog,
+  type ProductBundleDetails,
+} from "./components/ProductBundleDialog";
+import { ManagerPinDialog } from "./components/ManagerPinDialog";
+import { SalespersonPinLock } from "./components/SalespersonPinLock";
 import { useBootstrapData } from "./hooks/useBootstrapData";
 import { useCartActions } from "./hooks/useCartActions";
 import { useConnectivity } from "./hooks/useConnectivity";
@@ -50,6 +70,10 @@ import type { OrderType } from "../../components/layout/Header";
 type POSHomePageProps = {
   bootstrap?: ReturnType<typeof useBootstrapData>;
   orderType?: OrderType;
+  salesperson?: { name: string; displayName: string; token: string } | null;
+  salespersonLocked?: boolean;
+	onSalespersonVerified?: (salesperson: { name: string; displayName: string; token: string; expiresIn: number }) => void;
+  onLockSalesperson?: () => void;
 };
 
 function printInvoiceHtml(printPayload: PrintPayload) {
@@ -91,6 +115,15 @@ function getCheckoutErrorMessage(error: unknown) {
     if (error.code === "EMPTY_INVOICE") {
       return "Add at least one item before checkout.";
     }
+    if (error.code === "SERVICE_ITEMS_DISABLED") {
+      return "Service items are disabled for this POS Profile.";
+    }
+    if (error.code === "INVALID_DELIVERY_CHARGE_ITEM") {
+      return "The configured Delivery Charge Item must have Maintain Stock disabled.";
+    }
+    if (error.code === "DUPLICATE_DELIVERY_CHARGE") {
+      return "Only one Delivery Charge line is allowed on an invoice.";
+    }
   }
   return error instanceof Error ? error.message : "Checkout failed";
 }
@@ -118,15 +151,29 @@ function FeatureDisabled({
 export function POSHomePage({
   bootstrap: providedBootstrap,
   orderType = "Sales Invoice",
+  salesperson,
+  salespersonLocked = false,
+  onSalespersonVerified,
+  onLockSalesperson,
 }: POSHomePageProps) {
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isBarcodeScannerOpen, setIsBarcodeScannerOpen] = useState(false);
+  const [variantPickerItem, setVariantPickerItem] = useState<ItemDTO | null>(null);
+  const [variantOptions, setVariantOptions] = useState<TemplateVariant[]>([]);
+  const [variantError, setVariantError] = useState<string | null>(null);
+  const [bundleItem, setBundleItem] = useState<ItemDTO | null>(null);
+  const [bundleDetails, setBundleDetails] = useState<ProductBundleDetails | null>(null);
+  const [bundleError, setBundleError] = useState<string | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [clearCartConfirmation, setClearCartConfirmation] = useState<{
     closeCheckout: boolean;
   } | null>(null);
+  const [managerPinTarget, setManagerPinTarget] = useState<string | null>(null);
+  const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
+  const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
+  const [customerAddressesCustomer, setCustomerAddressesCustomer] = useState<string | null>(null);
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -168,9 +215,63 @@ export function POSHomePage({
   const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
   const cartError = useCartStore((s) => s.error);
   const setCartPosProfile = useCartStore((s) => s.setPosProfile);
+  const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+
+  useEffect(() => {
+    setCartNewItemPosition(bootstrap.data?.new_item_position);
+  }, [bootstrap.data?.new_item_position, setCartNewItemPosition]);
   const cartActions = useCartActions();
+  const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
+  const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
+  const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
+  const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+  const activeCustomerName = activeCustomer?.customer;
+
+  useEffect(() => {
+    if (!isCheckoutOpen || !activeCustomerName) return;
+    let cancelled = false;
+    void getCustomerAddresses(customerAddressesCall.call, {
+      pos_profile: bootstrap.data?.pos_profile,
+      customer: activeCustomerName,
+      limit: 100,
+    })
+      .then((addresses) => {
+        if (!cancelled) {
+          setCustomerAddresses(addresses);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomerAddresses([]);
+          setCustomerAddressesCustomer(activeCustomerName);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCustomerAddressesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
+
+  const handleRemoveItem = useCallback(
+    (rowName: string) => {
+      if (bootstrap.data?.require_manager_pin_item_removal) {
+        setManagerPinTarget(rowName);
+        return;
+      }
+      void cartActions.removeCartItem(rowName).catch((reason: unknown) => {
+        showToast({
+          type: "error",
+          message: reason instanceof Error ? reason.message : "Unable to remove item.",
+        });
+      });
+    },
+    [bootstrap.data?.require_manager_pin_item_removal, cartActions, showToast],
+  );
   const gatewayPayments = useGatewayPayments();
   const { isReachable } = useConnectivity();
   const customerLoyalty = useCustomerLoyalty(
@@ -359,7 +460,36 @@ export function POSHomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bootstrap.data?.pos_profile, isReachable, showToast]);
 
-  const handleAddItem = useCallback(
+  const openVariantPicker = useCallback(
+    async (item: ItemDTO) => {
+      setVariantPickerItem(item);
+      setVariantOptions([]);
+      setVariantError(null);
+      try {
+        const result = await getTemplateVariants(templateVariantsCall.call, {
+          template_item_code: item.item_code,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list:
+            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        setVariantOptions(result.variants || []);
+      } catch (error) {
+        setVariantError(
+          error instanceof Error ? error.message : "Unable to load item variants.",
+        );
+      }
+    },
+    [
+      activeCustomer,
+      bootstrap.data,
+      cartInvoice,
+      selectedPriceList,
+      templateVariantsCall.call,
+    ],
+  );
+
+  const addConcreteItem = useCallback(
     async (item: ItemDTO) => {
       setPageError(null);
       clearToast();
@@ -372,11 +502,103 @@ export function POSHomePage({
           message: err instanceof Error ? err.message : "Failed to add item",
         });
       } finally {
+        // The cart update is optimistic and can complete before the browser has
+        // painted a loading state. Keep the clicked row visibly active briefly
+        // so the cashier receives reliable feedback even on fast connections.
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
         setPendingItemCode(null);
       }
     },
     [cartActions, clearToast, setPageError, showToast],
   );
+
+  const openProductBundle = useCallback(
+    async (item: ItemDTO) => {
+      setBundleItem(item);
+      setBundleDetails(null);
+      setBundleError(null);
+      try {
+        const result = await getProductBundle(productBundleCall.call, {
+          item_code: item.item_code,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list:
+            selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        setBundleDetails(result);
+      } catch (error) {
+        setBundleError(
+          error instanceof Error ? error.message : "Unable to load bundle components.",
+        );
+      }
+    },
+    [
+      activeCustomer,
+      bootstrap.data,
+      cartInvoice,
+      productBundleCall.call,
+      selectedPriceList,
+    ],
+  );
+
+  const handleAddItem = useCallback(
+    async (item: ItemDTO) => {
+      if (item.has_variants) {
+        await openVariantPicker(item);
+        return;
+      }
+      if (item.is_product_bundle) {
+        await openProductBundle(item);
+        return;
+      }
+      await addConcreteItem(item);
+    },
+    [addConcreteItem, openProductBundle, openVariantPicker],
+  );
+
+  const applyDeliveryCharge = useCallback(
+    async (amount?: number) => {
+      const itemCode = bootstrap.data?.delivery_charge_item;
+      if (!itemCode) return;
+      let row = useCartStore.getState().invoice?.items.find((item) => item.item_code === itemCode);
+      if (amount === undefined || amount <= 0) {
+        if (row) await cartActions.removeCartItem(row.row_name);
+        return;
+      }
+      if (!row) {
+        const item = await getItemDetails(itemDetailsCall.call, {
+          item_code: itemCode,
+          pos_profile: bootstrap.data?.pos_profile,
+          customer: activeCustomer?.customer,
+          price_list: selectedPriceList || cartInvoice?.selling_price_list || bootstrap.data?.price_list,
+        });
+        await cartActions.addCartItem(item);
+        row = useCartStore.getState().invoice?.items.find((item) => item.item_code === itemCode);
+      }
+      const rate = amount && Number.isFinite(amount) && amount > 0 ? amount : Number(row?.rate || 0);
+      if (row && rate > 0 && Number(row.rate) !== rate) {
+        await cartActions.updateCartItemPricing(row.row_name, { type: "rate", value: rate });
+      }
+    },
+    [
+      activeCustomer?.customer,
+      bootstrap.data,
+      cartActions,
+      cartInvoice?.selling_price_list,
+      itemDetailsCall.call,
+      selectedPriceList,
+    ],
+  );
+
+  const handleSelectVariant = useCallback(
+    (variant: TemplateVariant) => {
+      setVariantPickerItem(null);
+      setVariantOptions([]);
+      void addConcreteItem(variant);
+    },
+    [addConcreteItem],
+  );
+
 
   useEffect(() => {
     const query = itemSearchQuery.trim();
@@ -467,6 +689,9 @@ export function POSHomePage({
         return;
       }
       setIsCartOpen(false);
+      setCustomerAddresses([]);
+      setCustomerAddressesCustomer(null);
+      setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
       showToast({
@@ -586,6 +811,7 @@ export function POSHomePage({
     dueDate?: string,
     loyaltyPoints?: number,
     taxId?: string,
+    shippingAddressName?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -606,9 +832,15 @@ export function POSHomePage({
         dueDate,
         loyaltyPoints,
         taxId,
+        shippingAddressName,
         orderType,
+        salesperson?.name,
+        salesperson?.token,
       );
       setIsCheckoutOpen(false);
+      if (bootstrap.data?.require_pin_before_every_sale) {
+        onLockSalesperson?.();
+      }
       void handleSelectCustomer(undefined, false);
       if (result?.invoice) {
         const queued =
@@ -640,6 +872,20 @@ export function POSHomePage({
       }
     } catch (err) {
       customerLoyalty.refresh();
+      if (
+        err instanceof VunaApiError &&
+        ["PIN_TOKEN_INVALID", "PIN_TOKEN_REQUIRED", "SALESPERSON_REQUIRED"].includes(
+          err.code || "",
+        )
+      ) {
+        setIsCheckoutOpen(false);
+        onLockSalesperson?.();
+        showToast({
+          type: "info",
+          message: "Your salesperson PIN session expired. Verify your PIN to continue.",
+        });
+        return;
+      }
       showToast({ type: "error", message: getCheckoutErrorMessage(err) });
     }
   };
@@ -666,6 +912,7 @@ export function POSHomePage({
         getInvoiceFromPath(currentPath) ? (
           <InvoiceDetailsPage
             invoice={getInvoiceFromPath(currentPath) || ""}
+            invoiceDoctype={getInvoiceDoctypeFromPath(currentPath)}
             posProfile={bootstrap.data?.pos_profile}
             isOnline={isReachable && navigator.onLine !== false}
             onStartSale={(customer) => {
@@ -789,7 +1036,7 @@ export function POSHomePage({
             onClearCart={() => handleClearCart(false)}
             onHold={handleHoldCart}
             onLoadBatches={cartActions.loadItemBatches}
-            onRemoveItem={cartActions.removeCartItem}
+            onRemoveItem={handleRemoveItem}
             onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
             onSelectPriceList={(priceList) =>
               void handleSelectPriceList(priceList)
@@ -876,7 +1123,7 @@ export function POSHomePage({
               onClearCart={() => handleClearCart(false)}
               onHold={handleHoldCart}
               onLoadBatches={cartActions.loadItemBatches}
-              onRemoveItem={cartActions.removeCartItem}
+              onRemoveItem={handleRemoveItem}
               onSelectCustomer={(customer) =>
                 void handleSelectCustomer(customer)
               }
@@ -901,11 +1148,22 @@ export function POSHomePage({
       ) : null}
 
       <CheckoutDialog
+        allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
+		    autoAllocatePaymentBalance={bootstrap.data?.auto_allocate_payment_balance}
+        allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
+        allowDeliveryChargeChange={bootstrap.data?.allow_delivery_charge_change}
+        deliveryChargeItem={bootstrap.data?.delivery_charge_item}
         currency={bootstrap.data?.currency}
         currencyPrecision={bootstrap.data?.currency_precision}
         customer={activeCustomer}
+        customerAddresses={
+          customerAddressesCustomer === activeCustomer?.customer
+            ? customerAddresses
+            : []
+        }
+        customerAddressesLoading={customerAddressesLoading}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
         isOpen={isCheckoutOpen}
@@ -914,6 +1172,7 @@ export function POSHomePage({
         onClear={() => {
           if (handleClearCart(true)) setIsCheckoutOpen(false);
         }}
+        onApplyDeliveryCharge={applyDeliveryCharge}
         onClose={() => setIsCheckoutOpen(false)}
         onConfirm={handleCheckout}
         onHold={() => {
@@ -953,6 +1212,34 @@ export function POSHomePage({
         }
         orderType={orderType}
         posProfile={bootstrap.data?.pos_profile}
+      />
+
+      <ManagerPinDialog
+        isOpen={Boolean(managerPinTarget)}
+        posProfile={bootstrap.data?.pos_profile}
+        onCancel={() => setManagerPinTarget(null)}
+        onApproved={(managerPinToken) => {
+          const rowName = managerPinTarget;
+          setManagerPinTarget(null);
+          if (rowName) {
+            void cartActions.removeCartItem(rowName, managerPinToken).catch((reason: unknown) => {
+              showToast({
+                type: "error",
+                message: reason instanceof Error ? reason.message : "Unable to remove item.",
+              });
+            });
+          }
+        }}
+      />
+
+      <SalespersonPinLock
+        enabled={Boolean(bootstrap.data?.enable_salesperson_pin && salespersonLocked)}
+        posProfile={bootstrap.data?.pos_profile}
+        pinUsers={bootstrap.data?.pin_users}
+			onVerified={(name, displayName, token, expiresIn) => {
+				onSalespersonVerified?.({ name, displayName, token, expiresIn });
+          showToast({ type: "info", message: `${displayName} is ready to sell.` });
+        }}
       />
 
       {toast?.type === "queued" ? (
@@ -1025,6 +1312,42 @@ export function POSHomePage({
           <strong>{cartInvoice?.items?.length || 0}</strong>
         </div>
       </ConfirmDialog>
+      <VariantPickerDialog
+        key={variantPickerItem?.item_code || "variant-picker"}
+        currency={bootstrap.data?.currency}
+        error={variantError}
+        isLoading={templateVariantsCall.loading}
+        isOpen={Boolean(variantPickerItem)}
+        template={variantPickerItem}
+        variants={variantOptions}
+        onClose={() => {
+          setVariantPickerItem(null);
+          setVariantOptions([]);
+          setVariantError(null);
+        }}
+        onSelect={handleSelectVariant}
+      />
+      <ProductBundleDialog
+        key={bundleItem?.item_code || "product-bundle"}
+        bundle={bundleItem}
+        currency={bootstrap.data?.currency}
+        details={bundleDetails}
+        error={bundleError}
+        isLoading={productBundleCall.loading}
+        isOpen={Boolean(bundleItem)}
+        onClose={() => {
+          setBundleItem(null);
+          setBundleDetails(null);
+          setBundleError(null);
+        }}
+        onConfirm={() => {
+          if (!bundleItem) return;
+          setBundleItem(null);
+          setBundleDetails(null);
+          setBundleError(null);
+          void addConcreteItem(bundleItem);
+        }}
+      />
       <BarcodeScannerDialog
         open={isBarcodeScannerOpen}
         onClose={() => setIsBarcodeScannerOpen(false)}

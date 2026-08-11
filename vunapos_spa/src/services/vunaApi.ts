@@ -3,6 +3,7 @@ import type {
 	BootstrapData,
 	C2BGatewayPaymentDTO,
 	CustomerContactPhoneDTO,
+	CustomerAddressDTO,
 	CustomerDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
@@ -51,6 +52,8 @@ export const vunaMethods = {
 	searchItems: "vunapos.api.item.search_items",
 	resolveBarcode: "vunapos.api.item.resolve_barcode",
 	getItemDetails: "vunapos.api.item.get_item_details",
+	getProductBundle: "vunapos.api.item.get_product_bundle",
+	getTemplateVariants: "vunapos.api.item.get_template_variants",
 	getItemBatches: "vunapos.api.batch.get_item_batches",
 	allocateBatches: "vunapos.api.batch.allocate_batches",
 	searchCustomers: "vunapos.api.customer.search_customers",
@@ -70,6 +73,7 @@ export const vunaMethods = {
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
 	searchC2bGatewayPayments: "vunapos.api.gateway.search_c2b_gateway_payments",
 	createCustomer: "vunapos.api.customer.create_customer",
+	getCustomerAddresses: "vunapos.api.customer.get_customer_addresses",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
 	getInvoice: "vunapos.api.sales.get_invoice",
@@ -96,6 +100,9 @@ export const vunaMethods = {
 	getCsrfToken: "vunapos.api.auth.get_csrf_token",
 	getClosingPreview: "vunapos.api.pos_closing.get_preview",
 	closePosSession: "vunapos.api.pos_closing.close_session",
+	verifySalespersonPin: "vunapos.api.pin.verify_salesperson",
+	refreshSalespersonPin: "vunapos.api.pin.refresh_salesperson",
+	verifyManagerPin: "vunapos.api.pin.verify_manager",
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
@@ -143,6 +150,30 @@ export function closePosSession(
 	return callAndUnwrap<POSClosingPreviewDTO>(call, params);
 }
 
+export function verifySalespersonPin(
+	call: FrappeCall,
+	params: { pos_profile: string; salesperson: string; pin: string },
+) {
+	return callAndUnwrap<{ token: string; salesperson: string; display_name: string; expires_in: number }>(
+		call,
+		params,
+	);
+}
+
+export function refreshSalespersonPin(call: FrappeCall, params: { pos_profile: string; token: string }) {
+	return callAndUnwrap<{ token: string; salesperson: string; display_name: string; expires_in: number }>(
+		call,
+		params,
+	);
+}
+
+export function verifyManagerPin(
+	call: FrappeCall,
+	params: { pos_profile: string; pin: string; action?: string },
+) {
+	return callAndUnwrap<{ token: string; manager: string; display_name: string; expires_in: number }>(call, params);
+}
+
 export function searchItems(
 	call: FrappeCall,
 	params: { query?: string; pos_profile?: string; customer?: string; price_list?: string; limit?: number },
@@ -162,6 +193,29 @@ export function getItemDetails(
 	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
 ) {
 	return callAndUnwrap<ItemDTO>(call, params);
+}
+
+export function getProductBundle(
+	call: FrappeCall,
+	params: { item_code: string; pos_profile?: string; customer?: string; price_list?: string },
+) {
+	return callAndUnwrap<{
+		item_code: string;
+		price_list?: string;
+		warehouse?: string;
+		available_qty?: number | null;
+		items: NonNullable<ItemDTO["bundle_items"]>;
+	}>(call, params);
+}
+
+export function getTemplateVariants(
+	call: FrappeCall,
+	params: { template_item_code: string; pos_profile?: string; customer?: string; price_list?: string },
+) {
+	return callAndUnwrap<{
+		template: Pick<ItemDTO, "item_code" | "item_name" | "description" | "variant_based_on">;
+		variants: Array<ItemDTO & { attributes: Array<{ attribute: string; value: string }> }>;
+	}>(call, params);
 }
 
 export function getItemBatches(
@@ -211,6 +265,13 @@ export function getCustomerContactPhone(
 	return callAndUnwrap<CustomerContactPhoneDTO>(call, params);
 }
 
+export function getCustomerAddresses(
+	call: FrappeCall,
+	params: { pos_profile?: string; customer: string; limit?: number },
+) {
+	return callAndUnwrap<CustomerAddressDTO[]>(call, params);
+}
+
 export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: string; customer: string }) {
 	return callAndUnwrap<CustomerLoyaltyDTO>(call, params);
 }
@@ -232,6 +293,7 @@ export function initiateStkGatewayPayment(
 		customer?: string;
 		currency?: string;
 		idempotency_key?: string;
+		account_reference?: string;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
@@ -315,7 +377,7 @@ export function updateItem(
 
 export function removeItem(
 	call: FrappeCall,
-	params: { invoice_doctype: string; invoice_name: string; row_name: string },
+	params: { invoice_doctype: string; invoice_name: string; row_name: string; manager_pin_token?: string },
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, params);
 }
@@ -330,6 +392,9 @@ export function submitInvoice(
 		due_date?: string;
 		loyalty_points?: number;
 		tax_id?: string;
+		shipping_address_name?: string;
+		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -349,6 +414,9 @@ export function checkoutInvoice(
 		due_date?: string;
 		loyalty_points?: number;
 		tax_id?: string;
+		shipping_address_name?: string;
+		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -381,6 +449,9 @@ export function createAndSubmitInvoice(
 		is_credit_sale?: boolean;
 		due_date?: string;
 		tax_id?: string;
+		shipping_address_name?: string;
+		salesperson?: string;
+		salesperson_token?: string;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
@@ -400,11 +471,16 @@ export function createAndSubmitSalesOrder(
 		idempotency_key?: string;
 		delivery_date?: string;
 		tax_id?: string;
+		shipping_address_name?: string;
+		salesperson?: string;
+		salesperson_token?: string;
+		payments?: PaymentInput[];
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
+		payments: JSON.stringify(params.payments || []),
 	});
 }
 

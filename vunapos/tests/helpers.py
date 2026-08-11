@@ -96,9 +96,45 @@ def ensure_test_customer():
 	return customer.name
 
 
+def ensure_test_shipping_address(customer=None):
+	"""Create a reusable customer-linked shipping address for POS checkout tests."""
+	customer = customer or ensure_test_customer()
+	address_title = f"_Test Vuna Shipping Address {customer}"
+	address_name = frappe.db.get_value(
+		"Address",
+		{"address_title": address_title, "address_type": "Shipping"},
+		"name",
+	)
+	if address_name:
+		address = frappe.get_doc("Address", address_name)
+		if not any(
+			link.link_doctype == "Customer" and link.link_name == customer
+			for link in address.get("links", [])
+		):
+			address.append("links", {"link_doctype": "Customer", "link_name": customer})
+			address.save(ignore_permissions=True)
+		return address.name
+	address = frappe.get_doc(
+		{
+			"doctype": "Address",
+			"address_title": address_title,
+			"address_type": "Shipping",
+			"address_line1": "1 Vuna Way",
+			"city": "Nairobi",
+			"country": "Kenya",
+			"links": [{"link_doctype": "Customer", "link_name": customer}],
+		}
+	)
+	address.insert(ignore_permissions=True)
+	return address.name
+
+
 def ensure_test_pos_profile():
 	if frappe.db.exists("POS Profile", "_Test VunaPOS Profile"):
 		profile = frappe.get_doc("POS Profile", "_Test VunaPOS Profile")
+		if profile.meta.has_field("vunapos_allow_service_items") and not profile.vunapos_allow_service_items:
+			profile.vunapos_allow_service_items = 1
+			profile.save(ignore_permissions=True)
 		if not any(row.user == frappe.session.user for row in profile.get("applicable_for_users", [])):
 			profile.append("applicable_for_users", {"user": frappe.session.user, "default": 0})
 			profile.save(ignore_permissions=True)
@@ -122,6 +158,7 @@ def ensure_test_pos_profile():
 			"expense_account": _account(company, root_type="Expense"),
 			"cost_center": _cost_center(company),
 			"write_off_limit": 1,
+			"vunapos_allow_service_items": 1,
 		}
 	)
 	profile.append("payments", {"mode_of_payment": mode_of_payment, "default": 1})
