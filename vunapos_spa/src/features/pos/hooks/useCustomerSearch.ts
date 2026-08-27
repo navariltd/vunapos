@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
 
 import type { CustomerDTO } from "../types";
-import { createCustomer, vunaMethods } from "../../../services/vunaApi";
+import { createCustomer, searchCustomers, vunaMethods } from "../../../services/vunaApi";
 import { customerRepository } from "../../../lib/repositories/customerRepository";
 import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 
@@ -10,6 +10,7 @@ import { useRuntimeCacheStore } from "../../../lib/stores/runtimeCacheStore";
 // remains server-authoritative and requires connectivity.
 export function useCustomerSearch(query: string, posProfile?: string) {
 	const createCall = useFrappePostCall(vunaMethods.createCustomer);
+	const searchCall = useFrappePostCall(vunaMethods.searchCustomers);
 	const [isCreating, setIsCreating] = useState(false);
 	const [createError, setCreateError] = useState<string | null>(null);
 	const [createdCustomers, setCreatedCustomers] = useState<CustomerDTO[]>([]);
@@ -26,8 +27,22 @@ export function useCustomerSearch(query: string, posProfile?: string) {
 	}, [query]);
 
 	useEffect(() => {
-		void customerRepository.search(debouncedQuery, 20).then((rows) => setCachedCustomers(rows as CustomerDTO[]));
-	}, [debouncedQuery, revision]);
+		let cancelled = false;
+		void customerRepository.search(debouncedQuery, 20).then(async (rows) => {
+			if (rows.length || !debouncedQuery.trim() || !posProfile) return rows;
+			try {
+				return await searchCustomers(
+					searchCall.call,
+					{ query: debouncedQuery, limit: 20 },
+				);
+			} catch {
+				return rows;
+			}
+		}).then((rows) => {
+			if (!cancelled) setCachedCustomers(rows as CustomerDTO[]);
+		});
+		return () => { cancelled = true; };
+	}, [debouncedQuery, posProfile, revision, searchCall.call]);
 
 	const customers = useMemo(() => {
 		const merged = [...createdCustomers];
