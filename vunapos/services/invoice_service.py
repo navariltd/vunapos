@@ -761,16 +761,16 @@ def _rate_matches_pricing_rule_discount(row, precision):
 
 
 def _set_row_batch_allocations(row, allocations):
-	row._batch_allocations = allocations or []
+	row.flags.vunapos_batch_allocations = allocations or []
 
 
 def _set_row_serial_allocations(row, allocations):
-	row._serial_allocations = allocations or []
+	row.flags.vunapos_serial_allocations = allocations or []
 
 
 def _get_row_serial_allocations(row):
-	if getattr(row, "_serial_allocations", None):
-		return row._serial_allocations
+	if getattr(row.flags, "vunapos_serial_allocations", None):
+		return row.flags.vunapos_serial_allocations
 	if row.get("serial_and_batch_bundle") and frappe.db.exists(
 		"Serial and Batch Bundle", row.serial_and_batch_bundle
 	):
@@ -784,8 +784,8 @@ def _get_row_serial_allocations(row):
 
 
 def _get_row_batch_allocations(row):
-	if getattr(row, "_batch_allocations", None):
-		return row._batch_allocations
+	if getattr(row.flags, "vunapos_batch_allocations", None):
+		return row.flags.vunapos_batch_allocations
 	if row.get("serial_and_batch_bundle"):
 		return _get_bundle_allocations(row.serial_and_batch_bundle)
 	if row.get("batch_no"):
@@ -1553,7 +1553,7 @@ def checkout_invoice(
 		salesperson_token=salesperson_token,
 	)
 	doc.submit()
-	consume_gateway_payment_links(getattr(doc, "_vunapos_gateway_payment_links", []), doc)
+	consume_gateway_payment_links(getattr(doc.flags, "vunapos_gateway_payment_links", []), doc)
 	return invoice_to_dict(doc)
 
 
@@ -1584,7 +1584,7 @@ def _prepare_invoice_for_checkout(
 	payment_rows = validate_payment_rows(
 		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
 	)
-	doc._vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
+	doc.flags.vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)

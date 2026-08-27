@@ -28,8 +28,6 @@ def create_opening_entry():
 		user=frappe.session.user,
 	)
 
-	frappe.db.commit()
-
 	return {
 		"success": True,
 		"name": opening_entry.name,
