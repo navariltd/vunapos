@@ -14,6 +14,10 @@ from vunapos.services.profile_service import (
 # are reported so active terminals can remove them from their current snapshot.
 SYNCED_DOCTYPES = ("Item", "Customer")
 CACHE_SCHEMA_REVISION = 5
+# Keep the first paint bounded. Search endpoints continue to resolve the full
+# catalogue on demand, while the initial snapshot contains the most useful rows.
+INITIAL_ITEM_LIMIT = 500
+INITIAL_CUSTOMER_LIMIT = 200
 
 
 def _bootstrap_version():
@@ -128,8 +132,12 @@ def get_pos_bootstrap(pos_profile=None, since=None):
 		"mode": "delta" if since else "full",
 		"pos_profile": profile_to_dict(profile, invoice_mode),
 		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),
-		"items": search_items(pos_profile=profile.name, limit=0, since=since),
-		"customers": search_customers(limit=100000, since=since),
+		"items": search_items(
+			pos_profile=profile.name,
+			limit=0 if since else INITIAL_ITEM_LIMIT,
+			since=since,
+		),
+		"customers": search_customers(limit=0 if since else INITIAL_CUSTOMER_LIMIT, since=since),
 		"tax_templates": _sync_tax_templates(since=since),
 		"item_tax_templates": _sync_item_tax_templates(since=since),
 		"tax_settings": _get_tax_settings(),

@@ -11,8 +11,8 @@ def _date_value(doc, fieldname):
 
 
 def _batch_allocations(row):
-	if getattr(row, "_batch_allocations", None):
-		return row._batch_allocations
+	if getattr(row.flags, "vunapos_batch_allocations", None):
+		return row.flags.vunapos_batch_allocations
 	if row.get("serial_and_batch_bundle"):
 		allocations = []
 		for entry in frappe.get_doc("Serial and Batch Bundle", row.get("serial_and_batch_bundle")).get(
@@ -41,8 +41,8 @@ def _batch_allocations(row):
 
 
 def _serial_allocations(row):
-	if getattr(row, "_serial_allocations", None):
-		return row._serial_allocations
+	if getattr(row.flags, "vunapos_serial_allocations", None):
+		return row.flags.vunapos_serial_allocations
 	if not row.get("serial_and_batch_bundle"):
 		return []
 	try:
