@@ -22,6 +22,7 @@ type AppSessionContextValue = {
   isBootstrapping: boolean;
   clearCompanyUrl: () => Promise<void>;
   saveCompanyUrl: (rawUrl: string) => Promise<SaveCompanyUrlResult>;
+  sessionId: string | null;
   signIn: (identifier: string, password: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
 };
@@ -30,6 +31,7 @@ const AppSessionContext = createContext<AppSessionContextValue | null>(null);
 
 export function AppSessionProvider({ children }: PropsWithChildren) {
   const [companyUrl, setCompanyUrl] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>('needsCompanyUrl');
   const [isBootstrapping, setIsBootstrapping] = useState(true);
 
@@ -57,12 +59,14 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
         if (sessionStatus === 'expired') {
           await clearStoredSession();
+          setSessionId(null);
           setAuthState('sessionExpired');
           return;
         }
 
         // Do not treat a temporary offline failure as an expired session. Future feature
         // requests will redirect through invalidateSession when the server rejects the SID.
+        setSessionId(storedSessionId);
         setAuthState('signedIn');
       } catch {
         if (isMounted) {
@@ -83,6 +87,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
   const clearCompanyUrl = useCallback(async () => {
     await clearStoredCompanyUrl();
+    setSessionId(null);
     setCompanyUrl(null);
     setAuthState('needsCompanyUrl');
   }, []);
@@ -98,6 +103,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
       const isDifferentCompany = companyUrl !== normalized.url;
       if (isDifferentCompany) {
         await clearStoredSession();
+        setSessionId(null);
       }
       await persistCompanyUrl(normalized.url);
       setCompanyUrl(normalized.url);
@@ -119,6 +125,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
     try {
       const sessionId = await signInToFrappe(companyUrl, identifier, password);
       await persistSessionId(sessionId);
+      setSessionId(sessionId);
       setAuthState('signedIn');
       return { ok: true };
     } catch (error) {
@@ -131,11 +138,13 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
   const signOut = useCallback(async () => {
     await clearStoredSession();
+    setSessionId(null);
     setAuthState(companyUrl ? 'signedOut' : 'needsCompanyUrl');
   }, [companyUrl]);
 
   const invalidateSession = useCallback(async () => {
     await clearStoredSession();
+    setSessionId(null);
     setAuthState(companyUrl ? 'sessionExpired' : 'needsCompanyUrl');
   }, [companyUrl]);
 
@@ -146,9 +155,10 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
     invalidateSession,
     isBootstrapping,
     saveCompanyUrl,
+    sessionId,
     signIn,
     signOut,
-  }), [authState, clearCompanyUrl, companyUrl, invalidateSession, isBootstrapping, saveCompanyUrl, signIn, signOut]);
+  }), [authState, clearCompanyUrl, companyUrl, invalidateSession, isBootstrapping, saveCompanyUrl, sessionId, signIn, signOut]);
 
   return <AppSessionContext.Provider value={value}>{children}</AppSessionContext.Provider>;
 }

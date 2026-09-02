@@ -4,25 +4,19 @@
     "slug": "vunapos-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/vunapos-logo.png",
     "scheme": "vunapos",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/vunapos-logo.png"
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#f8f8f8",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
       "predictiveBackGestureEnabled": false,
       "package": "com.anonymous.vunaposmobile"
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/vunapos-logo.png"
     },
     "plugins": [
       "expo-router",

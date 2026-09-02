@@ -6,10 +6,18 @@ type FrappeMessage = {
   };
 };
 
+type VunaEnvelope<T> = {
+  data: T;
+  errors?: { message?: string }[];
+  ok: boolean;
+};
+
+type VunaMethodParams = Record<string, boolean | number | string | null | undefined>;
+
 export class FrappeClientError extends Error {
   constructor(
     message: string,
-    readonly code: 'connection' | 'login' | 'session',
+    readonly code: 'api' | 'connection' | 'login' | 'session',
   ) {
     super(message);
   }
@@ -17,6 +25,19 @@ export class FrappeClientError extends Error {
 
 function requestUrl(companyUrl: string, path: string) {
   return `${companyUrl}${path}`;
+}
+
+function getMethodUrl(companyUrl: string, method: string, params: VunaMethodParams) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  }
+
+  const baseUrl = requestUrl(companyUrl, `/api/method/${method}`);
+  const queryString = query.toString();
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 }
 
 function getSessionId(response: Response): string | undefined {
@@ -106,5 +127,59 @@ export async function validateFrappeSession(companyUrl: string, sessionId: strin
     return response.ok ? 'valid' : 'unavailable';
   } catch {
     return 'unavailable';
+  }
+}
+
+/**
+ * Calls a VunaPOS GET endpoint using the saved Frappe session. API failures
+ * remain distinguishable from connectivity and expired-session failures so a
+ * feature can present the right recovery path.
+ */
+export async function getVunaMethod<T>(
+  companyUrl: string,
+  sessionId: string,
+  method: string,
+  params: VunaMethodParams = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  try {
+    const response = await fetch(getMethodUrl(companyUrl, method, params), {
+      headers: {
+        Accept: 'application/json',
+        Cookie: `sid=${encodeURIComponent(sessionId)}`,
+      },
+      method: 'GET',
+      signal,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      throw new FrappeClientError('Your session has expired. Sign in again to continue.', 'session');
+    }
+
+    let payload: { message?: VunaEnvelope<T> } | undefined;
+    try {
+      payload = await response.json() as { message?: VunaEnvelope<T> };
+    } catch {
+      // Preserve a useful status-based error when a proxy returns non-JSON.
+    }
+
+    if (!response.ok) {
+      throw new FrappeClientError(`The server could not complete this request (${response.status}).`, 'api');
+    }
+
+    if (!payload?.message?.ok) {
+      const message = payload?.message?.errors?.[0]?.message ?? 'The server could not complete this request.';
+      throw new FrappeClientError(message, 'api');
+    }
+
+    return payload.message.data;
+  } catch (error) {
+    if (error instanceof FrappeClientError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
   }
 }

@@ -1,15 +1,17 @@
 import { StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
-import { PosInvoiceStatus, PosPreviewInvoice } from '@/features/pos/types';
+import { PosInvoiceListRow, PosInvoiceStatus } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceListItemProps = {
-  invoice: PosPreviewInvoice;
+  invoice: PosInvoiceListRow;
 };
 
 const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: string }> = {
   'Credit Note': { backgroundColor: '#4a3010', color: '#f3c579' },
+  Cancelled: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
+  Overdue: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
   Paid: { backgroundColor: '#16452e', color: '#86efac' },
   'Partly Paid': { backgroundColor: '#4a3010', color: '#f3c579' },
   Unpaid: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
