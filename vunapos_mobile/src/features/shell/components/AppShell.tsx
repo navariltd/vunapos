@@ -5,21 +5,23 @@ import { StatusBar } from 'expo-status-bar';
 import { Screen } from '@/components/layout/Screen';
 import { PosBottomNavigation } from '@/features/pos/components/PosBottomNavigation';
 import { PosTopBar } from '@/features/pos/components/PosTopBar';
-import { PosOrderType } from '@/features/pos/types';
+import { PosNavigationTab, PosOrderType } from '@/features/pos/types';
 import { posDarkColors } from '@/theme/tokens';
 
 type AppShellProps = PropsWithChildren<{
+  activeTab: PosNavigationTab;
   onOrderTypeChange: (orderType: PosOrderType) => void;
+  onTabChange: (tab: PosNavigationTab) => void;
   orderType: PosOrderType;
 }>;
 
-export function AppShell({ children, onOrderTypeChange, orderType }: AppShellProps) {
+export function AppShell({ activeTab, children, onOrderTypeChange, onTabChange, orderType }: AppShellProps) {
   return (
     <Screen style={styles.screen}>
       <StatusBar style="light" />
       <PosTopBar onOrderTypeChange={onOrderTypeChange} orderType={orderType} />
       <View style={styles.content}>{children}</View>
-      <PosBottomNavigation />
+      <PosBottomNavigation activeTab={activeTab} onTabChange={onTabChange} />
     </Screen>
   );
 }

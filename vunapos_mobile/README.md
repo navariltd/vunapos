@@ -32,8 +32,9 @@ src/
 - Frappe sign-in using the identifier ERPNext accepts (`usr`) and a password; the resulting session ID is encrypted at rest.
 - Restored sessions are checked at startup. An expired session returns to sign-in without discarding the company URL.
 - A native-to-JavaScript launch handoff with the “Preparing workspace…” progress treatment.
-- A native POS home shell mirroring the SPA’s mobile structure: Invoice selector, item search/camera affordance, two-column catalogue cards, cart count, and static bottom navigation.
-- Representative local item cards and cart count interaction only; Frappe bootstrap data, barcode scanning, cart review, and non-Home tabs are intentionally deferred.
+- A native POS home shell mirroring the SPA’s mobile structure: Invoice selector, item search/camera affordance, two-column catalogue cards, cart count, and bottom navigation.
+- A searchable, read-only Invoices sales-history tab, with representative local invoice cards matching the SPA’s history information hierarchy.
+- Representative local catalogue and invoice data only; Frappe bootstrap/history data, barcode scanning, cart review, invoice details, and remaining tabs are intentionally deferred.
 
 ## Next increments
 
