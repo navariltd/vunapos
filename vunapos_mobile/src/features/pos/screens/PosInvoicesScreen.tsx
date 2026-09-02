@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
+import { PosInvoiceFiltersSheet } from '@/features/pos/components/PosInvoiceFiltersSheet';
 import { PosInvoiceListItem } from '@/features/pos/components/PosInvoiceListItem';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceHistory } from '@/features/pos/hooks/usePosInvoiceHistory';
@@ -19,16 +20,6 @@ const initialFilters: PosInvoiceHistoryFilters = {
   status: '',
   toDate: '',
 };
-
-const statusOptions: { label: string; value: PosInvoiceHistoryFilters['status'] }[] = [
-  { label: 'All statuses', value: '' },
-  { label: 'Paid', value: 'Paid' },
-  { label: 'Partly paid', value: 'Partly Paid' },
-  { label: 'Unpaid', value: 'Unpaid' },
-  { label: 'Overdue', value: 'Overdue' },
-  { label: 'Cancelled', value: 'Cancelled' },
-  { label: 'Credit note', value: 'Credit Note' },
-];
 
 function formatCurrency(amount: number, currency = 'KES') {
   return new Intl.NumberFormat(undefined, {
@@ -60,14 +51,13 @@ function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
   };
 }
 
-type FilterChoiceProps<T extends string> = {
+type FilterChoiceProps = {
   active: boolean;
   label: string;
   onPress: () => void;
-  value: T;
 };
 
-function FilterChoice<T extends string>({ active, label, onPress }: FilterChoiceProps<T>) {
+function FilterChoice({ active, label, onPress }: FilterChoiceProps) {
   return (
     <Pressable onPress={onPress} style={[styles.filterChoice, active && styles.filterChoiceActive]}>
       <Text style={[styles.filterChoiceLabel, active && styles.filterChoiceLabelActive]}>{label}</Text>
@@ -91,7 +81,8 @@ function SummaryCard({ label, value }: SummaryCardProps) {
 
 export function PosInvoicesScreen() {
   const [filters, setFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
-  const [filtersVisible, setFiltersVisible] = useState(false);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
   const [start, setStart] = useState(0);
   const bootstrap = usePosBootstrap();
   const history = usePosInvoiceHistory({ filters, posProfile: bootstrap.data?.pos_profile.name, start });
@@ -103,15 +94,40 @@ export function PosInvoicesScreen() {
     setStart(0);
   }
 
-  function clearFilters() {
-    setFilters(initialFilters);
+  function updateDraftFilter<Key extends keyof PosInvoiceHistoryFilters>(field: Key, value: PosInvoiceHistoryFilters[Key]) {
+    setDraftFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function openFilterSheet() {
+    setDraftFilters(filters);
+    setFilterSheetVisible(true);
+  }
+
+  function applyFilters() {
+    setFilters(draftFilters);
     setStart(0);
+    setFilterSheetVisible(false);
+  }
+
+  function clearDraftFilters() {
+    setDraftFilters({ ...initialFilters, documentType: draftFilters.documentType });
   }
 
   const historyError = bootstrap.error ?? history.error;
+  const activeFilterCount = [
+    filters.customer,
+    filters.fromDate,
+    filters.invoice,
+    filters.paymentMode,
+    filters.saleType,
+    filters.status,
+    filters.toDate,
+    filters.currentShift ? '' : 'currentShift',
+  ].filter(Boolean).length;
 
   return (
-    <FlatList
+    <>
+      <FlatList
       contentContainerStyle={styles.content}
       data={invoiceRows}
       ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -140,87 +156,16 @@ export function PosInvoicesScreen() {
           </View>
 
           <View style={styles.documentTabs}>
-            <FilterChoice active={filters.documentType === 'Invoice'} label="Sales history" onPress={() => updateFilter('documentType', 'Invoice')} value="Invoice" />
-            <FilterChoice active={filters.documentType === 'Order'} label="Sales orders" onPress={() => updateFilter('documentType', 'Order')} value="Order" />
+            <FilterChoice active={filters.documentType === 'Invoice'} label="Sales history" onPress={() => updateFilter('documentType', 'Invoice')} />
+            <FilterChoice active={filters.documentType === 'Order'} label="Sales orders" onPress={() => updateFilter('documentType', 'Order')} />
           </View>
 
-          <View style={styles.searchRow}>
-            <TextInput
-              accessibilityLabel="Filter by invoice number"
-              autoCapitalize="characters"
-              onChangeText={(value) => updateFilter('invoice', value)}
-              placeholder="Invoice number"
-              placeholderTextColor="#8f8f8f"
-              style={styles.searchInput}
-              value={filters.invoice}
-            />
-            <Pressable onPress={() => setFiltersVisible((visible) => !visible)} style={[styles.filtersButton, filtersVisible && styles.filtersButtonActive]}>
-              <Text style={[styles.filtersButtonLabel, filtersVisible && styles.filtersButtonLabelActive]}>{filtersVisible ? 'Hide filters' : 'Filters'}</Text>
+          <View style={styles.filterActionRow}>
+            <Text style={styles.filterSummary}>{activeFilterCount ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'All invoices in this shift'}</Text>
+            <Pressable accessibilityLabel="Open invoice filters" onPress={openFilterSheet} style={styles.filtersButton}>
+              <Text style={styles.filtersButtonLabel}>{activeFilterCount ? `Filters (${activeFilterCount})` : 'Filters'}</Text>
             </Pressable>
           </View>
-
-          {filtersVisible ? (
-            <View style={styles.filtersPanel}>
-              <TextInput
-                accessibilityLabel="Filter by customer ID"
-                autoCapitalize="none"
-                onChangeText={(value) => updateFilter('customer', value)}
-                placeholder="Customer ID"
-                placeholderTextColor="#8f8f8f"
-                style={styles.filterInput}
-                value={filters.customer}
-              />
-              <View style={styles.dateRow}>
-                <TextInput
-                  accessibilityLabel="Filter from date"
-                  keyboardType="numbers-and-punctuation"
-                  onChangeText={(value) => updateFilter('fromDate', value)}
-                  placeholder="From date (YYYY-MM-DD)"
-                  placeholderTextColor="#8f8f8f"
-                  style={[styles.filterInput, styles.halfWidth]}
-                  value={filters.fromDate}
-                />
-                <TextInput
-                  accessibilityLabel="Filter to date"
-                  keyboardType="numbers-and-punctuation"
-                  onChangeText={(value) => updateFilter('toDate', value)}
-                  placeholder="To date (YYYY-MM-DD)"
-                  placeholderTextColor="#8f8f8f"
-                  style={[styles.filterInput, styles.halfWidth]}
-                  value={filters.toDate}
-                />
-              </View>
-              <Text style={styles.filterLabel}>Status</Text>
-              <ScrollView contentContainerStyle={styles.filterChoices} horizontal showsHorizontalScrollIndicator={false}>
-                {statusOptions.map((option) => <FilterChoice active={filters.status === option.value} key={option.label} label={option.label} onPress={() => updateFilter('status', option.value)} value={option.value} />)}
-              </ScrollView>
-              <Text style={styles.filterLabel}>Payment mode</Text>
-              <ScrollView contentContainerStyle={styles.filterChoices} horizontal showsHorizontalScrollIndicator={false}>
-                <FilterChoice active={filters.paymentMode === ''} label="All payments" onPress={() => updateFilter('paymentMode', '')} value="" />
-                {bootstrap.data?.payment_modes.map((payment) => <FilterChoice active={filters.paymentMode === payment.mode_of_payment} key={payment.mode_of_payment} label={payment.mode_of_payment} onPress={() => updateFilter('paymentMode', payment.mode_of_payment)} value={payment.mode_of_payment} />)}
-              </ScrollView>
-              <Text style={styles.filterLabel}>Sale type</Text>
-              <View style={styles.filterChoices}>
-                <FilterChoice active={filters.saleType === ''} label="All sales" onPress={() => updateFilter('saleType', '')} value="" />
-                <FilterChoice active={filters.saleType === 'Cash Sale'} label="Cash sale" onPress={() => updateFilter('saleType', 'Cash Sale')} value="Cash Sale" />
-                <FilterChoice active={filters.saleType === 'Credit Sale'} label="Credit sale" onPress={() => updateFilter('saleType', 'Credit Sale')} value="Credit Sale" />
-              </View>
-              <View style={styles.currentShiftRow}>
-                <View style={styles.currentShiftCopy}>
-                  <Text style={styles.filterLabel}>Current shift only</Text>
-                  <Text style={styles.filterHint}>Show sales posted in your active POS shift.</Text>
-                </View>
-                <Switch
-                  accessibilityLabel="Current shift only"
-                  onValueChange={(value) => updateFilter('currentShift', value)}
-                  thumbColor={filters.currentShift ? posDarkColors.primary : posDarkColors.onSurfaceMuted}
-                  trackColor={{ false: posDarkColors.surfaceContainerHigh, true: '#5f5f5f' }}
-                  value={filters.currentShift}
-                />
-              </View>
-              <Pressable onPress={clearFilters} style={styles.clearFiltersButton}><Text style={styles.clearFiltersLabel}>Clear filters</Text></Pressable>
-            </View>
-          ) : null}
 
           {historyError ? <View style={styles.errorNotice}><Text style={styles.errorText}>{historyError}</Text></View> : null}
           {history.isLoading && history.data ? <Text style={styles.refreshingText}>Refreshing invoice history…</Text> : null}
@@ -238,37 +183,25 @@ export function PosInvoicesScreen() {
         </View>
       )}
       renderItem={({ item }) => <PosInvoiceListItem invoice={item} />}
-      showsVerticalScrollIndicator={false}
-    />
+        showsVerticalScrollIndicator={false}
+      />
+      <PosInvoiceFiltersSheet
+        filters={draftFilters}
+        onApply={applyFilters}
+        onChange={updateDraftFilter}
+        onClear={clearDraftFilters}
+        onDismiss={() => setFilterSheetVisible(false)}
+        paymentModes={bootstrap.data?.payment_modes.map((payment) => payment.mode_of_payment) ?? []}
+        visible={filterSheetVisible}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  clearFiltersButton: {
-    alignSelf: 'flex-start',
-    paddingVertical: spacing.xs,
-  },
-  clearFiltersLabel: {
-    color: posDarkColors.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
   content: {
     padding: spacing.md,
     paddingBottom: spacing.xxl,
-  },
-  currentShiftCopy: {
-    flex: 1,
-    gap: 2,
-  },
-  currentShiftRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  dateRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
   documentTabs: {
     flexDirection: 'row',
@@ -313,30 +246,15 @@ const styles = StyleSheet.create({
   filterChoiceLabelActive: {
     color: posDarkColors.onPrimary,
   },
-  filterChoices: {
+  filterActionRow: {
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: spacing.xs,
+    gap: spacing.sm,
   },
-  filterHint: {
+  filterSummary: {
     color: posDarkColors.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  filterInput: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: posDarkColors.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    height: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  filterLabel: {
-    color: posDarkColors.onSurface,
-    fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   filtersButton: {
@@ -347,28 +265,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: spacing.sm,
   },
-  filtersButtonActive: {
-    backgroundColor: posDarkColors.primary,
-    borderColor: posDarkColors.primary,
-  },
   filtersButtonLabel: {
     color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
-  },
-  filtersButtonLabelActive: {
-    color: posDarkColors.onPrimary,
-  },
-  filtersPanel: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.sm,
-  },
-  halfWidth: {
-    minWidth: 0,
   },
   header: {
     gap: spacing.md,
@@ -402,22 +302,6 @@ const styles = StyleSheet.create({
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
-  },
-  searchInput: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: posDarkColors.onSurface,
-    flex: 1,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    height: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  searchRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
   },
   separator: {
     height: spacing.sm,
