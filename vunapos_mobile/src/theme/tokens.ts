@@ -64,3 +64,22 @@ export const typography = {
     tiny: 11,
   },
 } as const;
+
+/**
+ * The POS surface intentionally follows the SPA's Desk-derived dark theme.
+ * It is kept separate from the setup/authentication palette because POS is
+ * designed for long-running, high-density selling sessions.
+ */
+export const posDarkColors = {
+  background: '#171717',
+  border: '#383838',
+  disabled: '#8a8a8a',
+  error: '#eb9091',
+  onPrimary: '#171717',
+  onSurface: '#f8f8f8',
+  onSurfaceMuted: '#c7c7c7',
+  primary: '#e2e2e2',
+  surface: '#1c1c1c',
+  surfaceContainer: '#232323',
+  surfaceContainerHigh: '#2a2a2a',
+} as const;

@@ -1,7 +1,7 @@
 import { Redirect } from 'expo-router';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { AppSkeletonScreen } from '@/features/shell/screens/AppSkeletonScreen';
+import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
 
 export default function AppIndex() {
   const { authState } = useAppSession();
@@ -10,5 +10,5 @@ export default function AppIndex() {
     return <Redirect href="/(auth)/sign-in" />;
   }
 
-  return <AppSkeletonScreen />;
+  return <PosHomeScreen />;
 }
