@@ -17,8 +17,18 @@ const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: s
   Unpaid: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
 };
 
-function formatCurrency(amount: number) {
-  return `KES ${amount.toFixed(2)}`;
+function formatCurrency(amount: number, currency = 'KES') {
+  return new Intl.NumberFormat(undefined, {
+    currency,
+    currencyDisplay: 'code',
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+    style: 'currency',
+  }).format(amount);
+}
+
+function paymentReference(transactionReference?: string, paymentRequest?: string) {
+  return transactionReference || paymentRequest || null;
 }
 
 export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
@@ -30,6 +40,7 @@ export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
         <View style={styles.titleGroup}>
           <Text numberOfLines={1} style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
           <Text numberOfLines={1} style={styles.customer}>{invoice.customerName}</Text>
+          {invoice.customerId ? <Text numberOfLines={1} style={styles.customerId}>{invoice.customerId}</Text> : null}
         </View>
         <View style={[styles.status, statusStyle]}>
           <Text style={[styles.statusLabel, { color: statusStyle.color }]}>{invoice.status}</Text>
@@ -41,9 +52,29 @@ export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
         <Text style={styles.metadata}>{invoice.itemCount} {invoice.itemCount === 1 ? 'item' : 'items'}</Text>
       </View>
 
+      <View style={styles.auditRow}>
+        <Text numberOfLines={1} style={styles.auditValue}>Cashier: {invoice.cashier || 'Not recorded'}</Text>
+        <Text numberOfLines={1} style={styles.auditValue}>Shift: {invoice.openingEntry || 'No shift'}</Text>
+      </View>
+
+      <View style={styles.paymentLines}>
+        {invoice.payments.length ? invoice.payments.map((payment, index) => {
+          const reference = paymentReference(payment.transaction_reference, payment.ke_payment_request);
+          return (
+            <View key={`${payment.mode_of_payment}-${reference || index}`} style={styles.paymentLine}>
+              <Text numberOfLines={1} style={styles.paymentMode}>{payment.mode_of_payment}{reference ? ` · ${reference}` : ''}</Text>
+              <Text style={styles.paymentAmount}>{formatCurrency(payment.amount, invoice.currency)}</Text>
+            </View>
+          );
+        }) : <Text style={styles.paymentMode}>{invoice.paymentMode}</Text>}
+      </View>
+
       <View style={styles.totalRow}>
-        <Text style={styles.paymentMode}>{invoice.paymentMode}</Text>
-        <Text style={styles.total}>{formatCurrency(invoice.total)}</Text>
+        <View>
+          <Text style={styles.totalLabel}>Total</Text>
+          {invoice.outstandingAmount > 0 ? <Text style={styles.outstanding}>Outstanding {formatCurrency(invoice.outstandingAmount, invoice.currency)}</Text> : null}
+        </View>
+        <Text style={styles.total}>{formatCurrency(invoice.total, invoice.currency)}</Text>
       </View>
     </View>
   );
@@ -58,10 +89,26 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  auditRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  auditValue: {
+    color: posDarkColors.onSurfaceMuted,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
   customer: {
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
+  },
+  customerId: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
   },
   invoiceNumber: {
     color: posDarkColors.onSurface,
@@ -81,6 +128,26 @@ const styles = StyleSheet.create({
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
+  },
+  paymentAmount: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+  },
+  paymentLine: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+  },
+  paymentLines: {
+    gap: 4,
+  },
+  outstanding: {
+    color: '#f3c579',
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+    marginTop: 2,
   },
   status: {
     borderRadius: radii.pill,
@@ -104,6 +171,11 @@ const styles = StyleSheet.create({
     color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 15,
+  },
+  totalLabel: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
   },
   totalRow: {
     alignItems: 'center',

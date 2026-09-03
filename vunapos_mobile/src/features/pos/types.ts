@@ -14,9 +14,15 @@ export type PosPreviewItem = {
 export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' | 'Partly Paid' | 'Unpaid';
 
 export type PosInvoiceListRow = {
+  cashier?: string;
+  currency?: string;
+  customerId?: string;
   customerName: string;
   invoiceNumber: string;
   itemCount: number;
+  openingEntry?: string;
+  outstandingAmount: number;
+  payments: PosInvoiceHistoryPayment[];
   paymentMode: string;
   postedAt: string;
   status: PosInvoiceStatus;
@@ -67,6 +73,8 @@ export type PosInvoiceHistoryRow = {
   status: PosInvoiceStatus;
   total_qty: number;
   vunapos_credit_sale?: boolean;
+  vunapos_opening_entry?: string;
+  vunapos_session_cashier?: string;
 };
 
 export type PosInvoiceHistory = {

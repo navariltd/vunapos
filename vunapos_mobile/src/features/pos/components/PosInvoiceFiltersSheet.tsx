@@ -25,6 +25,19 @@ const saleTypeOptions: { label: string; value: PosInvoiceHistoryFilters['saleTyp
 ];
 
 type DateFilterField = 'fromDate' | 'toDate';
+type SelectableFilterField = 'paymentMode' | 'saleType' | 'status';
+
+type FilterOption = {
+  label: string;
+  value: string;
+};
+
+type FilterSelection = {
+  field: SelectableFilterField;
+  label: string;
+  options: FilterOption[];
+  value: string;
+};
 
 function formatFilterDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -63,19 +76,13 @@ type PosInvoiceFiltersSheetProps = {
 type FilterSelectProps<Value extends string> = {
   accessibilityLabel: string;
   label: string;
-  onSelect: (value: Value) => void;
+  onPress: () => void;
   options: { label: string; value: Value }[];
   value: Value;
 };
 
-function FilterSelect<Value extends string>({ accessibilityLabel, label, onSelect, options, value }: FilterSelectProps<Value>) {
-  const [visible, setVisible] = useState(false);
+function FilterSelect<Value extends string>({ accessibilityLabel, label, onPress, options, value }: FilterSelectProps<Value>) {
   const selectedLabel = options.find((option) => option.value === value)?.label ?? label;
-
-  function selectOption(nextValue: Value) {
-    onSelect(nextValue);
-    setVisible(false);
-  }
 
   return (
     <View style={styles.selectWrapper}>
@@ -83,27 +90,50 @@ function FilterSelect<Value extends string>({ accessibilityLabel, label, onSelec
       <Pressable
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
-        onPress={() => setVisible((current) => !current)}
+        onPress={onPress}
         style={styles.selectButton}
       >
         <Text numberOfLines={1} style={styles.selectValue}>{selectedLabel}</Text>
-        <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name={visible ? 'chevron-up' : 'chevron-down'} size={20} />
+        <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} />
       </Pressable>
-      {visible ? (
-        <View style={styles.selectOptions}>
-          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator={false}>
-            {options.map((option) => (
-              <Pressable
-                key={option.value || option.label}
-                onPress={() => selectOption(option.value)}
-                style={[styles.selectOption, option.value === value && styles.selectOptionActive]}
-              >
-                <Text style={[styles.selectOptionLabel, option.value === value && styles.selectOptionLabelActive]}>{option.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+    </View>
+  );
+}
+
+type FilterSelectionDialogProps = {
+  onDismiss: () => void;
+  onSelect: (value: string) => void;
+  selection: FilterSelection | null;
+};
+
+function FilterSelectionDialog({ onDismiss, onSelect, selection }: FilterSelectionDialogProps) {
+  if (!selection) {
+    return null;
+  }
+
+  return (
+    <View accessibilityViewIsModal style={styles.selectionOverlay}>
+      <Pressable accessibilityLabel={`Dismiss ${selection.label} options`} onPress={onDismiss} style={styles.selectionScrim} />
+      <View style={styles.selectionDialog}>
+        <View style={styles.selectionHeader}>
+          <Text style={styles.selectionTitle}>Select {selection.label.toLowerCase()}</Text>
+          <Pressable accessibilityLabel="Close options" onPress={onDismiss} style={styles.selectionCloseButton}>
+            <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={20} />
+          </Pressable>
         </View>
-      ) : null}
+        <ScrollView contentContainerStyle={styles.selectionOptions} showsVerticalScrollIndicator={false}>
+          {selection.options.map((option) => (
+            <Pressable
+              key={option.value || option.label}
+              onPress={() => onSelect(option.value)}
+              style={[styles.selectionOption, option.value === selection.value && styles.selectionOptionActive]}
+            >
+              <Text style={styles.selectionOptionLabel}>{option.label}</Text>
+              {option.value === selection.value ? <MaterialCommunityIcons color={posDarkColors.onSurface} name="check" size={20} /> : null}
+            </Pressable>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 }
@@ -135,6 +165,7 @@ export function PosInvoiceFiltersSheet({
 }: PosInvoiceFiltersSheetProps) {
   const insets = useSafeAreaInsets();
   const [datePickerField, setDatePickerField] = useState<DateFilterField | null>(null);
+  const [selection, setSelection] = useState<FilterSelection | null>(null);
   const paymentModeOptions: { label: string; value: PosInvoiceHistoryFilters['paymentMode'] }[] = [
     { label: 'All payments', value: '' },
     ...paymentModes.map((paymentMode) => ({ label: paymentMode, value: paymentMode })),
@@ -151,8 +182,28 @@ export function PosInvoiceFiltersSheet({
     }
   }
 
+  function openSelection(field: SelectableFilterField, label: string, options: FilterOption[], value: string) {
+    setSelection({ field, label, options, value });
+  }
+
+  function selectFilterOption(value: string) {
+    if (!selection) {
+      return;
+    }
+
+    if (selection.field === 'status') {
+      onChange('status', value as PosInvoiceHistoryFilters['status']);
+    } else if (selection.field === 'paymentMode') {
+      onChange('paymentMode', value);
+    } else {
+      onChange('saleType', value as PosInvoiceHistoryFilters['saleType']);
+    }
+
+    setSelection(null);
+  }
+
   return (
-    <Modal animationType="slide" onRequestClose={onDismiss} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
+    <Modal animationType="slide" onRequestClose={() => selection ? setSelection(null) : onDismiss()} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
       <View style={styles.modalRoot}>
         <Pressable accessibilityLabel="Dismiss filters" onPress={onDismiss} style={styles.backdrop} />
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
@@ -211,14 +262,14 @@ export function PosInvoiceFiltersSheet({
                 <FilterSelect
                   accessibilityLabel="Select invoice status"
                   label="Status"
-                  onSelect={(value) => onChange('status', value)}
+                  onPress={() => openSelection('status', 'Status', statusOptions, filters.status)}
                   options={statusOptions}
                   value={filters.status}
                 />
                 <FilterSelect
                   accessibilityLabel="Select payment mode"
                   label="Payment mode"
-                  onSelect={(value) => onChange('paymentMode', value)}
+                  onPress={() => openSelection('paymentMode', 'Payment mode', paymentModeOptions, filters.paymentMode)}
                   options={paymentModeOptions}
                   value={filters.paymentMode}
                 />
@@ -228,7 +279,7 @@ export function PosInvoiceFiltersSheet({
                 <FilterSelect
                   accessibilityLabel="Select sale type"
                   label="Sale type"
-                  onSelect={(value) => onChange('saleType', value)}
+                  onPress={() => openSelection('saleType', 'Sale type', saleTypeOptions, filters.saleType)}
                   options={saleTypeOptions}
                   value={filters.saleType}
                 />
@@ -269,6 +320,7 @@ export function PosInvoiceFiltersSheet({
             </View>
           </View>
         </KeyboardAvoidingView>
+        <FilterSelectionDialog onDismiss={() => setSelection(null)} onSelect={selectFilterOption} selection={selection} />
       </View>
     </Modal>
   );
@@ -439,40 +491,80 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: spacing.sm,
   },
-  selectOption: {
-    minHeight: 44,
+  selectionCloseButton: {
+    alignItems: 'center',
+    borderColor: posDarkColors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 36,
     justifyContent: 'center',
-    paddingHorizontal: spacing.sm,
+    width: 36,
   },
-  selectOptionActive: {
-    backgroundColor: posDarkColors.primary,
-  },
-  selectOptionLabel: {
-    color: posDarkColors.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  selectOptionLabelActive: {
-    color: posDarkColors.onPrimary,
-  },
-  selectOptions: {
+  selectionDialog: {
     backgroundColor: posDarkColors.surfaceContainerHigh,
     borderColor: posDarkColors.border,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
-    elevation: 8,
-    left: 0,
-    maxHeight: 238,
+    elevation: 24,
+    maxHeight: '72%',
     overflow: 'hidden',
+    width: '100%',
+  },
+  selectionHeader: {
+    alignItems: 'center',
+    borderBottomColor: posDarkColors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  selectionOption: {
+    alignItems: 'center',
+    borderBottomColor: posDarkColors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: spacing.md,
+  },
+  selectionOptionActive: {
+    backgroundColor: '#3a3a3a',
+  },
+  selectionOptionLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.body,
+  },
+  selectionOptions: {
+    paddingBottom: spacing.xs,
+  },
+  selectionOverlay: {
+    alignItems: 'center',
+    bottom: 0,
+    justifyContent: 'center',
+    left: 0,
+    padding: spacing.lg,
     position: 'absolute',
     right: 0,
-    top: 72,
-    zIndex: 2,
+    top: 0,
+    zIndex: 10,
+  },
+  selectionScrim: {
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  selectionTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 18,
   },
   selectRow: {
     flexDirection: 'row',
     gap: spacing.sm,
-    zIndex: 2,
   },
   selectValue: {
     color: posDarkColors.onSurface,
