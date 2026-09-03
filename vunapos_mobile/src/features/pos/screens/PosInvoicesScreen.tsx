@@ -44,6 +44,7 @@ function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
     currency: row.currency,
     customerId: row.customer,
     customerName: row.customer_name || row.customer || 'No customer',
+    doctype: row.doctype,
     dueDate: row.due_date,
     invoiceNumber: row.name,
     itemCount: row.total_qty,
@@ -87,7 +88,11 @@ function SummaryCard({ label, value }: SummaryCardProps) {
   );
 }
 
-export function PosInvoicesScreen() {
+type PosInvoicesScreenProps = {
+  onOpenInvoice: (invoice: { doctype?: string; name: string }) => void;
+};
+
+export function PosInvoicesScreen({ onOpenInvoice }: PosInvoicesScreenProps) {
   const [filters, setFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
@@ -190,7 +195,7 @@ export function PosInvoicesScreen() {
           ) : null}
         </View>
       )}
-      renderItem={({ item }) => <PosInvoiceListItem invoice={item} />}
+      renderItem={({ item }) => <PosInvoiceListItem invoice={item} onPress={() => onOpenInvoice({ doctype: item.doctype, name: item.invoiceNumber })} />}
         showsVerticalScrollIndicator={false}
       />
       <PosInvoiceFiltersSheet

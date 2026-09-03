@@ -1,4 +1,4 @@
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosInvoiceListRow, PosInvoiceStatus } from '@/features/pos/types';
@@ -6,6 +6,7 @@ import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceListItemProps = {
   invoice: PosInvoiceListRow;
+  onPress: () => void;
 };
 
 const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: string }> = {
@@ -39,11 +40,11 @@ function formatDueDate(value?: string) {
   return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
 }
 
-export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
+export function PosInvoiceListItem({ invoice, onPress }: PosInvoiceListItemProps) {
   const statusStyle = statusStyles[invoice.status];
 
   return (
-    <View style={styles.card}>
+    <Pressable accessibilityLabel={`Open ${invoice.invoiceNumber}`} onPress={onPress} style={styles.card}>
       <View style={styles.titleRow}>
         <View style={styles.titleGroup}>
           <Text numberOfLines={1} style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
@@ -89,7 +90,7 @@ export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
         </View>
         <Text style={styles.total}>{formatCurrency(invoice.total, invoice.currency)}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
