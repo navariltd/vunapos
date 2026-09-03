@@ -93,6 +93,8 @@ export type PosInvoiceDetail = {
   is_credit_sale?: boolean;
   is_return: boolean;
   items: PosInvoiceDetailItem[];
+  loyalty_amount?: number;
+  loyalty_points?: number;
   name: string;
   opening_entry?: string;
   payments?: PosInvoiceHistoryPayment[];

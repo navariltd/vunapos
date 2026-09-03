@@ -38,6 +38,11 @@ function formatDateTime(details: PosInvoiceDetail) {
   return time ? `${date} · ${time}` : date;
 }
 
+function paymentLabel(mode: string, transactionReference?: string, paymentRequest?: string) {
+  const reference = transactionReference || paymentRequest;
+  return reference ? `${mode} · ${reference}` : mode;
+}
+
 function DetailCard({ children, title }: { children: React.ReactNode; title: string }) {
   return <View style={styles.card}><Text style={styles.cardTitle}>{title}</Text>{children}</View>;
 }
@@ -123,6 +128,29 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack }:
           ))}
         </View>
       </DetailCard>
+
+      <DetailCard title="Checkout payments">
+        <View style={styles.keyValues}>
+          {invoice.loyalty_points ? <KeyValue label="Loyalty points redeemed" value={invoice.loyalty_points.toLocaleString()} /> : null}
+          {invoice.loyalty_amount ? <KeyValue label="Loyalty credit" value={formatCurrency(invoice.loyalty_amount, currency)} /> : null}
+          {invoice.payments?.length ? invoice.payments.map((payment, index) => (
+            <KeyValue
+              key={`${payment.mode_of_payment}-${payment.transaction_reference || payment.ke_payment_request || index}`}
+              label={paymentLabel(payment.mode_of_payment, payment.transaction_reference, payment.ke_payment_request)}
+              value={formatCurrency(payment.amount, currency)}
+            />
+          )) : <Text style={styles.emptyCardText}>{invoice.is_credit_sale ? 'No deposit was received at checkout.' : 'No checkout payment rows.'}</Text>}
+        </View>
+      </DetailCard>
+
+      <DetailCard title="Taxes and totals">
+        <View style={styles.keyValues}>
+          {invoice.taxes?.map((tax, index) => <KeyValue key={`${tax.account_head || tax.description || 'tax'}-${index}`} label={tax.description || tax.account_head || 'Tax'} value={formatCurrency(tax.tax_amount || 0, currency)} />)}
+          <KeyValue label="Net total" value={formatCurrency(invoice.totals.net_total || 0, currency)} />
+          <KeyValue label="Grand total" value={formatCurrency(total, currency)} />
+          {invoice.loyalty_amount ? <KeyValue label="Loyalty redemption" value={`−${formatCurrency(invoice.loyalty_amount, currency)}`} /> : null}
+        </View>
+      </DetailCard>
     </ScrollView>
   );
 }
@@ -137,6 +165,7 @@ const styles = StyleSheet.create({
   creditSale: { color: '#f3c579', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   customerId: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   customerName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  emptyCardText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm },
   heading: { flex: 1, gap: 4 },
