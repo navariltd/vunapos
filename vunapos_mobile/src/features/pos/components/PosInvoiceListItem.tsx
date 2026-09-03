@@ -31,6 +31,14 @@ function paymentReference(transactionReference?: string, paymentRequest?: string
   return transactionReference || paymentRequest || null;
 }
 
+function formatDueDate(value?: string) {
+  if (!value) return null;
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+
+  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+}
+
 export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
   const statusStyle = statusStyles[invoice.status];
 
@@ -42,8 +50,11 @@ export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
           <Text numberOfLines={1} style={styles.customer}>{invoice.customerName}</Text>
           {invoice.customerId ? <Text numberOfLines={1} style={styles.customerId}>{invoice.customerId}</Text> : null}
         </View>
-        <View style={[styles.status, statusStyle]}>
-          <Text style={[styles.statusLabel, { color: statusStyle.color }]}>{invoice.status}</Text>
+        <View style={styles.badges}>
+          {invoice.creditSale ? <View style={styles.creditSaleBadge}><Text style={styles.creditSaleLabel}>Credit sale</Text></View> : null}
+          <View style={[styles.status, statusStyle]}>
+            <Text style={[styles.statusLabel, { color: statusStyle.color }]}>{invoice.status}</Text>
+          </View>
         </View>
       </View>
 
@@ -51,6 +62,8 @@ export function PosInvoiceListItem({ invoice }: PosInvoiceListItemProps) {
         <Text style={styles.metadata}>{invoice.postedAt}</Text>
         <Text style={styles.metadata}>{invoice.itemCount} {invoice.itemCount === 1 ? 'item' : 'items'}</Text>
       </View>
+
+      {invoice.creditSale && invoice.dueDate ? <Text style={styles.dueDate}>Due {formatDueDate(invoice.dueDate)}</Text> : null}
 
       <View style={styles.auditRow}>
         <Text numberOfLines={1} style={styles.auditValue}>Cashier: {invoice.cashier || 'Not recorded'}</Text>
@@ -94,6 +107,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     justifyContent: 'space-between',
   },
+  badges: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
   auditValue: {
     color: posDarkColors.onSurfaceMuted,
     flex: 1,
@@ -108,6 +125,22 @@ const styles = StyleSheet.create({
   customerId: {
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  creditSaleBadge: {
+    backgroundColor: '#4a3010',
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  creditSaleLabel: {
+    color: '#f3c579',
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  dueDate: {
+    color: '#f3c579',
+    fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   invoiceNumber: {

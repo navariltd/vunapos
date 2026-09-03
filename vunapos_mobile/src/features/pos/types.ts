@@ -15,9 +15,11 @@ export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' 
 
 export type PosInvoiceListRow = {
   cashier?: string;
+  creditSale: boolean;
   currency?: string;
   customerId?: string;
   customerName: string;
+  dueDate?: string;
   invoiceNumber: string;
   itemCount: number;
   openingEntry?: string;

@@ -40,9 +40,11 @@ function formatPostedAt(row: PosInvoiceHistoryRow) {
 function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
   return {
     cashier: row.vunapos_session_cashier,
+    creditSale: Boolean(row.vunapos_credit_sale),
     currency: row.currency,
     customerId: row.customer,
     customerName: row.customer_name || row.customer || 'No customer',
+    dueDate: row.due_date,
     invoiceNumber: row.name,
     itemCount: row.total_qty,
     openingEntry: row.vunapos_opening_entry,
