@@ -56,16 +56,10 @@ export function CompanyUrlScreen() {
               placeholder="https://yourcompany.example.com"
               value={url}
             />
-            <HelperText type={submitError ? 'error' : 'info'} visible>
-              {submitError ?? 'We’ll check this address before saving it to this device.'}
-            </HelperText>
+            {submitError ? <HelperText type="error" visible>{submitError}</HelperText> : null}
             <Button contentStyle={styles.submitContent} disabled={!url.trim() || isSubmitting} loading={isSubmitting} mode="contained" onPress={() => void handleContinue()} style={styles.submitButton}>
               {isSubmitting ? 'Checking URL…' : 'Continue'}
             </Button>
-          </FadeIn>
-
-          <FadeIn delay={140}>
-            <Text style={styles.footer}>You can change this company URL later from account settings.</Text>
           </FadeIn>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -77,7 +71,8 @@ const styles = StyleSheet.create({
   keyboardView: { flex: 1 },
   content: {
     flexGrow: 1,
-    justifyContent: 'space-between',
+    gap: spacing.xxxl,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxxl,
   },
@@ -114,10 +109,4 @@ const styles = StyleSheet.create({
   inputOutline: { borderRadius: radii.md },
   submitButton: { borderRadius: radii.md },
   submitContent: { height: 46 },
-  footer: {
-    color: colors.ink.muted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    textAlign: 'center',
-  },
 });

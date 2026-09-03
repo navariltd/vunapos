@@ -4,11 +4,11 @@
     "slug": "vunapos-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/vunapos-logo.png",
+    "icon": "./assets/images/vuna-logo.png",
     "scheme": "vunapos",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/images/vunapos-logo.png"
+      "icon": "./assets/images/vuna-logo.png"
     },
     "android": {
       "predictiveBackGestureEnabled": false,
@@ -16,7 +16,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/vunapos-logo.png"
+      "favicon": "./assets/images/vuna-logo.png"
     },
     "plugins": [
       "expo-router",
@@ -24,8 +24,8 @@
         "expo-splash-screen",
         {
           "backgroundColor": "#f8f8f8",
-          "image": "./assets/images/vunapos-splash.png",
-          "imageWidth": 96,
+          "image": "./assets/images/vuna-logo.png",
+          "imageWidth": 128,
           "resizeMode": "contain"
         }
       ],

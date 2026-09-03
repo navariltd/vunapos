@@ -103,7 +103,6 @@ export function SignInScreen() {
             </View>
 
             {submitError ? <HelperText type="error" visible>{submitError}</HelperText> : null}
-            <Text style={styles.signInHint}>Your ERPNext administrator determines which sign-in ID you can use.</Text>
 
             <Button contentStyle={styles.submitContent} disabled={isSubmitting} loading={isSubmitting} mode="contained" onPress={() => void handleSubmit()} style={styles.submitButton}>
               {isSubmitting ? 'Signing in…' : 'Sign in'}
@@ -113,9 +112,6 @@ export function SignInScreen() {
             </Button>
           </FadeIn>
 
-          <FadeIn delay={140}>
-            <Text style={styles.footer}>VunaPOS · Mobile point of sale</Text>
-          </FadeIn>
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>
@@ -128,7 +124,8 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    justifyContent: 'space-between',
+    gap: spacing.xxxl,
+    justifyContent: 'center',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxxl,
   },
@@ -185,12 +182,6 @@ const styles = StyleSheet.create({
   inputOutline: {
     borderRadius: radii.md,
   },
-  signInHint: {
-    color: colors.ink.muted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-  },
   submitButton: {
     borderRadius: radii.md,
   },
@@ -199,11 +190,5 @@ const styles = StyleSheet.create({
   },
   changeCompanyButton: {
     alignSelf: 'center',
-  },
-  footer: {
-    color: colors.ink.muted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    textAlign: 'center',
   },
 });

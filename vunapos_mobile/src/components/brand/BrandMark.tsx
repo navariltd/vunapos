@@ -1,7 +1,6 @@
-import { StyleSheet, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Image, StyleSheet } from 'react-native';
 
-import { colors, radii, typography } from '@/theme/tokens';
+import { radii } from '@/theme/tokens';
 
 type BrandMarkProps = {
   size?: 'small' | 'large';
@@ -11,38 +10,24 @@ export function BrandMark({ size = 'large' }: BrandMarkProps) {
   const isLarge = size === 'large';
 
   return (
-    <View style={[styles.mark, isLarge ? styles.largeMark : styles.smallMark]}>
-      <Text style={[styles.letter, isLarge ? styles.largeLetter : styles.smallLetter]}>V</Text>
-    </View>
+    <Image
+      accessible={false}
+      source={require('../../../assets/images/vuna-logo.png')}
+      style={[styles.logo, isLarge ? styles.largeLogo : styles.smallLogo]}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  mark: {
-    alignItems: 'center',
-    backgroundColor: colors.ink.primary,
+  logo: {
     borderRadius: radii.md,
-    justifyContent: 'center',
   },
-  largeMark: {
-    height: 52,
-    width: 52,
+  largeLogo: {
+    height: 84,
+    width: 84,
   },
-  smallMark: {
-    height: 32,
-    width: 32,
-  },
-  letter: {
-    color: colors.surface.base,
-    fontFamily: typography.fontFamily.semibold,
-    includeFontPadding: false,
-  },
-  largeLetter: {
-    fontSize: 24,
-    lineHeight: 28,
-  },
-  smallLetter: {
-    fontSize: 15,
-    lineHeight: 18,
+  smallLogo: {
+    height: 36,
+    width: 36,
   },
 });
