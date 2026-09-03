@@ -12,27 +12,27 @@ import { colors, radii, spacing, typography } from '@/theme/tokens';
 export function SignInScreen() {
   const router = useRouter();
   const { authState, companyUrl, signIn } = useAppSession();
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const identifierHasError = attemptedSubmit && identifier.trim().length === 0;
+  const emailHasError = attemptedSubmit && email.trim().length === 0;
   const passwordHasError = attemptedSubmit && password.length === 0;
 
   async function handleSubmit() {
     setAttemptedSubmit(true);
     setSubmitError(null);
 
-    if (!identifier.trim() || !password) {
+    if (!email.trim() || !password) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await signIn(identifier, password);
+      const result = await signIn(email, password);
       if (result.ok) {
         router.replace('/(app)');
       } else {
@@ -73,16 +73,16 @@ export function SignInScreen() {
                   autoCapitalize="none"
                   autoComplete="username"
                   autoCorrect={false}
-                  error={identifierHasError}
+                  error={emailHasError}
                   label="Email, phone, or username"
                   mode="outlined"
-                  onChangeText={setIdentifier}
+                  onChangeText={setEmail}
                   outlineStyle={styles.inputOutline}
                   placeholder="Enter your sign-in ID"
                   returnKeyType="next"
-                  value={identifier}
+                  value={email}
                 />
-                <HelperText type="error" visible={identifierHasError}>Enter your sign-in ID.</HelperText>
+                <HelperText type="error" visible={emailHasError}>Enter your sign-in ID.</HelperText>
               </View>
 
               <View>
