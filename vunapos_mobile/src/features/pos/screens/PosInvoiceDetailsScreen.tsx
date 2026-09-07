@@ -4,9 +4,11 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosInvoicePaymentSheet } from '@/features/pos/components/PosInvoicePaymentSheet';
+import { PosErpNextRecordLink } from '@/features/pos/components/PosErpNextRecordLink';
+import { PosInvoiceReceiptActions } from '@/features/pos/components/PosInvoiceReceiptActions';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
-import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoicePaymentEntry, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
+import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoicePaymentEntry, PosInvoiceReturn, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceDetailsScreenProps = {
@@ -15,6 +17,7 @@ type PosInvoiceDetailsScreenProps = {
   onBack: () => void;
   onOpenCustomer: (customer: string) => void;
   onOpenPaymentEntry: (paymentEntry: PosInvoicePaymentEntry, currency: string) => void;
+  onOpenReturn: (invoiceReturn: PosInvoiceReturn) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
 
@@ -69,7 +72,7 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
   return <View style={styles.keyValue}><Text style={styles.keyLabel}>{label}</Text><Text numberOfLines={1} style={styles.keyText}>{value || '-'}</Text></View>;
 }
 
-export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onOpenPaymentEntry, onStartSale }: PosInvoiceDetailsScreenProps) {
+export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onOpenPaymentEntry, onOpenReturn, onStartSale }: PosInvoiceDetailsScreenProps) {
   const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
   const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
   const bootstrap = usePosBootstrap();
@@ -126,6 +129,9 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
         <SummaryValue label="Outstanding" value={formatCurrency(invoice.totals.outstanding_amount || 0, currency)} />
         <SummaryValue label="Items" value={String(itemCount)} />
       </View>
+
+      <PosInvoiceReceiptActions invoiceDoctype={invoice.doctype} invoiceName={invoice.name} />
+      <PosErpNextRecordLink doctype={invoice.doctype} name={invoice.name} />
 
       <DetailCard title="Customer">
         <Text style={styles.customerName}>{invoice.customer_name || invoiceCustomer || 'No customer'}</Text>
@@ -205,6 +211,27 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
         ) : <Text style={styles.emptyCardText}>No linked Payment Entries.</Text>}
       </DetailCard>
 
+      <DetailCard title="Returns and credit notes">
+        {invoice.returns?.length ? (
+          <View style={styles.returnList}>
+            {invoice.returns.map((invoiceReturn) => {
+              const isCancelled = invoiceReturn.docstatus === 2;
+
+              return (
+                <Pressable accessibilityLabel={`View credit note ${invoiceReturn.name}`} key={invoiceReturn.name} onPress={() => onOpenReturn(invoiceReturn)} style={styles.returnRow}>
+                  <View style={styles.returnMain}>
+                    <Text style={styles.returnName}>{invoiceReturn.name}</Text>
+                    <Text style={styles.returnMeta}>{formatDate(invoiceReturn.posting_date || undefined)}</Text>
+                    <Text style={[styles.returnStatus, isCancelled && styles.returnCancelled]}>{isCancelled ? 'Cancelled' : 'Submitted'}</Text>
+                  </View>
+                  <Text style={styles.returnAmount}>{formatCurrency(invoiceReturn.grand_total, currency)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : <Text style={styles.emptyCardText}>No returns have been created.</Text>}
+      </DetailCard>
+
       <DetailCard title="Taxes and totals">
         <View style={styles.keyValues}>
           {invoice.taxes?.map((tax, index) => <KeyValue key={`${tax.account_head || tax.description || 'tax'}-${index}`} label={tax.description || tax.account_head || 'Tax'} value={formatCurrency(tax.tax_amount || 0, currency)} />)}
@@ -271,6 +298,14 @@ const styles = StyleSheet.create({
   paymentEntryName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
   paymentEntryRow: { alignItems: 'flex-start', borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
   paymentEntryStatus: { color: '#86efac', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+  returnAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, textAlign: 'right' },
+  returnCancelled: { color: posDarkColors.error },
+  returnList: { gap: spacing.sm },
+  returnMain: { flex: 1, gap: 2 },
+  returnMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  returnName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
+  returnRow: { alignItems: 'flex-start', borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
+  returnStatus: { color: '#86efac', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.lg },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   status: { borderRadius: radii.pill, paddingHorizontal: spacing.sm, paddingVertical: 4 },

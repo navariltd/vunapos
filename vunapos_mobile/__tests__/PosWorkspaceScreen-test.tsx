@@ -33,11 +33,13 @@ jest.mock('@/features/pos/screens/PosInvoicesScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosInvoiceDetailsScreen', () => ({
-  PosInvoiceDetailsScreen: ({ onOpenPaymentEntry, onStartSale }: { onOpenPaymentEntry: (paymentEntry: { allocated_amount: number; docstatus: number; name: string; received_amount: number; unallocated_amount: number }, currency: string) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
+  PosInvoiceDetailsScreen: ({ onBack, onOpenPaymentEntry, onOpenReturn, onStartSale }: { onBack: () => void; onOpenPaymentEntry: (paymentEntry: { allocated_amount: number; docstatus: number; name: string; received_amount: number; unallocated_amount: number }, currency: string) => void; onOpenReturn: (invoiceReturn: { name: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
     const { Pressable, Text } = require('react-native');
     return <>
       <Pressable accessibilityRole="button" onPress={() => onStartSale({ customer: 'CUST-001', customerName: 'Example customer' })}><Text>Start new sale</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={() => onOpenPaymentEntry({ allocated_amount: 150, docstatus: 1, name: 'ACC-PAY-0001', received_amount: 150, unallocated_amount: 0 }, 'KES')}><Text>Open payment</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => onOpenReturn({ name: 'POS-INV-RET-0001' })}><Text>Open return</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={onBack}><Text>Back to previous invoice</Text></Pressable>
     </>;
   },
 }));
@@ -89,5 +91,16 @@ describe('PosWorkspaceScreen', () => {
     expect(screen.getByText('Payment details: ACC-PAY-0001')).toBeTruthy();
     await fireEvent.press(screen.getByText('Payment details: ACC-PAY-0001'));
     expect(screen.getByRole('button', { name: 'Start new sale' })).toBeTruthy();
+  });
+
+  it('opens a linked credit note and returns to the original invoice', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Open invoices' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open invoice' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open return' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to previous invoice' }));
+
+    expect(screen.getByRole('button', { name: 'Open return' })).toBeTruthy();
   });
 });

@@ -108,6 +108,7 @@ export type PosInvoiceDetail = {
   pos_profile?: string;
   posting_date?: string;
   posting_time?: string;
+  returns?: PosInvoiceReturn[];
   status: PosInvoiceStatus;
   taxes?: PosInvoiceDetailTax[];
   totals: {
@@ -118,6 +119,13 @@ export type PosInvoiceDetail = {
     rounded_total?: number;
   };
   warehouse?: string;
+};
+
+export type PosInvoiceReturn = {
+  docstatus: number;
+  grand_total: number;
+  name: string;
+  posting_date?: string | null;
 };
 
 export type PosInvoiceDetailItem = {

@@ -4,11 +4,21 @@ jest.mock('react-native-paper', () => ({
   Text: require('react-native').Text,
 }));
 
+jest.mock('@/features/pos/hooks/useErpNextRecord', () => ({
+  useErpNextRecord: jest.fn(),
+}));
+
+import { useErpNextRecord } from '@/features/pos/hooks/useErpNextRecord';
 import { PosPaymentEntryDetailsScreen } from '@/features/pos/screens/PosPaymentEntryDetailsScreen';
 
 const onBack = jest.fn();
+const mockUseErpNextRecord = jest.mocked(useErpNextRecord);
 
 describe('PosPaymentEntryDetailsScreen', () => {
+  beforeEach(() => {
+    mockUseErpNextRecord.mockReturnValue({ error: null, isOpening: false, openRecord: jest.fn() });
+  });
+
   afterEach(async () => {
     await cleanup();
     jest.clearAllMocks();
@@ -28,6 +38,7 @@ describe('PosPaymentEntryDetailsScreen', () => {
     expect(screen.getByText('Cash')).toBeTruthy();
     expect(screen.getByText('Applied to invoice')).toBeTruthy();
     expect(screen.getAllByText('KES 150.00')).toHaveLength(1);
+    expect(screen.getByLabelText('Open in ERPNext')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Back to invoice'));
 

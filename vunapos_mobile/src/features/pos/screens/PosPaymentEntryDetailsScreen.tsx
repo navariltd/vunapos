@@ -2,6 +2,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
+import { PosErpNextRecordLink } from '@/features/pos/components/PosErpNextRecordLink';
 import { PosInvoicePaymentEntry } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
@@ -62,6 +63,8 @@ export function PosPaymentEntryDetailsScreen({ currency, onBack, paymentEntry }:
           <DetailRow label="Status" value={isCancelled ? 'Cancelled' : 'Submitted'} />
         </View>
       </View>
+
+      <PosErpNextRecordLink doctype="Payment Entry" name={paymentEntry.name} />
     </ScrollView>
   );
 }
