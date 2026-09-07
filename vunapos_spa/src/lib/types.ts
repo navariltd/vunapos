@@ -8,6 +8,9 @@ export type CachedItem = {
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
+	sales_uom?: string | null;
+	uom?: string;
+	conversion_factor?: number;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
 	price_list_rate?: number | null;

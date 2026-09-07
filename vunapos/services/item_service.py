@@ -73,7 +73,14 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
-	rate = _get_rate(item.item_code, profile, price_list)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_rate = uom_rates.get(item_code, {}).get(default_uom)
+	for row in item.get("uoms", []):
+		if row.uom == default_uom:
+			default_conversion_factor = flt(row.conversion_factor) or 1.0
+			break
+	rate = default_rate if default_rate is not None else _get_rate(item.item_code, profile, price_list)
 	bundle = _get_product_bundle_map([item.item_code], profile.warehouse).get(item.item_code, {})
 	variant_count = _get_variant_count_map([item.item_code]).get(item.item_code, 0)
 	actual_qty = _get_actual_qty(item.item_code, profile.warehouse)
@@ -87,6 +94,8 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		item_tax_template=item_tax_template,
 		item_tax=_with_item_tax_prices(item_tax_summary.get(item_tax_template), rate),
 		uoms=uoms,
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
 		variant_count=variant_count,
@@ -338,22 +347,40 @@ def _to_item_payload_from_row(
 	if price_list_rate is None:
 		price_list_rate = flt(item.standard_rate)
 	pricing_rule = (pricing_rule_map or {}).get(item.name)
-	rate = flt(pricing_rule.get("rate")) if pricing_rule else price_list_rate
 	bundle = (bundle_map or {}).get(item.name, {})
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
 	if bundle.get("available_qty") is not None:
 		actual_qty = bundle["available_qty"]
 
 	item_tax_template = (item_tax_template_map or {}).get(item.name)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_price_list_rate = price_list_rate
+	for row in (uom_map or {}).get(item.name, []):
+		if row.get("uom") == default_uom:
+			default_conversion_factor = flt(row.get("conversion_factor")) or 1.0
+			if row.get("rate") is not None:
+				default_price_list_rate = flt(row.get("rate"))
+			else:
+				default_price_list_rate = flt(price_list_rate) * default_conversion_factor
+			break
+	default_rate = default_price_list_rate
+	if pricing_rule and pricing_rule.get("kind") == "price":
+		# Catalogue rules are calculated against the stock UOM. Apply the same
+		# percentage to the configured sales UOM price rather than displaying a
+		# stock-UOM discount on a carton/box row.
+		default_rate = flt(default_price_list_rate) * (1 - flt(pricing_rule.get("discount_percentage")) / 100)
 	return item_to_dict(
 		item,
-		rate=rate,
-		price_list_rate=price_list_rate,
+		rate=default_rate,
+		price_list_rate=default_price_list_rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
 		item_tax_template=item_tax_template,
-		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
+		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), default_rate),
 		uoms=(uom_map or {}).get(item.name, []),
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		pricing_rule=pricing_rule,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
