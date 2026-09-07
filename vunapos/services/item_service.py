@@ -700,6 +700,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			"description",
 			"image",
 			"stock_uom",
+			"sales_uom",
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",
