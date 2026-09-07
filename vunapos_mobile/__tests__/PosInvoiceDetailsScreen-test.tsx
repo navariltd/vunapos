@@ -20,6 +20,7 @@ const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
 const onBack = jest.fn();
 const onOpenCustomer = jest.fn();
+const onOpenPaymentEntry = jest.fn();
 const onStartSale = jest.fn();
 
 describe('PosInvoiceDetailsScreen', () => {
@@ -73,6 +74,7 @@ describe('PosInvoiceDetailsScreen', () => {
           },
         ],
         name: 'POS-INV-0001',
+        payment_entries: [{ allocated_amount: 150, docstatus: 1, mode_of_payment: 'Cash', name: 'ACC-PAY-0001', posting_date: '2026-09-07', received_amount: 150, unallocated_amount: 0 }],
         status: 'Paid',
         totals: { grand_total: 625, outstanding_amount: 150, paid_amount: 475 },
       },
@@ -86,7 +88,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('renders item quantities, rates, amounts, and batch allocations', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
 
     expect(screen.getByText('Batched item')).toBeTruthy();
     expect(screen.getByText('ITEM-BATCHED')).toBeTruthy();
@@ -98,7 +100,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('returns to the invoice list from the detail header', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('Back to invoices'));
 
@@ -106,7 +108,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('opens the linked customer profile', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('View customer'));
 
@@ -114,7 +116,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('starts a new sale for the invoice customer', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('Start new sale'));
 
@@ -122,8 +124,20 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('offers payment only for an outstanding eligible invoice', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
 
     expect(screen.getByLabelText('Receive payment')).toBeTruthy();
+  });
+
+  it('lists linked Payment Entries and opens the selected payment', async () => {
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onOpenPaymentEntry={onOpenPaymentEntry} onStartSale={onStartSale} />);
+
+    expect(screen.getByText('Linked Payment Entries')).toBeTruthy();
+    expect(screen.getByText('ACC-PAY-0001')).toBeTruthy();
+    expect(screen.getByText('Allocated KES 150.00')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('View payment ACC-PAY-0001'));
+
+    expect(onOpenPaymentEntry).toHaveBeenCalledWith(expect.objectContaining({ allocated_amount: 150, name: 'ACC-PAY-0001' }), 'KES');
   });
 });

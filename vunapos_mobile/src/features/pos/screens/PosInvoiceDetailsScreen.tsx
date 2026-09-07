@@ -6,7 +6,7 @@ import { Text } from 'react-native-paper';
 import { PosInvoicePaymentSheet } from '@/features/pos/components/PosInvoicePaymentSheet';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
-import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
+import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoicePaymentEntry, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceDetailsScreenProps = {
@@ -14,6 +14,7 @@ type PosInvoiceDetailsScreenProps = {
   invoiceName: string;
   onBack: () => void;
   onOpenCustomer: (customer: string) => void;
+  onOpenPaymentEntry: (paymentEntry: PosInvoicePaymentEntry, currency: string) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
 
@@ -68,7 +69,7 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
   return <View style={styles.keyValue}><Text style={styles.keyLabel}>{label}</Text><Text numberOfLines={1} style={styles.keyText}>{value || '-'}</Text></View>;
 }
 
-export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onStartSale }: PosInvoiceDetailsScreenProps) {
+export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onOpenPaymentEntry, onStartSale }: PosInvoiceDetailsScreenProps) {
   const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
   const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
   const bootstrap = usePosBootstrap();
@@ -183,6 +184,27 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
         </View>
       </DetailCard>
 
+      <DetailCard title="Linked Payment Entries">
+        {invoice.payment_entries?.length ? (
+          <View style={styles.paymentEntryList}>
+            {invoice.payment_entries.map((paymentEntry) => {
+              const isCancelled = paymentEntry.docstatus === 2;
+
+              return (
+                <Pressable accessibilityLabel={`View payment ${paymentEntry.name}`} key={paymentEntry.name} onPress={() => onOpenPaymentEntry(paymentEntry, currency)} style={styles.paymentEntryRow}>
+                  <View style={styles.paymentEntryMain}>
+                    <Text style={styles.paymentEntryName}>{paymentEntry.name}</Text>
+                    <Text style={styles.paymentEntryMeta}>{formatDate(paymentEntry.posting_date || undefined)} · {paymentEntry.mode_of_payment || 'Unspecified'}</Text>
+                    <Text style={[styles.paymentEntryStatus, isCancelled && styles.paymentEntryCancelled]}>{isCancelled ? 'Cancelled' : 'Submitted'}</Text>
+                  </View>
+                  <Text style={styles.paymentEntryAmount}>Allocated {formatCurrency(paymentEntry.allocated_amount, currency)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : <Text style={styles.emptyCardText}>No linked Payment Entries.</Text>}
+      </DetailCard>
+
       <DetailCard title="Taxes and totals">
         <View style={styles.keyValues}>
           {invoice.taxes?.map((tax, index) => <KeyValue key={`${tax.account_head || tax.description || 'tax'}-${index}`} label={tax.description || tax.account_head || 'Tax'} value={formatCurrency(tax.tax_amount || 0, currency)} />)}
@@ -241,6 +263,14 @@ const styles = StyleSheet.create({
   keyText: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small, textAlign: 'right' },
   keyValue: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   keyValues: { gap: spacing.xs },
+  paymentEntryAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny, textAlign: 'right' },
+  paymentEntryCancelled: { color: posDarkColors.error },
+  paymentEntryList: { gap: spacing.sm },
+  paymentEntryMain: { flex: 1, gap: 2 },
+  paymentEntryMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  paymentEntryName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
+  paymentEntryRow: { alignItems: 'flex-start', borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
+  paymentEntryStatus: { color: '#86efac', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.lg },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   status: { borderRadius: radii.pill, paddingHorizontal: spacing.sm, paddingVertical: 4 },

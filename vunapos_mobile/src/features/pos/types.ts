@@ -104,6 +104,7 @@ export type PosInvoiceDetail = {
   name: string;
   opening_entry?: string;
   payments?: PosInvoiceHistoryPayment[];
+  payment_entries?: PosInvoicePaymentEntry[];
   pos_profile?: string;
   posting_date?: string;
   posting_time?: string;
@@ -140,6 +141,16 @@ export type PosInvoiceDetailTax = {
   account_head?: string;
   description?: string;
   tax_amount?: number;
+};
+
+export type PosInvoicePaymentEntry = {
+  allocated_amount: number;
+  docstatus: number;
+  mode_of_payment?: string | null;
+  name: string;
+  posting_date?: string | null;
+  received_amount: number;
+  unallocated_amount: number;
 };
 
 export type PosCustomerDetails = {
