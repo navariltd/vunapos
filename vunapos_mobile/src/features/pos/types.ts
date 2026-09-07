@@ -33,8 +33,14 @@ export type PosInvoiceListRow = {
 };
 
 export type PosBootstrapData = {
-  payment_modes: { mode_of_payment: string }[];
+  payment_modes: {
+    default?: boolean;
+    mode_of_payment: string;
+    payment_gateway?: string | null;
+    type?: string | null;
+  }[];
   pos_profile: {
+    allow_customer_payments?: boolean;
     currency?: string;
     currency_precision?: number;
     name: string;
@@ -181,6 +187,11 @@ export type PosCustomerSummary = {
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;
+};
+
+export type PosReceivedPayment = {
+  duplicate?: boolean;
+  name: string;
 };
 
 export type PosInvoiceHistory = {

@@ -1,7 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
+import { PosInvoicePaymentSheet } from '@/features/pos/components/PosInvoicePaymentSheet';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
 import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
@@ -67,8 +69,10 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
 }
 
 export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onStartSale }: PosInvoiceDetailsScreenProps) {
+  const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
+  const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
   const bootstrap = usePosBootstrap();
-  const details = usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile: bootstrap.data?.pos_profile.name });
+  const details = usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile: bootstrap.data?.pos_profile.name, refreshKey: paymentRefreshKey });
   const error = bootstrap.error ?? details.error;
 
   if (bootstrap.isLoading || details.isLoading) {
@@ -90,6 +94,14 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
   const statusStyle = statusStyles[invoice.status];
   const itemCount = invoice.items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
   const invoiceCustomer = invoice.customer;
+  const outstandingAmount = invoice.totals.outstanding_amount || 0;
+  const canReceivePayment = Boolean(
+    bootstrap.data?.pos_profile.allow_customer_payments
+      && invoice.doctype !== 'Sales Order'
+      && invoiceCustomer
+      && outstandingAmount > 0
+      && bootstrap.data.payment_modes.some((paymentMode) => !paymentMode.payment_gateway),
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -121,6 +133,7 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
         {invoiceCustomer ? (
           <View style={styles.customerActions}>
             <Pressable accessibilityLabel="View customer" onPress={() => onOpenCustomer(invoiceCustomer)} style={styles.customerButton}><Text style={styles.customerButtonLabel}>View customer</Text></Pressable>
+            {canReceivePayment ? <Pressable accessibilityLabel="Receive payment" onPress={() => setPaymentSheetVisible(true)} style={styles.customerButton}><Text style={styles.customerButtonLabel}>Receive payment</Text></Pressable> : null}
             <Pressable accessibilityLabel="Start new sale" onPress={() => onStartSale({ customer: invoiceCustomer, customerName: invoice.customer_name || invoiceCustomer })} style={styles.customerButton}><Text style={styles.customerButtonLabel}>New sale</Text></Pressable>
           </View>
         ) : null}
@@ -178,6 +191,23 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
           {invoice.loyalty_amount ? <KeyValue label="Loyalty redemption" value={`−${formatCurrency(invoice.loyalty_amount, currency)}`} /> : null}
         </View>
       </DetailCard>
+
+      {invoiceCustomer && paymentSheetVisible ? (
+        <PosInvoicePaymentSheet
+          currency={currency}
+          customer={invoiceCustomer}
+          invoice={invoice.name}
+          onComplete={() => {
+            setPaymentSheetVisible(false);
+            setPaymentRefreshKey((current) => current + 1);
+          }}
+          onDismiss={() => setPaymentSheetVisible(false)}
+          outstandingAmount={outstandingAmount}
+          paymentModes={bootstrap.data?.payment_modes ?? []}
+          posProfile={bootstrap.data?.pos_profile.name || ''}
+          visible={paymentSheetVisible}
+        />
+      ) : null}
     </ScrollView>
   );
 }

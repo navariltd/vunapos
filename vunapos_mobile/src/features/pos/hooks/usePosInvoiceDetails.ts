@@ -18,12 +18,13 @@ type UsePosInvoiceDetailsArgs = {
   invoiceDoctype?: string;
   invoiceName: string;
   posProfile: string | undefined;
+  refreshKey?: number;
 };
 
-export function usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile }: UsePosInvoiceDetailsArgs): PosInvoiceDetailsState {
+export function usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile, refreshKey = 0 }: UsePosInvoiceDetailsArgs): PosInvoiceDetailsState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const requestKey = companyUrl && sessionId && posProfile && invoiceName
-    ? JSON.stringify({ companyUrl, invoiceDoctype, invoiceName, posProfile, sessionId })
+    ? JSON.stringify({ companyUrl, invoiceDoctype, invoiceName, posProfile, refreshKey, sessionId })
     : null;
   const [state, setState] = useState<PosInvoiceDetailsRequestState>({ data: null, error: null, requestKey: null });
 
@@ -50,7 +51,7 @@ export function usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile }
       });
 
     return () => controller.abort();
-  }, [companyUrl, invalidateSession, invoiceDoctype, invoiceName, posProfile, requestKey, sessionId]);
+  }, [companyUrl, invalidateSession, invoiceDoctype, invoiceName, posProfile, refreshKey, requestKey, sessionId]);
 
   if (!requestKey) {
     return { data: null, error: null, isLoading: false };

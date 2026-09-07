@@ -183,3 +183,72 @@ export async function getVunaMethod<T>(
     throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
   }
 }
+
+/**
+ * Calls a VunaPOS POST endpoint with the saved Frappe session and CSRF token.
+ * Frappe rejects state-changing requests without both, so this deliberately
+ * fetches a current token instead of relying on browser cookie behaviour.
+ */
+export async function postVunaMethod<T>(
+  companyUrl: string,
+  sessionId: string,
+  method: string,
+  params: VunaMethodParams = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const csrf = await getVunaMethod<{ csrf_token: string }>(
+    companyUrl,
+    sessionId,
+    'vunapos.api.auth.get_csrf_token',
+    {},
+    signal,
+  );
+
+  try {
+    const response = await fetch(requestUrl(companyUrl, `/api/method/${method}`), {
+      body: new URLSearchParams(
+        Object.entries(params)
+          .filter(([, value]) => value !== undefined && value !== null)
+          .map(([key, value]) => [key, String(value)]),
+      ).toString(),
+      headers: {
+        Accept: 'application/json',
+        Cookie: `sid=${encodeURIComponent(sessionId)}`,
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+        'X-Frappe-CSRF-Token': csrf.csrf_token,
+      },
+      method: 'POST',
+      signal,
+    });
+
+    if (response.status === 401 || response.status === 403) {
+      throw new FrappeClientError('Your session has expired. Sign in again to continue.', 'session');
+    }
+
+    let payload: { message?: VunaEnvelope<T> } | undefined;
+    try {
+      payload = await response.json() as { message?: VunaEnvelope<T> };
+    } catch {
+      // Preserve a useful status-based error when a proxy returns non-JSON.
+    }
+
+    if (!response.ok) {
+      throw new FrappeClientError(`The server could not complete this request (${response.status}).`, 'api');
+    }
+
+    if (!payload?.message?.ok) {
+      const message = payload?.message?.errors?.[0]?.message ?? 'The server could not complete this request.';
+      throw new FrappeClientError(message, 'api');
+    }
+
+    return payload.message.data;
+  } catch (error) {
+    if (error instanceof FrappeClientError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw error;
+    }
+    throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
+  }
+}

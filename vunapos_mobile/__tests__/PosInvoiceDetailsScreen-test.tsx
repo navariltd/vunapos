@@ -26,7 +26,7 @@ describe('PosInvoiceDetailsScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUsePosBootstrap.mockReturnValue({
-      data: { payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
+      data: { payment_modes: [{ default: true, mode_of_payment: 'Cash' }], pos_profile: { allow_customer_payments: true, currency: 'KES', name: 'POS-001' } },
       error: null,
       isLoading: false,
     });
@@ -74,7 +74,7 @@ describe('PosInvoiceDetailsScreen', () => {
         ],
         name: 'POS-INV-0001',
         status: 'Paid',
-        totals: { grand_total: 625, outstanding_amount: 0, paid_amount: 625 },
+        totals: { grand_total: 625, outstanding_amount: 150, paid_amount: 475 },
       },
       error: null,
       isLoading: false,
@@ -119,5 +119,11 @@ describe('PosInvoiceDetailsScreen', () => {
     await fireEvent.press(screen.getByLabelText('Start new sale'));
 
     expect(onStartSale).toHaveBeenCalledWith({ customer: 'CUST-001', customerName: 'Example customer' });
+  });
+
+  it('offers payment only for an outstanding eligible invoice', async () => {
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+
+    expect(screen.getByLabelText('Receive payment')).toBeTruthy();
   });
 });

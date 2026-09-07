@@ -1,6 +1,7 @@
 import {
   FrappeClientError,
   getVunaMethod,
+  postVunaMethod,
   signInToFrappe,
   validateFrappeSession,
   verifyVunaPosSite,
@@ -161,6 +162,32 @@ describe('frappeClient', () => {
       fetchMock.mockRejectedValue(aborted);
 
       await expect(getVunaMethod('https://vuna.example.com', 'sid', 'method')).rejects.toBe(aborted);
+    });
+  });
+
+  describe('postVunaMethod', () => {
+    it('gets a CSRF token then posts the authenticated Vuna request', async () => {
+      fetchMock
+        .mockResolvedValueOnce(mockResponse({ json: { message: { data: { csrf_token: 'csrf-1' }, ok: true } } }))
+        .mockResolvedValueOnce(mockResponse({ json: { message: { data: { name: 'ACC-PAY-0001' }, ok: true } } }));
+
+      await expect(postVunaMethod<{ name: string }>('https://vuna.example.com', 'session id', 'vunapos.api.payment.receive_customer_payment', {
+        amount: 150,
+        customer: 'CUST-001',
+      })).resolves.toEqual({ name: 'ACC-PAY-0001' });
+
+      expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://vuna.example.com/api/method/vunapos.api.auth.get_csrf_token', expect.objectContaining({ method: 'GET' }));
+      expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://vuna.example.com/api/method/vunapos.api.payment.receive_customer_payment', {
+        body: 'amount=150&customer=CUST-001',
+        headers: {
+          Accept: 'application/json',
+          Cookie: 'sid=session%20id',
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+          'X-Frappe-CSRF-Token': 'csrf-1',
+        },
+        method: 'POST',
+        signal: undefined,
+      });
     });
   });
 });
