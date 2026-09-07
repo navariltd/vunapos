@@ -11,7 +11,7 @@ export function normalizeCompanyUrl(rawInput: string): CompanyUrlValidation {
     return { ok: false, message: 'Enter your company URL.' };
   }
 
-  const withScheme = /^https?:\/\//i.test(input) ? input : `https://${input}`;
+  const withScheme = /^[a-z][a-z\d+.-]*:\/\//i.test(input) ? input : `https://${input}`;
 
   try {
     const parsed = new URL(withScheme);
