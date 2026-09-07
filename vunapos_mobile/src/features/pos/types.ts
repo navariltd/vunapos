@@ -146,6 +146,11 @@ export type PosInvoiceReturnPreviewItem = {
   uom?: string | null;
 };
 
+export type PosCreatedInvoiceReturn = {
+  duplicate: boolean;
+  invoice: PosInvoiceDetail;
+};
+
 export type PosInvoiceDetailItem = {
   amount: number;
   batch_allocations?: PosInvoiceBatchAllocation[];

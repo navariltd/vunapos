@@ -266,10 +266,14 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
           visible={paymentSheetVisible}
         />
       ) : null}
-      {canStartReturn ? (
+      {canStartReturn && returnPreviewVisible ? (
         <PosInvoiceReturnPreviewSheet
           currency={currency}
           invoiceName={invoice.name}
+          onComplete={(returnInvoice) => {
+            setReturnPreviewVisible(false);
+            onOpenReturn(returnInvoice);
+          }}
           onDismiss={() => setReturnPreviewVisible(false)}
           posProfile={bootstrap.data?.pos_profile.name || ''}
           visible={returnPreviewVisible}
