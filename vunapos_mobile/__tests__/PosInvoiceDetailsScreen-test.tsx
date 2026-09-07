@@ -20,6 +20,7 @@ const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
 const onBack = jest.fn();
 const onOpenCustomer = jest.fn();
+const onStartSale = jest.fn();
 
 describe('PosInvoiceDetailsScreen', () => {
   beforeEach(() => {
@@ -85,7 +86,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('renders item quantities, rates, amounts, and batch allocations', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
 
     expect(screen.getByText('Batched item')).toBeTruthy();
     expect(screen.getByText('ITEM-BATCHED')).toBeTruthy();
@@ -97,7 +98,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('returns to the invoice list from the detail header', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('Back to invoices'));
 
@@ -105,10 +106,18 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('opens the linked customer profile', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('View customer'));
 
     expect(onOpenCustomer).toHaveBeenCalledWith('CUST-001');
+  });
+
+  it('starts a new sale for the invoice customer', async () => {
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} onStartSale={onStartSale} />);
+
+    await fireEvent.press(screen.getByLabelText('Start new sale'));
+
+    expect(onStartSale).toHaveBeenCalledWith({ customer: 'CUST-001', customerName: 'Example customer' });
   });
 });

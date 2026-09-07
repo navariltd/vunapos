@@ -19,6 +19,7 @@ import { PosCustomerDetailsScreen } from '@/features/pos/screens/PosCustomerDeta
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
 const onBack = jest.fn();
+const onStartSale = jest.fn();
 
 describe('PosCustomerDetailsScreen', () => {
   beforeEach(() => {
@@ -55,8 +56,8 @@ describe('PosCustomerDetailsScreen', () => {
     await cleanup();
   });
 
-  it('renders the linked customer profile without exposing unavailable actions', async () => {
-    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} />);
+  it('renders the linked customer profile and allows starting a new sale', async () => {
+    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} onStartSale={onStartSale} />);
 
     expect(mockUsePosCustomerDetails).toHaveBeenCalledWith({ customer: 'CUST-001', posProfile: 'POS-001' });
     expect(screen.getByText('Example customer')).toBeTruthy();
@@ -66,12 +67,14 @@ describe('PosCustomerDetailsScreen', () => {
     expect(screen.getByText('+254 700 000 000')).toBeTruthy();
     expect(screen.getByText('customer@example.com')).toBeTruthy();
     expect(screen.getByText('42 Vuna Street, Nairobi, Kenya')).toBeTruthy();
-    expect(screen.queryByText('Start new sale')).toBeNull();
     expect(screen.queryByText('Receive payment')).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText('Start new sale'));
+    expect(onStartSale).toHaveBeenCalledWith({ customer: 'CUST-001', customerName: 'Example customer' });
   });
 
   it('returns to the invoice details screen', async () => {
-    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} />);
+    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} onStartSale={onStartSale} />);
 
     await fireEvent.press(screen.getByLabelText('Back to invoice'));
 

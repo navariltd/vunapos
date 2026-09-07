@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
-import { FlatList, ListRenderItem, StyleSheet, View } from 'react-native';
+import { FlatList, ListRenderItem, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosCartButton } from '@/features/pos/components/PosCartButton';
 import { PosItemCard } from '@/features/pos/components/PosItemCard';
 import { PosItemSearch } from '@/features/pos/components/PosItemSearch';
 import { previewItems } from '@/features/pos/data/previewItems';
-import { PosPreviewItem } from '@/features/pos/types';
-import { posDarkColors, spacing, typography } from '@/theme/tokens';
+import { PosPreviewItem, PosSaleCustomer } from '@/features/pos/types';
+import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 function matchesSearch(item: PosPreviewItem, searchTerm: string) {
   const normalizedItem = `${item.itemName} ${item.itemCode}`.toLowerCase();
@@ -17,9 +17,11 @@ function matchesSearch(item: PosPreviewItem, searchTerm: string) {
 type PosHomeScreenProps = {
   cartItemCount: number;
   onAddToCart: () => void;
+  onClearSaleCustomer: () => void;
+  saleCustomer: PosSaleCustomer | null;
 };
 
-export function PosHomeScreen({ cartItemCount, onAddToCart }: PosHomeScreenProps) {
+export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer, saleCustomer }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const filteredItems = useMemo(() => previewItems.filter((item) => matchesSearch(item, searchQuery)), [searchQuery]);
 
@@ -39,7 +41,23 @@ export function PosHomeScreen({ cartItemCount, onAddToCart }: PosHomeScreenProps
         data={filteredItems}
         keyExtractor={(item) => item.itemCode}
         ListEmptyComponent={<Text style={styles.emptyState}>No items found. Try another item name, code, or barcode.</Text>}
-        ListHeaderComponent={<PosItemSearch onChangeText={setSearchQuery} value={searchQuery} />}
+        ListHeaderComponent={(
+          <View>
+            {saleCustomer ? (
+              <View style={styles.saleCustomer}>
+                <View style={styles.saleCustomerDetails}>
+                  <Text style={styles.saleCustomerLabel}>Customer</Text>
+                  <Text numberOfLines={1} style={styles.saleCustomerName}>{saleCustomer.customerName}</Text>
+                  <Text style={styles.saleCustomerId}>{saleCustomer.customer}</Text>
+                </View>
+                <Pressable accessibilityLabel="Clear sale customer" onPress={onClearSaleCustomer} style={styles.clearCustomerButton}>
+                  <Text style={styles.clearCustomerButtonLabel}>Clear</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            <PosItemSearch onChangeText={setSearchQuery} value={searchQuery} />
+          </View>
+        )}
         numColumns={2}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
@@ -53,6 +71,18 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     position: 'relative',
+  },
+  clearCustomerButton: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  clearCustomerButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
   },
   emptyState: {
     color: posDarkColors.onSurfaceMuted,
@@ -69,5 +99,34 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+  },
+  saleCustomer: {
+    alignItems: 'center',
+    backgroundColor: posDarkColors.surfaceContainer,
+    borderBottomColor: posDarkColors.border,
+    borderBottomWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  saleCustomerDetails: {
+    flex: 1,
+    gap: 2,
+  },
+  saleCustomerId: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  saleCustomerLabel: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+  },
+  saleCustomerName: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
   },
 });

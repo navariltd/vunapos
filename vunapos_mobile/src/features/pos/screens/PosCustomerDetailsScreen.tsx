@@ -4,12 +4,13 @@ import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosCustomerDetails } from '@/features/pos/hooks/usePosCustomerDetails';
-import { PosCustomerAddress } from '@/features/pos/types';
+import { PosCustomerAddress, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCustomerDetailsScreenProps = {
   customer: string;
   onBack: () => void;
+  onStartSale: (customer: PosSaleCustomer) => void;
 };
 
 function formatCurrency(amount: number, currency = 'KES') {
@@ -49,7 +50,7 @@ function SummaryValue({ label, value, sub }: { label: string; value: string; sub
   );
 }
 
-export function PosCustomerDetailsScreen({ customer, onBack }: PosCustomerDetailsScreenProps) {
+export function PosCustomerDetailsScreen({ customer, onBack, onStartSale }: PosCustomerDetailsScreenProps) {
   const bootstrap = usePosBootstrap();
   const details = usePosCustomerDetails({ customer, posProfile: bootstrap.data?.pos_profile.name });
   const error = bootstrap.error ?? details.error;
@@ -100,6 +101,10 @@ export function PosCustomerDetailsScreen({ customer, onBack }: PosCustomerDetail
       <DetailCard title="Primary address">
         <Text style={styles.detailText}>{address || 'No permitted primary address available.'}</Text>
       </DetailCard>
+
+      <Pressable accessibilityLabel="Start new sale" onPress={() => onStartSale({ customer: profile.customer, customerName: profile.customer_name })} style={styles.startSaleButton}>
+        <Text style={styles.startSaleButtonLabel}>Start new sale</Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -117,6 +122,8 @@ const styles = StyleSheet.create({
   heading: { flex: 1, gap: 4 },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.lg },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
+  startSaleButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', padding: spacing.md },
+  startSaleButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   summaryLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },

@@ -178,6 +178,11 @@ export type PosCustomerSummary = {
   territory?: string | null;
 };
 
+export type PosSaleCustomer = {
+  customer: string;
+  customerName: string;
+};
+
 export type PosInvoiceHistory = {
   has_more: boolean;
   invoices: PosInvoiceHistoryRow[];

@@ -4,7 +4,7 @@ import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
-import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoiceStatus } from '@/features/pos/types';
+import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoiceStatus, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceDetailsScreenProps = {
@@ -12,6 +12,7 @@ type PosInvoiceDetailsScreenProps = {
   invoiceName: string;
   onBack: () => void;
   onOpenCustomer: (customer: string) => void;
+  onStartSale: (customer: PosSaleCustomer) => void;
 };
 
 const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: string }> = {
@@ -65,7 +66,7 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
   return <View style={styles.keyValue}><Text style={styles.keyLabel}>{label}</Text><Text numberOfLines={1} style={styles.keyText}>{value || '-'}</Text></View>;
 }
 
-export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer }: PosInvoiceDetailsScreenProps) {
+export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onStartSale }: PosInvoiceDetailsScreenProps) {
   const bootstrap = usePosBootstrap();
   const details = usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile: bootstrap.data?.pos_profile.name });
   const error = bootstrap.error ?? details.error;
@@ -117,7 +118,12 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
         <Text style={styles.customerName}>{invoice.customer_name || invoiceCustomer || 'No customer'}</Text>
         <Text style={styles.customerId}>{invoiceCustomer || '-'}</Text>
         {invoice.is_credit_sale ? <View style={styles.keyValues}><KeyValue label="Payment due" value={formatDate(invoice.due_date)} /><KeyValue label="Outstanding" value={formatCurrency(invoice.totals.outstanding_amount || 0, currency)} /></View> : null}
-        {invoiceCustomer ? <Pressable accessibilityLabel="View customer" onPress={() => onOpenCustomer(invoiceCustomer)} style={styles.customerButton}><Text style={styles.customerButtonLabel}>View customer</Text></Pressable> : null}
+        {invoiceCustomer ? (
+          <View style={styles.customerActions}>
+            <Pressable accessibilityLabel="View customer" onPress={() => onOpenCustomer(invoiceCustomer)} style={styles.customerButton}><Text style={styles.customerButtonLabel}>View customer</Text></Pressable>
+            <Pressable accessibilityLabel="Start new sale" onPress={() => onStartSale({ customer: invoiceCustomer, customerName: invoice.customer_name || invoiceCustomer })} style={styles.customerButton}><Text style={styles.customerButtonLabel}>New sale</Text></Pressable>
+          </View>
+        ) : null}
       </DetailCard>
 
       <DetailCard title="POS audit">
@@ -187,6 +193,7 @@ const styles = StyleSheet.create({
   customerId: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   customerButton: { alignSelf: 'flex-start', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
   customerButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+  customerActions: { flexDirection: 'row', gap: spacing.sm },
   customerName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   emptyCardText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
