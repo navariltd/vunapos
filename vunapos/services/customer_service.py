@@ -33,11 +33,24 @@ def search_customers(query=None, limit=20, since=None):
 		"Customer",
 		filters=filters,
 		or_filters=or_filters,
-		fields=["name"],
+		# Fetch the fields used by customer_to_dict in the directory query. The
+		# previous get_list(name) + get_doc() loop issued one request per customer
+		# during the initial POS bootstrap.
+		fields=[
+			"name",
+			"customer_name",
+			"mobile_no",
+			"email_id",
+			"customer_group",
+			"default_price_list",
+			"is_walkin",
+			"tax_id",
+			"modified",
+		],
 		limit_page_length=limit,
 		order_by="customer_name asc",
 	)
-	return [customer_to_dict(frappe.get_doc("Customer", row.name)) for row in customers]
+	return [customer_to_dict(row) for row in customers]
 
 
 def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=None):

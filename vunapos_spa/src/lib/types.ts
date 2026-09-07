@@ -8,6 +8,9 @@ export type CachedItem = {
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
+	sales_uom?: string | null;
+	uom?: string;
+	conversion_factor?: number;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
 	price_list_rate?: number | null;
@@ -177,6 +180,14 @@ export type CachedPosSession = {
 export type MetaRow = {
 	key: string;
 	value: unknown;
+};
+
+export type BootstrapConfigPayload = {
+	server_time: string;
+	pos_profile: CachedProfile;
+	pos_session: CachedPosSession;
+	tax_settings: TaxSettings;
+	payment_modes: CachedPaymentMode[];
 };
 
 export type BootstrapDeleted = {

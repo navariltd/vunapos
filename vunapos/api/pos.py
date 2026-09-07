@@ -1,7 +1,12 @@
 import frappe
 from frappe.utils import now
 
-from vunapos.services.sync_service import get_pos_bootstrap as get_pos_bootstrap_service
+from vunapos.services.sync_service import (
+	get_pos_bootstrap as get_pos_bootstrap_service,
+)
+from vunapos.services.sync_service import (
+	get_pos_bootstrap_config as get_pos_bootstrap_config_service,
+)
 from vunapos.utils.response import failure, success
 
 
@@ -25,5 +30,13 @@ def ping():
 def get_pos_bootstrap(pos_profile: str | None = None, since: str | None = None):
 	try:
 		return success(get_pos_bootstrap_service(pos_profile=pos_profile, since=since))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_pos_bootstrap_config(pos_profile: str | None = None):
+	try:
+		return success(get_pos_bootstrap_config_service(pos_profile=pos_profile))
 	except Exception as exc:
 		return _failure_from_exception(exc)

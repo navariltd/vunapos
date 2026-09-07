@@ -267,6 +267,40 @@ def ensure_test_item():
 	return item.name
 
 
+def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
+	"""Create a stock item whose configured sales UOM is an 18-unit box."""
+	stock_uom = frappe.db.get_value("UOM", {"name": "Nos"}, "name") or frappe.db.get_value("UOM", {}, "name")
+	box_uom = frappe.db.get_value("UOM", {"name": "Box"}, "name")
+	if not box_uom:
+		box_uom = frappe.get_doc({"doctype": "UOM", "uom_name": "Box"}).insert(ignore_permissions=True).name
+	if frappe.db.exists("Item", item_code):
+		item = frappe.get_doc("Item", item_code)
+	else:
+		item = frappe.get_doc(
+			{
+				"doctype": "Item",
+				"item_code": item_code,
+				"item_name": item_code,
+				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+				"stock_uom": stock_uom,
+				"sales_uom": box_uom,
+				"is_sales_item": 1,
+				"is_stock_item": 1,
+				"standard_rate": 100,
+				"uoms": [{"uom": box_uom, "conversion_factor": 18}],
+			}
+		)
+		item.insert(ignore_permissions=True)
+	item.sales_uom = box_uom
+	item.is_sales_item = 1
+	item.is_stock_item = 1
+	if not any(row.uom == box_uom for row in item.get("uoms", [])):
+		item.append("uoms", {"uom": box_uom, "conversion_factor": 18})
+	item.save(ignore_permissions=True)
+	frappe.clear_document_cache("Item", item.name)
+	return item.name
+
+
 def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
 	if frappe.db.exists("Item", item_code):
 		item = frappe.get_doc("Item", item_code)
