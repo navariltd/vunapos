@@ -20,6 +20,17 @@ export type PosCatalogueItem = {
   stock_uom?: string | null;
 };
 
+export type PosCartItem = {
+  allow_negative_stock: boolean;
+  available_qty: number | null;
+  is_stock_item: boolean;
+  item_code: string;
+  item_name: string;
+  qty: number;
+  rate: number;
+  uom?: string | null;
+};
+
 export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' | 'Partly Paid' | 'Unpaid';
 
 export type PosInvoiceListRow = {

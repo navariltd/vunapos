@@ -6,13 +6,13 @@ import { posDarkColors, radii } from '@/theme/tokens';
 
 type PosCartButtonProps = {
   itemCount: number;
+  onPress: () => void;
 };
 
-/** Cart presentation only; cart review and checkout arrive in later increments. */
-export function PosCartButton({ itemCount }: PosCartButtonProps) {
+export function PosCartButton({ itemCount, onPress }: PosCartButtonProps) {
   return (
     <View style={styles.container}>
-      <Pressable accessibilityLabel={`Cart, ${itemCount} items`} style={styles.button}>
+      <Pressable accessibilityLabel={`Cart, ${itemCount} items`} onPress={onPress} style={styles.button}>
         <MaterialCommunityIcons color={posDarkColors.onPrimary} name="cart-outline" size={26} />
       </Pressable>
       {itemCount > 0 ? <Badge style={styles.badge}>{itemCount}</Badge> : null}

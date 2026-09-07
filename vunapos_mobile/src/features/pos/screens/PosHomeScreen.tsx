@@ -17,12 +17,13 @@ function matchesSearch(item: PosCatalogueItem, searchTerm: string) {
 
 type PosHomeScreenProps = {
   cartItemCount: number;
-  onAddToCart: () => void;
+  onAddToCart: (item: PosCatalogueItem, currency: string) => void;
   onClearSaleCustomer: () => void;
+  onOpenCart: () => void;
   saleCustomer: PosSaleCustomer | null;
 };
 
-export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer, saleCustomer }: PosHomeScreenProps) {
+export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer, onOpenCart, saleCustomer }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({ posProfile: bootstrap.data?.pos_profile.name, query: searchQuery });
@@ -34,7 +35,7 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer,
   function addItem(item: PosCatalogueItem) {
     const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
     if (!outOfStock) {
-      onAddToCart();
+      onAddToCart(item, currency);
     }
   }
 
@@ -79,7 +80,7 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer,
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
       />
-      <PosCartButton itemCount={cartItemCount} />
+      <PosCartButton itemCount={cartItemCount} onPress={onOpenCart} />
     </View>
   );
 }
