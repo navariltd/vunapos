@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback } from 'react';
 import { PaperProvider } from 'react-native-paper';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppLaunchScreen } from '@/components/splash/AppLaunchScreen';
 import { AppSessionProvider, useAppSession } from '@/features/auth/AppSessionProvider';
@@ -19,11 +20,13 @@ export default function RootLayout() {
   });
 
   return (
-    <PaperProvider theme={frappeTheme}>
-      <AppSessionProvider>
-        <RootNavigator fontsLoaded={fontsLoaded} />
-      </AppSessionProvider>
-    </PaperProvider>
+    <SafeAreaProvider>
+      <PaperProvider theme={frappeTheme}>
+        <AppSessionProvider>
+          <RootNavigator fontsLoaded={fontsLoaded} />
+        </AppSessionProvider>
+      </PaperProvider>
+    </SafeAreaProvider>
   );
 }
 

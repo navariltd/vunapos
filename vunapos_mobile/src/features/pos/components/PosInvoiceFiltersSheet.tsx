@@ -207,7 +207,7 @@ export function PosInvoiceFiltersSheet({
       <View style={styles.modalRoot}>
         <Pressable accessibilityLabel="Dismiss filters" onPress={onDismiss} style={styles.backdrop} />
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
-          <View accessibilityViewIsModal style={styles.sheet}>
+          <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
               <View>
@@ -219,7 +219,7 @@ export function PosInvoiceFiltersSheet({
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               <Text style={styles.label}>Invoice number</Text>
               <TextInput
                 accessibilityLabel="Filter by invoice number"
@@ -310,7 +310,7 @@ export function PosInvoiceFiltersSheet({
               />
             ) : null}
 
-            <View style={[styles.footer, { paddingBottom: Math.max(spacing.md, insets.bottom) }]}>
+            <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
               <Pressable onPress={onClear} style={styles.clearButton}>
                 <Text style={styles.clearButtonLabel}>Clear filters</Text>
               </Pressable>
@@ -469,6 +469,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     borderTopWidth: 1,
+    flexShrink: 1,
     maxHeight: '88%',
   },
   sheetHeader: {

@@ -96,7 +96,7 @@ export function PosInvoicePaymentSheet({
       <View style={styles.modalRoot}>
         <Pressable accessibilityLabel="Dismiss receive payment" disabled={isSubmitting} onPress={onDismiss} style={styles.backdrop} />
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
-          <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+          <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
             <View style={styles.handle} />
             <View style={styles.header}>
               <View style={styles.heading}>
@@ -117,7 +117,7 @@ export function PosInvoicePaymentSheet({
                 </Pressable>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <Text style={styles.label}>Amount</Text>
                 <TextInput
                   accessibilityLabel="Payment amount"
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
   modeOptionLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
   modeOptionLabelActive: { color: posDarkColors.onPrimary },
   modeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, maxHeight: '88%', paddingHorizontal: spacing.md },
+  sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, flexShrink: 1, maxHeight: '88%', paddingHorizontal: spacing.md },
   submitButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', marginTop: spacing.md, minHeight: 48, paddingHorizontal: spacing.md },
   submitButtonDisabled: { opacity: 0.45 },
   submitButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },

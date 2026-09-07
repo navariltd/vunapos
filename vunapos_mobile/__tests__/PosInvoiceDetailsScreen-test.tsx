@@ -4,6 +4,10 @@ jest.mock('react-native-paper', () => ({
   Text: require('react-native').Text,
 }));
 
+jest.mock('react-native-safe-area-context', () => ({
+  useSafeAreaInsets: () => ({ bottom: 0 }),
+}));
+
 jest.mock('@/features/pos/hooks/usePosBootstrap', () => ({
   usePosBootstrap: jest.fn(),
 }));
@@ -20,16 +24,22 @@ jest.mock('@/features/pos/hooks/useErpNextRecord', () => ({
   useErpNextRecord: jest.fn(),
 }));
 
+jest.mock('@/features/pos/hooks/useInvoiceReturnPreview', () => ({
+  useInvoiceReturnPreview: jest.fn(),
+}));
+
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
 import { useInvoiceReceipt } from '@/features/pos/hooks/useInvoiceReceipt';
 import { useErpNextRecord } from '@/features/pos/hooks/useErpNextRecord';
+import { useInvoiceReturnPreview } from '@/features/pos/hooks/useInvoiceReturnPreview';
 import { PosInvoiceDetailsScreen } from '@/features/pos/screens/PosInvoiceDetailsScreen';
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
 const mockUseInvoiceReceipt = jest.mocked(useInvoiceReceipt);
 const mockUseErpNextRecord = jest.mocked(useErpNextRecord);
+const mockUseInvoiceReturnPreview = jest.mocked(useInvoiceReturnPreview);
 const onBack = jest.fn();
 const onOpenCustomer = jest.fn();
 const onOpenPaymentEntry = jest.fn();
@@ -41,6 +51,7 @@ describe('PosInvoiceDetailsScreen', () => {
     jest.clearAllMocks();
     mockUseInvoiceReceipt.mockReturnValue({ error: null, isWorking: false, printReceipt: jest.fn(), shareReceipt: jest.fn() });
     mockUseErpNextRecord.mockReturnValue({ error: null, isOpening: false, openRecord: jest.fn() });
+    mockUseInvoiceReturnPreview.mockReturnValue({ data: null, error: null, isLoading: false });
     mockUsePosBootstrap.mockReturnValue({
       data: { payment_modes: [{ default: true, mode_of_payment: 'Cash' }], pos_profile: { allow_customer_payments: true, currency: 'KES', name: 'POS-001' } },
       error: null,
@@ -116,6 +127,7 @@ describe('PosInvoiceDetailsScreen', () => {
     expect(screen.getByLabelText('Print receipt')).toBeTruthy();
     expect(screen.getByLabelText('Share receipt')).toBeTruthy();
     expect(screen.getByLabelText('Open in ERPNext')).toBeTruthy();
+    expect(screen.getByLabelText('Return items')).toBeTruthy();
   });
 
   it('returns to the invoice list from the detail header', async () => {

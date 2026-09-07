@@ -128,6 +128,24 @@ export type PosInvoiceReturn = {
   posting_date?: string | null;
 };
 
+export type PosInvoiceReturnPreview = {
+  currency?: string | null;
+  invoice: string;
+  items: PosInvoiceReturnPreviewItem[];
+};
+
+export type PosInvoiceReturnPreviewItem = {
+  item_code: string;
+  item_name: string;
+  rate: number;
+  return_amount: number;
+  returnable_qty: number;
+  returned_qty: number;
+  row_name: string;
+  sold_qty: number;
+  uom?: string | null;
+};
+
 export type PosInvoiceDetailItem = {
   amount: number;
   batch_allocations?: PosInvoiceBatchAllocation[];

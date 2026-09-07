@@ -5,6 +5,7 @@ import { Text } from 'react-native-paper';
 
 import { PosInvoicePaymentSheet } from '@/features/pos/components/PosInvoicePaymentSheet';
 import { PosErpNextRecordLink } from '@/features/pos/components/PosErpNextRecordLink';
+import { PosInvoiceReturnPreviewSheet } from '@/features/pos/components/PosInvoiceReturnPreviewSheet';
 import { PosInvoiceReceiptActions } from '@/features/pos/components/PosInvoiceReceiptActions';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
@@ -75,6 +76,7 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
 export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer, onOpenPaymentEntry, onOpenReturn, onStartSale }: PosInvoiceDetailsScreenProps) {
   const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
   const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
+  const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const bootstrap = usePosBootstrap();
   const details = usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile: bootstrap.data?.pos_profile.name, refreshKey: paymentRefreshKey });
   const error = bootstrap.error ?? details.error;
@@ -106,6 +108,12 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
       && outstandingAmount > 0
       && bootstrap.data.payment_modes.some((paymentMode) => !paymentMode.payment_gateway),
   );
+  const canStartReturn = Boolean(
+    invoice.docstatus === 1
+      && invoice.doctype !== 'Sales Order'
+      && !invoice.is_return
+      && bootstrap.data?.pos_profile.name,
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -132,6 +140,7 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
 
       <PosInvoiceReceiptActions invoiceDoctype={invoice.doctype} invoiceName={invoice.name} />
       <PosErpNextRecordLink doctype={invoice.doctype} name={invoice.name} />
+      {canStartReturn ? <Pressable accessibilityLabel="Return items" onPress={() => setReturnPreviewVisible(true)} style={styles.returnButton}><Text style={styles.returnButtonLabel}>Return items</Text></Pressable> : null}
 
       <DetailCard title="Customer">
         <Text style={styles.customerName}>{invoice.customer_name || invoiceCustomer || 'No customer'}</Text>
@@ -257,6 +266,15 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, o
           visible={paymentSheetVisible}
         />
       ) : null}
+      {canStartReturn ? (
+        <PosInvoiceReturnPreviewSheet
+          currency={currency}
+          invoiceName={invoice.name}
+          onDismiss={() => setReturnPreviewVisible(false)}
+          posProfile={bootstrap.data?.pos_profile.name || ''}
+          visible={returnPreviewVisible}
+        />
+      ) : null}
     </ScrollView>
   );
 }
@@ -299,6 +317,8 @@ const styles = StyleSheet.create({
   paymentEntryRow: { alignItems: 'flex-start', borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.sm },
   paymentEntryStatus: { color: '#86efac', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   returnAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, textAlign: 'right' },
+  returnButton: { alignSelf: 'flex-start', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 9 },
+  returnButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   returnCancelled: { color: posDarkColors.error },
   returnList: { gap: spacing.sm },
   returnMain: { flex: 1, gap: 2 },
