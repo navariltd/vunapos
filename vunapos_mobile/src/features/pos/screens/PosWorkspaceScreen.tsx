@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { AppShell } from '@/features/shell/components/AppShell';
 import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
 import { PosCartScreen } from '@/features/pos/screens/PosCartScreen';
+import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
 import { PosCustomerDetailsScreen } from '@/features/pos/screens/PosCustomerDetailsScreen';
 import { PosInvoiceDetailsScreen } from '@/features/pos/screens/PosInvoiceDetailsScreen';
 import { PosInvoicesScreen } from '@/features/pos/screens/PosInvoicesScreen';
@@ -20,6 +21,7 @@ type SelectedInvoice = {
 export function PosWorkspaceScreen() {
   const [activeTab, setActiveTab] = useState<PosNavigationTab>('Home');
   const [cartVisible, setCartVisible] = useState(false);
+  const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [cartCurrency, setCartCurrency] = useState('KES');
   const [orderType, setOrderType] = useState<PosOrderType>('Invoice');
   const [selectedInvoice, setSelectedInvoice] = useState<SelectedInvoice | null>(null);
@@ -33,6 +35,7 @@ export function PosWorkspaceScreen() {
     setSelectedCustomer(null);
     setSelectedPaymentEntry(null);
     setCartVisible(false);
+    setCheckoutVisible(false);
     setActiveTab(tab);
   }
 
@@ -42,6 +45,7 @@ export function PosWorkspaceScreen() {
     setSelectedCustomer(null);
     setSelectedInvoice(null);
     setSelectedPaymentEntry(null);
+    setCheckoutVisible(false);
     setActiveTab('Home');
   }
 
@@ -61,13 +65,30 @@ export function PosWorkspaceScreen() {
             onOpenReturn={(invoiceReturn) => setSelectedInvoice({ doctype: selectedInvoice.doctype, name: invoiceReturn.name, returnTo: selectedInvoice })}
             onStartSale={startSale}
           />
+        : checkoutVisible
+        ? <PosCheckoutScreen
+            currency={cartCurrency}
+            items={cart.items}
+            onBack={() => setCheckoutVisible(false)}
+            onComplete={(result) => {
+              cart.clear();
+              setCheckoutVisible(false);
+              setCartVisible(false);
+              setSelectedInvoice({ doctype: result.doctype, name: result.name });
+            }}
+            orderType={orderType}
+            saleCustomer={saleCustomer}
+            subtotal={cart.subtotal}
+          />
         : cartVisible
         ? <PosCartScreen
             currency={cartCurrency}
             items={cart.items}
             onBack={() => setCartVisible(false)}
+            onCheckout={() => setCheckoutVisible(true)}
             onClear={cart.clear}
             onRemove={cart.remove}
+            onSelectSaleCustomer={(customer) => setSaleCustomer({ customer: customer.customer, customerName: customer.customerName })}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
             saleCustomer={saleCustomer}

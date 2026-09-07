@@ -61,11 +61,30 @@ export type PosBootstrapData = {
     type?: string | null;
   }[];
   pos_profile: {
+    allow_credit_sales?: boolean;
     allow_customer_payments?: boolean;
+    allow_partial_payment?: boolean;
     currency?: string;
     currency_precision?: number;
+    default_sale_type?: 'Cash Sale' | 'Credit Sale';
     name: string;
   };
+};
+
+export type PosCheckoutPreview = {
+  currency?: string;
+  items: PosInvoiceDetailItem[];
+  loyalty_amount?: number;
+  totals: {
+    grand_total?: number;
+    net_total?: number;
+    rounded_total?: number;
+  };
+};
+
+export type PosCheckoutResult = {
+  doctype: string;
+  name: string;
 };
 
 export type PosInvoiceHistoryFilters = {
@@ -250,6 +269,11 @@ export type PosCustomerSummary = {
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;
+};
+
+export type PosCustomerSearchResult = PosSaleCustomer & {
+  email?: string | null;
+  mobile?: string | null;
 };
 
 export type PosReceivedPayment = {

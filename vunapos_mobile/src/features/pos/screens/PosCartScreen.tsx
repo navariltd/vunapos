@@ -3,13 +3,16 @@ import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
-import { PosCartItem, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
+import { PosCustomerPickerSheet } from '@/features/pos/components/PosCustomerPickerSheet';
+import { PosCartItem, PosCustomerSearchResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCartScreenProps = {
   currency: string;
   items: PosCartItem[];
   onBack: () => void;
+  onCheckout: () => void;
+  onSelectSaleCustomer: (customer: PosCustomerSearchResult) => void;
   onClear: () => void;
   onRemove: (itemCode: string) => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
@@ -80,7 +83,9 @@ function CartLine({ currency, item, onRemove, onUpdateQuantity }: { currency: st
   );
 }
 
-export function PosCartScreen({ currency, items, onBack, onClear, onRemove, onUpdateQuantity, orderType, saleCustomer, subtotal }: PosCartScreenProps) {
+export function PosCartScreen({ currency, items, onBack, onCheckout, onClear, onRemove, onSelectSaleCustomer, onUpdateQuantity, orderType, saleCustomer, subtotal }: PosCartScreenProps) {
+  const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.header}>
@@ -89,13 +94,20 @@ export function PosCartScreen({ currency, items, onBack, onClear, onRemove, onUp
         </Pressable>
         <View style={styles.heading}>
           <Text style={styles.title}>Cart</Text>
-          <Text style={styles.subtitle}>{orderType} · {saleCustomer?.customerName || 'Walk-in customer'}</Text>
+          <Text style={styles.subtitle}>{orderType}</Text>
         </View>
         {items.length ? <Pressable accessibilityLabel="Clear cart" onPress={onClear} style={styles.clearButton}><Text style={styles.clearButtonLabel}>Clear</Text></Pressable> : null}
       </View>
 
       {items.length ? (
         <>
+          <Pressable accessibilityHint="Opens a searchable customer list" accessibilityLabel="Select sale customer" onPress={() => setCustomerPickerVisible(true)} style={styles.customerSelector}>
+            <View style={styles.customerSelectorMain}>
+              <Text numberOfLines={1} style={styles.customerSelectorValue}>{saleCustomer?.customerName || 'Select customer'}</Text>
+              <Text numberOfLines={1} style={styles.customerSelectorMeta}>{saleCustomer?.customer || 'Search or choose from the list'}</Text>
+            </View>
+            <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} />
+          </Pressable>
           <View style={styles.itemList}>
             {items.map((item) => <CartLine currency={currency} item={item} key={`${item.item_code}-${item.qty}`} onRemove={() => onRemove(item.item_code)} onUpdateQuantity={(quantity) => onUpdateQuantity(item.item_code, quantity)} />)}
           </View>
@@ -104,7 +116,7 @@ export function PosCartScreen({ currency, items, onBack, onClear, onRemove, onUp
             <Text style={styles.summaryAmount}>{formatCurrency(subtotal, currency)}</Text>
           </View>
           <Text style={styles.checkoutNote}>Taxes, payments, and final stock checks are confirmed at checkout.</Text>
-          <View accessibilityState={{ disabled: true }} style={styles.checkoutButton}><Text style={styles.checkoutButtonLabel}>Checkout comes next</Text></View>
+          <Pressable accessibilityLabel="Proceed to checkout" onPress={onCheckout} style={styles.checkoutButton}><Text style={styles.checkoutButtonLabel}>Proceed to checkout</Text></Pressable>
         </>
       ) : (
         <View style={styles.emptyState}>
@@ -114,6 +126,14 @@ export function PosCartScreen({ currency, items, onBack, onClear, onRemove, onUp
           <Pressable accessibilityLabel="Browse items" onPress={onBack} style={styles.browseButton}><Text style={styles.browseButtonLabel}>Browse items</Text></Pressable>
         </View>
       )}
+      <PosCustomerPickerSheet
+        onDismiss={() => setCustomerPickerVisible(false)}
+        onSelect={(customer) => {
+          onSelectSaleCustomer(customer);
+          setCustomerPickerVisible(false);
+        }}
+        visible={customerPickerVisible}
+      />
     </ScrollView>
   );
 }
@@ -128,6 +148,10 @@ const styles = StyleSheet.create({
   clearButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
   clearButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  customerSelector: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, minHeight: 54, paddingHorizontal: spacing.md, paddingVertical: spacing.xs },
+  customerSelectorMain: { flex: 1, gap: 1 },
+  customerSelectorMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  customerSelectorValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   emptyState: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xxl },
   emptyText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, lineHeight: typography.lineHeight.body, textAlign: 'center' },
   emptyTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },

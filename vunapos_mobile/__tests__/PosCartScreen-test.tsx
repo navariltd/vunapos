@@ -4,9 +4,15 @@ jest.mock('react-native-paper', () => ({
   Text: require('react-native').Text,
 }));
 
+jest.mock('@/features/pos/components/PosCustomerPickerSheet', () => ({
+  PosCustomerPickerSheet: () => null,
+}));
+
 import { PosCartScreen } from '@/features/pos/screens/PosCartScreen';
 
 const onBack = jest.fn();
+const onCheckout = jest.fn();
+const onSelectSaleCustomer = jest.fn();
 const onClear = jest.fn();
 const onRemove = jest.fn();
 const onUpdateQuantity = jest.fn();
@@ -22,6 +28,8 @@ describe('PosCartScreen', () => {
         currency="KES"
         items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 2, rate: 125, uom: 'Nos' }]}
         onBack={onBack}
+        onCheckout={onCheckout}
+        onSelectSaleCustomer={onSelectSaleCustomer}
         onClear={onClear}
         onRemove={onRemove}
         onUpdateQuantity={onUpdateQuantity}
@@ -41,5 +49,8 @@ describe('PosCartScreen', () => {
 
     await fireEvent.press(screen.getByLabelText('Remove Stock item from cart'));
     expect(onRemove).toHaveBeenCalledWith('ITEM-001');
+
+    await fireEvent.press(screen.getByLabelText('Proceed to checkout'));
+    expect(onCheckout).toHaveBeenCalledTimes(1);
   });
 });
