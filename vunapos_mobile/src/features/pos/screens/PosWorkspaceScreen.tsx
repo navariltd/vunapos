@@ -24,7 +24,7 @@ export function PosWorkspaceScreen() {
         ? <PosInvoiceDetailsScreen invoiceDoctype={selectedInvoice.doctype} invoiceName={selectedInvoice.name} onBack={() => setSelectedInvoice(null)} />
         : activeTab === 'Home'
         ? <PosHomeScreen cartItemCount={cartItemCount} onAddToCart={() => setCartItemCount((count) => count + 1)} />
-        : <PosInvoicesScreen onOpenInvoice={setSelectedInvoice} />}
+        : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}
     </AppShell>
   );
 }

@@ -89,10 +89,11 @@ function SummaryCard({ label, value }: SummaryCardProps) {
 }
 
 type PosInvoicesScreenProps = {
+  onBackToPos: () => void;
   onOpenInvoice: (invoice: { doctype?: string; name: string }) => void;
 };
 
-export function PosInvoicesScreen({ onOpenInvoice }: PosInvoicesScreenProps) {
+export function PosInvoicesScreen({ onBackToPos, onOpenInvoice }: PosInvoicesScreenProps) {
   const [filters, setFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
@@ -164,7 +165,12 @@ export function PosInvoicesScreen({ onOpenInvoice }: PosInvoicesScreenProps) {
       ListHeaderComponent={(
         <View style={styles.header}>
           <View style={styles.heading}>
-            <Text style={styles.title}>Invoices</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Invoices</Text>
+              <Pressable accessibilityLabel="Back to POS" onPress={onBackToPos} style={styles.backToPosButton}>
+                <Text style={styles.backToPosButtonLabel}>Back to POS</Text>
+              </Pressable>
+            </View>
             <Text style={styles.subtitle}>Review completed sales from this POS workspace.</Text>
           </View>
 
@@ -212,6 +218,18 @@ export function PosInvoicesScreen({ onOpenInvoice }: PosInvoicesScreenProps) {
 }
 
 const styles = StyleSheet.create({
+  backToPosButton: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  backToPosButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
   content: {
     padding: spacing.md,
     paddingBottom: spacing.xxl,
@@ -352,7 +370,13 @@ const styles = StyleSheet.create({
   },
   title: {
     color: posDarkColors.onSurface,
+    flex: 1,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 22,
+  },
+  titleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
 });

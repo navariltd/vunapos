@@ -4,7 +4,7 @@ import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosInvoiceDetails } from '@/features/pos/hooks/usePosInvoiceDetails';
-import { PosInvoiceDetail, PosInvoiceStatus } from '@/features/pos/types';
+import { PosInvoiceDetail, PosInvoiceDetailItem, PosInvoiceStatus } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosInvoiceDetailsScreenProps = {
@@ -41,6 +41,15 @@ function formatDateTime(details: PosInvoiceDetail) {
 function paymentLabel(mode: string, transactionReference?: string, paymentRequest?: string) {
   const reference = transactionReference || paymentRequest;
   return reference ? `${mode} · ${reference}` : mode;
+}
+
+function formatBatchAllocations(item: PosInvoiceDetailItem) {
+  const allocations = item.batch_allocations
+    ?.filter((allocation) => allocation.batch_no)
+    .map((allocation) => `${allocation.batch_no} (${allocation.qty})`)
+    .join(', ');
+
+  return allocations || item.batch_no || null;
 }
 
 function DetailCard({ children, title }: { children: React.ReactNode; title: string }) {
@@ -120,12 +129,21 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack }:
 
       <DetailCard title="Items">
         <View style={styles.itemList}>
-          {invoice.items.map((item) => (
-            <View key={item.row_name} style={styles.itemRow}>
-              <View style={styles.itemMain}><Text style={styles.itemName}>{item.item_name}</Text><Text style={styles.itemCode}>{item.item_code}</Text><Text style={styles.itemMeta}>{item.qty} {item.uom || ''} · {formatCurrency(item.rate, currency)}</Text></View>
-              <Text style={styles.itemAmount}>{formatCurrency(item.amount, currency)}</Text>
-            </View>
-          ))}
+          {invoice.items.map((item) => {
+            const batchAllocations = formatBatchAllocations(item);
+
+            return (
+              <View key={item.row_name} style={styles.itemRow}>
+                <View style={styles.itemMain}>
+                  <Text style={styles.itemName}>{item.item_name}</Text>
+                  <Text style={styles.itemCode}>{item.item_code}</Text>
+                  <Text style={styles.itemMeta}>{item.qty} {item.uom || ''} · {formatCurrency(item.rate, currency)}</Text>
+                  {batchAllocations ? <Text style={styles.itemBatch}>Batch · {batchAllocations}</Text> : null}
+                </View>
+                <Text style={styles.itemAmount}>{formatCurrency(item.amount, currency)}</Text>
+              </View>
+            );
+          })}
         </View>
       </DetailCard>
 
@@ -170,6 +188,7 @@ const styles = StyleSheet.create({
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm },
   heading: { flex: 1, gap: 4 },
   itemAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  itemBatch: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   itemCode: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   itemList: { gap: spacing.sm },
   itemMain: { flex: 1, gap: 2 },

@@ -115,12 +115,19 @@ export type PosInvoiceDetail = {
 
 export type PosInvoiceDetailItem = {
   amount: number;
+  batch_allocations?: PosInvoiceBatchAllocation[];
+  batch_no?: string | null;
   item_code: string;
   item_name: string;
   qty: number;
   rate: number;
   row_name: string;
   uom?: string;
+};
+
+export type PosInvoiceBatchAllocation = {
+  batch_no: string;
+  qty: number;
 };
 
 export type PosInvoiceDetailTax = {
