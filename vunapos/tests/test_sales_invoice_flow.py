@@ -1319,6 +1319,22 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(response["data"]["name"], invoice["name"])
 		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_idempotency_key": key}), 1)
 
+	def test_direct_cash_checkout_accepts_url_encoded_false_credit_flag(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Invoice")
+
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="url-encoded-false-credit-flag",
+			is_credit_sale="false",
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertFalse(response["data"]["is_credit_sale"])
+
 	@patch("frappe.enqueue")
 	def test_background_enabled_checkout_reserves_then_queues_submission(self, enqueue):
 		profile_name = ensure_test_pos_profile()

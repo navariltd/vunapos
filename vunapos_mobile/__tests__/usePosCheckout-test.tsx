@@ -61,13 +61,33 @@ describe('POS checkout hooks', () => {
     expect(result).toEqual({ doctype: 'Sales Invoice', name: 'SINV-0001' });
     expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', {
       customer: 'CUST-001',
-      due_date: undefined,
       idempotency_key: expect.stringMatching(/^mobile-checkout-/),
-      is_credit_sale: false,
       items: '[{"item_code":"ITEM-001","qty":2,"uom":"Nos"}]',
       payments: '[{"amount":290,"mode_of_payment":"Cash"}]',
       pos_profile: 'POS-001',
     });
+  });
+
+  it('sends credit-only fields only when the cashier enables a credit sale', async () => {
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0002' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-001',
+        dueDate: '2026-09-30',
+        isCreditSale: true,
+        items: [item],
+        orderType: 'Invoice',
+        payments: [],
+        posProfile: 'POS-001',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({
+      due_date: '2026-09-30',
+      is_credit_sale: true,
+    }));
   });
 
   it('uses the sales-order endpoint without invoice-only fields', async () => {

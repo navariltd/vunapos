@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
@@ -40,8 +40,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [paymentMode, setPaymentMode] = useState<string | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [isCreditSale, setIsCreditSale] = useState(false);
+  const appliedSaleTypeDefault = useRef(false);
   const [dueDate, setDueDate] = useState(today());
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
 
   const profile = bootstrap.data?.pos_profile;
   const manualModes = (bootstrap.data?.payment_modes ?? []).filter((mode) => !mode.payment_gateway);
@@ -50,7 +52,13 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     : subtotal;
   const selectedMode = paymentMode || manualModes.find((mode) => mode.default)?.mode_of_payment || manualModes[0]?.mode_of_payment || null;
   const enteredPayment = Number(paymentAmount || total);
-  const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales && saleCustomer);
+  const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
+
+  useEffect(() => {
+    if (appliedSaleTypeDefault.current || !profile) return;
+    setIsCreditSale(Boolean(isInvoice && profile.allow_credit_sales && profile.default_sale_type === 'Credit Sale'));
+    appliedSaleTypeDefault.current = true;
+  }, [isInvoice, profile]);
 
   function selectPaymentMode(mode: string) {
     setPaymentMode(mode);
@@ -60,10 +68,12 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   function setSaleType(nextCreditSale: boolean) {
     setIsCreditSale(nextCreditSale);
     setValidationError(null);
+    checkout.clearError();
   }
 
   function requestSubmit() {
     setValidationError(null);
+    checkout.clearError();
     if (!profile) {
       setValidationError('Could not load your POS profile. Return to the cart and try again.');
       return;
@@ -91,19 +101,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       }
     }
 
-    Alert.alert(
-      isInvoice ? 'Complete sale?' : 'Submit sales order?',
-      isInvoice
-        ? `Frappe will confirm stock, prices, tax, and a payment of ${formatCurrency(isCreditSale ? 0 : enteredPayment, currency)} before submitting.`
-        : 'Frappe will confirm stock, prices, and tax before submitting this order.',
-      [
-        { style: 'cancel', text: 'Cancel' },
-        {
-          onPress: () => void submit(),
-          text: isInvoice ? 'Complete sale' : 'Submit order',
-        },
-      ],
-    );
+    setIsSubmitConfirmationVisible(true);
   }
 
   async function submit() {
@@ -119,6 +117,9 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     });
     if (result) onComplete(result);
   }
+
+  const submissionLabel = isInvoice ? 'sales invoice' : 'sales order';
+  const customerName = saleCustomer?.customerName || 'Walk-in customer';
 
   if (bootstrap.isLoading || (isInvoice && preview.isLoading)) {
     return <View style={styles.state}><Text style={styles.stateText}>Confirming current prices and stock…</Text></View>;
@@ -141,12 +142,12 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         </Pressable>
         <View style={styles.heading}>
           <Text style={styles.title}>{isInvoice ? 'Checkout' : 'Submit order'}</Text>
-          <Text style={styles.subtitle}>{saleCustomer?.customerName || 'Walk-in customer'} · {items.length} item{items.length === 1 ? '' : 's'}</Text>
+          <Text style={styles.subtitle}>{customerName} · {items.length} item{items.length === 1 ? '' : 's'}</Text>
         </View>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Server-confirmed totals</Text>
+        <Text style={styles.cardTitle}>Cart totals</Text>
         {isInvoice && preview.data ? <>
           <SummaryRow label="Items" value={formatCurrency(preview.data.totals.net_total ?? total, currency)} />
           <SummaryRow label="Tax" value={formatCurrency(total - (preview.data.totals.net_total ?? total), currency)} />
@@ -157,10 +158,20 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       {isInvoice ? <>
         {canUseCredit ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sale type</Text>
-            <View style={styles.optionRow}>
-              <Option active={!isCreditSale} label="Cash sale" onPress={() => setSaleType(false)} />
-              <Option active={isCreditSale} label="Credit sale" onPress={() => setSaleType(true)} />
+            <View style={styles.creditSaleRow}>
+              <View style={styles.creditSaleText}>
+                <Text style={styles.cardTitle}>Credit sale</Text>
+                <Text style={styles.cardHint}>Record an outstanding balance with a payment due date.</Text>
+              </View>
+              <Switch
+                accessibilityLabel="Enable credit sale"
+                accessibilityRole="switch"
+                accessibilityState={{ checked: isCreditSale }}
+                onValueChange={setSaleType}
+                thumbColor={posDarkColors.onSurface}
+                trackColor={{ false: posDarkColors.border, true: '#39b976' }}
+                value={isCreditSale}
+              />
             </View>
             {isCreditSale ? <>
               <Text style={styles.fieldLabel}>Payment due date</Text>
@@ -183,6 +194,43 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       <Pressable accessibilityLabel={isInvoice ? 'Complete sale' : 'Submit sales order'} disabled={checkout.isSubmitting || !items.length} onPress={requestSubmit} style={[styles.submitButton, checkout.isSubmitting && styles.submitButtonDisabled]}>
         <Text style={styles.submitButtonLabel}>{checkout.isSubmitting ? 'Submitting…' : isInvoice ? `Complete sale · ${formatCurrency(total, currency)}` : 'Submit sales order'}</Text>
       </Pressable>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => { if (!checkout.isSubmitting) setIsSubmitConfirmationVisible(false); }}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        transparent
+        visible={isSubmitConfirmationVisible}
+      >
+        <View style={styles.confirmationModalRoot}>
+          <Pressable
+            accessibilityLabel="Dismiss sale confirmation"
+            disabled={checkout.isSubmitting}
+            onPress={() => setIsSubmitConfirmationVisible(false)}
+            style={styles.confirmationBackdrop}
+          />
+          <View accessibilityViewIsModal style={styles.confirmationDialog}>
+            {checkout.isSubmitting ? <>
+              <ActivityIndicator color={posDarkColors.primary} size="small" />
+              <Text style={styles.confirmationTitle}>Submitting {submissionLabel}…</Text>
+              <Text style={styles.confirmationDescription}>Please wait while the sale is confirmed.</Text>
+            </> : <>
+              <Text style={styles.confirmationTitle}>Confirm submission of {submissionLabel} for {customerName}?</Text>
+              <Text style={styles.confirmationDescription}>This will submit the sale and its selected payment.</Text>
+              {checkout.error ? <Text style={styles.errorText}>{checkout.error}</Text> : null}
+              <View style={styles.confirmationActions}>
+                <Pressable accessibilityLabel="Cancel sale submission" onPress={() => setIsSubmitConfirmationVisible(false)} style={styles.cancelConfirmationButton}>
+                  <Text style={styles.cancelConfirmationLabel}>Cancel</Text>
+                </Pressable>
+                <Pressable accessibilityLabel={isInvoice ? 'Confirm sales invoice submission' : 'Confirm sales order submission'} onPress={() => void submit()} style={styles.confirmConfirmationButton}>
+                  <Text style={styles.confirmConfirmationLabel}>{isInvoice ? 'Submit invoice' : 'Submit order'}</Text>
+                </Pressable>
+              </View>
+            </>}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -202,7 +250,19 @@ const styles = StyleSheet.create({
   card: { backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, gap: spacing.sm, padding: spacing.md },
   cardHint: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, lineHeight: typography.lineHeight.body },
   cardTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  cancelConfirmationButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
+  cancelConfirmationLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  confirmConfirmationButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
+  confirmConfirmationLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  confirmationActions: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  confirmationBackdrop: { backgroundColor: 'rgba(0, 0, 0, 0.68)', ...StyleSheet.absoluteFill },
+  confirmationDescription: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, lineHeight: typography.lineHeight.body },
+  confirmationDialog: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.lg, borderWidth: 1, gap: spacing.md, marginHorizontal: spacing.lg, padding: spacing.lg },
+  confirmationModalRoot: { flex: 1, justifyContent: 'center' },
+  confirmationTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 19, lineHeight: typography.lineHeight.body },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  creditSaleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, justifyContent: 'space-between' },
+  creditSaleText: { flex: 1, gap: 3 },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
   fieldLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
   header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },

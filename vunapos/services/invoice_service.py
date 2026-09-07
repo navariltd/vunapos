@@ -347,6 +347,7 @@ def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
 
 
 def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
+	is_credit_sale = bool(cint(is_credit_sale))
 	if not is_credit_sale:
 		return None
 	if not due_date:
@@ -1719,7 +1720,9 @@ def create_and_submit_invoice(
 				"CHECKOUT_IDEMPOTENCY_REQUIRED",
 				_("An idempotency key is required when background invoice submission is enabled"),
 			)
-		_validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
+		is_credit_sale = _validate_credit_sale_request(
+			profile, is_credit_sale, customer or profile.customer
+		)
 		_validate_credit_due_date(is_credit_sale, due_date, nowdate())
 		draft = create_invoice_from_cart(
 			pos_profile=profile.name,

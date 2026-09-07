@@ -21,14 +21,39 @@ export type PosCatalogueItem = {
 };
 
 export type PosCartItem = {
+  amount?: number;
   allow_negative_stock: boolean;
   available_qty: number | null;
+  conversion_factor?: number;
+  is_free_item?: boolean;
   is_stock_item: boolean;
   item_code: string;
   item_name: string;
+  price_list_rate?: number;
   qty: number;
   rate: number;
   uom?: string | null;
+};
+
+export type PosCartTax = {
+  account_head?: string;
+  description?: string;
+  included_in_print_rate?: boolean;
+  rate?: number;
+  tax_amount?: number;
+};
+
+export type PosCartTotals = {
+  grand_total?: number;
+  net_total?: number;
+  rounded_total?: number;
+  total_taxes_and_charges?: number;
+};
+
+export type PosCartData = {
+  items: PosCartItem[];
+  taxes: PosCartTax[];
+  totals: PosCartTotals;
 };
 
 export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' | 'Partly Paid' | 'Unpaid';
@@ -53,6 +78,10 @@ export type PosInvoiceListRow = {
 };
 
 export type PosBootstrapData = {
+  default_customer?: {
+    customer: string;
+    customer_name: string;
+  } | null;
   items?: PosCatalogueItem[];
   payment_modes: {
     default?: boolean;

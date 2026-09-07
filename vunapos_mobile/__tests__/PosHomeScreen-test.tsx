@@ -22,6 +22,10 @@ jest.mock('@/features/pos/components/PosItemSearch', () => ({
   },
 }));
 
+jest.mock('@/features/pos/components/PosCustomerPickerSheet', () => ({
+  PosCustomerPickerSheet: () => null,
+}));
+
 jest.mock('@/features/pos/hooks/usePosBootstrap', () => ({
   usePosBootstrap: jest.fn(),
 }));
@@ -37,13 +41,13 @@ import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosItemSearch = jest.mocked(usePosItemSearch);
 const onAddToCart = jest.fn();
-const onClearSaleCustomer = jest.fn();
+const onPosProfileLoaded = jest.fn();
 
 describe('PosHomeScreen', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUsePosBootstrap.mockReturnValue({
-      data: { items: [], payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
+      data: { default_customer: { customer: 'CUST-WALK-IN', customer_name: 'Walk-in customer' }, items: [], payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
       error: null,
       isLoading: false,
       reload: jest.fn(),
@@ -55,28 +59,12 @@ describe('PosHomeScreen', () => {
     await cleanup();
   });
 
-  it('shows the selected customer for a new sale and supports clearing it', async () => {
-    const screen = await render(
-      <PosHomeScreen
-        cartItemCount={0}
-        onAddToCart={onAddToCart}
-        onClearSaleCustomer={onClearSaleCustomer}
-        onOpenCart={jest.fn()}
-        saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }}
-      />,
-    );
-
-    expect(screen.getByText('Example customer')).toBeTruthy();
-    expect(screen.getByText('CUST-001')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('Clear sale customer'));
-    expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
-  });
-
-  it('shows the authenticated bootstrap catalogue instead of preview items', async () => {
+  it('adds catalogue items without asking for a customer first', async () => {
     const liveItem = { actual_qty: 3, item_code: 'LIVE-001', item_name: 'Live catalogue item', rate: 150 };
     mockUsePosBootstrap.mockReturnValue({
       data: {
         items: [liveItem],
+        default_customer: null,
         payment_modes: [],
         pos_profile: { currency: 'KES', name: 'POS-001' },
       },
@@ -84,9 +72,10 @@ describe('PosHomeScreen', () => {
       isLoading: false,
       reload: jest.fn(),
     });
-    const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onClearSaleCustomer={onClearSaleCustomer} onOpenCart={jest.fn()} saleCustomer={null} />);
+    const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} onPosProfileLoaded={onPosProfileLoaded} />);
 
     expect(screen.getByText('Live catalogue item')).toBeTruthy();
+    expect(onPosProfileLoaded).toHaveBeenCalledWith('POS-001');
     await fireEvent.press(screen.getByRole('button', { name: 'Live catalogue item' }));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, 'KES');
   });
@@ -94,7 +83,7 @@ describe('PosHomeScreen', () => {
   it('shows a retryable error when the POS bootstrap cannot load', async () => {
     const reload = jest.fn();
     mockUsePosBootstrap.mockReturnValue({ data: null, error: 'Could not reach your company site.', isLoading: false, reload });
-    const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onClearSaleCustomer={onClearSaleCustomer} onOpenCart={jest.fn()} saleCustomer={null} />);
+    const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} onPosProfileLoaded={onPosProfileLoaded} />);
 
     expect(screen.getByText('Could not reach your company site.')).toBeTruthy();
     await fireEvent.press(screen.getByLabelText('Retry loading POS catalogue'));

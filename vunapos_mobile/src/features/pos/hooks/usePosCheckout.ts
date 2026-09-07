@@ -72,6 +72,10 @@ export function useSubmitPosCheckout() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
+  function clearError() {
+    setError(null);
+  }
+
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
     if (!companyUrl || !sessionId || !input.posProfile) {
       setError('Your session is no longer available. Sign in again to continue.');
@@ -91,10 +95,9 @@ export function useSubmitPosCheckout() {
           items: JSON.stringify(cartPayload(input.items)),
           payments: JSON.stringify(input.payments),
           pos_profile: input.posProfile,
-          ...(input.orderType === 'Invoice' ? {
-            due_date: input.isCreditSale ? input.dueDate : undefined,
-            is_credit_sale: input.isCreditSale,
-          } : {}),
+          ...(input.orderType === 'Invoice' && input.isCreditSale
+            ? { due_date: input.dueDate, is_credit_sale: true }
+            : {}),
         },
       );
       idempotencyKey.current = createIdempotencyKey();
@@ -110,5 +113,5 @@ export function useSubmitPosCheckout() {
     }
   }
 
-  return { error, isSubmitting, submit };
+  return { clearError, error, isSubmitting, submit };
 }

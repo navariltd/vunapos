@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { AppShell } from '@/features/shell/components/AppShell';
 import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
@@ -28,7 +28,9 @@ export function PosWorkspaceScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{ currency: string; paymentEntry: PosInvoicePaymentEntry } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
-  const cart = usePosCart();
+  const [posProfile, setPosProfile] = useState<string>();
+  const cart = usePosCart({ customer: saleCustomer, posProfile });
+  const receivePosProfile = useCallback((profileName: string) => setPosProfile(profileName), []);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -85,17 +87,31 @@ export function PosWorkspaceScreen() {
             currency={cartCurrency}
             items={cart.items}
             onBack={() => setCartVisible(false)}
-            onCheckout={() => setCheckoutVisible(true)}
+            onCheckout={() => {
+              if (!cart.requiresCustomer && !cart.isUpdating && !cart.error) setCheckoutVisible(true);
+            }}
             onClear={cart.clear}
+            onClearSaleCustomer={() => setSaleCustomer(null)}
             onRemove={cart.remove}
             onSelectSaleCustomer={(customer) => setSaleCustomer({ customer: customer.customer, customerName: customer.customerName })}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
+            requiresCustomer={cart.requiresCustomer}
             saleCustomer={saleCustomer}
             subtotal={cart.subtotal}
+            taxes={cart.taxes}
+            totals={cart.totals}
+            isUpdating={cart.isUpdating}
+            error={cart.error}
+            onRetry={() => { void cart.retry(); }}
           />
         : activeTab === 'Home'
-        ? <PosHomeScreen cartItemCount={cart.itemCount} onAddToCart={(item, currency) => { setCartCurrency(currency); cart.add(item); }} onClearSaleCustomer={() => setSaleCustomer(null)} onOpenCart={() => setCartVisible(true)} saleCustomer={saleCustomer} />
+        ? <PosHomeScreen
+            cartItemCount={cart.itemCount}
+            onAddToCart={(item, currency) => { setCartCurrency(currency); void cart.add(item); }}
+            onOpenCart={() => setCartVisible(true)}
+            onPosProfileLoaded={receivePosProfile}
+          />
         : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}
     </AppShell>
   );

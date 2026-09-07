@@ -15,10 +15,21 @@ jest.mock('@/features/shell/components/AppShell', () => ({
   },
 }));
 
+jest.mock('@/features/pos/hooks/usePosCart', () => ({
+  usePosCart: () => ({ add: jest.fn(), clear: jest.fn(), error: null, isUpdating: false, itemCount: 0, items: [], refresh: jest.fn(), remove: jest.fn(), retry: jest.fn(), subtotal: 0, taxes: [], totals: {}, updateQuantity: jest.fn() }),
+}));
+
 jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
-  PosHomeScreen: ({ saleCustomer }: { saleCustomer: { customerName: string } | null }) => {
+  PosHomeScreen: ({ onOpenCart }: { onOpenCart: () => void }) => {
+    const { Pressable, Text } = require('react-native');
+    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable></>;
+  },
+}));
+
+jest.mock('@/features/pos/screens/PosCartScreen', () => ({
+  PosCartScreen: ({ saleCustomer }: { saleCustomer: { customerName: string } | null }) => {
     const { Text } = require('react-native');
-    return <><Text>POS home</Text><Text>{saleCustomer ? `Sale customer: ${saleCustomer.customerName}` : 'No sale customer'}</Text></>;
+    return <Text>{saleCustomer ? `Cart customer: ${saleCustomer.customerName}` : 'Cart has no customer'}</Text>;
   },
 }));
 
@@ -78,7 +89,8 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Start new sale' }));
 
     expect(screen.getByText('POS home')).toBeTruthy();
-    expect(screen.getByText('Sale customer: Example customer')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Open cart' }));
+    expect(screen.getByText('Cart customer: Example customer')).toBeTruthy();
   });
 
   it('opens a linked payment and returns to the invoice', async () => {
