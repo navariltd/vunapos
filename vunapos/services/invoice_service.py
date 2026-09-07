@@ -539,7 +539,7 @@ def _cart_item_rows(items):
 
 def _resolve_item_uom(item_code, uom=None):
 	item = frappe.get_cached_doc("Item", item_code)
-	uom = uom or item.stock_uom
+	uom = uom or item.get("sales_uom") or item.stock_uom
 	if uom == item.stock_uom:
 		return uom, 1.0
 	for row in item.get("uoms", []):
@@ -891,7 +891,7 @@ def _apply_batch_allocation(row, doc, profile, qty=None):
 
 	allocation = allocate_item_batches(
 		row.item_code,
-		qty or row.qty,
+		qty or flt(row.qty) * flt(row.get("conversion_factor") or 1),
 		warehouse=profile.warehouse or row.get("warehouse"),
 		strategy="FEFO",
 	)
@@ -962,6 +962,10 @@ def _materialize_batch_bundles(doc):
 
 
 def validate_invoice_batch_allocations(doc):
+	# Sales Orders do not issue stock. Batch/serial allocation is performed when
+	# a stock transaction is created from the order, not during POS order entry.
+	if doc.doctype == "Sales Order":
+		return
 	allocated_by_batch = {}
 	for row in doc.get("items", []):
 		flags = get_item_tracking_flags(row.item_code)
@@ -981,7 +985,12 @@ def validate_invoice_batch_allocations(doc):
 				"BATCH_ALLOCATION_REQUIRED",
 				_("Batch allocation is required for item {0}.").format(row.item_code),
 			)
-		validate_batch_allocation(row.item_code, row.qty, allocations, warehouse=row.get("warehouse"))
+		validate_batch_allocation(
+			row.item_code,
+			flt(row.qty) * flt(row.get("conversion_factor") or 1),
+			allocations,
+			warehouse=row.get("warehouse"),
+		)
 		for allocation in allocations:
 			key = (row.item_code, row.get("warehouse"), allocation.get("batch_no"))
 			allocated_by_batch[key] = allocated_by_batch.get(key, 0) + flt(allocation.get("qty"))
@@ -1080,6 +1089,20 @@ def _append_cart_items(doc, profile, items):
 		flags = get_item_tracking_flags(item.get("item_code"))
 		_unused_uom, conversion_factor = _resolve_item_uom(item.get("item_code"), item.get("uom"))
 		stock_qty = flt(item.get("qty")) * conversion_factor
+		if doc.doctype == "Sales Order":
+			row = doc.append(
+				"items",
+				_get_item_row(
+					item.get("item_code"),
+					item.get("qty"),
+					doc,
+					profile,
+					item_tax_template=item.get("item_tax_template"),
+					pricing_item=item,
+				),
+			)
+			_apply_vunapos_item_metadata(row, item)
+			continue
 		if flags["requires_serial"]:
 			serials = (
 				validate_serial_allocation(
@@ -1382,7 +1405,7 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 	row.batch_no = None
 	if row.meta.has_field("serial_and_batch_bundle"):
 		row.serial_and_batch_bundle = None
-	_apply_batch_allocation(row, doc, profile, qty)
+	_apply_batch_allocation(row, doc, profile, flt(qty) * flt(row.get("conversion_factor") or 1))
 	_save_invoice(doc)
 	return invoice_to_dict(doc)
 

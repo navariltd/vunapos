@@ -2,10 +2,9 @@ import frappe
 from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from erpnext.accounts.utils import get_currency_precision
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
-	get_sre_reserved_qty_for_item_and_warehouse,
+	get_sre_reserved_qty_for_items_and_warehouses,
 )
 from erpnext.stock.get_item_details import get_item_details
-from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import cint, flt, today
 from pypika import Order
@@ -27,9 +26,7 @@ def _get_item_code_from_barcode(barcode):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return None
-	stock_balance = flt(get_stock_balance(item_code, warehouse))
-	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
-	return max(stock_balance - reserved_stock, 0)
+	return _get_actual_qty_map([item_code], warehouse).get(item_code, 0)
 
 
 def _get_rate(item_code, profile, price_list=None):
@@ -76,7 +73,14 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
-	rate = _get_rate(item.item_code, profile, price_list)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_rate = uom_rates.get(item_code, {}).get(default_uom)
+	for row in item.get("uoms", []):
+		if row.uom == default_uom:
+			default_conversion_factor = flt(row.conversion_factor) or 1.0
+			break
+	rate = default_rate if default_rate is not None else _get_rate(item.item_code, profile, price_list)
 	bundle = _get_product_bundle_map([item.item_code], profile.warehouse).get(item.item_code, {})
 	variant_count = _get_variant_count_map([item.item_code]).get(item.item_code, 0)
 	actual_qty = _get_actual_qty(item.item_code, profile.warehouse)
@@ -90,6 +94,8 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		item_tax_template=item_tax_template,
 		item_tax=_with_item_tax_prices(item_tax_summary.get(item_tax_template), rate),
 		uoms=uoms,
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
 		variant_count=variant_count,
@@ -201,11 +207,22 @@ def _get_actual_qty_map(item_codes, warehouse):
 	if not item_codes or not warehouse:
 		return None
 
-	# Bin.reserved_stock does not include every reservation source in every
-	# ERPNext release (notably native Stock Reservation Entries). Use the same
-	# reservation-aware calculation as the item-details endpoint so catalogue
-	# quantities represent sellable stock, not merely physical stock.
-	return {item_code: _get_actual_qty(item_code, warehouse) for item_code in item_codes}
+	# Avoid one stock and one reservation query per catalogue item. The initial
+	# bootstrap can contain hundreds of items, so use the Bin aggregate and the
+	# ERPNext batch reservation helper in one query each. Bin.reserved_stock does
+	# not include every reservation source in every ERPNext release; subtracting
+	# native Stock Reservation Entries keeps the displayed quantity authoritative.
+	stock_rows = frappe.get_all(
+		"Bin",
+		filters={"item_code": ["in", item_codes], "warehouse": warehouse},
+		fields=["item_code", "actual_qty"],
+	)
+	stock_map = {row.item_code: flt(row.actual_qty) for row in stock_rows}
+	reserved_map = get_sre_reserved_qty_for_items_and_warehouses(item_codes, [warehouse])
+	return {
+		item_code: max(stock_map.get(item_code, 0) - flt(reserved_map.get((item_code, warehouse), 0)), 0)
+		for item_code in item_codes
+	}
 
 
 def _get_product_bundle_map(item_codes, warehouse=None):
@@ -330,22 +347,40 @@ def _to_item_payload_from_row(
 	if price_list_rate is None:
 		price_list_rate = flt(item.standard_rate)
 	pricing_rule = (pricing_rule_map or {}).get(item.name)
-	rate = flt(pricing_rule.get("rate")) if pricing_rule else price_list_rate
 	bundle = (bundle_map or {}).get(item.name, {})
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
 	if bundle.get("available_qty") is not None:
 		actual_qty = bundle["available_qty"]
 
 	item_tax_template = (item_tax_template_map or {}).get(item.name)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_price_list_rate = price_list_rate
+	for row in (uom_map or {}).get(item.name, []):
+		if row.get("uom") == default_uom:
+			default_conversion_factor = flt(row.get("conversion_factor")) or 1.0
+			if row.get("rate") is not None:
+				default_price_list_rate = flt(row.get("rate"))
+			else:
+				default_price_list_rate = flt(price_list_rate) * default_conversion_factor
+			break
+	default_rate = default_price_list_rate
+	if pricing_rule and pricing_rule.get("kind") == "price":
+		# Catalogue rules are calculated against the stock UOM. Apply the same
+		# percentage to the configured sales UOM price rather than displaying a
+		# stock-UOM discount on a carton/box row.
+		default_rate = flt(default_price_list_rate) * (1 - flt(pricing_rule.get("discount_percentage")) / 100)
 	return item_to_dict(
 		item,
-		rate=rate,
-		price_list_rate=price_list_rate,
+		rate=default_rate,
+		price_list_rate=default_price_list_rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
 		item_tax_template=item_tax_template,
-		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
+		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), default_rate),
 		uoms=(uom_map or {}).get(item.name, []),
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		pricing_rule=pricing_rule,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
@@ -381,23 +416,50 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 			}
 		)
 
+	# Pass a transaction document to ERPNext's evaluator. Without `doc`, dynamic
+	# Pricing Rule conditions are evaluated against only the item args and rules
+	# that reference invoice/customer fields silently fail in the catalogue.
+	transaction_doc = frappe.new_doc("Sales Invoice")
+	customer_fields = None
+	transaction_doc.customer = customer
+	transaction_doc.company = profile.company
+	transaction_doc.currency = profile.currency
+	transaction_doc.selling_price_list = price_list
+	transaction_doc.posting_date = today()
+	transaction_doc.pos_profile = profile.name
+	if customer:
+		customer_fields = frappe.db.get_value(
+			"Customer", customer, ["customer_group", "territory"], as_dict=True
+		)
+		if customer_fields:
+			transaction_doc.customer_group = customer_fields.customer_group
+			transaction_doc.territory = customer_fields.territory
+	pricing_context = {
+		"items": pricing_items,
+		"customer": customer,
+		"currency": profile.currency,
+		"conversion_rate": 1,
+		"price_list": price_list,
+		"price_list_currency": profile.currency,
+		"plc_conversion_rate": 1,
+		"company": profile.company,
+		"transaction_date": today(),
+		"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
+		"doctype": "Sales Invoice",
+		"name": "",
+		"update_stock": 1,
+		"pos_profile": profile.name,
+	}
+	if customer_fields:
+		pricing_context.update(
+			{
+				"customer_group": customer_fields.customer_group,
+				"territory": customer_fields.territory,
+			}
+		)
 	results = apply_pricing_rule(
-		{
-			"items": pricing_items,
-			"customer": customer,
-			"currency": profile.currency,
-			"conversion_rate": 1,
-			"price_list": price_list,
-			"price_list_currency": profile.currency,
-			"plc_conversion_rate": 1,
-			"company": profile.company,
-			"transaction_date": today(),
-			"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
-			"doctype": "Sales Invoice",
-			"name": "",
-			"update_stock": 1,
-			"pos_profile": profile.name,
-		}
+		pricing_context,
+		doc=transaction_doc,
 	)
 
 	precision = get_currency_precision()
@@ -665,6 +727,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			"description",
 			"image",
 			"stock_uom",
+			"sales_uom",
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",

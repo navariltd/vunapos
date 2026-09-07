@@ -243,6 +243,7 @@ export type ItemDTO = {
 	description?: string;
 	image?: string | null;
 	stock_uom?: string;
+	sales_uom?: string | null;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	uom?: string;
 	conversion_factor?: number;
