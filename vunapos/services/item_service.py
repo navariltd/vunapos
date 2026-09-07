@@ -416,23 +416,50 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 			}
 		)
 
+	# Pass a transaction document to ERPNext's evaluator. Without `doc`, dynamic
+	# Pricing Rule conditions are evaluated against only the item args and rules
+	# that reference invoice/customer fields silently fail in the catalogue.
+	transaction_doc = frappe.new_doc("Sales Invoice")
+	customer_fields = None
+	transaction_doc.customer = customer
+	transaction_doc.company = profile.company
+	transaction_doc.currency = profile.currency
+	transaction_doc.selling_price_list = price_list
+	transaction_doc.posting_date = today()
+	transaction_doc.pos_profile = profile.name
+	if customer:
+		customer_fields = frappe.db.get_value(
+			"Customer", customer, ["customer_group", "territory"], as_dict=True
+		)
+		if customer_fields:
+			transaction_doc.customer_group = customer_fields.customer_group
+			transaction_doc.territory = customer_fields.territory
+	pricing_context = {
+		"items": pricing_items,
+		"customer": customer,
+		"currency": profile.currency,
+		"conversion_rate": 1,
+		"price_list": price_list,
+		"price_list_currency": profile.currency,
+		"plc_conversion_rate": 1,
+		"company": profile.company,
+		"transaction_date": today(),
+		"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
+		"doctype": "Sales Invoice",
+		"name": "",
+		"update_stock": 1,
+		"pos_profile": profile.name,
+	}
+	if customer_fields:
+		pricing_context.update(
+			{
+				"customer_group": customer_fields.customer_group,
+				"territory": customer_fields.territory,
+			}
+		)
 	results = apply_pricing_rule(
-		{
-			"items": pricing_items,
-			"customer": customer,
-			"currency": profile.currency,
-			"conversion_rate": 1,
-			"price_list": price_list,
-			"price_list_currency": profile.currency,
-			"plc_conversion_rate": 1,
-			"company": profile.company,
-			"transaction_date": today(),
-			"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
-			"doctype": "Sales Invoice",
-			"name": "",
-			"update_stock": 1,
-			"pos_profile": profile.name,
-		}
+		pricing_context,
+		doc=transaction_doc,
 	)
 
 	precision = get_currency_precision()
