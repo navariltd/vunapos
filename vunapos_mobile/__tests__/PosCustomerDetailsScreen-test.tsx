@@ -28,6 +28,7 @@ describe('PosCustomerDetailsScreen', () => {
       data: { payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
       error: null,
       isLoading: false,
+      reload: jest.fn(),
     });
     mockUsePosCustomerDetails.mockReturnValue({
       data: {

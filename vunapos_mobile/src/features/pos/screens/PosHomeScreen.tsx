@@ -1,16 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { FlatList, ListRenderItem, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosCartButton } from '@/features/pos/components/PosCartButton';
 import { PosItemCard } from '@/features/pos/components/PosItemCard';
 import { PosItemSearch } from '@/features/pos/components/PosItemSearch';
-import { previewItems } from '@/features/pos/data/previewItems';
-import { PosPreviewItem, PosSaleCustomer } from '@/features/pos/types';
+import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { usePosItemSearch } from '@/features/pos/hooks/usePosItemSearch';
+import { PosCatalogueItem, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
-function matchesSearch(item: PosPreviewItem, searchTerm: string) {
-  const normalizedItem = `${item.itemName} ${item.itemCode}`.toLowerCase();
+function matchesSearch(item: PosCatalogueItem, searchTerm: string) {
+  const normalizedItem = `${item.item_name} ${item.item_code} ${item.barcode || ''}`.toLowerCase();
   return normalizedItem.includes(searchTerm.trim().toLowerCase());
 }
 
@@ -23,24 +24,40 @@ type PosHomeScreenProps = {
 
 export function PosHomeScreen({ cartItemCount, onAddToCart, onClearSaleCustomer, saleCustomer }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const filteredItems = useMemo(() => previewItems.filter((item) => matchesSearch(item, searchQuery)), [searchQuery]);
+  const bootstrap = usePosBootstrap();
+  const itemSearch = usePosItemSearch({ posProfile: bootstrap.data?.pos_profile.name, query: searchQuery });
+  const bootstrapItems = bootstrap.data?.items ?? [];
+  const localMatches = bootstrapItems.filter((item) => matchesSearch(item, searchQuery));
+  const items = searchQuery.trim() ? itemSearch.items : localMatches;
+  const currency = bootstrap.data?.pos_profile.currency || 'KES';
 
-  function addItem(item: PosPreviewItem) {
-    if (item.quantity > 0) {
+  function addItem(item: PosCatalogueItem) {
+    const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
+    if (!outOfStock) {
       onAddToCart();
     }
   }
 
-  const renderItem: ListRenderItem<PosPreviewItem> = ({ item }) => <PosItemCard item={item} onAdd={addItem} />;
+  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => <PosItemCard currency={currency} item={item} onAdd={addItem} />;
+
+  if (bootstrap.isLoading) return <View style={styles.state}><Text style={styles.stateText}>Loading your POS catalogue…</Text></View>;
+  if (bootstrap.error || !bootstrap.data) {
+    return (
+      <View style={styles.state}>
+        <Text style={styles.errorText}>{bootstrap.error || 'Could not load the POS catalogue.'}</Text>
+        <Pressable accessibilityLabel="Retry loading POS catalogue" onPress={bootstrap.reload} style={styles.retryButton}><Text style={styles.retryButtonLabel}>Try again</Text></Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.content}>
       <FlatList
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.listContent}
-        data={filteredItems}
-        keyExtractor={(item) => item.itemCode}
-        ListEmptyComponent={<Text style={styles.emptyState}>No items found. Try another item name, code, or barcode.</Text>}
+        data={items}
+        keyExtractor={(item) => item.item_code}
+        ListEmptyComponent={<Text style={styles.emptyState}>{itemSearch.isLoading ? 'Searching the catalogue…' : itemSearch.error || 'No items found. Try another item name, code, or barcode.'}</Text>}
         ListHeaderComponent={(
           <View>
             {saleCustomer ? (
@@ -92,6 +109,12 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xxl,
     textAlign: 'center',
   },
+  errorText: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    textAlign: 'center',
+  },
   listContent: {
     paddingBottom: 88,
   },
@@ -99,6 +122,18 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+  },
+  retryButton: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  retryButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
   },
   saleCustomer: {
     alignItems: 'center',
@@ -109,6 +144,19 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  state: {
+    alignItems: 'center',
+    flex: 1,
+    gap: spacing.md,
+    justifyContent: 'center',
+    padding: spacing.xl,
+  },
+  stateText: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    textAlign: 'center',
   },
   saleCustomerDetails: {
     flex: 1,

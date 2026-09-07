@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { PosBootstrapData } from '@/features/pos/types';
@@ -8,15 +8,17 @@ type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
   isLoading: boolean;
+  reload: () => void;
 };
 
-type PosBootstrapRequestState = Omit<PosBootstrapState, 'isLoading'> & {
+type PosBootstrapRequestState = Omit<PosBootstrapState, 'isLoading' | 'reload'> & {
   requestKey: string | null;
 };
 
 export function usePosBootstrap(): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const requestKey = companyUrl && sessionId ? `${companyUrl}:${sessionId}` : null;
+  const [reloadKey, setReloadKey] = useState(0);
+  const requestKey = companyUrl && sessionId ? `${companyUrl}:${sessionId}:${reloadKey}` : null;
   const [state, setState] = useState<PosBootstrapRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
@@ -40,9 +42,9 @@ export function usePosBootstrap(): PosBootstrapState {
     return () => controller.abort();
   }, [companyUrl, invalidateSession, requestKey, sessionId]);
 
-  if (!requestKey) {
-    return { data: null, error: 'Your session is no longer available. Sign in again to continue.', isLoading: false };
-  }
+  const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
-  return { ...state, isLoading: state.requestKey !== requestKey };
+  if (!requestKey) return { data: null, error: 'Your session is no longer available. Sign in again to continue.', isLoading: false, reload };
+
+  return { ...state, isLoading: state.requestKey !== requestKey, reload };
 }

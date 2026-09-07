@@ -3,12 +3,21 @@ export type PosOrderType = 'Invoice' | 'Order';
 /** Tabs enabled in the native increment. The remaining shell tabs are visual only. */
 export type PosNavigationTab = 'Home' | 'Invoices';
 
-export type PosPreviewItem = {
-  itemCode: string;
-  itemName: string;
-  price: number;
-  quantity: number;
-  taxLabel: string;
+export type PosCatalogueItem = {
+  actual_qty?: number | null;
+  allow_negative_stock?: boolean | number | null;
+  barcode?: string | null;
+  image?: string | null;
+  is_stock_item?: boolean | number | null;
+  item_code: string;
+  item_name: string;
+  item_tax?: {
+    exclusive_tax_rate?: number | null;
+    inclusive?: boolean | null;
+    inclusive_tax_rate?: number | null;
+  } | null;
+  rate?: number | null;
+  stock_uom?: string | null;
 };
 
 export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' | 'Partly Paid' | 'Unpaid';
@@ -33,6 +42,7 @@ export type PosInvoiceListRow = {
 };
 
 export type PosBootstrapData = {
+  items?: PosCatalogueItem[];
   payment_modes: {
     default?: boolean;
     mode_of_payment: string;

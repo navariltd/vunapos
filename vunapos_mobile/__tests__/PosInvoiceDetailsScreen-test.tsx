@@ -56,6 +56,7 @@ describe('PosInvoiceDetailsScreen', () => {
       data: { payment_modes: [{ default: true, mode_of_payment: 'Cash' }], pos_profile: { allow_customer_payments: true, currency: 'KES', name: 'POS-001' } },
       error: null,
       isLoading: false,
+      reload: jest.fn(),
     });
     mockUsePosInvoiceDetails.mockReturnValue({
       data: {
