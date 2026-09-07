@@ -39,6 +39,7 @@ from vunapos.tests.helpers import (
 	ensure_test_customer,
 	ensure_test_item,
 	ensure_test_pos_profile,
+	ensure_test_sales_uom_item,
 	ensure_test_shipping_address,
 	ensure_test_stock_item,
 	set_invoice_mode,
@@ -473,6 +474,40 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		item = response["data"]["items"][0]
 		self.assertEqual(item["batch_no"], "VUNA-BATCH-ONE-A")
 		self.assertEqual(item["batch_allocations"][0]["batch_no"], "VUNA-BATCH-ONE-A")
+
+	def test_batch_allocation_uses_stock_quantity_for_sales_uom(self):
+		profile = ensure_test_pos_profile()
+		warehouse = frappe.db.get_value("POS Profile", profile, "warehouse")
+		item_code = ensure_test_sales_uom_item("_Test Vuna Batch Sales UOM Item")
+		frappe.db.set_value("Item", item_code, {"has_batch_no": 1, "is_stock_item": 1})
+		ensure_batch_stock(item_code, warehouse, [("VUNA-BATCH-BOX-A", 18, add_days(nowdate(), 30))])
+
+		response = create_invoice_from_cart(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1, "uom": "Box"}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		item = response["data"]["items"][0]
+		self.assertEqual(item["uom"], "Box")
+		self.assertEqual(item["conversion_factor"], 18)
+		self.assertEqual(item["batch_allocations"][0]["qty"], 18)
+
+	def test_sales_order_does_not_allocate_batches(self):
+		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Sales Order Batch Item")
+		ensure_batch_stock(item_code, warehouse, [("VUNA-SO-BATCH-A", 5, add_days(nowdate(), 30))])
+
+		response = create_and_submit_sales_order(
+			pos_profile=profile,
+			customer=ensure_test_customer(),
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="sales-order-batch-deferred-key",
+		)
+
+		self.assertTrue(response["ok"], response)
+		item = response["data"]["items"][0]
+		self.assertIsNone(item.get("batch_no"))
+		self.assertEqual(item.get("batch_allocations"), [])
 
 	def test_batch_item_splits_allocation_across_multiple_batches(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch Split Item")
