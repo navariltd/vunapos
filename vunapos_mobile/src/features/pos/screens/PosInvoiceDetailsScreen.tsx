@@ -11,6 +11,7 @@ type PosInvoiceDetailsScreenProps = {
   invoiceDoctype?: string;
   invoiceName: string;
   onBack: () => void;
+  onOpenCustomer: (customer: string) => void;
 };
 
 const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: string }> = {
@@ -64,7 +65,7 @@ function KeyValue({ label, value }: { label: string; value?: string }) {
   return <View style={styles.keyValue}><Text style={styles.keyLabel}>{label}</Text><Text numberOfLines={1} style={styles.keyText}>{value || '-'}</Text></View>;
 }
 
-export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack }: PosInvoiceDetailsScreenProps) {
+export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack, onOpenCustomer }: PosInvoiceDetailsScreenProps) {
   const bootstrap = usePosBootstrap();
   const details = usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile: bootstrap.data?.pos_profile.name });
   const error = bootstrap.error ?? details.error;
@@ -87,6 +88,7 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack }:
   const total = invoice.totals.rounded_total || invoice.totals.grand_total || 0;
   const statusStyle = statusStyles[invoice.status];
   const itemCount = invoice.items.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  const invoiceCustomer = invoice.customer;
 
   return (
     <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -112,9 +114,10 @@ export function PosInvoiceDetailsScreen({ invoiceDoctype, invoiceName, onBack }:
       </View>
 
       <DetailCard title="Customer">
-        <Text style={styles.customerName}>{invoice.customer_name || invoice.customer || 'No customer'}</Text>
-        <Text style={styles.customerId}>{invoice.customer || '-'}</Text>
+        <Text style={styles.customerName}>{invoice.customer_name || invoiceCustomer || 'No customer'}</Text>
+        <Text style={styles.customerId}>{invoiceCustomer || '-'}</Text>
         {invoice.is_credit_sale ? <View style={styles.keyValues}><KeyValue label="Payment due" value={formatDate(invoice.due_date)} /><KeyValue label="Outstanding" value={formatCurrency(invoice.totals.outstanding_amount || 0, currency)} /></View> : null}
+        {invoiceCustomer ? <Pressable accessibilityLabel="View customer" onPress={() => onOpenCustomer(invoiceCustomer)} style={styles.customerButton}><Text style={styles.customerButtonLabel}>View customer</Text></Pressable> : null}
       </DetailCard>
 
       <DetailCard title="POS audit">
@@ -182,6 +185,8 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   creditSale: { color: '#f3c579', fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   customerId: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  customerButton: { alignSelf: 'flex-start', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  customerButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   customerName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   emptyCardText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },

@@ -1,0 +1,80 @@
+import { cleanup, fireEvent, render } from '@testing-library/react-native';
+
+jest.mock('react-native-paper', () => ({
+  Text: require('react-native').Text,
+}));
+
+jest.mock('@/features/pos/hooks/usePosBootstrap', () => ({
+  usePosBootstrap: jest.fn(),
+}));
+
+jest.mock('@/features/pos/hooks/usePosCustomerDetails', () => ({
+  usePosCustomerDetails: jest.fn(),
+}));
+
+import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { usePosCustomerDetails } from '@/features/pos/hooks/usePosCustomerDetails';
+import { PosCustomerDetailsScreen } from '@/features/pos/screens/PosCustomerDetailsScreen';
+
+const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
+const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
+const onBack = jest.fn();
+
+describe('PosCustomerDetailsScreen', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUsePosBootstrap.mockReturnValue({
+      data: { payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
+      error: null,
+      isLoading: false,
+    });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        address: { address_line1: '42 Vuna Street', city: 'Nairobi', country: 'Kenya' },
+        as_of: '2026-09-07 10:00:00',
+        balance: 1250,
+        contact: { phone: '+254 700 000 000' },
+        customer: {
+          currency: 'KES',
+          customer: 'CUST-001',
+          customer_group: 'Retail',
+          customer_name: 'Example customer',
+          customer_type: 'Company',
+          email_id: 'customer@example.com',
+          tax_id: 'P012345678X',
+          territory: 'Kenya',
+        },
+        loyalty: { points: 24, program: 'Vuna rewards', tier: 'Gold' },
+      },
+      error: null,
+      isLoading: false,
+    });
+  });
+
+  afterEach(async () => {
+    await cleanup();
+  });
+
+  it('renders the linked customer profile without exposing unavailable actions', async () => {
+    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} />);
+
+    expect(mockUsePosCustomerDetails).toHaveBeenCalledWith({ customer: 'CUST-001', posProfile: 'POS-001' });
+    expect(screen.getByText('Example customer')).toBeTruthy();
+    expect(screen.getByText('CUST-001 · Retail')).toBeTruthy();
+    expect(screen.getByText('KES 1,250.00')).toBeTruthy();
+    expect(screen.getByText('24')).toBeTruthy();
+    expect(screen.getByText('+254 700 000 000')).toBeTruthy();
+    expect(screen.getByText('customer@example.com')).toBeTruthy();
+    expect(screen.getByText('42 Vuna Street, Nairobi, Kenya')).toBeTruthy();
+    expect(screen.queryByText('Start new sale')).toBeNull();
+    expect(screen.queryByText('Receive payment')).toBeNull();
+  });
+
+  it('returns to the invoice details screen', async () => {
+    const screen = await render(<PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} />);
+
+    await fireEvent.press(screen.getByLabelText('Back to invoice'));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});

@@ -136,6 +136,48 @@ export type PosInvoiceDetailTax = {
   tax_amount?: number;
 };
 
+export type PosCustomerDetails = {
+  address?: PosCustomerAddress | null;
+  as_of: string;
+  balance: number;
+  contact?: PosCustomerContact | null;
+  customer: PosCustomerSummary;
+  loyalty: PosCustomerLoyalty | null;
+};
+
+export type PosCustomerAddress = {
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  country?: string | null;
+  pincode?: string | null;
+  state?: string | null;
+};
+
+export type PosCustomerContact = {
+  email_id?: string | null;
+  mobile_no?: string | null;
+  phone?: string | null;
+};
+
+export type PosCustomerLoyalty = {
+  points: number;
+  program?: string | null;
+  tier?: string | null;
+};
+
+export type PosCustomerSummary = {
+  currency?: string | null;
+  customer: string;
+  customer_group?: string | null;
+  customer_name: string;
+  customer_type?: string | null;
+  email_id?: string | null;
+  mobile_no?: string | null;
+  tax_id?: string | null;
+  territory?: string | null;
+};
+
 export type PosInvoiceHistory = {
   has_more: boolean;
   invoices: PosInvoiceHistoryRow[];

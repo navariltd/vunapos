@@ -19,6 +19,7 @@ import { PosInvoiceDetailsScreen } from '@/features/pos/screens/PosInvoiceDetail
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
 const onBack = jest.fn();
+const onOpenCustomer = jest.fn();
 
 describe('PosInvoiceDetailsScreen', () => {
   beforeEach(() => {
@@ -30,6 +31,8 @@ describe('PosInvoiceDetailsScreen', () => {
     });
     mockUsePosInvoiceDetails.mockReturnValue({
       data: {
+        customer: 'CUST-001',
+        customer_name: 'Example customer',
         currency: 'KES',
         docstatus: 1,
         doctype: 'POS Invoice',
@@ -82,7 +85,7 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('renders item quantities, rates, amounts, and batch allocations', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
 
     expect(screen.getByText('Batched item')).toBeTruthy();
     expect(screen.getByText('ITEM-BATCHED')).toBeTruthy();
@@ -94,10 +97,18 @@ describe('PosInvoiceDetailsScreen', () => {
   });
 
   it('returns to the invoice list from the detail header', async () => {
-    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} />);
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
 
     await fireEvent.press(screen.getByLabelText('Back to invoices'));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the linked customer profile', async () => {
+    const screen = await render(<PosInvoiceDetailsScreen invoiceName="POS-INV-0001" onBack={onBack} onOpenCustomer={onOpenCustomer} />);
+
+    await fireEvent.press(screen.getByLabelText('View customer'));
+
+    expect(onOpenCustomer).toHaveBeenCalledWith('CUST-001');
   });
 });
