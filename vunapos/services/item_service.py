@@ -2,10 +2,9 @@ import frappe
 from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from erpnext.accounts.utils import get_currency_precision
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
-	get_sre_reserved_qty_for_item_and_warehouse,
+	get_sre_reserved_qty_for_items_and_warehouses,
 )
 from erpnext.stock.get_item_details import get_item_details
-from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import cint, flt, today
 from pypika import Order
@@ -27,9 +26,7 @@ def _get_item_code_from_barcode(barcode):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return None
-	stock_balance = flt(get_stock_balance(item_code, warehouse))
-	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
-	return max(stock_balance - reserved_stock, 0)
+	return _get_actual_qty_map([item_code], warehouse).get(item_code, 0)
 
 
 def _get_rate(item_code, profile, price_list=None):
@@ -201,11 +198,22 @@ def _get_actual_qty_map(item_codes, warehouse):
 	if not item_codes or not warehouse:
 		return None
 
-	# Bin.reserved_stock does not include every reservation source in every
-	# ERPNext release (notably native Stock Reservation Entries). Use the same
-	# reservation-aware calculation as the item-details endpoint so catalogue
-	# quantities represent sellable stock, not merely physical stock.
-	return {item_code: _get_actual_qty(item_code, warehouse) for item_code in item_codes}
+	# Avoid one stock and one reservation query per catalogue item. The initial
+	# bootstrap can contain hundreds of items, so use the Bin aggregate and the
+	# ERPNext batch reservation helper in one query each. Bin.reserved_stock does
+	# not include every reservation source in every ERPNext release; subtracting
+	# native Stock Reservation Entries keeps the displayed quantity authoritative.
+	stock_rows = frappe.get_all(
+		"Bin",
+		filters={"item_code": ["in", item_codes], "warehouse": warehouse},
+		fields=["item_code", "actual_qty"],
+	)
+	stock_map = {row.item_code: flt(row.actual_qty) for row in stock_rows}
+	reserved_map = get_sre_reserved_qty_for_items_and_warehouses(item_codes, [warehouse])
+	return {
+		item_code: max(stock_map.get(item_code, 0) - flt(reserved_map.get((item_code, warehouse), 0)), 0)
+		for item_code in item_codes
+	}
 
 
 def _get_product_bundle_map(item_codes, warehouse=None):

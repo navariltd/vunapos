@@ -1,5 +1,5 @@
 import { unwrapVunaResponse, VunaApiError } from "../services/vunaApi";
-import type { BootstrapPayload } from "./types";
+import type { BootstrapConfigPayload, BootstrapPayload } from "./types";
 
 // The only module allowed to import fetch (dependency rule, spec §4.4). Catalogue
 // bootstrap and connectivity checks run outside React's render lifecycle, so they can't use the
@@ -34,6 +34,13 @@ export async function fetchBootstrap(posProfile?: string, since?: string): Promi
 	const json = await getJson("vunapos.api.pos.get_pos_bootstrap", {
 		pos_profile: posProfile,
 		since,
+	});
+	return unwrapVunaResponse(json);
+}
+
+export async function fetchBootstrapConfig(posProfile?: string): Promise<BootstrapConfigPayload> {
+	const json = await getJson("vunapos.api.pos.get_pos_bootstrap_config", {
+		pos_profile: posProfile,
 	});
 	return unwrapVunaResponse(json);
 }

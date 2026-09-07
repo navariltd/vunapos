@@ -179,6 +179,14 @@ export type MetaRow = {
 	value: unknown;
 };
 
+export type BootstrapConfigPayload = {
+	server_time: string;
+	pos_profile: CachedProfile;
+	pos_session: CachedPosSession;
+	tax_settings: TaxSettings;
+	payment_modes: CachedPaymentMode[];
+};
+
 export type BootstrapDeleted = {
 	Item?: string[];
 	Customer?: string[];
