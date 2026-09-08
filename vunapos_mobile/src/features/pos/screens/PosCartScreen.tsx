@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosCustomerPickerSheet } from '@/features/pos/components/PosCustomerPickerSheet';
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { PosCartItem, PosCartTax, PosCartTotals, PosCustomerSearchResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
@@ -95,7 +96,7 @@ export function PosCartScreen({ currency, error, isUpdating, items, onBack, onCh
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
 
   return (
-    <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <KeyboardAwareFormScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scrollView}>
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to items" onPress={onBack} style={styles.backButton}>
           <MaterialCommunityIcons color={posDarkColors.onSurface} name="arrow-left" size={22} />
@@ -151,7 +152,7 @@ export function PosCartScreen({ currency, error, isUpdating, items, onBack, onCh
         }}
         visible={customerPickerVisible}
       />
-    </ScrollView>
+    </KeyboardAwareFormScroll>
   );
 }
 
@@ -197,9 +198,10 @@ const styles = StyleSheet.create({
   quantityControl: { alignItems: 'center', flexDirection: 'row', gap: spacing.xs },
   retryButton: { borderColor: posDarkColors.border, borderRadius: radii.sm, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs },
   retryButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
-  quantityInput: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.sm, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small, height: 34, minWidth: 52, paddingHorizontal: spacing.xs, textAlign: 'center' },
+  quantityInput: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.sm, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small, height: 34, includeFontPadding: false, lineHeight: typography.lineHeight.compact, minWidth: 52, paddingHorizontal: spacing.xs, paddingVertical: 0, textAlign: 'center', textAlignVertical: 'center' },
   removeButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
   stockHint: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  scrollView: { flex: 1 },
   subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   summary: { borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingTop: spacing.md },
   summaryAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },

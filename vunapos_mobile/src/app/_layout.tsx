@@ -3,6 +3,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback } from 'react';
 import { PaperProvider } from 'react-native-paper';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppLaunchScreen } from '@/components/splash/AppLaunchScreen';
@@ -21,11 +22,13 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <PaperProvider theme={frappeTheme}>
-        <AppSessionProvider>
-          <RootNavigator fontsLoaded={fontsLoaded} />
-        </AppSessionProvider>
-      </PaperProvider>
+      <KeyboardProvider>
+        <PaperProvider theme={frappeTheme}>
+          <AppSessionProvider>
+            <RootNavigator fontsLoaded={fontsLoaded} />
+          </AppSessionProvider>
+        </PaperProvider>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

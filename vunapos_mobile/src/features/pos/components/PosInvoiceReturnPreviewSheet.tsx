@@ -1,8 +1,9 @@
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { useCreateInvoiceReturn } from '@/features/pos/hooks/useCreateInvoiceReturn';
 import { useInvoiceReturnPreview } from '@/features/pos/hooks/useInvoiceReturnPreview';
 import { PosInvoiceReturn, PosInvoiceReturnPreviewItem } from '@/features/pos/types';
@@ -141,7 +142,7 @@ export function PosInvoiceReturnPreviewSheet({ currency, invoiceName, onComplete
             ) : preview.isLoading ? <View style={styles.state}><Text style={styles.stateText}>Preparing return…</Text></View> : null}
             {!createdReturn && preview.error ? <View style={styles.state}><Text style={styles.errorText}>{preview.error}</Text></View> : null}
             {!createdReturn && preview.data ? (
-              <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <KeyboardAwareFormScroll contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} showsVerticalScrollIndicator={false} style={styles.formScroll}>
                 {returnableItems.length ? returnableItems.map((item) => {
                   const selected = Boolean(selectedRows[item.row_name]);
 
@@ -210,7 +211,7 @@ export function PosInvoiceReturnPreviewSheet({ currency, invoiceName, onComplete
                     </Pressable>
                   </>
                 ) : null}
-              </ScrollView>
+              </KeyboardAwareFormScroll>
             ) : null}
           </View>
         </KeyboardAvoidingView>
@@ -226,6 +227,7 @@ const styles = StyleSheet.create({
   closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   content: { gap: spacing.sm, paddingTop: spacing.md },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body, textAlign: 'center' },
+  formScroll: { flex: 1 },
   handle: { alignSelf: 'center', backgroundColor: '#555', borderRadius: radii.pill, height: 4, marginTop: spacing.xs, width: 40 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
   heading: { flex: 1, gap: 4 },

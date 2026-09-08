@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { useReceiveInvoicePayment } from '@/features/pos/hooks/useReceiveInvoicePayment';
 import { PosBootstrapData } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
@@ -117,7 +118,7 @@ export function PosInvoicePaymentSheet({
                 </Pressable>
               </View>
             ) : (
-              <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <KeyboardAwareFormScroll contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} showsVerticalScrollIndicator={false} style={styles.formScroll}>
                 <Text style={styles.label}>Amount</Text>
                 <TextInput
                   accessibilityLabel="Payment amount"
@@ -159,7 +160,7 @@ export function PosInvoicePaymentSheet({
                 <Pressable accessibilityLabel="Submit invoice payment" disabled={isSubmitting || !availableModes.length} onPress={() => void submitPayment()} style={[styles.submitButton, (isSubmitting || !availableModes.length) && styles.submitButtonDisabled]}>
                   <Text style={styles.submitButtonLabel}>{isSubmitting ? 'Receiving payment…' : 'Receive payment'}</Text>
                 </Pressable>
-              </ScrollView>
+              </KeyboardAwareFormScroll>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -174,6 +175,7 @@ const styles = StyleSheet.create({
   closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   content: { gap: spacing.sm, paddingTop: spacing.md },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
+  formScroll: { flex: 1 },
   handle: { alignSelf: 'center', backgroundColor: '#555', borderRadius: radii.pill, height: 4, marginTop: spacing.xs, width: 40 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
   heading: { flex: 1, gap: 4 },

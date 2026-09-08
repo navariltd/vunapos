@@ -57,6 +57,7 @@ describe('PosCartScreen', () => {
     await fireEvent.changeText(screen.getByLabelText('Quantity for Stock item'), '3.5');
     await fireEvent(screen.getByLabelText('Quantity for Stock item'), 'blur');
     expect(onUpdateQuantity).toHaveBeenCalledWith('ITEM-001', 3.5);
+    expect(screen.getByLabelText('Quantity for Stock item')).toHaveStyle({ includeFontPadding: false, paddingVertical: 0, textAlignVertical: 'center' });
 
     await fireEvent.press(screen.getByLabelText('Remove Stock item from cart'));
     expect(onRemove).toHaveBeenCalledWith('ITEM-001');

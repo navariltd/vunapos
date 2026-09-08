@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Redirect, useRouter } from 'expo-router';
 import { Button, HelperText, Text, TextInput } from 'react-native-paper';
 
 import { BrandMark } from '@/components/brand/BrandMark';
 import { FadeIn } from '@/components/layout/FadeIn';
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { Screen } from '@/components/layout/Screen';
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { colors, radii, spacing, typography } from '@/theme/tokens';
@@ -49,8 +50,7 @@ export function SignInScreen() {
 
   return (
     <Screen>
-      <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareFormScroll contentContainerStyle={styles.content} style={styles.keyboardView}>
           <FadeIn style={styles.introduction}>
             <BrandMark />
             <View style={styles.heading}>
@@ -112,8 +112,7 @@ export function SignInScreen() {
             </Button>
           </FadeIn>
 
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAwareFormScroll>
     </Screen>
   );
 }

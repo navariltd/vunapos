@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import { PosCartItem, PosCheckoutResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
@@ -135,7 +136,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <KeyboardAwareFormScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scrollView}>
       <View style={styles.header}>
         <Pressable accessibilityLabel="Back to cart" disabled={checkout.isSubmitting} onPress={onBack} style={styles.backButton}>
           <MaterialCommunityIcons color={posDarkColors.onSurface} name="arrow-left" size={22} />
@@ -231,7 +232,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           </View>
         </View>
       </Modal>
-    </ScrollView>
+    </KeyboardAwareFormScroll>
   );
 }
 
@@ -273,6 +274,7 @@ const styles = StyleSheet.create({
   optionLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
   optionLabelActive: { color: posDarkColors.onPrimary },
   optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  scrollView: { flex: 1 },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
   submitButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 50, paddingHorizontal: spacing.md },

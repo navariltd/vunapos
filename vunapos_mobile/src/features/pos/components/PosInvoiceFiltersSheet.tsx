@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
+import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { PosInvoiceHistoryFilters } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
@@ -219,7 +220,7 @@ export function PosInvoiceFiltersSheet({
               </Pressable>
             </View>
 
-            <ScrollView contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <KeyboardAwareFormScroll contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} showsVerticalScrollIndicator={false} style={styles.formScroll}>
               <Text style={styles.label}>Invoice number</Text>
               <TextInput
                 accessibilityLabel="Filter by invoice number"
@@ -297,7 +298,7 @@ export function PosInvoiceFiltersSheet({
                   </View>
                 </View>
               </View>
-            </ScrollView>
+            </KeyboardAwareFormScroll>
 
             {datePickerField ? (
               <DateTimePicker
@@ -431,6 +432,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     padding: spacing.md,
+  },
+  formScroll: {
+    flex: 1,
   },
   handle: {
     alignSelf: 'center',
