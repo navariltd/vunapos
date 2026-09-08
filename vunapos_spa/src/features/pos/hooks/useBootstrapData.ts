@@ -70,6 +70,7 @@ export function useBootstrapData() {
 			modes_of_payment: profile.modes_of_payment,
 			print_format: profile.print_format,
 			invoice_mode: profile.invoice_mode,
+			checkout_fields: profile.checkout_fields,
 		};
 	}, [profile, currentUser]);
 

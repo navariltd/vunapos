@@ -35,7 +35,8 @@ import type {
   CustomerDTO,
   CustomerAddressDTO,
   CustomerContactPhoneDTO,
-  CustomerLoyaltyDTO,
+	CustomerLoyaltyDTO,
+	CheckoutFieldDefinition,
   C2BGatewayPaymentDTO,
   GatewayPaymentLinkDTO,
   InvoiceDTO,
@@ -58,6 +59,8 @@ type CheckoutDialogProps = {
   customerAddresses?: CustomerAddressDTO[];
   customerAddressesLoading?: boolean;
   customerLoyalty?: CustomerLoyaltyDTO | null;
+  checkoutFields?: CheckoutFieldDefinition[];
+  onSearchCheckoutLinkOptions?: (params: { doctype: string; fieldname: string; query?: string }) => Promise<Array<{ value: string; label: string }>>;
   defaultSaleType?: "Cash Sale" | "Credit Sale";
   error?: string | null;
   isOpen: boolean;
@@ -72,7 +75,8 @@ type CheckoutDialogProps = {
     dueDate?: string,
     loyaltyPoints?: number,
     taxId?: string,
-    shippingAddressName?: string,
+	shippingAddressName?: string,
+	checkoutFields?: Record<string, string | number | boolean | null>,
   ) => void;
   onHold: () => void;
   onAttachC2bGatewayPayment?: (params: {
@@ -145,6 +149,8 @@ export function CheckoutDialog({
   customerAddresses,
   customerAddressesLoading,
   customerLoyalty,
+  checkoutFields,
+  onSearchCheckoutLinkOptions,
   defaultSaleType,
   error,
   isOpen,
@@ -184,6 +190,8 @@ export function CheckoutDialog({
       customerAddresses={customerAddresses}
       customerAddressesLoading={customerAddressesLoading}
       customerLoyalty={customerLoyalty}
+      checkoutFields={checkoutFields}
+      onSearchCheckoutLinkOptions={onSearchCheckoutLinkOptions}
       defaultSaleType={defaultSaleType}
       error={error}
       modesOfPayment={modesOfPayment}
@@ -235,7 +243,9 @@ function CheckoutDialogContent({
   onInitiateGatewayPayment,
   onPreviewLoyalty,
   orderType = "Sales Invoice",
-  posProfile,
+	posProfile,
+	checkoutFields,
+	onSearchCheckoutLinkOptions,
 }: Omit<CheckoutDialogProps, "isOpen">) {
   const invoice = useCartStore((s) => s.invoice);
   const isSubmitting = useCartStore((s) => s.isMutating);
@@ -298,7 +308,26 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
-  const [shippingAddressName, setShippingAddressName] = useState<string>("");
+	const [shippingAddressName, setShippingAddressName] = useState<string>("");
+  const [additionalFields, setAdditionalFields] = useState<Record<string, string>>({});
+  const [linkOptions, setLinkOptions] = useState<Record<string, Array<{ value: string; label: string }>>>({});
+  const [activeLinkField, setActiveLinkField] = useState<string | null>(null);
+  const [linkSearchLoading, setLinkSearchLoading] = useState<string | null>(null);
+  const searchLinkField = useCallback((field: CheckoutFieldDefinition, query = "") => {
+    if (!onSearchCheckoutLinkOptions) return;
+    setLinkSearchLoading(field.fieldname);
+    void onSearchCheckoutLinkOptions({ doctype: field.doctype, fieldname: field.fieldname, query })
+      .then((options) => setLinkOptions((current) => ({ ...current, [field.fieldname]: options })))
+      .catch(() => setLinkOptions((current) => ({ ...current, [field.fieldname]: [] })))
+      .finally(() => setLinkSearchLoading((current) => current === field.fieldname ? null : current));
+  }, [onSearchCheckoutLinkOptions]);
+	const configuredFields = useMemo(
+		() => (checkoutFields || []).filter((field) => field.doctype === orderType),
+		[checkoutFields, orderType],
+	);
+	const requiredFieldMissing = configuredFields.find(
+		(field) => field.required && !String(additionalFields[field.fieldname] || "").trim(),
+	);
 
   useEffect(() => {
     const defaultAddress = customerAddresses?.find((address) => address.is_default);
@@ -887,6 +916,82 @@ function CheckoutDialogContent({
                   ) : null}
                 </div>
               ) : null}
+              {configuredFields.length ? (
+                <div className="order-4 mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {configuredFields.map((field) => (
+                    <label key={`${field.doctype}-${field.fieldname}`} className="relative block">
+                      <span className="pointer-events-none absolute -top-2 left-2 z-10 bg-surface px-1 text-[10px] font-medium text-on-surface-variant">
+                        {field.label}{field.required ? " *" : ""}
+                      </span>
+                      {field.fieldtype === "Select" ? (
+                        <select
+                          aria-label={field.label}
+                          value={additionalFields[field.fieldname] || ""}
+                          onChange={(event) => setAdditionalFields((current) => ({ ...current, [field.fieldname]: event.target.value }))}
+                          className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                        >
+                          <option value="">Select {field.label}</option>
+                          {(field.options || "").split("\\n").filter(Boolean).map((option) => <option key={option} value={option}>{option}</option>)}
+                        </select>
+                      ) : field.fieldtype === "Link" ? (
+                        <div className="relative">
+                          <input
+                            aria-label={field.label}
+                            value={additionalFields[field.fieldname] || ""}
+                            onFocus={() => {
+                              setActiveLinkField(field.fieldname);
+                              if (!linkOptions[field.fieldname]) searchLinkField(field);
+                            }}
+                            onBlur={() => window.setTimeout(() => setActiveLinkField((current) => current === field.fieldname ? null : current), 150)}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setAdditionalFields((current) => ({ ...current, [field.fieldname]: value }));
+                              searchLinkField(field, value.trim());
+                            }}
+                            placeholder={field.placeholder || `Search ${field.label}`}
+                            className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
+                          />
+                          {activeLinkField === field.fieldname ? (
+                            <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-md border border-outline-variant bg-surface-container shadow-lg">
+                              {linkSearchLoading === field.fieldname ? (
+                                <div className="px-3 py-2 text-xs text-on-surface-variant">Searching…</div>
+                              ) : (linkOptions[field.fieldname] || []).length ? (
+                                (linkOptions[field.fieldname] || []).map((option) => (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    className="block w-full px-3 py-2 text-left text-sm hover:bg-surface-container-high"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                      setAdditionalFields((current) => ({ ...current, [field.fieldname]: option.value }));
+                                      setActiveLinkField(null);
+                                    }}
+                                  >
+                                    {option.label}
+                                  </button>
+                                ))
+                              ) : (
+                                <div className="px-3 py-2 text-xs text-on-surface-variant">No matching records</div>
+                              )}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <input
+                          aria-label={field.label}
+                          type={field.fieldtype === "Date" ? "date" : field.fieldtype === "Check" ? "checkbox" : "text"}
+                          value={field.fieldtype === "Check" ? undefined : additionalFields[field.fieldname] || ""}
+                          checked={field.fieldtype === "Check" ? additionalFields[field.fieldname] === "1" : undefined}
+                          onChange={(event) => setAdditionalFields((current) => ({ ...current, [field.fieldname]: field.fieldtype === "Check" ? (event.target.checked ? "1" : "0") : event.target.value }))}
+                          placeholder={field.placeholder || undefined}
+                          className={field.fieldtype === "Check" ? "size-5" : "h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"}
+                        />
+                      )}
+                      {field.help_text ? <span className="mt-1 block text-xs text-on-surface-variant">{field.help_text}</span> : null}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
               {customerAddressesLoading || customerAddresses?.length ? (
                 <div className="order-4 mb-4 rounded-md bg-surface-container-low px-3 py-2">
                   <label className="block text-sm font-medium text-on-surface">
@@ -1263,6 +1368,10 @@ function CheckoutDialogContent({
           <Button
             disabled={!isPayable || isSubmitting || deliveryApplying}
             onClick={async () => {
+              if (requiredFieldMissing) {
+                showToast({ type: "error", message: `${requiredFieldMissing.label} is required before checkout.` });
+                return;
+              }
               if (
                 deliveryEnabled &&
                 onApplyDeliveryCharge &&
@@ -1303,6 +1412,7 @@ function CheckoutDialogContent({
                   ? checkoutTaxId.trim() || undefined
                   : undefined,
                 shippingAddressName || undefined,
+                additionalFields,
               );
             }}
           >

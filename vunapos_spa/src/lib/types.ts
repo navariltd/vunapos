@@ -144,6 +144,17 @@ export type CachedProfile = {
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
+	checkout_fields?: Array<{
+		doctype: "Sales Invoice" | "POS Invoice" | "Sales Order";
+		fieldname: string;
+		label: string;
+		fieldtype: string;
+		options?: string | null;
+		required?: boolean;
+		placeholder?: string | null;
+		help_text?: string | null;
+		order?: number;
+	}>;
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

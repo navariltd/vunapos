@@ -49,6 +49,7 @@ export class VunaApiError extends Error {
 export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
 	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
+	searchCheckoutLinkOptions: "vunapos.api.profile.search_checkout_link_options",
 	searchItems: "vunapos.api.item.search_items",
 	resolveBarcode: "vunapos.api.item.resolve_barcode",
 	getItemDetails: "vunapos.api.item.get_item_details",
@@ -137,6 +138,16 @@ async function callAndUnwrap<T>(call: FrappeCall, params: Record<string, unknown
 
 export function getBootstrapData(call: FrappeCall, posProfile?: string) {
 	return callAndUnwrap<BootstrapData>(call, { pos_profile: posProfile });
+}
+
+export function searchCheckoutLinkOptions(
+	call: FrappeCall,
+	params: { doctype: string; fieldname: string; query?: string },
+) {
+	return callAndUnwrap<Array<{ value: string; label: string }>>(
+		call,
+		params,
+	);
 }
 
 export function getClosingPreview(call: FrappeCall, posProfile: string) {
@@ -395,11 +406,13 @@ export function submitInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -417,11 +430,13 @@ export function checkoutInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -452,12 +467,14 @@ export function createAndSubmitInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -475,12 +492,14 @@ export function createAndSubmitSalesOrder(
 		salesperson?: string;
 		salesperson_token?: string;
 		payments?: PaymentInput[];
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 

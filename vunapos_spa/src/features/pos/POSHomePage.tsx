@@ -24,6 +24,7 @@ import {
 import {
   getItemDetails,
   getCustomerAddresses,
+  searchCheckoutLinkOptions,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -227,6 +228,7 @@ export function POSHomePage({
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+  const checkoutLinkOptionsCall = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
@@ -812,6 +814,7 @@ export function POSHomePage({
     loyaltyPoints?: number,
     taxId?: string,
     shippingAddressName?: string,
+    checkoutFields?: Record<string, string | number | boolean | null>,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -833,6 +836,7 @@ export function POSHomePage({
         loyaltyPoints,
         taxId,
         shippingAddressName,
+        checkoutFields,
         orderType,
         salesperson?.name,
         salesperson?.token,
@@ -1147,7 +1151,7 @@ export function POSHomePage({
         </div>
       ) : null}
 
-      <CheckoutDialog
+        <CheckoutDialog
         allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
@@ -1169,6 +1173,8 @@ export function POSHomePage({
         isOpen={isCheckoutOpen}
         modesOfPayment={paymentModes}
         customerLoyalty={customerLoyalty.data}
+          checkoutFields={bootstrap.data?.checkout_fields}
+          onSearchCheckoutLinkOptions={(params) => searchCheckoutLinkOptions(checkoutLinkOptionsCall.call, params)}
         onClear={() => {
           if (handleClearCart(true)) setIsCheckoutOpen(false);
         }}

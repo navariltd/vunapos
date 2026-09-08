@@ -7,6 +7,20 @@ export type ModeOfPaymentDTO = {
 	requires_reference?: boolean;
 };
 
+export type CheckoutFieldValues = Record<string, string | number | boolean | null>;
+
+export type CheckoutFieldDefinition = {
+	doctype: "Sales Invoice" | "POS Invoice" | "Sales Order";
+	fieldname: string;
+	label: string;
+	fieldtype: string;
+	options?: string | null;
+	required?: boolean;
+	placeholder?: string | null;
+	help_text?: string | null;
+	order?: number;
+};
+
 export type C2BGatewayPaymentDTO = {
 	name: string;
 	transaction_id: string;
@@ -216,6 +230,7 @@ export type BootstrapData = {
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
+	checkout_fields?: CheckoutFieldDefinition[];
 	print_format?: string | null;
 	invoice_mode?: "Sales Invoice" | "POS Invoice" | string;
 	background_submission?: {
