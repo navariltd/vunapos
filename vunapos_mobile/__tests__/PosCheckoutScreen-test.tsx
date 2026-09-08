@@ -339,4 +339,98 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(screen.getByText('Only cash can exceed the total and return change.')).toBeTruthy());
     expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(true);
   });
+
+  it('selects and submits a Sales Order delivery date', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0001' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByText('Delivery date')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Choose Sales Order delivery date'));
+    await fireEvent(screen.getByTestId('sales-order-delivery-date-picker'), 'valueChange', {}, new Date(2026, 8, 12, 12));
+
+    await fireEvent.press(screen.getByLabelText('Submit sales order'));
+    expect(screen.getByText('This will submit the Sales Order for delivery on Sep 12, 2026.')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Confirm sales order submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      deliveryDate: '2026-09-12',
+      orderType: 'Order',
+      payments: [],
+    })));
+  });
+
+  it('collects an optional Sales Order advance only when the POS profile permits it', async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: 'Cash', type: 'Cash' }],
+        pos_profile: { allow_sales_order_payments: true, name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    submit.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0002' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByText('Sales Order advance payment')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '40');
+    expect(screen.getByText('Advance payment')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Submit sales order'));
+    expect(screen.getByText(/collect an advance of/)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Confirm sales order submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      orderType: 'Order',
+      payments: [{ amount: 40, mode_of_payment: 'Cash' }],
+    })));
+  });
+
+  it('blocks a Sales Order advance above the order total', async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: 'Cash', type: 'Cash' }],
+        pos_profile: { allow_sales_order_payments: true, name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '101');
+
+    expect(screen.getByText('An advance cannot exceed the Sales Order total.')).toBeTruthy();
+    expect(screen.getByLabelText('Submit sales order').props.accessibilityState.disabled).toBe(true);
+  });
 });

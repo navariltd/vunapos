@@ -11,6 +11,7 @@ type PreviewInput = {
 };
 
 type SubmitInput = PreviewInput & {
+  deliveryDate?: string;
   dueDate?: string;
   isCreditSale: boolean;
   orderType: PosOrderType;
@@ -98,6 +99,7 @@ export function useSubmitPosCheckout() {
           ...(input.orderType === 'Invoice' && input.isCreditSale
             ? { due_date: input.dueDate, is_credit_sale: true }
             : {}),
+          ...(input.orderType === 'Order' ? { delivery_date: input.deliveryDate } : {}),
         },
       );
       idempotencyKey.current = createIdempotencyKey();

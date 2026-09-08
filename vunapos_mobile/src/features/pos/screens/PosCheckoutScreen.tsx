@@ -77,7 +77,9 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
   const [dueDate, setDueDate] = useState(today());
+  const [deliveryDate, setDeliveryDate] = useState(today());
   const [isDueDatePickerVisible, setIsDueDatePickerVisible] = useState(false);
+  const [isDeliveryDatePickerVisible, setIsDeliveryDatePickerVisible] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
 
@@ -97,11 +99,15 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const paymentInputs = buildPaymentInputs(manualModes, paymentAmounts, precision);
   const paymentModeKey = manualModes.map((mode) => mode.mode_of_payment).join('|');
   const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
+  const allowsSalesOrderAdvancePayments = Boolean(!isInvoice && profile?.allow_sales_order_payments);
+  const hasSalesOrderAdvanceOverpayment = allowsSalesOrderAdvancePayments && allocation.allocatedMinor > totalMinor;
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
   const canSubmitPayment = Boolean(
-    !isInvoice || (manualModes.length && (isCreditSale
-      ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
-      : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment)))),
+    isInvoice
+      ? manualModes.length && (isCreditSale
+        ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
+        : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment)))
+      : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment),
   );
   const isPaymentOverpaid = allocation.remainingMinor < 0;
   const paymentBalanceLabel = isPaymentOverpaid
@@ -111,10 +117,16 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       : 'Remaining';
   const paymentStatus = allocation.hasInvalidAmount
     ? 'Invalid allocation'
+    : hasSalesOrderAdvanceOverpayment
+      ? 'Advance exceeds order total'
     : hasNonCashOverpayment
       ? 'Overpayment not allowed'
       : isPaymentOverpaid
         ? 'Change due'
+        : !isInvoice
+          ? allocation.allocatedMinor > 0
+            ? 'Advance payment'
+            : 'No advance'
         : allocation.remainingMinor === 0
           ? 'Fully paid'
           : isCreditSale && allocation.allocatedMinor > 0
@@ -125,7 +137,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
                 ? 'Partial payment'
                 : 'Payment incomplete';
   const isReadyToSubmit = Boolean(
-    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : true),
+    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : deliveryDate >= today() && canSubmitPayment),
   );
   const paidAmount = allocation.allocatedMinor / currencyScale(precision);
   const checkoutBalanceAmount = Math.abs(allocation.remainingMinor / currencyScale(precision));
@@ -191,6 +203,18 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       setValidationError('The credit sale due date cannot be before the posting date.');
       return;
     }
+    if (!isInvoice && deliveryDate < today()) {
+      setValidationError('The Sales Order delivery date cannot be before today.');
+      return;
+    }
+    if (!isInvoice && allowsSalesOrderAdvancePayments && allocation.hasInvalidAmount) {
+      setValidationError('Enter valid advance-payment amounts using the configured currency precision.');
+      return;
+    }
+    if (!isInvoice && hasSalesOrderAdvanceOverpayment) {
+      setValidationError('Sales Order advance payments cannot exceed the order total.');
+      return;
+    }
     if (isInvoice) {
       if (!manualModes.length) {
         setValidationError('No manual payment mode is configured for this POS profile.');
@@ -219,11 +243,12 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     if (!profile) return;
     const result = await checkout.submit({
       customer: saleCustomer?.customer,
+      deliveryDate: !isInvoice ? deliveryDate : undefined,
       dueDate: isCreditSale ? dueDate : undefined,
       isCreditSale,
       items,
       orderType,
-      payments: isInvoice ? paymentInputs : [],
+      payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
     });
     if (result) onComplete(result);
@@ -278,7 +303,34 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         </> : <Text style={styles.cardHint}>Frappe will calculate final tax and totals when this Sales Order is submitted.</Text>}
       </View>
 
-      {isInvoice ? <>
+      {!isInvoice ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>Sales Order</Text>
+        <Text style={styles.cardHint}>Choose when this order should be delivered.</Text>
+        <Text style={styles.fieldLabel}>Delivery date</Text>
+        <Pressable accessibilityLabel="Choose Sales Order delivery date" onPress={() => setIsDeliveryDatePickerVisible(true)} style={styles.datePickerButton}>
+          <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="calendar-month-outline" size={20} />
+          <Text style={styles.datePickerButtonLabel}>{formatDate(deliveryDate)}</Text>
+        </Pressable>
+        {isDeliveryDatePickerVisible ? <DateTimePicker
+          accentColor={posDarkColors.primary}
+          minimumDate={dateFromInput(today())}
+          mode="date"
+          negativeButton={{ label: 'Cancel' }}
+          onDismiss={() => setIsDeliveryDatePickerVisible(false)}
+          onValueChange={(_event, selectedDate) => {
+            setDeliveryDate(dateInputValue(selectedDate));
+            setIsDeliveryDatePickerVisible(false);
+          }}
+          positiveButton={{ label: 'Select' }}
+          presentation={Platform.OS === 'android' ? 'dialog' : 'inline'}
+          testID="sales-order-delivery-date-picker"
+          themeVariant="dark"
+          value={dateFromInput(deliveryDate)}
+        /> : null}
+        {!allowsSalesOrderAdvancePayments ? <Text style={styles.cardHint}>This POS profile does not allow an advance payment for Sales Orders.</Text> : null}
+      </View> : null}
+
+      {isInvoice && <>
         {canUseCredit ? (
           <View style={styles.card}>
             <View style={styles.creditSaleRow}>
@@ -321,14 +373,20 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           </View>
         ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Payment methods</Text>
+      </>}
+
+      {(isInvoice || allowsSalesOrderAdvancePayments) ? <View style={styles.card}>
+          <Text style={styles.cardTitle}>{isInvoice ? 'Payment methods' : 'Sales Order advance payment'}</Text>
           <View style={styles.paymentSummaryRow}>
             <PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / currencyScale(precision), currency, precision)} />
-            <PaymentSummary label={paymentBalanceLabel} value={formatCurrency(Math.abs(allocation.remainingMinor) / currencyScale(precision), currency, precision)} />
+            <PaymentSummary label={isInvoice ? paymentBalanceLabel : 'Order balance'} value={formatCurrency(Math.abs(allocation.remainingMinor) / currencyScale(precision), currency, precision)} />
             <PaymentSummary label="Status" value={paymentStatus} />
           </View>
-          <Text style={styles.cardHint}>{isCreditSale ? 'Optionally record a deposit. The remaining balance will be recorded as credit.' : 'Tap a payment mode to allocate the full balance, or enter amounts to split the payment.'}</Text>
+          <Text style={styles.cardHint}>{isInvoice
+            ? isCreditSale
+              ? 'Optionally record a deposit. The remaining balance will be recorded as credit.'
+              : 'Tap a payment mode to allocate the full balance, or enter amounts to split the payment.'
+            : 'Optionally collect an advance. It cannot exceed the Sales Order total and will be recorded against this order.'}</Text>
           {manualModes.length ? <View style={styles.paymentModes}>
             {manualModes.map((mode) => {
               const amount = paymentAmounts[mode.mode_of_payment] ?? '';
@@ -353,11 +411,13 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
                 </View>
               </View>;
             })}
-          </View> : <Text style={styles.errorText}>No manual payment mode is configured for this POS profile.</Text>}
-          {profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
-          {hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
-        </View>
-      </> : <View style={styles.card}><Text style={styles.cardTitle}>Sales Order</Text><Text style={styles.cardHint}>This order is submitted without an advance payment. Advance-payment and delivery options will follow in a dedicated order checkout increment.</Text></View>}
+          </View> : <Text style={isInvoice ? styles.errorText : styles.cardHint}>{isInvoice
+            ? 'No manual payment mode is configured for this POS profile.'
+            : 'No manual payment mode is configured, so this Sales Order will be submitted without an advance.'}</Text>}
+          {isInvoice && profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
+          {isInvoice && hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
+          {hasSalesOrderAdvanceOverpayment ? <Text style={styles.errorText}>An advance cannot exceed the Sales Order total.</Text> : null}
+        </View> : null}
 
       {validationError || checkout.error ? <Text style={styles.errorText}>{validationError || checkout.error}</Text> : null}
       <Pressable accessibilityLabel={isInvoice ? 'Complete sale' : 'Submit sales order'} accessibilityState={{ disabled: !isReadyToSubmit }} disabled={!isReadyToSubmit} onPress={requestSubmit} style={[styles.submitButton, !isReadyToSubmit && styles.submitButtonDisabled]}>
@@ -386,7 +446,13 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
               <Text style={styles.confirmationDescription}>Please wait while the sale is confirmed.</Text>
             </> : <>
               <Text style={styles.confirmationTitle}>Confirm submission of {submissionLabel} for {customerName}?</Text>
-              <Text style={styles.confirmationDescription}>{isCreditSale ? 'This will submit the sale as credit with its payment due date.' : 'This will submit the sale and its selected payment allocation.'}</Text>
+              <Text style={styles.confirmationDescription}>{!isInvoice
+                ? allocation.allocatedMinor > 0
+                  ? `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)} and collect an advance of ${formatCurrency(paidAmount, currency, precision)}.`
+                  : `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)}.`
+                : isCreditSale
+                  ? 'This will submit the sale as credit with its payment due date.'
+                  : 'This will submit the sale and its selected payment allocation.'}</Text>
               {checkout.error ? <Text style={styles.errorText}>{checkout.error}</Text> : null}
               <View style={styles.confirmationActions}>
                 <Pressable accessibilityLabel="Cancel sale submission" onPress={() => setIsSubmitConfirmationVisible(false)} style={styles.cancelConfirmationButton}>

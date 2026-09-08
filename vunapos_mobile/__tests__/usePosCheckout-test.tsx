@@ -79,7 +79,7 @@ describe('POS checkout hooks', () => {
         isCreditSale: true,
         items: [item],
         orderType: 'Invoice',
-        payments: [],
+        payments: [{ amount: 40, mode_of_payment: 'Cash' }],
         posProfile: 'POS-001',
       });
     });
@@ -90,20 +90,25 @@ describe('POS checkout hooks', () => {
     }));
   });
 
-  it('uses the sales-order endpoint without invoice-only fields', async () => {
+  it('uses the sales-order endpoint with a delivery date and without invoice-only fields', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0001' });
     const hook = await renderHook(() => useSubmitPosCheckout());
 
     await act(async () => {
       await hook.result.current.submit({
+        deliveryDate: '2026-09-30',
         isCreditSale: false,
         items: [item],
         orderType: 'Order',
-        payments: [],
+        payments: [{ amount: 40, mode_of_payment: 'Cash' }],
         posProfile: 'POS-001',
       });
     });
 
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_sales_order', expect.objectContaining({
+      delivery_date: '2026-09-30',
+      payments: '[{"amount":40,"mode_of_payment":"Cash"}]',
+    }));
     expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_sales_order', expect.not.objectContaining({ due_date: expect.anything(), is_credit_sale: expect.anything() }));
   });
 });

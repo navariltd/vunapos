@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/vuna-logo.png",
     "scheme": "vunapos",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "ios": {
       "icon": "./assets/images/vuna-logo.png"
     },

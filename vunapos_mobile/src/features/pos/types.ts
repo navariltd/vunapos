@@ -88,6 +88,7 @@ export type PosBootstrapData = {
     allow_credit_sales?: boolean;
     allow_customer_payments?: boolean;
     allow_partial_payment?: boolean;
+    allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
     currency?: string;
     currency_precision?: number;
