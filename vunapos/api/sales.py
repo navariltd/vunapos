@@ -86,6 +86,7 @@ def checkout_invoice(
 	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
+	checkout_fields: dict | str | None = None,
 ):
 	try:
 		return success(
@@ -101,6 +102,7 @@ def checkout_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 		)
 	except Exception as exc:
@@ -277,6 +279,7 @@ def submit_invoice(
 	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
+	checkout_fields: dict | str | None = None,
 ):
 	try:
 		return success(
@@ -291,6 +294,7 @@ def submit_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 		)
 	except Exception as exc:
@@ -312,6 +316,7 @@ def create_and_submit_invoice(
 	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
+	checkout_fields: dict | str | None = None,
 ):
 	try:
 		return success(
@@ -329,6 +334,7 @@ def create_and_submit_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 		)
 	except Exception as exc:
@@ -348,6 +354,7 @@ def create_and_submit_sales_order(
 	shipping_address_name: str | None = None,
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
+	checkout_fields: dict | str | None = None,
 ):
 	try:
 		return success(
@@ -363,6 +370,7 @@ def create_and_submit_sales_order(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 		)
 	except Exception as exc:

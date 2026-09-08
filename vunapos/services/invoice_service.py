@@ -22,6 +22,7 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
+from vunapos.services.checkout_field_service import apply_checkout_field_values
 from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_PROCESSING,
 	QUEUE_STATUS_QUEUED,
@@ -594,7 +595,7 @@ def _get_actual_qty(item_code, warehouse):
 	return max(stock_balance - reserved_stock, 0)
 
 
-def validate_cart_items(items, profile):
+def validate_cart_items(items, profile, *, validate_stock=True):
 	delivery_charge_item = profile.get("vunapos_delivery_charge_item")
 	if delivery_charge_item:
 		matches = [item for item in items if item.get("item_code") == delivery_charge_item]
@@ -604,7 +605,8 @@ def validate_cart_items(items, profile):
 				_("Only one Delivery Charge line is allowed on an invoice"),
 			)
 	item_qtys = _get_cart_item_qtys(items)
-	_validate_stock_qtys(item_qtys, profile)
+	if validate_stock:
+		_validate_stock_qtys(item_qtys, profile)
 	return item_qtys
 
 
@@ -1508,6 +1510,7 @@ def submit_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
@@ -1529,6 +1532,7 @@ def submit_invoice(
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
 	_apply_shipping_address(doc, shipping_address_name)
+	apply_checkout_field_values(doc, checkout_fields, profile)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
@@ -1554,6 +1558,7 @@ def checkout_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1580,6 +1585,7 @@ def checkout_invoice(
 		shipping_address_name=shipping_address_name,
 		salesperson=salesperson,
 		salesperson_token=salesperson_token,
+		checkout_fields=checkout_fields,
 	)
 	doc.submit()
 	consume_gateway_payment_links(getattr(doc.flags, "vunapos_gateway_payment_links", []), doc)
@@ -1598,6 +1604,7 @@ def _prepare_invoice_for_checkout(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1618,6 +1625,7 @@ def _prepare_invoice_for_checkout(
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
 	_apply_shipping_address(doc, shipping_address_name)
+	apply_checkout_field_values(doc, checkout_fields, profile)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1682,6 +1690,7 @@ def create_and_submit_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1712,6 +1721,7 @@ def create_and_submit_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
@@ -1733,6 +1743,7 @@ def create_and_submit_invoice(
 			shipping_address_name=shipping_address_name,
 			salesperson=salesperson,
 			salesperson_token=salesperson_token,
+			checkout_fields=checkout_fields,
 		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
@@ -1807,6 +1818,7 @@ def create_and_submit_sales_order(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = _find_submitted_order_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1821,7 +1833,7 @@ def create_and_submit_sales_order(
 		profile = resolve_pos_profile(pos_profile)
 		opening_entry = require_open_pos_session(profile.name)
 		cart_items = _cart_item_rows(items)
-		validate_cart_items(cart_items, profile)
+		validate_cart_items(cart_items, profile, validate_stock=False)
 		doc, profile = _build_sales_order_doc(
 			pos_profile=profile.name,
 			customer=customer,
@@ -1861,6 +1873,7 @@ def create_and_submit_sales_order(
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 		_apply_checkout_tax_id(doc, tax_id)
 		_apply_shipping_address(doc, shipping_address_name)
+		apply_checkout_field_values(doc, checkout_fields, profile)
 		doc.flags.ignore_mandatory = False
 		doc.insert()
 		_materialize_batch_bundles(doc)

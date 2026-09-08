@@ -13,6 +13,17 @@ def ensure_vunapos_custom_fields():
 		{
 			"POS Settings": [
 				{
+					"fieldname": "vunapos_checkout_fields",
+					"label": "VunaPOS Checkout Fields",
+					"fieldtype": "Table",
+					"options": "VunaPOS Checkout Field",
+					"insert_after": "vunapos_salesperson_pin_session_minutes",
+					"description": (
+						"Register additional fields that VunaPOS may display and persist during checkout. "
+						"The field must already exist on the selected transaction DocType."
+					),
+				},
+				{
 					"fieldname": "vunapos_salesperson_pin_session_minutes",
 					"label": "Salesperson PIN Session Duration (Minutes)",
 					"fieldtype": "Int",
@@ -59,6 +70,14 @@ def ensure_vunapos_custom_fields():
 				},
 			],
 			"POS Profile": [
+				{
+					"fieldname": "vunapos_checkout_fields",
+					"label": "Checkout Field Overrides",
+					"fieldtype": "Table",
+					"options": "VunaPOS Checkout Field",
+					"insert_after": "vunapos_tab",
+					"description": "Override global VunaPOS checkout fields for this POS Profile.",
+				},
 				{
 					"fieldname": "vunapos_tab",
 					"label": "VunaPOS",
