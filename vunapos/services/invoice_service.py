@@ -11,7 +11,7 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate
+from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate, sbool
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
@@ -335,8 +335,17 @@ def _has_gateway_payment_rows(payments, profile):
 	)
 
 
+def _normalize_credit_sale_flag(is_credit_sale):
+	if isinstance(is_credit_sale, bool):
+		return is_credit_sale
+	normalized = sbool(cstr(is_credit_sale).strip().lower())
+	if isinstance(normalized, bool):
+		return normalized
+	_throw("INVALID_CREDIT_SALE_FLAG", _("Credit sale must be true or false"))
+
+
 def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
-	is_credit_sale = bool(cint(is_credit_sale))
+	is_credit_sale = _normalize_credit_sale_flag(is_credit_sale)
 	if not is_credit_sale:
 		return False
 	if not profile or not profile.get("vunapos_allow_credit_sales"):
@@ -347,7 +356,7 @@ def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
 
 
 def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
-	is_credit_sale = bool(cint(is_credit_sale))
+	is_credit_sale = _normalize_credit_sale_flag(is_credit_sale)
 	if not is_credit_sale:
 		return None
 	if not due_date:
