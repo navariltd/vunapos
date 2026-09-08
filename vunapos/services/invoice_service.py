@@ -1032,6 +1032,10 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 	_set_if_has_field(doc, "pos_profile", profile.name)
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_sync_profile_pricing_fields(doc, profile, price_list)
+	# Populate ERPNext customer defaults (customer group, territory, and related
+	# context) before item pricing rules are evaluated for the first cart row.
+	if hasattr(doc, "set_missing_values"):
+		doc.set_missing_values()
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
@@ -1066,6 +1070,8 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_set_if_has_field(doc, "vunapos_pos_profile", profile.name)
 	_sync_profile_pricing_fields(doc, profile, price_list)
+	if hasattr(doc, "set_missing_values"):
+		doc.set_missing_values()
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
 	_reset_invoice_totals(doc)
