@@ -1,6 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DateTimePicker } from '@expo/ui/community/datetime-picker';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
@@ -38,6 +39,22 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function dateFromInput(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function dateInputValue(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(dateFromInput(value));
+}
+
 function taxLabel(description?: string, accountHead?: string, rate?: number, included?: boolean) {
   const name = description || accountHead || 'Tax';
   const rateLabel = rate === undefined || rate === null ? '' : ` · ${rate}%${included ? ' included' : ''}`;
@@ -60,6 +77,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
   const [dueDate, setDueDate] = useState(today());
+  const [isDueDatePickerVisible, setIsDueDatePickerVisible] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
 
@@ -72,6 +90,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const grandTotal = preview.data?.totals.grand_total ?? total;
   const roundedTotal = preview.data?.totals.rounded_total;
   const taxTotal = preview.data?.totals.total_taxes_and_charges ?? Math.max(grandTotal - netTotal, 0);
+  const postingDate = preview.data?.posting_date ?? today();
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
   const allocation = calculatePaymentAllocation(manualModes, paymentAmounts, totalMinor, precision);
@@ -100,7 +119,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
             ? 'Partial payment'
             : 'Payment incomplete';
   const isReadyToSubmit = Boolean(
-    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate : canSubmitPayment) : true),
+    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate : canSubmitPayment) : true),
   );
   const paidAmount = isCreditSale ? 0 : allocation.allocatedMinor / currencyScale(precision);
   const checkoutBalanceAmount = Math.abs(isCreditSale ? total : allocation.remainingMinor / currencyScale(precision));
@@ -162,6 +181,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     }
     if (isCreditSale && !dueDate) {
       setValidationError('Select a due date for this credit sale.');
+      return;
+    }
+    if (isCreditSale && dueDate < postingDate) {
+      setValidationError('The credit sale due date cannot be before the posting date.');
       return;
     }
     if (!isCreditSale && isInvoice) {
@@ -271,7 +294,25 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
             </View>
             {isCreditSale ? <>
               <Text style={styles.fieldLabel}>Payment due date</Text>
-              <TextInput accessibilityLabel="Credit sale due date" autoCapitalize="none" onChangeText={setDueDate} placeholder="YYYY-MM-DD" placeholderTextColor="#8f8f8f" style={styles.input} value={dueDate} />
+              <Pressable accessibilityLabel="Choose credit sale due date" onPress={() => setIsDueDatePickerVisible(true)} style={styles.datePickerButton}>
+                <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="calendar-month-outline" size={20} />
+                <Text style={styles.datePickerButtonLabel}>{formatDate(dueDate)}</Text>
+              </Pressable>
+              {isDueDatePickerVisible ? <DateTimePicker
+                accentColor={posDarkColors.primary}
+                minimumDate={dateFromInput(postingDate)}
+                mode="date"
+                negativeButton={{ label: 'Cancel' }}
+                onDismiss={() => setIsDueDatePickerVisible(false)}
+                onValueChange={(_event, selectedDate) => {
+                  setDueDate(dateInputValue(selectedDate));
+                  setIsDueDatePickerVisible(false);
+                }}
+                positiveButton={{ label: 'Select' }}
+                presentation={Platform.OS === 'android' ? 'dialog' : 'inline'}
+                themeVariant="dark"
+                value={dateFromInput(dueDate)}
+              /> : null}
             </> : null}
           </View>
         ) : null}
@@ -387,6 +428,8 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   creditSaleRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, justifyContent: 'space-between' },
   creditSaleText: { flex: 1, gap: 3 },
+  datePickerButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.sm },
+  datePickerButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
   fieldLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
   header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },

@@ -4,6 +4,14 @@ jest.mock('react-native-paper', () => ({
   Text: require('react-native').Text,
 }));
 
+jest.mock('@expo/ui/community/datetime-picker', () => {
+  const { View } = require('react-native');
+  return {
+    __esModule: true,
+    DateTimePicker: (props: object) => <View accessibilityLabel="Credit sale date picker" {...props} />,
+  };
+});
+
 jest.mock('@/features/pos/hooks/usePosBootstrap', () => ({
   usePosBootstrap: jest.fn(),
 }));
@@ -150,7 +158,35 @@ describe('PosCheckoutScreen', () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText('Enable credit sale').props.value).toBe(true));
-    expect(screen.getByLabelText('Credit sale due date')).toBeTruthy();
+    expect(screen.getByLabelText('Choose credit sale due date')).toBeTruthy();
+  });
+
+  it('uses a native date picker and prevents credit due dates before the posting date', async () => {
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], posting_date: '2026-09-10', totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent(screen.getByLabelText('Enable credit sale'), 'valueChange', true);
+    await fireEvent.press(screen.getByLabelText('Choose credit sale due date'));
+
+    const picker = screen.getByLabelText('Credit sale date picker');
+    expect(picker.props.minimumDate).toEqual(new Date(2026, 8, 10, 12));
+
+    await fireEvent(picker, 'valueChange', {}, new Date(2026, 8, 12, 12));
+    expect(screen.getByText('Sep 12, 2026')).toBeTruthy();
   });
 
   it('renders the authoritative item, tax, total, and payment review summary', async () => {

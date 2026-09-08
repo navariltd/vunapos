@@ -108,6 +108,7 @@ export type PosCheckoutPreview = {
   currency?: string;
   items: PosInvoiceDetailItem[];
   loyalty_amount?: number;
+  posting_date?: string;
   taxes?: PosCheckoutTax[];
   totals: {
     change_amount?: number;
