@@ -99,7 +99,9 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
   const canSubmitPayment = Boolean(
-    !isInvoice || isCreditSale || (manualModes.length && canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))),
+    !isInvoice || (manualModes.length && (isCreditSale
+      ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
+      : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment)))),
   );
   const isPaymentOverpaid = allocation.remainingMinor < 0;
   const paymentBalanceLabel = isPaymentOverpaid
@@ -115,21 +117,23 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         ? 'Change due'
         : allocation.remainingMinor === 0
           ? 'Fully paid'
-          : profile?.allow_partial_payment
-            ? 'Partial payment'
-            : 'Payment incomplete';
+          : isCreditSale && allocation.allocatedMinor > 0
+            ? 'Deposit + credit'
+            : isCreditSale
+              ? 'Credit sale'
+              : profile?.allow_partial_payment
+                ? 'Partial payment'
+                : 'Payment incomplete';
   const isReadyToSubmit = Boolean(
-    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate : canSubmitPayment) : true),
+    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : true),
   );
-  const paidAmount = isCreditSale ? 0 : allocation.allocatedMinor / currencyScale(precision);
-  const checkoutBalanceAmount = Math.abs(isCreditSale ? total : allocation.remainingMinor / currencyScale(precision));
-  const checkoutBalanceLabel = isCreditSale
-    ? 'Outstanding'
-    : isPaymentOverpaid
-      ? 'Cash change'
-      : allocation.remainingMinor > 0
-        ? 'Outstanding'
-        : 'Balance';
+  const paidAmount = allocation.allocatedMinor / currencyScale(precision);
+  const checkoutBalanceAmount = Math.abs(allocation.remainingMinor / currencyScale(precision));
+  const checkoutBalanceLabel = isPaymentOverpaid
+    ? 'Cash change'
+    : isCreditSale || allocation.remainingMinor > 0
+      ? 'Outstanding'
+      : 'Balance';
 
   useEffect(() => {
     if (appliedSaleTypeDefault.current || !profile) return;
@@ -187,7 +191,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       setValidationError('The credit sale due date cannot be before the posting date.');
       return;
     }
-    if (!isCreditSale && isInvoice) {
+    if (isInvoice) {
       if (!manualModes.length) {
         setValidationError('No manual payment mode is configured for this POS profile.');
         return;
@@ -200,7 +204,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         setValidationError('Electronic payments cannot exceed the invoice total.');
         return;
       }
-      if (!canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile.allow_partial_payment))) {
+      if (!isCreditSale && !canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile.allow_partial_payment))) {
         setValidationError(profile.allow_partial_payment
           ? 'Allocate a payment amount greater than zero.'
           : `Payment must cover ${formatCurrency(total, currency, precision)}.`);
@@ -219,7 +223,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       isCreditSale,
       items,
       orderType,
-      payments: !isCreditSale && isInvoice ? paymentInputs : [],
+      payments: isInvoice ? paymentInputs : [],
       posProfile: profile.name,
     });
     if (result) onComplete(result);
@@ -317,14 +321,14 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           </View>
         ) : null}
 
-        {!isCreditSale ? <View style={styles.card}>
+        <View style={styles.card}>
           <Text style={styles.cardTitle}>Payment methods</Text>
           <View style={styles.paymentSummaryRow}>
             <PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / currencyScale(precision), currency, precision)} />
             <PaymentSummary label={paymentBalanceLabel} value={formatCurrency(Math.abs(allocation.remainingMinor) / currencyScale(precision), currency, precision)} />
             <PaymentSummary label="Status" value={paymentStatus} />
           </View>
-          <Text style={styles.cardHint}>Tap a payment mode to allocate the full balance, or enter amounts to split the payment.</Text>
+          <Text style={styles.cardHint}>{isCreditSale ? 'Optionally record a deposit. The remaining balance will be recorded as credit.' : 'Tap a payment mode to allocate the full balance, or enter amounts to split the payment.'}</Text>
           {manualModes.length ? <View style={styles.paymentModes}>
             {manualModes.map((mode) => {
               const amount = paymentAmounts[mode.mode_of_payment] ?? '';
@@ -352,7 +356,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           </View> : <Text style={styles.errorText}>No manual payment mode is configured for this POS profile.</Text>}
           {profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
           {hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
-        </View> : null}
+        </View>
       </> : <View style={styles.card}><Text style={styles.cardTitle}>Sales Order</Text><Text style={styles.cardHint}>This order is submitted without an advance payment. Advance-payment and delivery options will follow in a dedicated order checkout increment.</Text></View>}
 
       {validationError || checkout.error ? <Text style={styles.errorText}>{validationError || checkout.error}</Text> : null}

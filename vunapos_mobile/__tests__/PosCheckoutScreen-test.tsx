@@ -135,6 +135,36 @@ describe('PosCheckoutScreen', () => {
     expect(clearError).toHaveBeenCalled();
   });
 
+  it('accepts a credit-sale deposit and submits its outstanding balance as credit', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0004' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent(screen.getByLabelText('Enable credit sale'), 'valueChange', true);
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '40');
+
+    expect(screen.getByText('Optionally record a deposit. The remaining balance will be recorded as credit.')).toBeTruthy();
+    expect(screen.getByText('Deposit + credit')).toBeTruthy();
+    expect(screen.getAllByText('Outstanding')).toHaveLength(2);
+
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      isCreditSale: true,
+      payments: [{ amount: 40, mode_of_payment: 'Cash' }],
+    })));
+  });
+
   it('uses the POS Profile credit-sale default and provides the SPA-style switch', async () => {
     mockUsePosBootstrap.mockReturnValue({
       data: {
