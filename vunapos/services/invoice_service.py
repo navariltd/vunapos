@@ -1263,7 +1263,7 @@ def get_invoice(invoice_doctype, invoice_name):
 
 
 def hold_invoice(invoice_doctype, invoice_name):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	opening_entry = require_open_pos_session(doc.get("pos_profile"))
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1344,7 +1344,7 @@ def _held_invoice_row(doctype, row):
 def list_held_invoices(pos_profile=None, limit=20):
 	limit = min(int(limit or 20), 100)
 	rows = []
-	for doctype in SUPPORTED_INVOICE_DOCTYPES:
+	for doctype in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
 		if not frappe.db.table_exists(doctype):
 			continue
 		require_read(doctype)
@@ -1355,9 +1355,11 @@ def list_held_invoices(pos_profile=None, limit=20):
 			filters[VUNAPOS_FIELD] = 1
 		if _has_field(doctype, HELD_FIELD):
 			filters[HELD_FIELD] = 1
-		if pos_profile and _has_field(doctype, "pos_profile"):
-			filters["pos_profile"] = pos_profile
+		profile_field = "pos_profile" if _has_field(doctype, "pos_profile") else "vunapos_pos_profile"
+		if pos_profile and _has_field(doctype, profile_field):
+			filters[profile_field] = pos_profile
 
+		date_field = "posting_date" if _has_field(doctype, "posting_date") else "transaction_date"
 		for row in frappe.get_all(
 			doctype,
 			filters=filters,
@@ -1365,7 +1367,7 @@ def list_held_invoices(pos_profile=None, limit=20):
 				"name",
 				"customer",
 				"customer_name",
-				"posting_date",
+				date_field,
 				"modified",
 				"grand_total",
 				"rounded_total",
@@ -1374,6 +1376,8 @@ def list_held_invoices(pos_profile=None, limit=20):
 			order_by="modified desc",
 			limit_page_length=limit,
 		):
+			if date_field != "posting_date":
+				row["posting_date"] = row.get(date_field)
 			rows.append(_held_invoice_row(doctype, row))
 
 	rows.sort(key=lambda row: row.get("modified") or "", reverse=True)

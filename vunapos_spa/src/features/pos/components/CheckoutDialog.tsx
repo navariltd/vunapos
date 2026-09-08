@@ -1369,12 +1369,7 @@ function CheckoutDialogContent({
             variant="ghost"
             className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container sm:ml-auto sm:min-w-28 sm:gap-2 sm:px-3 sm:text-sm"
             onClick={onHold}
-            disabled={isSubmitting || isSalesOrder}
-            title={
-              isSalesOrder
-                ? "Holding Sales Orders is not supported yet"
-                : undefined
-            }
+            disabled={isSubmitting}
           >
             <Pause className="size-4" /> Hold
           </Button>

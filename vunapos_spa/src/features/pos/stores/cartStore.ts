@@ -770,7 +770,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 		const optimistic = await previewLocalCart(nextItems, pendingInvoice);
 		const revision = ++localCartRevision;
 		if (get().invoice === pendingInvoice) set({ invoice: optimistic, error: null });
-		scheduleBackgroundPricing(nextItems, optimistic, api, revision);
+		// Existing workflow Sales Orders are already server-priced. Defer their
+		// complete repricing until checkout so local additions do not call the
+		// invoice-only preview endpoint with a Sales Order doctype.
+		if (optimistic.source_invoice_doctype !== "Sales Order") {
+			scheduleBackgroundPricing(nextItems, optimistic, api, revision);
+		}
 		return optimistic;
 	}
 
