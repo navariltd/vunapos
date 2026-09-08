@@ -6,6 +6,7 @@ export type PaymentReferences = Record<string, { referenceDate: string; referenc
 
 export type PaymentInput = {
   amount: number;
+  gateway_payment_link?: string;
   mode_of_payment: string;
   reference_date?: string;
   reference_no?: string;

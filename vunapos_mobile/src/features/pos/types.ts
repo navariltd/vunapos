@@ -106,6 +106,14 @@ export type PosPaymentMode = {
     type?: string | null;
 };
 
+export type PosGatewayPaymentLink = {
+  amount: number;
+  currency?: string;
+  mode_of_payment: string;
+  name: string;
+  status: 'Authorized' | 'Cancelled' | 'Draft' | 'Expired' | 'Failed' | 'Paid' | 'Pending' | string;
+};
+
 export type PosCheckoutPreview = {
   currency?: string;
   items: PosInvoiceDetailItem[];
@@ -318,6 +326,7 @@ export type PosCustomerSummary = {
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;
+  mobile?: string | null;
 };
 
 export type PosCustomerSearchResult = PosSaleCustomer & {

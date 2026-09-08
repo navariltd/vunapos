@@ -5,6 +5,7 @@ import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Switch, Text
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import {
@@ -19,7 +20,7 @@ import {
   parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
-import { PosCartItem, PosCheckoutResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
+import { PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCheckoutScreenProps = {
@@ -62,6 +63,18 @@ function taxLabel(description?: string, accountHead?: string, rate?: number, inc
   return `${name}${rateLabel}`;
 }
 
+function isSuccessfulGatewayPayment(link?: PosGatewayPaymentLink) {
+  return link?.status === 'Authorized' || link?.status === 'Paid';
+}
+
+function isPendingGatewayPayment(link?: PosGatewayPaymentLink) {
+  return link?.status === 'Draft' || link?.status === 'Pending';
+}
+
+function createGatewayIdempotencyKey(modeOfPayment: string) {
+  return `mobile-gateway-${modeOfPayment}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 /**
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
@@ -73,11 +86,16 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     ? { customer: saleCustomer?.customer, items, posProfile: bootstrap.data.pos_profile.name }
     : null);
   const checkout = useSubmitPosCheckout();
+  const gatewayPayment = useGatewayPayment();
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
   const [paymentReferences, setPaymentReferences] = useState<Record<string, { referenceDate: string; referenceNo: string }>>({});
+  const [gatewayLinks, setGatewayLinks] = useState<Record<string, PosGatewayPaymentLink | undefined>>({});
+  const [activeGatewayMode, setActiveGatewayMode] = useState<PosPaymentMode | null>(null);
+  const [gatewayPhone, setGatewayPhone] = useState('');
   const [isCreditSale, setIsCreditSale] = useState(false);
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
+  const gatewayIdempotencyKeys = useRef<Record<string, string>>({});
   const [dueDate, setDueDate] = useState(today());
   const [deliveryDate, setDeliveryDate] = useState(today());
   const [isDueDatePickerVisible, setIsDueDatePickerVisible] = useState(false);
@@ -95,6 +113,8 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       requires_reference: mode.requires_reference
         ?? profilePaymentModes.find((profileMode) => profileMode.mode_of_payment === mode.mode_of_payment)?.requires_reference,
     }));
+  const gatewayModes = (bootstrap.data?.payment_modes ?? []).filter((mode) => Boolean(mode.payment_gateway));
+  const paymentModes = [...manualModes, ...gatewayModes];
   const total = isInvoice
     ? (preview.data?.totals.rounded_total ?? preview.data?.totals.grand_total ?? 0)
     : subtotal;
@@ -105,23 +125,32 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const postingDate = preview.data?.posting_date ?? today();
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
-  const allocation = calculatePaymentAllocation(manualModes, paymentAmounts, totalMinor, precision);
-  const paymentInputs = buildPaymentInputs(manualModes, paymentAmounts, precision, paymentReferences);
-  const paymentModeKey = manualModes.map((mode) => mode.mode_of_payment).join('|');
+  const allocation = calculatePaymentAllocation(paymentModes, paymentAmounts, totalMinor, precision);
+  const allocationInputs = buildPaymentInputs(paymentModes, paymentAmounts, precision, paymentReferences);
+  const paymentInputs = allocationInputs.map((payment) => {
+    const gatewayLink = gatewayLinks[payment.mode_of_payment];
+    return gatewayLink && isSuccessfulGatewayPayment(gatewayLink)
+      ? { ...payment, gateway_payment_link: gatewayLink.name }
+      : payment;
+  });
+  const paymentModeKey = paymentModes.map((mode) => mode.mode_of_payment).join('|');
   const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
   const missingReferenceMode = paymentInputs.find((payment) => manualModes.find(
     (mode) => mode.mode_of_payment === payment.mode_of_payment,
   )?.requires_reference && !payment.reference_no)?.mode_of_payment;
   const hasMissingPaymentReference = Boolean(missingReferenceMode);
+  const hasUnverifiedGatewayPayment = allocationInputs.some((payment) => gatewayModes.some(
+    (mode) => mode.mode_of_payment === payment.mode_of_payment,
+  ) && !isSuccessfulGatewayPayment(gatewayLinks[payment.mode_of_payment]));
   const allowsSalesOrderAdvancePayments = Boolean(!isInvoice && profile?.allow_sales_order_payments);
   const hasSalesOrderAdvanceOverpayment = allowsSalesOrderAdvancePayments && allocation.allocatedMinor > totalMinor;
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
   const canSubmitPayment = Boolean(
     isInvoice
-      ? manualModes.length && (isCreditSale
+      ? paymentModes.length && (isCreditSale
         ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
-        : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))) && !hasMissingPaymentReference
-      : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment && !hasMissingPaymentReference),
+        : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))) && !hasMissingPaymentReference && !hasUnverifiedGatewayPayment
+      : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment && !hasMissingPaymentReference && !hasUnverifiedGatewayPayment),
   );
   const isPaymentOverpaid = allocation.remainingMinor < 0;
   const paymentBalanceLabel = isPaymentOverpaid
@@ -131,6 +160,8 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       : 'Remaining';
   const paymentStatus = allocation.hasInvalidAmount
     ? 'Invalid allocation'
+    : hasUnverifiedGatewayPayment
+      ? 'Gateway verification required'
     : hasMissingPaymentReference
       ? 'Reference required'
     : hasSalesOrderAdvanceOverpayment
@@ -177,8 +208,18 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     setPaymentAmounts(createInitialPaymentAmounts(manualModes, totalMinor, precision));
   }, [isCreditSale, isInvoice, manualModes, paymentModeKey, precision, totalMinor]);
 
+  useEffect(() => {
+    const link = activeGatewayMode ? gatewayLinks[activeGatewayMode.mode_of_payment] : undefined;
+    if (!link || !isPendingGatewayPayment(link)) return;
+    const timeout = setTimeout(() => void refreshGatewayPayment(), 3000);
+    return () => clearTimeout(timeout);
+    // The poll must restart only when its server link changes, not while a request updates local UI state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeGatewayMode, gatewayLinks]);
+
   function selectPaymentMode(mode: string) {
-    setPaymentAmounts(allocateAllToMode(manualModes, mode, totalMinor, precision));
+    setPaymentAmounts(allocateAllToMode(paymentModes, mode, totalMinor, precision));
+    setActiveGatewayMode(null);
   }
 
   function setPaymentAmount(mode: string, amount: string) {
@@ -188,6 +229,54 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         ? allocatePaymentRemainderToNextMode(manualModes, next, mode, totalMinor, precision)
         : next;
     });
+  }
+
+  function openGatewayPayment(mode: PosPaymentMode) {
+    gatewayPayment.clearError();
+    setPaymentAmounts(allocateAllToMode(paymentModes, mode.mode_of_payment, totalMinor, precision));
+    setGatewayPhone(saleCustomer?.mobile || '');
+    setActiveGatewayMode(mode);
+  }
+
+  function clearGatewayPayment(modeOfPayment: string) {
+    setGatewayLinks((current) => ({ ...current, [modeOfPayment]: undefined }));
+    setPaymentAmounts(createInitialPaymentAmounts(manualModes, totalMinor, precision));
+    setActiveGatewayMode(null);
+  }
+
+  async function initiateGatewayPayment() {
+    if (!activeGatewayMode || !profile) return;
+    const amountMinor = parsePaymentAmount(paymentAmounts[activeGatewayMode.mode_of_payment] || '', precision) || 0;
+    if (!amountMinor || !gatewayPhone.trim()) return;
+    const modeOfPayment = activeGatewayMode.mode_of_payment;
+    const idempotencyKey = gatewayIdempotencyKeys.current[modeOfPayment]
+      || (gatewayIdempotencyKeys.current[modeOfPayment] = createGatewayIdempotencyKey(modeOfPayment));
+    const link = await gatewayPayment.initiate({
+      amount: amountMinor / currencyScale(precision),
+      currency,
+      customer: saleCustomer?.customer,
+      idempotencyKey,
+      modeOfPayment,
+      phoneNumber: gatewayPhone.trim(),
+      posProfile: profile.name,
+    });
+    if (link) setGatewayLinks((current) => ({ ...current, [modeOfPayment]: link }));
+  }
+
+  async function refreshGatewayPayment() {
+    if (!activeGatewayMode) return;
+    const modeOfPayment = activeGatewayMode.mode_of_payment;
+    const link = gatewayLinks[modeOfPayment];
+    if (!link) return;
+    const nextLink = await gatewayPayment.getStatus(link.name);
+    if (nextLink) setGatewayLinks((current) => ({ ...current, [modeOfPayment]: nextLink }));
+  }
+
+  async function cancelGatewayPayment() {
+    if (!activeGatewayMode) return;
+    const link = gatewayLinks[activeGatewayMode.mode_of_payment];
+    if (link) await gatewayPayment.cancel(link.name);
+    clearGatewayPayment(activeGatewayMode.mode_of_payment);
   }
 
   function setPaymentReferenceNo(mode: string, referenceNo: string) {
@@ -207,8 +296,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   function setSaleType(nextCreditSale: boolean) {
     setIsCreditSale(nextCreditSale);
     setPaymentAmounts(nextCreditSale
-      ? Object.fromEntries(manualModes.map((mode) => [mode.mode_of_payment, '']))
+      ? Object.fromEntries(paymentModes.map((mode) => [mode.mode_of_payment, '']))
       : createInitialPaymentAmounts(manualModes, totalMinor, precision));
+    setGatewayLinks({});
+    setActiveGatewayMode(null);
     initializedPaymentKey.current = nextCreditSale ? null : `${paymentModeKey}:${totalMinor}`;
     setValidationError(null);
     checkout.clearError();
@@ -247,6 +338,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     }
     if (hasMissingPaymentReference) {
       setValidationError(`Enter the transaction reference for ${missingReferenceMode}.`);
+      return;
+    }
+    if (hasUnverifiedGatewayPayment) {
+      setValidationError('Verify the selected gateway payment before completing this sale.');
       return;
     }
     if (isInvoice) {
@@ -470,8 +565,23 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           </View> : <Text style={isInvoice ? styles.errorText : styles.cardHint}>{isInvoice
             ? 'No manual payment mode is configured for this POS profile.'
             : 'No manual payment mode is configured, so this Sales Order will be submitted without an advance.'}</Text>}
+          {gatewayModes.length ? <View style={styles.gatewayModes}>
+            <Text style={styles.fieldLabel}>Gateway payments</Text>
+            {gatewayModes.map((mode) => {
+              const link = gatewayLinks[mode.mode_of_payment];
+              const isVerified = isSuccessfulGatewayPayment(link);
+              return <Pressable key={mode.mode_of_payment} accessibilityLabel={`Pay with ${mode.mode_of_payment}`} onPress={() => openGatewayPayment(mode)} style={[styles.gatewayModeButton, isVerified && styles.gatewayModeButtonVerified]}>
+                <View style={styles.gatewayModeText}>
+                  <Text style={styles.paymentModeLabel}>{mode.mode_of_payment}</Text>
+                  <Text style={styles.cardHint}>{isVerified ? `Verified · ${formatCurrency(link?.amount ?? 0, currency, precision)}` : link ? `Awaiting confirmation · ${link.status}` : 'Tap to start a secure payment'}</Text>
+                </View>
+                <MaterialCommunityIcons color={isVerified ? '#39b976' : posDarkColors.onSurfaceMuted} name={isVerified ? 'check-circle' : 'cellphone-wireless'} size={22} />
+              </Pressable>;
+            })}
+          </View> : null}
           {isInvoice && profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
           {hasMissingPaymentReference ? <Text style={styles.errorText}>A transaction reference is required for {missingReferenceMode}.</Text> : null}
+          {hasUnverifiedGatewayPayment ? <Text style={styles.errorText}>Verify the selected gateway payment to continue. Checkout unlocks after confirmation.</Text> : null}
           {isInvoice && hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
           {hasSalesOrderAdvanceOverpayment ? <Text style={styles.errorText}>An advance cannot exceed the Sales Order total.</Text> : null}
           {referenceDateMode ? <DateTimePicker
@@ -496,6 +606,37 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       <Pressable accessibilityLabel={isInvoice ? 'Complete sale' : 'Submit sales order'} accessibilityState={{ disabled: !isReadyToSubmit }} disabled={!isReadyToSubmit} onPress={requestSubmit} style={[styles.submitButton, !isReadyToSubmit && styles.submitButtonDisabled]}>
         <Text style={styles.submitButtonLabel}>{checkout.isSubmitting ? 'Submitting…' : isInvoice ? `Complete sale · ${formatCurrency(total, currency, precision)}` : 'Submit sales order'}</Text>
       </Pressable>
+
+      <Modal animationType="slide" onRequestClose={() => { if (!gatewayPayment.isWorking) setActiveGatewayMode(null); }} presentationStyle="pageSheet" visible={Boolean(activeGatewayMode)}>
+        {activeGatewayMode ? <KeyboardAwareFormScroll contentContainerStyle={styles.gatewayModalContent} showsVerticalScrollIndicator={false} style={styles.scrollView}>
+          <View style={styles.header}>
+            <View style={styles.heading}>
+              <Text style={styles.title}>{activeGatewayMode.mode_of_payment}</Text>
+              <Text style={styles.subtitle}>Verify {formatCurrency((parsePaymentAmount(paymentAmounts[activeGatewayMode.mode_of_payment] || '', precision) || 0) / currencyScale(precision), currency, precision)} through {activeGatewayMode.payment_gateway}.</Text>
+            </View>
+            <Pressable accessibilityLabel="Close gateway payment" disabled={gatewayPayment.isWorking} onPress={() => setActiveGatewayMode(null)} style={styles.backButton}>
+              <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={22} />
+            </Pressable>
+          </View>
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>STK Push</Text>
+            <Text style={styles.cardHint}>Send a payment prompt to the customer, then wait for gateway confirmation.</Text>
+            <Text style={styles.fieldLabel}>Customer phone number</Text>
+            <TextInput accessibilityLabel="Gateway customer phone number" inputMode="tel" keyboardType="phone-pad" onChangeText={setGatewayPhone} placeholder="Phone number" placeholderTextColor="#8f8f8f" style={styles.input} value={gatewayPhone} />
+            {gatewayPayment.error ? <Text style={styles.errorText}>{gatewayPayment.error}</Text> : null}
+            {gatewayLinks[activeGatewayMode.mode_of_payment] ? <Text style={isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment]) ? styles.gatewayVerifiedText : styles.cardHint}>
+              {isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment]) ? `Payment verified${gatewayLinks[activeGatewayMode.mode_of_payment]?.status === 'Authorized' ? ' (authorized)' : ''}.` : `Payment status: ${gatewayLinks[activeGatewayMode.mode_of_payment]?.status}. Checking automatically…`}
+            </Text> : null}
+            <Pressable accessibilityLabel="Send STK payment request" disabled={gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])} onPress={() => void initiateGatewayPayment()} style={[styles.submitButton, (gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])) && styles.submitButtonDisabled]}>
+              {gatewayPayment.isWorking ? <ActivityIndicator color={posDarkColors.onPrimary} size="small" /> : <Text style={styles.submitButtonLabel}>{gatewayLinks[activeGatewayMode.mode_of_payment] ? 'Retry STK request' : 'Send STK request'}</Text>}
+            </Pressable>
+            {gatewayLinks[activeGatewayMode.mode_of_payment] ? <View style={styles.gatewayActions}>
+              <Pressable accessibilityLabel="Check gateway payment status" disabled={gatewayPayment.isWorking} onPress={() => void refreshGatewayPayment()} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Check status</Text></Pressable>
+              <Pressable accessibilityLabel="Cancel gateway payment" disabled={gatewayPayment.isWorking || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])} onPress={() => void cancelGatewayPayment()} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Cancel payment</Text></Pressable>
+            </View> : null}
+          </View>
+        </KeyboardAwareFormScroll> : null}
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -575,6 +716,13 @@ const styles = StyleSheet.create({
   datePickerButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
   fieldLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
+  gatewayActions: { flexDirection: 'row', gap: spacing.sm },
+  gatewayModeButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between', minHeight: 56, padding: spacing.sm },
+  gatewayModeButtonVerified: { borderColor: '#39b976' },
+  gatewayModeText: { flex: 1, gap: 2 },
+  gatewayModes: { gap: spacing.xs },
+  gatewayModalContent: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  gatewayVerifiedText: { color: '#7ee2a8', fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
   header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   input: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
@@ -594,6 +742,8 @@ const styles = StyleSheet.create({
   paymentSummaryRow: { backgroundColor: posDarkColors.surfaceContainer, borderRadius: radii.sm, flexDirection: 'row', gap: spacing.xs, padding: spacing.sm },
   paymentSummaryValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   scrollView: { flex: 1 },
+  secondaryButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
+  secondaryButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
   submitButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 50, paddingHorizontal: spacing.md },

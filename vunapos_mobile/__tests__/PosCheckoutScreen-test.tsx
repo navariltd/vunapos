@@ -21,13 +21,19 @@ jest.mock('@/features/pos/hooks/usePosCheckout', () => ({
   useSubmitPosCheckout: jest.fn(),
 }));
 
+jest.mock('@/features/pos/hooks/useGatewayPayment', () => ({
+  useGatewayPayment: jest.fn(),
+}));
+
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
+const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
 const clearError = jest.fn();
 const submit = jest.fn();
 const onComplete = jest.fn();
@@ -50,6 +56,14 @@ describe('PosCheckoutScreen', () => {
       isLoading: false,
     });
     mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, submit });
+    mockUseGatewayPayment.mockReturnValue({
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate: jest.fn(),
+      isWorking: false,
+    });
   });
 
   afterEach(async () => {
@@ -350,6 +364,53 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
       payments: [{ amount: 116, mode_of_payment: 'Bank transfer', reference_date: new Date().toISOString().slice(0, 10), reference_no: 'RCP-001' }],
     })));
+  });
+
+  it('blocks gateway checkout until the server confirms the gateway payment', async () => {
+    const initiate = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Pending' });
+    const getStatus = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Paid' });
+    mockUseGatewayPayment.mockReturnValue({ cancel: jest.fn(), clearError: jest.fn(), error: null, getStatus, initiate, isWorking: false });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'M-Pesa STK', payment_gateway: 'M-Pesa', type: 'Phone' },
+        ],
+        pos_profile: { name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps', mobile: '0712345678' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Pay with M-Pesa STK'));
+    await fireEvent.press(screen.getByLabelText('Send STK payment request'));
+
+    await waitFor(() => expect(initiate).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 116,
+      customer: 'CUST-001',
+      modeOfPayment: 'M-Pesa STK',
+      phoneNumber: '0712345678',
+      posProfile: 'POS-001',
+    })));
+    expect(screen.getByText('Verify the selected gateway payment to continue. Checkout unlocks after confirmation.')).toBeTruthy();
+    expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(true);
+
+    await fireEvent.press(screen.getByLabelText('Check gateway payment status'));
+    await waitFor(() => expect(getStatus).toHaveBeenCalledWith('GPL-001'));
+    await waitFor(() => expect(screen.getByText('Payment verified.')).toBeTruthy());
+    expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(false);
   });
 
   it('disables completion when an electronic payment exceeds the invoice total', async () => {
