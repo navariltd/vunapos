@@ -6,6 +6,17 @@ import { Text } from 'react-native-paper';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
+import {
+  allocateAllToMode,
+  allocatePaymentRemainderToNextMode,
+  buildPaymentInputs,
+  calculatePaymentAllocation,
+  canCompletePaymentAllocation,
+  createInitialPaymentAmounts,
+  currencyScale,
+  minorUnitsToInput,
+  totalToMinorUnits,
+} from '@/features/pos/paymentAllocation';
 import { PosCartItem, PosCheckoutResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
@@ -19,8 +30,8 @@ type PosCheckoutScreenProps = {
   subtotal: number;
 };
 
-function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat(undefined, { currency, currencyDisplay: 'code', maximumFractionDigits: 2, minimumFractionDigits: 2, style: 'currency' }).format(amount);
+function formatCurrency(amount: number, currency: string, precision = 2) {
+  return new Intl.NumberFormat(undefined, { currency, currencyDisplay: 'code', maximumFractionDigits: precision, minimumFractionDigits: precision, style: 'currency' }).format(amount);
 }
 
 function today() {
@@ -38,10 +49,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     ? { customer: saleCustomer?.customer, items, posProfile: bootstrap.data.pos_profile.name }
     : null);
   const checkout = useSubmitPosCheckout();
-  const [paymentMode, setPaymentMode] = useState<string | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
   const [isCreditSale, setIsCreditSale] = useState(false);
   const appliedSaleTypeDefault = useRef(false);
+  const initializedPaymentKey = useRef<string | null>(null);
   const [dueDate, setDueDate] = useState(today());
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
@@ -51,9 +62,36 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const total = isInvoice
     ? (preview.data?.totals.rounded_total ?? preview.data?.totals.grand_total ?? 0)
     : subtotal;
-  const selectedMode = paymentMode || manualModes.find((mode) => mode.default)?.mode_of_payment || manualModes[0]?.mode_of_payment || null;
-  const enteredPayment = Number(paymentAmount || total);
+  const precision = profile?.currency_precision ?? 2;
+  const totalMinor = totalToMinorUnits(total, precision);
+  const allocation = calculatePaymentAllocation(manualModes, paymentAmounts, totalMinor, precision);
+  const paymentInputs = buildPaymentInputs(manualModes, paymentAmounts, precision);
+  const paymentModeKey = manualModes.map((mode) => mode.mode_of_payment).join('|');
+  const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
+  const canSubmitPayment = Boolean(
+    !isInvoice || isCreditSale || (manualModes.length && canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))),
+  );
+  const isPaymentOverpaid = allocation.remainingMinor < 0;
+  const paymentBalanceLabel = isPaymentOverpaid
+    ? 'Change'
+    : isCreditSale || (allocation.remainingMinor > 0 && profile?.allow_partial_payment)
+      ? 'Outstanding'
+      : 'Remaining';
+  const paymentStatus = allocation.hasInvalidAmount
+    ? 'Invalid allocation'
+    : hasNonCashOverpayment
+      ? 'Overpayment not allowed'
+      : isPaymentOverpaid
+        ? 'Change due'
+        : allocation.remainingMinor === 0
+          ? 'Fully paid'
+          : profile?.allow_partial_payment
+            ? 'Partial payment'
+            : 'Payment incomplete';
+  const isReadyToSubmit = Boolean(
+    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate : canSubmitPayment) : true),
+  );
 
   useEffect(() => {
     if (appliedSaleTypeDefault.current || !profile) return;
@@ -61,13 +99,33 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     appliedSaleTypeDefault.current = true;
   }, [isInvoice, profile]);
 
+  useEffect(() => {
+    if (!isInvoice || isCreditSale || !manualModes.length || totalMinor <= 0) return;
+    const nextKey = `${paymentModeKey}:${totalMinor}`;
+    if (initializedPaymentKey.current === nextKey) return;
+    initializedPaymentKey.current = nextKey;
+    setPaymentAmounts(createInitialPaymentAmounts(manualModes, totalMinor, precision));
+  }, [isCreditSale, isInvoice, manualModes, paymentModeKey, precision, totalMinor]);
+
   function selectPaymentMode(mode: string) {
-    setPaymentMode(mode);
-    if (!paymentAmount) setPaymentAmount(String(total));
+    setPaymentAmounts(allocateAllToMode(manualModes, mode, totalMinor, precision));
+  }
+
+  function setPaymentAmount(mode: string, amount: string) {
+    setPaymentAmounts((current) => {
+      const next = { ...current, [mode]: amount };
+      return profile?.auto_allocate_payment_balance
+        ? allocatePaymentRemainderToNextMode(manualModes, next, mode, totalMinor, precision)
+        : next;
+    });
   }
 
   function setSaleType(nextCreditSale: boolean) {
     setIsCreditSale(nextCreditSale);
+    setPaymentAmounts(nextCreditSale
+      ? Object.fromEntries(manualModes.map((mode) => [mode.mode_of_payment, '']))
+      : createInitialPaymentAmounts(manualModes, totalMinor, precision));
+    initializedPaymentKey.current = nextCreditSale ? null : `${paymentModeKey}:${totalMinor}`;
     setValidationError(null);
     checkout.clearError();
   }
@@ -88,16 +146,22 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       return;
     }
     if (!isCreditSale && isInvoice) {
-      if (!selectedMode) {
+      if (!manualModes.length) {
         setValidationError('No manual payment mode is configured for this POS profile.');
         return;
       }
-      if (!Number.isFinite(enteredPayment) || enteredPayment <= 0) {
-        setValidationError('Enter a payment amount greater than zero.');
+      if (allocation.hasInvalidAmount) {
+        setValidationError('Enter valid payment amounts using the configured currency precision.');
         return;
       }
-      if (!profile.allow_partial_payment && enteredPayment < total) {
-        setValidationError(`Payment must cover ${formatCurrency(total, currency)}.`);
+      if (hasNonCashOverpayment) {
+        setValidationError('Electronic payments cannot exceed the invoice total.');
+        return;
+      }
+      if (!canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile.allow_partial_payment))) {
+        setValidationError(profile.allow_partial_payment
+          ? 'Allocate a payment amount greater than zero.'
+          : `Payment must cover ${formatCurrency(total, currency, precision)}.`);
         return;
       }
     }
@@ -113,7 +177,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       isCreditSale,
       items,
       orderType,
-      payments: !isCreditSale && isInvoice && selectedMode ? [{ amount: enteredPayment, mode_of_payment: selectedMode }] : [],
+      payments: !isCreditSale && isInvoice ? paymentInputs : [],
       posProfile: profile.name,
     });
     if (result) onComplete(result);
@@ -150,10 +214,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Cart totals</Text>
         {isInvoice && preview.data ? <>
-          <SummaryRow label="Items" value={formatCurrency(preview.data.totals.net_total ?? total, currency)} />
-          <SummaryRow label="Tax" value={formatCurrency(total - (preview.data.totals.net_total ?? total), currency)} />
+          <SummaryRow label="Items" value={formatCurrency(preview.data.totals.net_total ?? total, currency, precision)} />
+          <SummaryRow label="Tax" value={formatCurrency(total - (preview.data.totals.net_total ?? total), currency, precision)} />
         </> : <Text style={styles.cardHint}>Frappe will calculate final tax and totals when this Sales Order is submitted.</Text>}
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.totalValue}>{formatCurrency(total, currency)}</Text></View>
+        <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.totalValue}>{formatCurrency(total, currency, precision)}</Text></View>
       </View>
 
       {isInvoice ? <>
@@ -182,18 +246,46 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         ) : null}
 
         {!isCreditSale ? <View style={styles.card}>
-          <Text style={styles.cardTitle}>Payment</Text>
-          <Text style={styles.cardHint}>Choose a manual payment mode. Gateway payments are completed separately and are not submitted from this screen.</Text>
-          {manualModes.length ? <View style={styles.optionRow}>{manualModes.map((mode) => <Option active={selectedMode === mode.mode_of_payment} key={mode.mode_of_payment} label={mode.mode_of_payment} onPress={() => selectPaymentMode(mode.mode_of_payment)} />)}</View> : <Text style={styles.errorText}>No manual payment mode is configured for this POS profile.</Text>}
-          <Text style={styles.fieldLabel}>Amount received</Text>
-          <TextInput accessibilityLabel="Checkout payment amount" inputMode="decimal" keyboardType="decimal-pad" onChangeText={setPaymentAmount} placeholder={total.toFixed(2)} placeholderTextColor="#8f8f8f" style={styles.input} value={paymentAmount || String(total)} />
+          <Text style={styles.cardTitle}>Payment methods</Text>
+          <View style={styles.paymentSummaryRow}>
+            <PaymentSummary label="Allocated" value={formatCurrency(allocation.allocatedMinor / currencyScale(precision), currency, precision)} />
+            <PaymentSummary label={paymentBalanceLabel} value={formatCurrency(Math.abs(allocation.remainingMinor) / currencyScale(precision), currency, precision)} />
+            <PaymentSummary label="Status" value={paymentStatus} />
+          </View>
+          <Text style={styles.cardHint}>Tap a payment mode to allocate the full balance, or enter amounts to split the payment.</Text>
+          {manualModes.length ? <View style={styles.paymentModes}>
+            {manualModes.map((mode) => {
+              const amount = paymentAmounts[mode.mode_of_payment] ?? '';
+              const isAll = amount === minorUnitsToInput(totalMinor, precision)
+                && manualModes.every((other) => other.mode_of_payment === mode.mode_of_payment || !(paymentAmounts[other.mode_of_payment]));
+              return <View key={mode.mode_of_payment} style={styles.paymentModeRow}>
+                <Pressable accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`} onPress={() => selectPaymentMode(mode.mode_of_payment)} style={[styles.paymentModeButton, isAll && styles.paymentModeButtonActive]}>
+                  <Text style={[styles.paymentModeLabel, isAll && styles.paymentModeLabelActive]}>{mode.mode_of_payment}{mode.default ? ' · Default' : ''}</Text>
+                </Pressable>
+                <View style={styles.paymentAmountWrap}>
+                  <Text style={styles.currencyPrefix}>{currency}</Text>
+                  <TextInput
+                    accessibilityLabel={`${mode.mode_of_payment} amount`}
+                    inputMode="decimal"
+                    keyboardType="decimal-pad"
+                    onChangeText={(amountInput) => setPaymentAmount(mode.mode_of_payment, amountInput)}
+                    placeholder={minorUnitsToInput(0, precision)}
+                    placeholderTextColor="#8f8f8f"
+                    style={styles.paymentAmountInput}
+                    value={amount}
+                  />
+                </View>
+              </View>;
+            })}
+          </View> : <Text style={styles.errorText}>No manual payment mode is configured for this POS profile.</Text>}
           {profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
+          {hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
         </View> : null}
       </> : <View style={styles.card}><Text style={styles.cardTitle}>Sales Order</Text><Text style={styles.cardHint}>This order is submitted without an advance payment. Advance-payment and delivery options will follow in a dedicated order checkout increment.</Text></View>}
 
       {validationError || checkout.error ? <Text style={styles.errorText}>{validationError || checkout.error}</Text> : null}
-      <Pressable accessibilityLabel={isInvoice ? 'Complete sale' : 'Submit sales order'} disabled={checkout.isSubmitting || !items.length} onPress={requestSubmit} style={[styles.submitButton, checkout.isSubmitting && styles.submitButtonDisabled]}>
-        <Text style={styles.submitButtonLabel}>{checkout.isSubmitting ? 'Submitting…' : isInvoice ? `Complete sale · ${formatCurrency(total, currency)}` : 'Submit sales order'}</Text>
+      <Pressable accessibilityLabel={isInvoice ? 'Complete sale' : 'Submit sales order'} accessibilityState={{ disabled: !isReadyToSubmit }} disabled={!isReadyToSubmit} onPress={requestSubmit} style={[styles.submitButton, !isReadyToSubmit && styles.submitButtonDisabled]}>
+        <Text style={styles.submitButtonLabel}>{checkout.isSubmitting ? 'Submitting…' : isInvoice ? `Complete sale · ${formatCurrency(total, currency, precision)}` : 'Submit sales order'}</Text>
       </Pressable>
 
       <Modal
@@ -218,7 +310,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
               <Text style={styles.confirmationDescription}>Please wait while the sale is confirmed.</Text>
             </> : <>
               <Text style={styles.confirmationTitle}>Confirm submission of {submissionLabel} for {customerName}?</Text>
-              <Text style={styles.confirmationDescription}>This will submit the sale and its selected payment.</Text>
+              <Text style={styles.confirmationDescription}>{isCreditSale ? 'This will submit the sale as credit with its payment due date.' : 'This will submit the sale and its selected payment allocation.'}</Text>
               {checkout.error ? <Text style={styles.errorText}>{checkout.error}</Text> : null}
               <View style={styles.confirmationActions}>
                 <Pressable accessibilityLabel="Cancel sale submission" onPress={() => setIsSubmitConfirmationVisible(false)} style={styles.cancelConfirmationButton}>
@@ -236,12 +328,12 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   );
 }
 
-function Option({ active, label, onPress }: { active: boolean; label: string; onPress: () => void }) {
-  return <Pressable accessibilityLabel={label} onPress={onPress} style={[styles.option, active && styles.optionActive]}><Text style={[styles.optionLabel, active && styles.optionLabelActive]}>{label}</Text></Pressable>;
-}
-
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return <View style={styles.summaryRow}><Text style={styles.summaryLabel}>{label}</Text><Text style={styles.summaryValue}>{value}</Text></View>;
+}
+
+function PaymentSummary({ label, value }: { label: string; value: string }) {
+  return <View style={styles.paymentSummary}><Text style={styles.paymentSummaryLabel}>{label}</Text><Text numberOfLines={1} style={styles.paymentSummaryValue}>{value}</Text></View>;
 }
 
 const styles = StyleSheet.create({
@@ -269,11 +361,19 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   input: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  option: { borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
-  optionActive: { backgroundColor: posDarkColors.primary, borderColor: posDarkColors.primary },
-  optionLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
-  optionLabelActive: { color: posDarkColors.onPrimary },
-  optionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+  currencyPrefix: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
+  paymentAmountInput: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm, textAlign: 'right' },
+  paymentAmountWrap: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, flexDirection: 'row', minHeight: 46, paddingLeft: spacing.sm },
+  paymentModeButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainerHigh, borderColor: 'transparent', borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 46, paddingHorizontal: spacing.sm },
+  paymentModeButtonActive: { backgroundColor: posDarkColors.primary, borderColor: posDarkColors.primary },
+  paymentModeLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, textAlign: 'center' },
+  paymentModeLabelActive: { color: posDarkColors.onPrimary },
+  paymentModeRow: { flexDirection: 'row', gap: spacing.sm },
+  paymentModes: { gap: spacing.sm },
+  paymentSummary: { flex: 1, gap: 2 },
+  paymentSummaryLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  paymentSummaryRow: { backgroundColor: posDarkColors.surfaceContainer, borderRadius: radii.sm, flexDirection: 'row', gap: spacing.xs, padding: spacing.sm },
+  paymentSummaryValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   scrollView: { flex: 1 },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },

@@ -83,21 +83,25 @@ export type PosBootstrapData = {
     customer_name: string;
   } | null;
   items?: PosCatalogueItem[];
-  payment_modes: {
-    default?: boolean;
-    mode_of_payment: string;
-    payment_gateway?: string | null;
-    type?: string | null;
-  }[];
+  payment_modes: PosPaymentMode[];
   pos_profile: {
     allow_credit_sales?: boolean;
     allow_customer_payments?: boolean;
     allow_partial_payment?: boolean;
+    auto_allocate_payment_balance?: boolean;
     currency?: string;
     currency_precision?: number;
     default_sale_type?: 'Cash Sale' | 'Credit Sale';
     name: string;
   };
+};
+
+export type PosPaymentMode = {
+    default?: boolean;
+    mode_of_payment: string;
+    payment_gateway?: string | null;
+    requires_reference?: boolean;
+    type?: string | null;
 };
 
 export type PosCheckoutPreview = {

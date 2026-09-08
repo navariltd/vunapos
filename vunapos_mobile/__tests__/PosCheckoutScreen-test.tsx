@@ -152,4 +152,73 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(screen.getByLabelText('Enable credit sale').props.value).toBe(true));
     expect(screen.getByLabelText('Credit sale due date')).toBeTruthy();
   });
+
+  it('submits a split allocation across configured manual payment modes', async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'M-Pesa', type: 'Phone' },
+        ],
+        pos_profile: { name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0003' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '16');
+    await fireEvent.changeText(screen.getByLabelText('M-Pesa amount'), '100');
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      payments: [{ amount: 16, mode_of_payment: 'Cash' }, { amount: 100, mode_of_payment: 'M-Pesa' }],
+    })));
+  });
+
+  it('disables completion when an electronic payment exceeds the invoice total', async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'M-Pesa', type: 'Phone' },
+        ],
+        pos_profile: { name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Cash amount').props.value).toBe('116.00'));
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '');
+    await fireEvent.changeText(screen.getByLabelText('M-Pesa amount'), '117');
+
+    await waitFor(() => expect(screen.getByText('Only cash can exceed the total and return change.')).toBeTruthy());
+    expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(true);
+  });
 });
