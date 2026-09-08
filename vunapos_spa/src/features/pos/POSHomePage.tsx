@@ -25,6 +25,7 @@ import {
   getItemDetails,
   getCustomerAddresses,
   searchCheckoutLinkOptions,
+  applyWorkflowAction,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -229,6 +230,7 @@ export function POSHomePage({
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const checkoutLinkOptionsCall = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
+  const workflowActionCall = useFrappePostCall(vunaMethods.applyWorkflowAction);
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
@@ -815,6 +817,7 @@ export function POSHomePage({
     taxId?: string,
     shippingAddressName?: string,
     checkoutFields?: Record<string, string | number | boolean | null>,
+	workflowAction?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -841,6 +844,19 @@ export function POSHomePage({
         salesperson?.name,
         salesperson?.token,
       );
+		if (workflowAction && result?.invoice?.docstatus === 0) {
+			try {
+				await applyWorkflowAction(workflowActionCall.call, {
+					doctype: result.invoice.doctype,
+					docname: result.invoice.name,
+					action: workflowAction,
+					pos_profile: bootstrap.data?.pos_profile,
+				});
+				showToast({ type: "info", message: `Workflow action “${workflowAction}” applied.` });
+			} catch (workflowError) {
+				showToast({ type: "error", message: workflowError instanceof Error ? workflowError.message : "Workflow action could not be applied." });
+			}
+		}
       setIsCheckoutOpen(false);
       if (bootstrap.data?.require_pin_before_every_sale) {
         onLockSalesperson?.();
@@ -922,6 +938,21 @@ export function POSHomePage({
             onStartSale={(customer) => {
               void handleSelectCustomer(customer);
               navigateToPosPage("Home");
+            }}
+            onEdit={async () => {
+              try {
+                await cartActions.editDraftInvoice(
+                  getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
+                  getInvoiceFromPath(currentPath) || "",
+                );
+                navigateToPosPage("Home");
+                setIsCartOpen(true);
+              } catch (err) {
+                showToast({
+                  type: "error",
+                  message: err instanceof Error ? err.message : "Unable to edit draft",
+                });
+              }
             }}
           />
         ) : (
@@ -1174,6 +1205,7 @@ export function POSHomePage({
         modesOfPayment={paymentModes}
         customerLoyalty={customerLoyalty.data}
           checkoutFields={bootstrap.data?.checkout_fields}
+          workflow={bootstrap.data?.workflow}
           onSearchCheckoutLinkOptions={(params) => searchCheckoutLinkOptions(checkoutLinkOptionsCall.call, params)}
         onClear={() => {
           if (handleClearCart(true)) setIsCheckoutOpen(false);

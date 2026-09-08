@@ -22,6 +22,8 @@ def _status(row):
 
 
 def _sales_order_status(row):
+	if row.docstatus == 0:
+		return "Draft"
 	if row.docstatus == 2:
 		return "Cancelled"
 	total = flt(row.rounded_total or row.grand_total)
@@ -44,6 +46,7 @@ def _get_sales_order_history(
 	current_shift=1,
 	start=0,
 	page_length=50,
+	draft_only=False,
 ):
 	page_length = min(max(int(page_length or 50), 1), 200)
 	start = max(int(start or 0), 0)
@@ -52,7 +55,7 @@ def _get_sales_order_history(
 		"company": profile.company,
 		"vunapos_pos_profile": profile.name,
 		"vunapos_invoice": 1,
-		"docstatus": ["in", [1, 2]],
+		"docstatus": 0 if draft_only else ["in", [1, 2]],
 	}
 	opening_entry = None
 	if customer:
@@ -170,7 +173,7 @@ def _get_sales_order_history(
 		"has_more": len(result) > start + page_length,
 		"opening_entry": (opening_entry.name if frappe.utils.cint(current_shift) and opening_entry else None),
 		"summary": {
-			"invoice_count": len(active_rows),
+			"invoice_count": len(result),
 			"returns_count": 0,
 			"gross_sales": sum(flt(row["grand_total"]) for row in active_rows),
 			"returns": 0,
@@ -209,6 +212,20 @@ def get_invoice_history(
 			current_shift=current_shift,
 			start=start,
 			page_length=page_length,
+		)
+	if document_type == "Draft Order":
+		return _get_sales_order_history(
+			profile,
+			invoice=invoice,
+			customer=customer,
+			from_date=from_date,
+			to_date=to_date,
+			status=status,
+			payment_mode=payment_mode,
+			current_shift=current_shift,
+			start=start,
+			page_length=page_length,
+			draft_only=True,
 		)
 	doctype = get_invoice_mode()
 	filters = {

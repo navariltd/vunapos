@@ -155,6 +155,7 @@ export type CachedProfile = {
 		help_text?: string | null;
 		order?: number;
 	}>;
+	workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;

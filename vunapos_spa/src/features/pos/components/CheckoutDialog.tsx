@@ -60,6 +60,7 @@ type CheckoutDialogProps = {
   customerAddressesLoading?: boolean;
   customerLoyalty?: CustomerLoyaltyDTO | null;
   checkoutFields?: CheckoutFieldDefinition[];
+  workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
   onSearchCheckoutLinkOptions?: (params: { doctype: string; fieldname: string; query?: string }) => Promise<Array<{ value: string; label: string }>>;
   defaultSaleType?: "Cash Sale" | "Credit Sale";
   error?: string | null;
@@ -77,6 +78,7 @@ type CheckoutDialogProps = {
     taxId?: string,
 	shippingAddressName?: string,
 	checkoutFields?: Record<string, string | number | boolean | null>,
+	workflowAction?: string,
   ) => void;
   onHold: () => void;
   onAttachC2bGatewayPayment?: (params: {
@@ -150,6 +152,7 @@ export function CheckoutDialog({
   customerAddressesLoading,
   customerLoyalty,
   checkoutFields,
+  workflow,
   onSearchCheckoutLinkOptions,
   defaultSaleType,
   error,
@@ -191,6 +194,7 @@ export function CheckoutDialog({
       customerAddressesLoading={customerAddressesLoading}
       customerLoyalty={customerLoyalty}
       checkoutFields={checkoutFields}
+      workflow={workflow}
       onSearchCheckoutLinkOptions={onSearchCheckoutLinkOptions}
       defaultSaleType={defaultSaleType}
       error={error}
@@ -246,12 +250,15 @@ function CheckoutDialogContent({
 	posProfile,
 	checkoutFields,
 	onSearchCheckoutLinkOptions,
+	workflow,
 }: Omit<CheckoutDialogProps, "isOpen">) {
   const invoice = useCartStore((s) => s.invoice);
   const isSubmitting = useCartStore((s) => s.isMutating);
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
   const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
+  const activeWorkflow = workflow?.enabled ? workflow.workflows[orderType] : undefined;
+  const workflowAction = activeWorkflow?.transitions?.[0]?.action;
 
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
@@ -992,6 +999,12 @@ function CheckoutDialogContent({
                   ))}
                 </div>
               ) : null}
+              {activeWorkflow ? (
+                <div className="order-4 mb-4 rounded-md bg-primary/10 px-3 py-2 text-sm text-on-surface">
+                  Workflow: <strong>{activeWorkflow.name}</strong>
+                  {workflowAction ? ` · Next action: ${workflowAction}` : ""}
+                </div>
+              ) : null}
               {customerAddressesLoading || customerAddresses?.length ? (
                 <div className="order-4 mb-4 rounded-md bg-surface-container-low px-3 py-2">
                   <label className="block text-sm font-medium text-on-surface">
@@ -1413,6 +1426,7 @@ function CheckoutDialogContent({
                   : undefined,
                 shippingAddressName || undefined,
                 additionalFields,
+				workflowAction,
               );
             }}
           >

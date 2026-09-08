@@ -84,7 +84,7 @@ export function InvoicesPage({
   onRefreshHeld,
   onRestoreHeld,
 }: Props) {
-  const [tab, setTab] = useState<"history" | "orders" | "queue" | "issues">("history");
+  const [tab, setTab] = useState<"history" | "orders" | "draft-orders" | "queue" | "issues">("history");
   const [filters, setFilters] = useState<Filters>({
     invoice: "",
     customer: "",
@@ -100,12 +100,12 @@ export function InvoicesPage({
     vunaMethods.getInvoiceHistory,
     {
       pos_profile: posProfile,
-      document_type: tab === "orders" ? "Order" : "Invoice",
+      document_type: tab === "orders" ? "Order" : tab === "draft-orders" ? "Draft Order" : "Invoice",
       ...filters,
       start,
       page_length: 50,
     },
-    posProfile && (tab === "history" || tab === "orders")
+    posProfile && (tab === "history" || tab === "orders" || tab === "draft-orders")
       ? ["vunapos_invoice_history", posProfile, tab, filters, start]
       : null,
   );
@@ -156,7 +156,11 @@ export function InvoicesPage({
           <div>
             <h2 className="text-lg font-semibold">Invoices</h2>
             <p className="text-sm text-on-surface-variant">
-              Review completed sales and restore held invoices.
+              {tab === "orders"
+                ? "Review submitted and cancelled Sales Orders."
+                : tab === "draft-orders"
+                  ? "Review Sales Orders awaiting workflow approval."
+                : "Review completed sales and restore held invoices."}
             </p>
           </div>
           <Button onClick={onBack}>Back to POS</Button>
@@ -167,6 +171,9 @@ export function InvoicesPage({
           </Tab>
           <Tab active={tab === "orders"} onClick={() => setTab("orders")}>
             Sales Orders
+          </Tab>
+          <Tab active={tab === "draft-orders"} onClick={() => setTab("draft-orders")}>
+            Draft Orders
           </Tab>
           <Tab active={tab === "queue"} onClick={() => setTab("queue")}>
             Checkout Queue
@@ -217,6 +224,7 @@ export function InvoicesPage({
               >
                 <option value="">All statuses</option>
                 {[
+                  ...(tab === "orders" || tab === "draft-orders" ? ["Draft"] : []),
                   "Paid",
                   "Partly Paid",
                   "Unpaid",
@@ -267,7 +275,7 @@ export function InvoicesPage({
               <>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Summary
-                    label={tab === "orders" ? "Orders" : "Invoices"}
+                    label={tab === "orders" || tab === "draft-orders" ? "Orders" : "Invoices"}
                     value={String(history.summary.invoice_count)}
                   />
                   <Summary

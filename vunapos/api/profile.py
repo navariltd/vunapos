@@ -3,6 +3,7 @@ import frappe
 from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.profile_service import get_bootstrap_data as get_bootstrap_data_service
 from vunapos.services.profile_service import get_user_pos_profiles
+from vunapos.services.workflow_service import apply_pos_workflow_action, get_pos_workflow_actions
 from vunapos.utils.response import failure, success
 
 
@@ -43,3 +44,24 @@ def search_checkout_link_options(doctype: str, fieldname: str, query: str | None
 		limit_page_length=20,
 	)
 	return success([{"value": row.name, "label": row.name} for row in rows])
+
+
+@frappe.whitelist(methods=["POST"])
+def apply_workflow_action(
+	doctype: str,
+	docname: str,
+	action: str,
+	pos_profile: str | None = None,
+):
+	try:
+		return success(apply_pos_workflow_action(doctype, docname, action, pos_profile))
+	except Exception as exc:
+		return failure(str(exc), code=exc.__class__.__name__)
+
+
+@frappe.whitelist()
+def get_workflow_actions(doctype: str, docname: str, pos_profile: str | None = None):
+	try:
+		return success(get_pos_workflow_actions(doctype, docname, pos_profile))
+	except Exception as exc:
+		return failure(str(exc), code=exc.__class__.__name__)

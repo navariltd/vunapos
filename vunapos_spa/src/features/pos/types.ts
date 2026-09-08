@@ -231,6 +231,7 @@ export type BootstrapData = {
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];
 	checkout_fields?: CheckoutFieldDefinition[];
+	workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
 	print_format?: string | null;
 	invoice_mode?: "Sales Invoice" | "POS Invoice" | string;
 	background_submission?: {
@@ -412,6 +413,7 @@ export type InvoiceDTO = {
 	doctype: "Sales Invoice" | "POS Invoice" | string;
 	name: string;
 	docstatus: 0 | 1 | 2;
+	workflow_state?: string | null;
 	queue_status?: "Queued" | "Processing" | "Submitted" | "Failed" | "Requires Review" | "Cancelled";
 	queue_attempts?: number;
 	queue_error?: string | null;

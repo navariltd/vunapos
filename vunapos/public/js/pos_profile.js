@@ -57,6 +57,12 @@ function setup_checkout_field_form(frm) {
 	);
 }
 
+function setup_workflow_configuration(frm) {
+	frm.set_query("transaction_doctype", "vunapos_workflow_configuration", () => ({
+		filters: { name: ["in", VUNAPOS_CHECKOUT_DOCTYPES] },
+	}));
+}
+
 ["POS Profile", "POS Settings"].forEach((doctype) => {
 	frappe.ui.form.on(doctype, {
 		setup: setup_checkout_field_form,
@@ -65,6 +71,11 @@ function setup_checkout_field_form(frm) {
 			refresh_checkout_field_options(frm, frappe.get_doc(cdt, cdn));
 		},
 	});
+});
+
+frappe.ui.form.on("POS Profile", {
+	setup: setup_workflow_configuration,
+	refresh: setup_workflow_configuration,
 });
 
 frappe.ui.form.on("POS Profile", {

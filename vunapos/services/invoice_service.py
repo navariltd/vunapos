@@ -48,6 +48,7 @@ from vunapos.services.stock_reservation_service import (
 	create_invoice_stock_reservations,
 	validate_invoice_stock_reservations,
 )
+from vunapos.services.workflow_service import assert_pos_workflow_editable, workflow_enabled_for
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
@@ -226,8 +227,12 @@ def _save_invoice(doc):
 	return doc
 
 
-def _load_draft_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+def _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
+	if allow_sales_order:
+		if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+			_throw("UNSUPPORTED_INVOICE_DOCTYPE", _("Unsupported transaction type"))
+	else:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus != 0:
@@ -1251,7 +1256,8 @@ def preview_invoice(
 
 
 def get_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+	if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	return invoice_to_dict(frappe.get_doc(invoice_doctype, invoice_name))
 
@@ -1296,8 +1302,9 @@ def update_invoice_from_cart(
 	price_list=None,
 	loyalty_points=None,
 ):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	cart_items = _cart_item_rows(items)
 	validate_cart_items(cart_items, profile)
 
@@ -1374,8 +1381,9 @@ def list_held_invoices(pos_profile=None, limit=20):
 
 
 def add_item(invoice_doctype, invoice_name, item_code, qty=1):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": item_code, "qty": qty}], profile)
 	_append_cart_items(doc, profile, [{"item_code": item_code, "qty": qty}])
@@ -1388,11 +1396,12 @@ def add_item(invoice_doctype, invoice_name, item_code, qty=1):
 
 
 def update_item(invoice_doctype, invoice_name, row_name, qty):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	row = next((item for item in doc.get("items", []) if item.name == row_name), None)
 	if not row:
 		frappe.throw(_("Invoice item row {0} was not found").format(row_name))
-	profile = resolve_pos_profile(doc.get("pos_profile"))
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": row.item_code, "qty": qty}], profile)
 	flags = get_item_tracking_flags(row.item_code)
@@ -1419,8 +1428,9 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 
 
 def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token=None):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	manager_identity = None
 	if profile.get("vunapos_require_manager_pin_item_removal"):
 		manager_state = consume_pin_token(manager_pin_token, profile, "manager")
@@ -1541,6 +1551,8 @@ def submit_invoice(
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	_apply_shipping_address(doc, shipping_address_name, persist=True)
+	if workflow_enabled_for(resolve_pos_profile(doc.get("pos_profile")), doc.doctype):
+		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(gateway_links, doc)
 	return invoice_to_dict(doc)
@@ -1587,6 +1599,9 @@ def checkout_invoice(
 		salesperson_token=salesperson_token,
 		checkout_fields=checkout_fields,
 	)
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	if workflow_enabled_for(profile, doc.doctype):
+		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(getattr(doc.flags, "vunapos_gateway_payment_links", []), doc)
 	return invoice_to_dict(doc)
@@ -1701,7 +1716,11 @@ def create_and_submit_invoice(
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
 		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
 		has_gateway_payment = _has_gateway_payment_rows(payments, existing_profile)
-		if get_queue_limits(existing_profile)["enabled"] and not has_gateway_payment:
+		if (
+			get_queue_limits(existing_profile)["enabled"]
+			and not has_gateway_payment
+			and not workflow_enabled_for(existing_profile, existing.doctype)
+		):
 			if existing.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
 				return invoice_to_dict(existing)
 			if existing.get("vunapos_queue_status"):
@@ -1753,6 +1772,7 @@ def create_and_submit_invoice(
 		if (
 			get_queue_limits(profile)["enabled"]
 			and not has_gateway_payment
+			and not workflow_enabled_for(profile, "Sales Invoice")
 			and not str(idempotency_key or "").strip()
 		):
 			_throw(
@@ -1770,7 +1790,11 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		if get_queue_limits(profile)["enabled"] and not has_gateway_payment:
+		if (
+			get_queue_limits(profile)["enabled"]
+			and not has_gateway_payment
+			and not workflow_enabled_for(profile, "Sales Invoice")
+		):
 			_prepare_invoice_for_checkout(
 				doc,
 				payments=payments,
@@ -1879,6 +1903,8 @@ def create_and_submit_sales_order(
 		_materialize_batch_bundles(doc)
 		_apply_checkout_tax_id(doc, tax_id, persist=True)
 		_apply_shipping_address(doc, shipping_address_name, persist=True)
+		if workflow_enabled_for(profile, doc.doctype):
+			return invoice_to_dict(doc)
 		doc.submit()
 		advance_payments = []
 		if payment_rows:

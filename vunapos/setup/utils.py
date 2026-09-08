@@ -5,7 +5,7 @@ from frappe.utils import now_datetime
 
 
 def ensure_vunapos_custom_fields():
-	for fieldname in ("vunapos_allow_delivery_items", "vunapos_delivery_item"):
+	for fieldname in ("vunapos_allow_delivery_items", "vunapos_delivery_item", "vunapos_apply_workflow"):
 		custom_field = f"POS Profile-{fieldname}"
 		if frappe.db.exists("Custom Field", custom_field):
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
@@ -70,6 +70,14 @@ def ensure_vunapos_custom_fields():
 				},
 			],
 			"POS Profile": [
+				{
+					"fieldname": "vunapos_workflow_configuration",
+					"label": "Workflow Configuration",
+					"fieldtype": "Table",
+					"options": "VunaPOS Workflow Configuration",
+					"insert_after": "vunapos_tab",
+					"description": "Choose which transaction DocTypes use their active ERPNext Workflow in VunaPOS.",
+				},
 				{
 					"fieldname": "vunapos_checkout_fields",
 					"label": "Checkout Field Overrides",

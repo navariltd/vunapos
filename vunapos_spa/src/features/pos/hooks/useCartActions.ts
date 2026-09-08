@@ -29,6 +29,7 @@ export function useCartActions() {
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
+	const editDraftInvoiceAction = useCartStore((s) => s.editDraftInvoice);
 
 	return useMemo(
 		() => ({
@@ -74,6 +75,7 @@ export function useCartActions() {
 			),
 			holdCart: () => holdCartAction(api),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
+			editDraftInvoice: (doctype: string, name: string) => editDraftInvoiceAction(doctype, name, api),
 		}),
 		[
 			api,

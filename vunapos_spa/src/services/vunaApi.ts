@@ -49,6 +49,8 @@ export class VunaApiError extends Error {
 export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
 	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
+	applyWorkflowAction: "vunapos.api.profile.apply_workflow_action",
+	getWorkflowActions: "vunapos.api.profile.get_workflow_actions",
 	searchCheckoutLinkOptions: "vunapos.api.profile.search_checkout_link_options",
 	searchItems: "vunapos.api.item.search_items",
 	resolveBarcode: "vunapos.api.item.resolve_barcode",
@@ -152,6 +154,13 @@ export function searchCheckoutLinkOptions(
 
 export function getClosingPreview(call: FrappeCall, posProfile: string) {
 	return callAndUnwrap<POSClosingPreviewDTO>(call, { pos_profile: posProfile });
+}
+
+export function getWorkflowActions(
+	call: FrappeCall,
+	params: { doctype: string; docname: string; pos_profile?: string },
+) {
+	return callAndUnwrap<Array<{ action: string; next_state: string }>>(call, params);
 }
 
 export function closePosSession(
@@ -450,6 +459,10 @@ type CartItemInput = {
 	item_note?: string | null;
 	pricing_override?: { type: string; value: number };
 };
+
+export function applyWorkflowAction(call: FrappeCall, params: { doctype: string; docname: string; action: string; pos_profile?: string }) {
+	return callAndUnwrap<{ doctype: string; name: string; docstatus: number; workflow_state?: string }>(call, params);
+}
 
 export function createAndSubmitInvoice(
 	call: FrappeCall,

@@ -26,6 +26,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	getInvoice,
 	resolveBarcode,
 	searchItems,
 	holdInvoice,
@@ -45,6 +46,7 @@ import {
 export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
+	getInvoice?: FrappeCall;
 	searchItems: FrappeCall;
 	resolveBarcode: FrappeCall;
 	getItemBatches: FrappeCall;
@@ -638,6 +640,7 @@ type CartActions = {
 	) => Promise<SubmitCartResult | null>;
 	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
+	editDraftInvoice: (invoiceDoctype: string, invoiceName: string, api: CartApi) => Promise<InvoiceDTO>;
 };
 
 export type CartStore = CartState & CartActions;
@@ -1336,6 +1339,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 			validateManualBatchAllocations(invoice.items);
 
 			if (orderType === "Sales Order") {
+				if (invoice.source_invoice_doctype === "Sales Order" && invoice.source_invoice_name) {
+					const updated = await runMutation(() => syncLocalCartToSource(invoice, api));
+					if (updated) {
+						set({ invoice: updated });
+						return { invoice: updated, queued: false, printPayload: null };
+					}
+				}
 				if (!isUnsyncedLocalCart(invoice)) {
 					throw new Error("Restore this held invoice as a Sales Invoice, or clear the cart and create a new Sales Order.");
 				}
@@ -1539,6 +1549,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			await get().listHeld(api);
 			return restoredInvoice;
+		},
+		editDraftInvoice: async (invoiceDoctype, invoiceName, api) => {
+			if (!api.getInvoice) throw new Error("Draft editing is unavailable.");
+			const draft = await runMutation(() => getInvoice(api.getInvoice!, {
+				invoice_doctype: invoiceDoctype,
+				invoice_name: invoiceName,
+			}));
+			if (draft.docstatus !== 0) throw new Error("Only draft transactions can be edited.");
+			const local = invoiceToLocalCart(draft);
+			set({ invoice: local, selectedPriceList: draft.selling_price_list, error: null });
+			return local;
 		},
 	};
 });
