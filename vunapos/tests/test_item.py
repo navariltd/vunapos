@@ -102,6 +102,37 @@ class TestVunaPOSItem(IntegrationTestCase):
 		self.assertEqual(item["sales_uom"], "Box")
 		self.assertEqual(item["conversion_factor"], 18)
 
+	def test_catalogue_applies_customer_pricing_rule_for_sales_uom(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		customer = ensure_test_customer()
+		item_code = ensure_test_sales_uom_item("_Test Vuna Customer Sales UOM Item")
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Customer UOM Rate",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code, "uom": "Box"}],
+				"selling": 1,
+				"applicable_for": "Customer",
+				"customer": customer,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Rate",
+				"rate": 77,
+				"priority": 20,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		response = search_items(query=item_code, pos_profile=profile_name, customer=customer)
+
+		self.assertTrue(response["ok"], response)
+		item = next(row for row in response["data"] if row["item_code"] == item_code)
+		self.assertEqual(item["rate"], 77)
+		self.assertEqual(item["pricing_rule"]["pricing_rules"], [rule.name])
+
 	def test_catalogue_evaluates_dynamic_pricing_rule_condition(self):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)

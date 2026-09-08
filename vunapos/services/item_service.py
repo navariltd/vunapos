@@ -366,10 +366,14 @@ def _to_item_payload_from_row(
 			break
 	default_rate = default_price_list_rate
 	if pricing_rule and pricing_rule.get("kind") == "price":
-		# Catalogue rules are calculated against the stock UOM. Apply the same
-		# percentage to the configured sales UOM price rather than displaying a
-		# stock-UOM discount on a carton/box row.
-		default_rate = flt(default_price_list_rate) * (1 - flt(pricing_rule.get("discount_percentage")) / 100)
+		# Use ERPNext's effective rate for fixed-rate rules. Discount rules carry
+		# only a percentage, which must be applied to the selected UOM price.
+		if pricing_rule.get("rate") is not None:
+			default_rate = flt(pricing_rule.get("rate"))
+		else:
+			default_rate = flt(default_price_list_rate) * (
+				1 - flt(pricing_rule.get("discount_percentage")) / 100
+			)
 	return item_to_dict(
 		item,
 		rate=default_rate,
@@ -388,13 +392,26 @@ def _to_item_payload_from_row(
 	)
 
 
-def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_list):
+def _get_catalogue_pricing_rule_map(
+	items, rate_map, profile, customer, price_list, uom_rate_map=None, uom_map=None
+):
 	if not items or profile.get("ignore_pricing_rule"):
 		return {}
 
 	pricing_items = []
 	for item in items:
-		price_list_rate = flt(rate_map.get(item.name, item.standard_rate))
+		default_uom = item.get("sales_uom") or item.stock_uom
+		conversion_factor = next(
+			(
+				flt(row.get("conversion_factor")) or 1.0
+				for row in (uom_map or {}).get(item.name, [])
+				if row.get("uom") == default_uom
+			),
+			1.0,
+		)
+		price_list_rate = (uom_rate_map or {}).get(item.name, {}).get(default_uom)
+		if price_list_rate is None:
+			price_list_rate = flt(rate_map.get(item.name, item.standard_rate)) * conversion_factor
 		pricing_items.append(
 			{
 				"doctype": "Sales Invoice Item",
@@ -404,15 +421,15 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 				"item_group": item.item_group,
 				"brand": item.get("brand"),
 				"qty": 1,
-				"stock_qty": 1,
-				"uom": item.stock_uom,
+				"stock_qty": conversion_factor,
+				"uom": default_uom,
 				"stock_uom": item.stock_uom,
 				"parenttype": "Sales Invoice",
 				"parent": "",
 				"warehouse": profile.warehouse,
 				"price_list_rate": price_list_rate,
 				"rate": price_list_rate,
-				"conversion_factor": 1,
+				"conversion_factor": conversion_factor,
 			}
 		)
 
@@ -467,7 +484,19 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 	for item, result in zip(items, results, strict=True):
 		if not result.get("has_pricing_rule"):
 			continue
-		original_rate = flt(rate_map.get(item.name, item.standard_rate), precision)
+		default_uom = item.get("sales_uom") or item.stock_uom
+		original_rate = (uom_rate_map or {}).get(item.name, {}).get(default_uom)
+		if original_rate is None:
+			conversion_factor = next(
+				(
+					flt(row.get("conversion_factor")) or 1.0
+					for row in (uom_map or {}).get(item.name, [])
+					if row.get("uom") == default_uom
+				),
+				1.0,
+			)
+			original_rate = flt(rate_map.get(item.name, item.standard_rate)) * conversion_factor
+		original_rate = flt(original_rate, precision)
 		if result.get("price_or_product_discount") == "Product":
 			free_items = [
 				{
@@ -791,6 +820,8 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		profile,
 		customer,
 		price_list,
+		uom_rate_map,
+		uom_map,
 	)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
