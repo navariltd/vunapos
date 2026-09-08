@@ -478,7 +478,7 @@ function isStockControlled(item: ItemDTO) {
 	return item.is_stock_item === undefined || Boolean(item.is_stock_item);
 }
 
-function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
+function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number, stockQtyOverride?: number) {
 	if ("is_stock_item" in item && item.is_stock_item !== undefined && !item.is_stock_item) {
 		return;
 	}
@@ -487,7 +487,7 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
 		return;
 	}
 
-	const stockQty = qty * Number(("conversion_factor" in item && item.conversion_factor) || 1);
+	const stockQty = stockQtyOverride ?? (qty * Number(("conversion_factor" in item && item.conversion_factor) || 1));
 	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
 	}
@@ -514,7 +514,8 @@ async function refreshAndValidateStock(
 				customer,
 				price_list: priceList,
 			});
-			validateAvailableQty(fresh, qty);
+			// `qty` is already expressed in stock-UOM units in requestedByCode.
+			validateAvailableQty(fresh, qty, qty);
 			freshByCode.set(itemCode, fresh);
 		}),
 	);
