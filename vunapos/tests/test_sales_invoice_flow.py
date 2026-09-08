@@ -355,6 +355,40 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
 		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
 
+	def test_preview_pricing_rule_sees_customer_group_defaults(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		customer = ensure_test_customer()
+		customer_group = frappe.db.get_value("Customer", customer, "customer_group")
+		item_code = ensure_test_item()
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Customer Group Price",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Rate",
+				"rate": 77,
+				"min_qty": 1,
+				"condition": f"customer_group == {customer_group!r}",
+				"priority": 20,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		response = preview_invoice(
+			pos_profile=profile_name,
+			customer=customer,
+			items=[{"item_code": item_code, "qty": 1}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["rate"], 77)
+
 	def test_checkout_allows_erpnext_pricing_rule_without_rate_change_permission(self):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)
