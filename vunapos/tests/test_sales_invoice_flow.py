@@ -233,6 +233,40 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			frappe.session.user,
 		)
 
+	def test_sales_order_advance_forwards_bank_payment_reference(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		with patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True):
+			with patch("vunapos.services.payment_service.receive_customer_payment", return_value={"name": "PAY-001"}) as receive_payment:
+				response = create_and_submit_sales_order(
+					pos_profile=profile,
+					items=[{"item_code": item_code, "qty": 1}],
+					payments=[
+						{
+							"amount": 25,
+							"mode_of_payment": "Cash",
+							"reference_date": "2026-09-08",
+							"reference_no": "RCP-001",
+						}
+					],
+					idempotency_key="sales-order-bank-reference-key",
+				)
+
+		self.assertTrue(response["ok"], response)
+		receive_payment.assert_called_once_with(
+			pos_profile=profile,
+			customer=response["data"]["customer"],
+			amount=25,
+			mode_of_payment="Cash",
+			sales_order=response["data"]["name"],
+			allocated_amount=25,
+			idempotency_key="sales-order-bank-reference-key:advance:0",
+			gateway_payment_link=None,
+			reference_no="RCP-001",
+			reference_date="2026-09-08",
+		)
+
 	def test_checkout_persists_customer_shipping_address(self):
 		profile = ensure_test_pos_profile()
 		customer = ensure_test_customer()
@@ -1003,10 +1037,50 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(
 			rows,
 			[
-				{"mode_of_payment": "Cash", "amount": 25.25, "default": None, "gateway_payment_link": None},
-				{"mode_of_payment": "M-Pesa", "amount": 74.75, "default": None, "gateway_payment_link": None},
+				{
+					"mode_of_payment": "Cash",
+					"amount": 25.25,
+					"default": None,
+					"gateway_payment_link": None,
+					"reference_no": None,
+					"reference_date": None,
+				},
+				{
+					"mode_of_payment": "M-Pesa",
+					"amount": 74.75,
+					"default": None,
+					"gateway_payment_link": None,
+					"reference_no": None,
+					"reference_date": None,
+				},
 			],
 		)
+
+	def test_bank_payment_validation_requires_a_reference_and_date(self):
+		doc = frappe._dict({"rounded_total": 100, "grand_total": 100})
+		doc.precision = lambda _fieldname: 2
+		profile = frappe._dict({"payments": [frappe._dict({"mode_of_payment": "Bank transfer"})]})
+
+		with patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True):
+			with self.assertRaises(frappe.ValidationError) as context:
+				validate_payment_rows(doc, [{"mode_of_payment": "Bank transfer", "amount": 100}], profile)
+			self.assertEqual(context.exception.vuna_error_code, "PAYMENT_REFERENCE_REQUIRED")
+
+			rows = validate_payment_rows(
+				doc,
+				[
+					{
+						"mode_of_payment": "Bank transfer",
+						"amount": 100,
+						"reference_date": "2026-09-08",
+						"reference_no": " RCP-001 ",
+					}
+				],
+				profile,
+			)
+
+		self.assertEqual(rows[0]["reference_no"], "RCP-001")
+		self.assertEqual(rows[0]["reference_date"], "2026-09-08")
 
 	def test_payment_validation_subtracts_loyalty_redemption_from_amount_due(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 25})

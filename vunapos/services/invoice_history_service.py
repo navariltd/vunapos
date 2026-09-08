@@ -269,7 +269,7 @@ def get_invoice_history(
 		payment_child = frappe.get_meta(doctype).get_field("payments").options
 		payment_child_meta = frappe.get_meta(payment_child)
 		payment_fields = ["parent", "mode_of_payment", "amount"]
-		for fieldname in ("ke_transaction_id", "ke_transaction_date", "ke_payment_request"):
+		for fieldname in ("ke_transaction_id", "ke_transaction_date", "ke_payment_request", "reference_no"):
 			if payment_child_meta.has_field(fieldname):
 				payment_fields.append(fieldname)
 		for payment in frappe.get_all(
@@ -282,7 +282,7 @@ def get_invoice_history(
 				{
 					"mode_of_payment": payment.mode_of_payment,
 					"amount": flt(payment.amount),
-					"transaction_reference": payment.get("ke_transaction_id"),
+					"transaction_reference": payment.get("ke_transaction_id") or payment.get("reference_no"),
 					"transaction_date": payment.get("ke_transaction_date"),
 					"ke_payment_request": payment.get("ke_payment_request"),
 				}

@@ -2,6 +2,15 @@ import { PosPaymentMode } from '@/features/pos/types';
 
 export type PaymentAmounts = Record<string, string>;
 
+export type PaymentReferences = Record<string, { referenceDate: string; referenceNo: string }>;
+
+export type PaymentInput = {
+  amount: number;
+  mode_of_payment: string;
+  reference_date?: string;
+  reference_no?: string;
+};
+
 export type PaymentAllocation = {
   allocatedMinor: number;
   cashMinor: number;
@@ -106,11 +115,22 @@ export function canCompletePaymentAllocation(allocation: PaymentAllocation, tota
     && (allocation.remainingMinor <= 0 || allowPartialPayment);
 }
 
-export function buildPaymentInputs(modes: PosPaymentMode[], amounts: PaymentAmounts, precision: number) {
+export function buildPaymentInputs(
+  modes: PosPaymentMode[],
+  amounts: PaymentAmounts,
+  precision: number,
+  references: PaymentReferences = {},
+): PaymentInput[] {
   return modes.flatMap((mode) => {
     const amountMinor = parsePaymentAmount(amounts[mode.mode_of_payment] || '', precision);
-    return amountMinor && amountMinor > 0
-      ? [{ amount: amountMinor / currencyScale(precision), mode_of_payment: mode.mode_of_payment }]
-      : [];
+    if (!amountMinor || amountMinor <= 0) return [];
+    const reference = references[mode.mode_of_payment];
+    return [{
+      amount: amountMinor / currencyScale(precision),
+      mode_of_payment: mode.mode_of_payment,
+      ...(mode.requires_reference && reference?.referenceNo.trim()
+        ? { reference_date: reference.referenceDate, reference_no: reference.referenceNo.trim() }
+        : {}),
+    }];
   });
 }

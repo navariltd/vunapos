@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { PaymentInput } from '@/features/pos/paymentAllocation';
 import { PosCartItem, PosCheckoutPreview, PosCheckoutResult, PosOrderType } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/frappeClient';
 
@@ -15,7 +16,7 @@ type SubmitInput = PreviewInput & {
   dueDate?: string;
   isCreditSale: boolean;
   orderType: PosOrderType;
-  payments: { amount: number; mode_of_payment: string }[];
+  payments: PaymentInput[];
 };
 
 function cartPayload(items: PosCartItem[]) {

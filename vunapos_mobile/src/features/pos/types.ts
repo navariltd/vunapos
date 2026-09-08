@@ -93,6 +93,7 @@ export type PosBootstrapData = {
     currency?: string;
     currency_precision?: number;
     default_sale_type?: 'Cash Sale' | 'Credit Sale';
+    modes_of_payment?: PosPaymentMode[];
     name: string;
   };
 };

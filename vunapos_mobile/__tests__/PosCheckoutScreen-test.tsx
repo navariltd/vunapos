@@ -307,6 +307,51 @@ describe('PosCheckoutScreen', () => {
     })));
   });
 
+  it('requires and submits a transaction reference for a configured bank payment mode', async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'Bank transfer', type: 'Bank' },
+        ],
+        pos_profile: {
+          modes_of_payment: [{ mode_of_payment: 'Bank transfer', requires_reference: true, type: 'Bank' }],
+          name: 'POS-001',
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0005' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '');
+    await fireEvent.changeText(screen.getByLabelText('Bank transfer amount'), '116');
+
+    expect(screen.getByLabelText('Bank transfer transaction reference')).toBeTruthy();
+    expect(screen.getByText('A transaction reference is required for Bank transfer.')).toBeTruthy();
+    expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(true);
+
+    await fireEvent.changeText(screen.getByLabelText('Bank transfer transaction reference'), 'RCP-001');
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      payments: [{ amount: 116, mode_of_payment: 'Bank transfer', reference_date: new Date().toISOString().slice(0, 10), reference_no: 'RCP-001' }],
+    })));
+  });
+
   it('disables completion when an electronic payment exceeds the invoice total', async () => {
     mockUsePosBootstrap.mockReturnValue({
       data: {

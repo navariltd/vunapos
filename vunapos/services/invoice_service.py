@@ -326,6 +326,17 @@ def _payment_mode_type(mode_of_payment):
 	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
 
 
+def _payment_mode_requires_reference(profile, mode_of_payment):
+	if not profile or not profile.company:
+		return False
+	account = frappe.db.get_value(
+		"Mode of Payment Account",
+		{"parent": mode_of_payment, "company": profile.company},
+		"default_account",
+	)
+	return bool(account and frappe.get_cached_value("Account", account, "account_type") == "Bank")
+
+
 def _has_gateway_payment_rows(payments, profile):
 	rows = _payment_rows(payments)
 	if not rows or not profile:
@@ -473,6 +484,31 @@ def validate_payment_rows(
 				_("Payment mode {0} can only be used once").format(mode_of_payment),
 			)
 		payment_gateway = payment_mode_gateway(profile, mode_of_payment) if profile else None
+		reference_no = cstr(row.get("reference_no") or "").strip() or None
+		reference_date = row.get("reference_date")
+		if not payment_gateway and _payment_mode_requires_reference(profile, mode_of_payment):
+			if not reference_no:
+				_throw(
+					"PAYMENT_REFERENCE_REQUIRED",
+					_("A transaction reference is required for bank payment mode {0}").format(
+						mode_of_payment
+					),
+				)
+			if not reference_date:
+				_throw(
+					"PAYMENT_REFERENCE_DATE_REQUIRED",
+					_("A transaction date is required for bank payment mode {0}").format(mode_of_payment),
+				)
+			try:
+				reference_date = str(getdate(reference_date))
+			except (TypeError, ValueError):
+				_throw(
+					"PAYMENT_REFERENCE_DATE_INVALID",
+					_("Enter a valid transaction date for bank payment mode {0}").format(mode_of_payment),
+				)
+		else:
+			reference_no = None
+			reference_date = None
 
 		raw_amount = row.get("amount")
 		storage_amount = None
@@ -519,6 +555,8 @@ def validate_payment_rows(
 				"amount": storage_amount,
 				"default": row.get("default"),
 				"gateway_payment_link": gateway_link.name if gateway_link else None,
+				"reference_no": reference_no,
+				"reference_date": reference_date,
 			}
 		)
 
@@ -1449,6 +1487,8 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 			"amount": flt(payment.get("amount")),
 			"default": payment.get("default"),
 		}
+		if payment.get("reference_no") and frappe.get_meta(payment_child_doctype).has_field("reference_no"):
+			row["reference_no"] = payment.get("reference_no")
 		_apply_gateway_metadata_to_payment_row(row, payment, payment_child_doctype)
 		doc.append("payments", row)
 	return doc
@@ -1868,6 +1908,8 @@ def create_and_submit_sales_order(
 						allocated_amount=amount,
 						idempotency_key=f"{idempotency_key}:advance:{index}",
 						gateway_payment_link=payment.get("gateway_payment_link"),
+						reference_no=payment.get("reference_no"),
+						reference_date=payment.get("reference_date"),
 					)
 				)
 		result = invoice_to_dict(doc)

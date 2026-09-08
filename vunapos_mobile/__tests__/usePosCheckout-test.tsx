@@ -90,6 +90,26 @@ describe('POS checkout hooks', () => {
     }));
   });
 
+  it('serializes manual payment transaction references for invoice checkout', async () => {
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0003' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-001',
+        isCreditSale: false,
+        items: [item],
+        orderType: 'Invoice',
+        payments: [{ amount: 290, mode_of_payment: 'Bank transfer', reference_date: '2026-09-08', reference_no: 'RCP-001' }],
+        posProfile: 'POS-001',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({
+      payments: '[{"amount":290,"mode_of_payment":"Bank transfer","reference_date":"2026-09-08","reference_no":"RCP-001"}]',
+    }));
+  });
+
   it('uses the sales-order endpoint with a delivery date and without invoice-only fields', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0001' });
     const hook = await renderHook(() => useSubmitPosCheckout());

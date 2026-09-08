@@ -56,4 +56,14 @@ describe('payment allocation', () => {
       { amount: 1000, mode_of_payment: 'M-Pesa' },
     ]);
   });
+
+  it('serializes a transaction reference only for a payment mode that requires it', () => {
+    const bankMode: PosPaymentMode[] = [{ mode_of_payment: 'Bank transfer', requires_reference: true, type: 'Bank' }];
+
+    expect(buildPaymentInputs(bankMode, { 'Bank transfer': '1500' }, 2, {
+      'Bank transfer': { referenceDate: '2026-09-08', referenceNo: ' RCP-001 ' },
+    })).toEqual([
+      { amount: 1500, mode_of_payment: 'Bank transfer', reference_date: '2026-09-08', reference_no: 'RCP-001' },
+    ]);
+  });
 });

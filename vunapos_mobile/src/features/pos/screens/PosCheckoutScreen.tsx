@@ -16,6 +16,7 @@ import {
   createInitialPaymentAmounts,
   currencyScale,
   minorUnitsToInput,
+  parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
 import { PosCartItem, PosCheckoutResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
@@ -73,6 +74,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     : null);
   const checkout = useSubmitPosCheckout();
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
+  const [paymentReferences, setPaymentReferences] = useState<Record<string, { referenceDate: string; referenceNo: string }>>({});
   const [isCreditSale, setIsCreditSale] = useState(false);
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
@@ -80,11 +82,19 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [deliveryDate, setDeliveryDate] = useState(today());
   const [isDueDatePickerVisible, setIsDueDatePickerVisible] = useState(false);
   const [isDeliveryDatePickerVisible, setIsDeliveryDatePickerVisible] = useState(false);
+  const [referenceDateMode, setReferenceDateMode] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
 
   const profile = bootstrap.data?.pos_profile;
-  const manualModes = (bootstrap.data?.payment_modes ?? []).filter((mode) => !mode.payment_gateway);
+  const profilePaymentModes = profile?.modes_of_payment ?? [];
+  const manualModes = (bootstrap.data?.payment_modes ?? [])
+    .filter((mode) => !mode.payment_gateway)
+    .map((mode) => ({
+      ...mode,
+      requires_reference: mode.requires_reference
+        ?? profilePaymentModes.find((profileMode) => profileMode.mode_of_payment === mode.mode_of_payment)?.requires_reference,
+    }));
   const total = isInvoice
     ? (preview.data?.totals.rounded_total ?? preview.data?.totals.grand_total ?? 0)
     : subtotal;
@@ -96,9 +106,13 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
   const allocation = calculatePaymentAllocation(manualModes, paymentAmounts, totalMinor, precision);
-  const paymentInputs = buildPaymentInputs(manualModes, paymentAmounts, precision);
+  const paymentInputs = buildPaymentInputs(manualModes, paymentAmounts, precision, paymentReferences);
   const paymentModeKey = manualModes.map((mode) => mode.mode_of_payment).join('|');
   const hasNonCashOverpayment = allocation.nonCashMinor > totalMinor;
+  const missingReferenceMode = paymentInputs.find((payment) => manualModes.find(
+    (mode) => mode.mode_of_payment === payment.mode_of_payment,
+  )?.requires_reference && !payment.reference_no)?.mode_of_payment;
+  const hasMissingPaymentReference = Boolean(missingReferenceMode);
   const allowsSalesOrderAdvancePayments = Boolean(!isInvoice && profile?.allow_sales_order_payments);
   const hasSalesOrderAdvanceOverpayment = allowsSalesOrderAdvancePayments && allocation.allocatedMinor > totalMinor;
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
@@ -106,8 +120,8 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     isInvoice
       ? manualModes.length && (isCreditSale
         ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
-        : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment)))
-      : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment),
+        : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))) && !hasMissingPaymentReference
+      : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment && !hasMissingPaymentReference),
   );
   const isPaymentOverpaid = allocation.remainingMinor < 0;
   const paymentBalanceLabel = isPaymentOverpaid
@@ -117,6 +131,8 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       : 'Remaining';
   const paymentStatus = allocation.hasInvalidAmount
     ? 'Invalid allocation'
+    : hasMissingPaymentReference
+      ? 'Reference required'
     : hasSalesOrderAdvanceOverpayment
       ? 'Advance exceeds order total'
     : hasNonCashOverpayment
@@ -174,6 +190,20 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     });
   }
 
+  function setPaymentReferenceNo(mode: string, referenceNo: string) {
+    setPaymentReferences((current) => ({
+      ...current,
+      [mode]: { referenceDate: current[mode]?.referenceDate || today(), referenceNo },
+    }));
+  }
+
+  function setPaymentReferenceDate(mode: string, referenceDate: string) {
+    setPaymentReferences((current) => ({
+      ...current,
+      [mode]: { referenceDate, referenceNo: current[mode]?.referenceNo || '' },
+    }));
+  }
+
   function setSaleType(nextCreditSale: boolean) {
     setIsCreditSale(nextCreditSale);
     setPaymentAmounts(nextCreditSale
@@ -213,6 +243,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     }
     if (!isInvoice && hasSalesOrderAdvanceOverpayment) {
       setValidationError('Sales Order advance payments cannot exceed the order total.');
+      return;
+    }
+    if (hasMissingPaymentReference) {
+      setValidationError(`Enter the transaction reference for ${missingReferenceMode}.`);
       return;
     }
     if (isInvoice) {
@@ -390,33 +424,72 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           {manualModes.length ? <View style={styles.paymentModes}>
             {manualModes.map((mode) => {
               const amount = paymentAmounts[mode.mode_of_payment] ?? '';
+              const amountMinor = parsePaymentAmount(amount, precision);
+              const needsReference = Boolean(mode.requires_reference && amountMinor && amountMinor > 0);
+              const reference = paymentReferences[mode.mode_of_payment];
               const isAll = amount === minorUnitsToInput(totalMinor, precision)
                 && manualModes.every((other) => other.mode_of_payment === mode.mode_of_payment || !(paymentAmounts[other.mode_of_payment]));
-              return <View key={mode.mode_of_payment} style={styles.paymentModeRow}>
-                <Pressable accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`} onPress={() => selectPaymentMode(mode.mode_of_payment)} style={[styles.paymentModeButton, isAll && styles.paymentModeButtonActive]}>
-                  <Text style={[styles.paymentModeLabel, isAll && styles.paymentModeLabelActive]}>{mode.mode_of_payment}{mode.default ? ' · Default' : ''}</Text>
-                </Pressable>
-                <View style={styles.paymentAmountWrap}>
-                  <Text style={styles.currencyPrefix}>{currency}</Text>
-                  <TextInput
-                    accessibilityLabel={`${mode.mode_of_payment} amount`}
-                    inputMode="decimal"
-                    keyboardType="decimal-pad"
-                    onChangeText={(amountInput) => setPaymentAmount(mode.mode_of_payment, amountInput)}
-                    placeholder={minorUnitsToInput(0, precision)}
-                    placeholderTextColor="#8f8f8f"
-                    style={styles.paymentAmountInput}
-                    value={amount}
-                  />
+              return <View key={mode.mode_of_payment} style={styles.paymentMode}>
+                <View style={styles.paymentModeRow}>
+                  <Pressable accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`} onPress={() => selectPaymentMode(mode.mode_of_payment)} style={[styles.paymentModeButton, isAll && styles.paymentModeButtonActive]}>
+                    <Text style={[styles.paymentModeLabel, isAll && styles.paymentModeLabelActive]}>{mode.mode_of_payment}{mode.default ? ' · Default' : ''}</Text>
+                  </Pressable>
+                  <View style={styles.paymentAmountWrap}>
+                    <Text style={styles.currencyPrefix}>{currency}</Text>
+                    <TextInput
+                      accessibilityLabel={`${mode.mode_of_payment} amount`}
+                      inputMode="decimal"
+                      keyboardType="decimal-pad"
+                      onChangeText={(amountInput) => setPaymentAmount(mode.mode_of_payment, amountInput)}
+                      placeholder={minorUnitsToInput(0, precision)}
+                      placeholderTextColor="#8f8f8f"
+                      style={styles.paymentAmountInput}
+                      value={amount}
+                    />
+                  </View>
                 </View>
+                {needsReference ? <View style={styles.paymentReference}>
+                  <Text style={styles.fieldLabel}>Transaction reference</Text>
+                  <TextInput
+                    accessibilityLabel={`${mode.mode_of_payment} transaction reference`}
+                    autoCapitalize="characters"
+                    onChangeText={(referenceNo) => setPaymentReferenceNo(mode.mode_of_payment, referenceNo)}
+                    placeholder="Receipt or transaction number"
+                    placeholderTextColor="#8f8f8f"
+                    style={styles.input}
+                    value={reference?.referenceNo ?? ''}
+                  />
+                  <Text style={styles.fieldLabel}>Transaction date</Text>
+                  <Pressable accessibilityLabel={`Choose ${mode.mode_of_payment} transaction date`} onPress={() => setReferenceDateMode(mode.mode_of_payment)} style={styles.datePickerButton}>
+                    <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="calendar-month-outline" size={20} />
+                    <Text style={styles.datePickerButtonLabel}>{formatDate(reference?.referenceDate || today())}</Text>
+                  </Pressable>
+                </View> : null}
               </View>;
             })}
           </View> : <Text style={isInvoice ? styles.errorText : styles.cardHint}>{isInvoice
             ? 'No manual payment mode is configured for this POS profile.'
             : 'No manual payment mode is configured, so this Sales Order will be submitted without an advance.'}</Text>}
           {isInvoice && profile?.allow_partial_payment ? <Text style={styles.cardHint}>Partial payments are enabled for this POS profile.</Text> : null}
+          {hasMissingPaymentReference ? <Text style={styles.errorText}>A transaction reference is required for {missingReferenceMode}.</Text> : null}
           {isInvoice && hasNonCashOverpayment ? <Text style={styles.errorText}>Only cash can exceed the total and return change.</Text> : null}
           {hasSalesOrderAdvanceOverpayment ? <Text style={styles.errorText}>An advance cannot exceed the Sales Order total.</Text> : null}
+          {referenceDateMode ? <DateTimePicker
+            accentColor={posDarkColors.primary}
+            maximumDate={dateFromInput(today())}
+            mode="date"
+            negativeButton={{ label: 'Cancel' }}
+            onDismiss={() => setReferenceDateMode(null)}
+            onValueChange={(_event, selectedDate) => {
+              setPaymentReferenceDate(referenceDateMode, dateInputValue(selectedDate));
+              setReferenceDateMode(null);
+            }}
+            positiveButton={{ label: 'Select' }}
+            presentation={Platform.OS === 'android' ? 'dialog' : 'inline'}
+            testID={`payment-reference-date-picker-${referenceDateMode}`}
+            themeVariant="dark"
+            value={dateFromInput(paymentReferences[referenceDateMode]?.referenceDate || today())}
+          /> : null}
         </View> : null}
 
       {validationError || checkout.error ? <Text style={styles.errorText}>{validationError || checkout.error}</Text> : null}
@@ -512,8 +585,10 @@ const styles = StyleSheet.create({
   paymentModeButtonActive: { backgroundColor: posDarkColors.primary, borderColor: posDarkColors.primary },
   paymentModeLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, textAlign: 'center' },
   paymentModeLabelActive: { color: posDarkColors.onPrimary },
+  paymentMode: { gap: spacing.sm },
   paymentModeRow: { flexDirection: 'row', gap: spacing.sm },
   paymentModes: { gap: spacing.sm },
+  paymentReference: { gap: spacing.xs },
   paymentSummary: { flex: 1, gap: 2 },
   paymentSummaryLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   paymentSummaryRow: { backgroundColor: posDarkColors.surfaceContainer, borderRadius: radii.sm, flexDirection: 'row', gap: spacing.xs, padding: spacing.sm },
