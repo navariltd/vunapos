@@ -153,6 +153,58 @@ describe('PosCheckoutScreen', () => {
     expect(screen.getByLabelText('Credit sale due date')).toBeTruthy();
   });
 
+  it('renders the authoritative item, tax, total, and payment review summary', async () => {
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: {
+        items: [{ amount: 100, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, row_name: 'item-row', uom: 'Nos' }],
+        taxes: [{ description: 'VAT', included_in_print_rate: false, rate: 16, tax_amount: 16 }],
+        totals: { grand_total: 116, net_total: 100, rounded_total: 116, total_taxes_and_charges: 16 },
+      },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByText('Checkout summary')).toBeTruthy();
+    expect(screen.getByText('1 × Stock item')).toBeTruthy();
+    expect(screen.getByText('VAT · 16%')).toBeTruthy();
+    expect(screen.getByText('Total taxes and charges')).toBeTruthy();
+    expect(screen.getByText('Grand total')).toBeTruthy();
+    expect(screen.getByText('Paid amount')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Balance')).toBeTruthy());
+  });
+
+  it('updates the review summary with cash change or an outstanding balance', async () => {
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Cash amount').props.value).toBe('116.00'));
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '120');
+    expect(screen.getByText('Cash change')).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByLabelText('Cash amount'), '100');
+    expect(screen.getByText('Outstanding')).toBeTruthy();
+  });
+
   it('submits a split allocation across configured manual payment modes', async () => {
     mockUsePosBootstrap.mockReturnValue({
       data: {

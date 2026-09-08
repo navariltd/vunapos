@@ -108,11 +108,24 @@ export type PosCheckoutPreview = {
   currency?: string;
   items: PosInvoiceDetailItem[];
   loyalty_amount?: number;
+  taxes?: PosCheckoutTax[];
   totals: {
+    change_amount?: number;
     grand_total?: number;
     net_total?: number;
+    outstanding_amount?: number;
+    paid_amount?: number;
     rounded_total?: number;
+    total_taxes_and_charges?: number;
   };
+};
+
+export type PosCheckoutTax = {
+  account_head?: string;
+  description?: string;
+  included_in_print_rate?: boolean;
+  rate?: number;
+  tax_amount?: number;
 };
 
 export type PosCheckoutResult = {

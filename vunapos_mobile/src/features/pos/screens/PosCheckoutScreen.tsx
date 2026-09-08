@@ -38,6 +38,12 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function taxLabel(description?: string, accountHead?: string, rate?: number, included?: boolean) {
+  const name = description || accountHead || 'Tax';
+  const rateLabel = rate === undefined || rate === null ? '' : ` · ${rate}%${included ? ' included' : ''}`;
+  return `${name}${rateLabel}`;
+}
+
 /**
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
@@ -62,6 +68,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const total = isInvoice
     ? (preview.data?.totals.rounded_total ?? preview.data?.totals.grand_total ?? 0)
     : subtotal;
+  const netTotal = preview.data?.totals.net_total ?? total;
+  const grandTotal = preview.data?.totals.grand_total ?? total;
+  const roundedTotal = preview.data?.totals.rounded_total;
+  const taxTotal = preview.data?.totals.total_taxes_and_charges ?? Math.max(grandTotal - netTotal, 0);
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
   const allocation = calculatePaymentAllocation(manualModes, paymentAmounts, totalMinor, precision);
@@ -92,6 +102,15 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const isReadyToSubmit = Boolean(
     items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate : canSubmitPayment) : true),
   );
+  const paidAmount = isCreditSale ? 0 : allocation.allocatedMinor / currencyScale(precision);
+  const checkoutBalanceAmount = Math.abs(isCreditSale ? total : allocation.remainingMinor / currencyScale(precision));
+  const checkoutBalanceLabel = isCreditSale
+    ? 'Outstanding'
+    : isPaymentOverpaid
+      ? 'Cash change'
+      : allocation.remainingMinor > 0
+        ? 'Outstanding'
+        : 'Balance';
 
   useEffect(() => {
     if (appliedSaleTypeDefault.current || !profile) return;
@@ -212,12 +231,24 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Cart totals</Text>
+        <Text style={styles.cardTitle}>Checkout summary</Text>
         {isInvoice && preview.data ? <>
-          <SummaryRow label="Items" value={formatCurrency(preview.data.totals.net_total ?? total, currency, precision)} />
-          <SummaryRow label="Tax" value={formatCurrency(total - (preview.data.totals.net_total ?? total), currency, precision)} />
+          <SummaryRow label="Customer" value={customerName} />
+          <View style={styles.summaryDivider} />
+          <Text style={styles.summarySectionTitle}>Items</Text>
+          <View style={styles.summaryItems}>
+            {preview.data.items.map((item) => <SummaryRow key={item.row_name || item.item_code} label={`${item.qty} × ${item.item_name}`} value={formatCurrency(item.amount, currency, precision)} />)}
+          </View>
+          <View style={styles.summaryDivider} />
+          <SummaryRow label="Subtotal" value={formatCurrency(netTotal, currency, precision)} />
+          {(preview.data.taxes ?? []).map((tax, index) => <SummaryRow key={`${tax.account_head || tax.description || 'tax'}-${index}`} label={taxLabel(tax.description, tax.account_head, tax.rate, tax.included_in_print_rate)} value={formatCurrency(tax.tax_amount ?? 0, currency, precision)} />)}
+          <SummaryRow label="Total taxes and charges" value={formatCurrency(taxTotal, currency, precision)} />
+          <View style={styles.totalRow}><Text style={styles.totalLabel}>Grand total</Text><Text style={styles.totalValue}>{formatCurrency(grandTotal, currency, precision)}</Text></View>
+          {roundedTotal !== undefined && roundedTotal !== grandTotal ? <SummaryRow label="Rounded total" value={formatCurrency(roundedTotal, currency, precision)} /> : null}
+          <View style={styles.summaryDivider} />
+          <SummaryRow label="Paid amount" value={formatCurrency(paidAmount, currency, precision)} />
+          <SummaryRow label={checkoutBalanceLabel} value={formatCurrency(checkoutBalanceAmount, currency, precision)} />
         </> : <Text style={styles.cardHint}>Frappe will calculate final tax and totals when this Sales Order is submitted.</Text>}
-        <View style={styles.totalRow}><Text style={styles.totalLabel}>Total</Text><Text style={styles.totalValue}>{formatCurrency(total, currency, precision)}</Text></View>
       </View>
 
       {isInvoice ? <>
@@ -382,7 +413,10 @@ const styles = StyleSheet.create({
   submitButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   summaryLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  summaryDivider: { backgroundColor: posDarkColors.border, height: StyleSheet.hairlineWidth, marginVertical: spacing.xs },
+  summaryItems: { gap: spacing.xs },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  summarySectionTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   summaryValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
   title: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
   totalLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
