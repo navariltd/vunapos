@@ -1323,6 +1323,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (!invoice) {
 				return null;
 			}
+			// An edited draft keeps its original document type in the local-cart
+			// source metadata. Preserve that type even when the workspace selector
+			// is still set to its normal default (Sales Invoice).
+			const effectiveOrderType =
+				invoice.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
 
 			const selectedCustomer = getActiveCustomer(get());
 			if (isOnline && isUnsyncedLocalCart(invoice)) {
@@ -1343,7 +1348,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			validateManualBatchAllocations(invoice.items);
 
-			if (orderType === "Sales Order") {
+			if (effectiveOrderType === "Sales Order") {
 				if (invoice.source_invoice_doctype === "Sales Order" && invoice.source_invoice_name) {
 					const updated = await runMutation(() => syncLocalCartToSource(invoice, api));
 					if (updated) {

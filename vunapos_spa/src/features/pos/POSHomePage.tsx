@@ -210,6 +210,10 @@ export function POSHomePage({
 
   const items = useItemSearch(itemSearchQuery);
   const cartInvoice = useCartStore((s) => s.invoice);
+  // Drafts edited from history retain their original doctype. Prefer it over
+  // the workspace selector so Sales Orders never enter the invoice checkout path.
+  const effectiveOrderType: OrderType =
+    cartInvoice?.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
   const cartQuantity =
     cartInvoice?.items.reduce(
       (total, item) => total + Number(item.qty || 0),
@@ -741,7 +745,7 @@ export function POSHomePage({
     }
     try {
       const heldInvoice = await cartActions.holdCart(
-        orderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
+        effectiveOrderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
       );
       if (heldInvoice) {
         showToast({ type: "held", invoice: heldInvoice });
@@ -846,7 +850,7 @@ export function POSHomePage({
         taxId,
         shippingAddressName,
         checkoutFields,
-        orderType,
+        effectiveOrderType,
         salesperson?.name,
         salesperson?.token,
       );
@@ -1190,7 +1194,7 @@ export function POSHomePage({
         </div>
       ) : null}
 
-        <CheckoutDialog
+          <CheckoutDialog
         allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
@@ -1256,7 +1260,7 @@ export function POSHomePage({
         onPreviewLoyalty={(points) =>
           cartActions.previewLoyaltyRedemption(points)
         }
-        orderType={orderType}
+            orderType={effectiveOrderType}
         posProfile={bootstrap.data?.pos_profile}
       />
 
