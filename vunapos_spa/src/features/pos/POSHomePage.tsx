@@ -326,7 +326,7 @@ export function POSHomePage({
 
   const error = pageError || bootstrap.error || items.error;
 
-  useConfigurationRealtime(async (event) => {
+  useConfigurationRealtime(async () => {
     if (!isReachable || navigator.onLine === false) return;
     try {
       await hydrate(bootstrap.data?.pos_profile);
@@ -349,10 +349,6 @@ export function POSHomePage({
         else if (cartState.invoice?.items.length)
           await cartActions.refreshCartConfiguration();
       }
-      showToast({
-        type: "info",
-        message: `${event.doctype || "POS"} configuration updated.`,
-      });
     } catch (refreshError) {
       showToast({
         type: "error",
