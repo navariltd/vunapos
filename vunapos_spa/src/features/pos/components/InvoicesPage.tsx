@@ -340,7 +340,7 @@ export function InvoicesPage({
                               {formatDate(row.posting_date)}
                               <span className="block text-xs text-on-surface-variant">
                                 {formatTime(
-                                  row.posting_time || row.posting_date,
+                                  row.posting_time,
                                 )}
                               </span>
                               {row.vunapos_credit_sale && row.due_date ? (

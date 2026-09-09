@@ -76,6 +76,7 @@ def _get_sales_order_history(
 	fields = [
 		"name",
 		"transaction_date",
+		"transaction_time",
 		"customer",
 		"customer_name",
 		"currency",
@@ -85,7 +86,9 @@ def _get_sales_order_history(
 		"total_qty",
 		"delivery_date",
 		"docstatus",
+		"creation",
 	]
+	fields = [field for field in fields if meta.has_field(field) or field == "creation"]
 	for fieldname in (
 		"vunapos_opening_entry",
 		"vunapos_session_cashier",
@@ -146,6 +149,7 @@ def _get_sales_order_history(
 				"name": row.name,
 				"doctype": "Sales Order",
 				"posting_date": row.transaction_date,
+				"posting_time": row.get("transaction_time") or row.get("creation"),
 				"customer": row.customer,
 				"customer_name": row.customer_name,
 				"currency": row.currency,
