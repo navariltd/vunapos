@@ -737,7 +737,7 @@ export function POSHomePage({
     }
     try {
       const heldInvoice = await cartActions.holdCart(
-        bootstrap.data?.default_order_type === "Sales Order" ? "Sales Order" : "Sales Invoice",
+        orderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
       );
       if (heldInvoice) {
         showToast({ type: "held", invoice: heldInvoice });
