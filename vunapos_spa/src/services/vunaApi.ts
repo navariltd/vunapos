@@ -471,6 +471,7 @@ export function createAndSubmitInvoice(
 		customer?: string;
 		price_list?: string;
 		loyalty_points?: number;
+		invoice_doctype?: string;
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
@@ -523,6 +524,7 @@ export function createInvoiceFromCart(
 		customer?: string;
 		price_list?: string;
 		loyalty_points?: number;
+		invoice_doctype?: string;
 		items: CartItemInput[];
 	},
 ) {

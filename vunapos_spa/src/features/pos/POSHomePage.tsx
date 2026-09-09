@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
-import { ShoppingCart, X } from "lucide-react";
+import { Loader2, ShoppingCart, X } from "lucide-react";
 
 import type {
 	CustomerAddressDTO,
@@ -736,7 +736,9 @@ export function POSHomePage({
       return;
     }
     try {
-      const heldInvoice = await cartActions.holdCart();
+      const heldInvoice = await cartActions.holdCart(
+        bootstrap.data?.default_order_type === "Sales Order" ? "Sales Order" : "Sales Invoice",
+      );
       if (heldInvoice) {
         showToast({ type: "held", invoice: heldInvoice });
         void handleSelectCustomer(undefined, false);
@@ -912,10 +914,9 @@ export function POSHomePage({
 
   if (bootstrap.isLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-sm font-medium text-on-surface-variant">
-          Loading POS workspace...
-        </p>
+      <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm font-medium text-on-surface-variant">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        <span>Loading...</span>
       </div>
     );
   }

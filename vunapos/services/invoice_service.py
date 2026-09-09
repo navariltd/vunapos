@@ -1217,15 +1217,20 @@ def _validate_existing_pricing_permissions(doc, profile):
 			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
 
 
-def create_draft_invoice(pos_profile=None, customer=None, price_list=None):
-	invoice_doctype = _resolve_invoice_doctype()
-	require_create(invoice_doctype)
-	doc, _profile = _build_invoice_doc(
-		pos_profile=pos_profile,
-		customer=customer,
-		invoice_doctype=invoice_doctype,
-		price_list=price_list,
-	)
+def create_draft_invoice(pos_profile=None, customer=None, price_list=None, invoice_doctype=None):
+	invoice_doctype = invoice_doctype or _resolve_invoice_doctype()
+	if invoice_doctype == "Sales Order":
+		require_create(invoice_doctype)
+		doc, _profile = _build_sales_order_doc(pos_profile, customer, price_list)
+	else:
+		invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
+		require_create(invoice_doctype)
+		doc, _profile = _build_invoice_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			invoice_doctype=invoice_doctype,
+			price_list=price_list,
+		)
 	doc.insert(ignore_mandatory=True)
 	return invoice_to_dict(doc)
 
@@ -1667,6 +1672,7 @@ def create_invoice_from_cart(
 	price_list=None,
 	loyalty_points=None,
 	idempotency_key=None,
+	invoice_doctype=None,
 ):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
@@ -1679,6 +1685,7 @@ def create_invoice_from_cart(
 			pos_profile=profile.name,
 			customer=customer,
 			price_list=price_list,
+			invoice_doctype=invoice_doctype,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		if idempotency_key:

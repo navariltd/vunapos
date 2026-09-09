@@ -638,7 +638,7 @@ type CartActions = {
 		salesperson?: string,
 		salespersonToken?: string,
 	) => Promise<SubmitCartResult | null>;
-	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	holdCart: (api: CartApi, orderType?: "Sales Invoice" | "Sales Order") => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
 	editDraftInvoice: (invoiceDoctype: string, invoiceName: string, api: CartApi) => Promise<InvoiceDTO>;
 };
@@ -1487,7 +1487,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 		},
 
-		holdCart: async (api) => {
+		holdCart: async (api, orderType = "Sales Invoice") => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) {
 				return null;
@@ -1518,6 +1518,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						price_list: get().selectedPriceList,
 						items: cartItemsPayload(invoice.items),
 						loyalty_points: invoice.loyalty_points || undefined,
+						invoice_doctype: orderType === "Sales Order" ? "Sales Order" : invoice.source_invoice_doctype || invoice.doctype,
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {
 							invoice_doctype: draftInvoice.doctype,

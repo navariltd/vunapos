@@ -73,7 +73,7 @@ export function useCartActions() {
 			) => submitCartAction(
 				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, shippingAddressName, checkoutFields, orderType, salesperson, salespersonToken,
 			),
-			holdCart: () => holdCartAction(api),
+			holdCart: (orderType?: "Sales Invoice" | "Sales Order") => holdCartAction(api, orderType),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
 			editDraftInvoice: (doctype: string, name: string) => editDraftInvoiceAction(doctype, name, api),
 		}),
