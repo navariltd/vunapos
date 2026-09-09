@@ -42,7 +42,7 @@ import { CloseShiftPage } from "./components/CloseShiftPage";
 import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
-import { ItemSearch } from "./components/ItemSearch";
+import { ItemSearch, type CatalogueView } from "./components/ItemSearch";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import {
@@ -158,6 +158,10 @@ export function POSHomePage({
   onSalespersonVerified,
   onLockSalesperson,
 }: POSHomePageProps) {
+  const [catalogueView, setCatalogueView] = useState<CatalogueView>(() => {
+    if (typeof window === "undefined") return "grid";
+    return window.localStorage.getItem("vunapos.catalogue-view") === "list" ? "list" : "grid";
+  });
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -220,6 +224,10 @@ export function POSHomePage({
   const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+
+  useEffect(() => {
+    window.localStorage.setItem("vunapos.catalogue-view", catalogueView);
+  }, [catalogueView]);
 
   useEffect(() => {
     setCartNewItemPosition(bootstrap.data?.new_item_position);
@@ -1031,6 +1039,8 @@ export function POSHomePage({
               onChange={setItemSearchQuery}
               onScan={handleScanBarcode}
               onOpenCamera={() => setIsBarcodeScannerOpen(true)}
+              view={catalogueView}
+              onViewChange={setCatalogueView}
             />
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
               <ItemGrid
@@ -1040,6 +1050,7 @@ export function POSHomePage({
                 items={items.items}
                 pendingItemCode={pendingItemCode}
                 onAddItem={handleAddItem}
+                view={catalogueView}
               />
             </div>
           </section>
