@@ -4,6 +4,7 @@ from frappe.utils import flt, getdate, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
+from vunapos.services.workflow_service import assert_pos_workflow_editable
 from vunapos.utils.permissions import require_read
 
 
@@ -413,6 +414,13 @@ def get_invoice_details(pos_profile=None, invoice_name=None, invoice_doctype=Non
 		]
 
 	result = invoice_to_dict(doc)
+	can_edit = doc.docstatus == 0
+	if can_edit:
+		try:
+			assert_pos_workflow_editable(doc, profile)
+		except frappe.PermissionError:
+			can_edit = False
+	result["can_edit"] = can_edit
 	if doctype == "Sales Order":
 		order_total = flt(doc.get("rounded_total") or doc.get("grand_total"))
 		result["posting_date"] = doc.get("transaction_date")

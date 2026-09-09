@@ -33,6 +33,7 @@ type Details = InvoiceDTO & {
   opening_entry?: string;
   cashier?: string;
   closing_entry?: string;
+  can_edit?: boolean;
   returns: Array<{
     name: string;
     posting_date: string;
@@ -264,7 +265,7 @@ export function InvoiceDetailsPage({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            {details.docstatus === 0 && onEdit ? (
+            {details.docstatus === 0 && details.can_edit !== false && onEdit ? (
               <Button variant="secondary" onClick={onEdit} title="Edit draft">
                 <span aria-hidden="true">✎</span>
                 <span className="ml-2">Edit</span>
