@@ -88,7 +88,10 @@ def _get_sales_order_history(
 		"docstatus",
 		"creation",
 	]
-	fields = [field for field in fields if meta.has_field(field) or field == "creation"]
+	# ``name`` is Frappe's implicit document identifier and is not always
+	# reported by ``Meta.has_field``. Keep it explicitly so draft-order rows
+	# retain the identifier needed by the POS list and details view.
+	fields = [field for field in fields if field in {"name", "creation"} or meta.has_field(field)]
 	for fieldname in (
 		"vunapos_opening_entry",
 		"vunapos_session_cashier",
