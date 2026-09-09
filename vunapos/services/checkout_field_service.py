@@ -65,6 +65,23 @@ def get_global_checkout_fields(profile=None):
 
 
 def validate_global_checkout_fields(doc, method=None):
+	if doc.doctype == "POS Profile":
+		# A transaction type may have only one workflow configuration row.  Keeping
+		# duplicate rows (even when one is disabled) makes the profile ambiguous
+		# when the workflow metadata is evaluated.
+		seen_workflow_doctypes = set()
+		for row in doc.get("vunapos_workflow_configuration", []):
+			doctype = (row.get("transaction_doctype") or "").strip()
+			if not doctype:
+				continue
+			if doctype in seen_workflow_doctypes:
+				frappe.throw(
+					_(
+						"Transaction DocType {0} can only be configured once in Workflow Configuration."
+					).format(doctype)
+				)
+			seen_workflow_doctypes.add(doctype)
+
 	for row in doc.get("vunapos_checkout_fields", []):
 		doctype = row.get("target_doctype")
 		fieldname = (row.get("fieldname") or "").strip()

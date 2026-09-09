@@ -76,6 +76,20 @@ function setup_workflow_configuration(frm) {
 frappe.ui.form.on("POS Profile", {
 	setup: setup_workflow_configuration,
 	refresh: setup_workflow_configuration,
+	vunapos_workflow_configuration_transaction_doctype(frm, cdt, cdn) {
+		const row = frappe.get_doc(cdt, cdn);
+		const duplicate = (frm.doc.vunapos_workflow_configuration || []).some(
+			(other) =>
+				other.name !== row.name && other.transaction_doctype === row.transaction_doctype
+		);
+		if (!duplicate) return;
+		frappe.msgprint(
+			__(
+				"This transaction DocType is already configured. Each DocType can appear only once."
+			)
+		);
+		frappe.model.set_value(cdt, cdn, "transaction_doctype", "");
+	},
 });
 
 frappe.ui.form.on("POS Profile", {
