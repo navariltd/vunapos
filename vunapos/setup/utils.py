@@ -9,25 +9,37 @@ def ensure_vunapos_custom_fields():
 		custom_field = f"POS Profile-{fieldname}"
 		if frappe.db.exists("Custom Field", custom_field):
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
-	create_custom_fields(
+	custom_fields = (
 		{
 			"POS Settings": [
+				{
+					"fieldname": "vunapos_checkout_section",
+					"label": "Checkout Fields",
+					"fieldtype": "Section Break",
+					"insert_after": "invoice_type",
+				},
 				{
 					"fieldname": "vunapos_checkout_fields",
 					"label": "VunaPOS Checkout Fields",
 					"fieldtype": "Table",
 					"options": "VunaPOS Checkout Field",
-					"insert_after": "vunapos_salesperson_pin_session_minutes",
+					"insert_after": "vunapos_checkout_section",
 					"description": (
 						"Register additional fields that VunaPOS may display and persist during checkout. "
 						"The field must already exist on the selected transaction DocType."
 					),
 				},
 				{
+					"fieldname": "vunapos_security_section",
+					"label": "Security",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_gateway_payment_timeout_minutes",
+				},
+				{
 					"fieldname": "vunapos_salesperson_pin_session_minutes",
 					"label": "Salesperson PIN Session Duration (Minutes)",
 					"fieldtype": "Int",
-					"insert_after": "vunapos_gateway_payment_timeout_minutes",
+					"insert_after": "vunapos_security_section",
 					"description": (
 						"How long a verified salesperson session remains valid. Active sessions are refreshed "
 						"before expiry; inactive sessions are locked when this duration elapses. Maximum: 1440 minutes."
@@ -35,10 +47,16 @@ def ensure_vunapos_custom_fields():
 					"default": "15",
 				},
 				{
+					"fieldname": "vunapos_gateway_section",
+					"label": "Payment Gateway",
+					"fieldtype": "Section Break",
+					"insert_after": "vunapos_checkout_fields",
+				},
+				{
 					"fieldname": "vunapos_gateway_payment_timeout_minutes",
 					"label": "VunaPOS Gateway Payment Timeout (Minutes)",
 					"fieldtype": "Int",
-					"insert_after": "invoice_type",
+					"insert_after": "vunapos_gateway_section",
 					"description": (
 						"Unconsumed pending VunaPOS gateway payment links older than this value are "
 						"expired automatically. Use 0 or blank for the default timeout."
@@ -67,303 +85,6 @@ def ensure_vunapos_custom_fields():
 						"When set, VunaPOS treats this mode as gateway-controlled and blocks "
 						"manual cashier-entered amounts during checkout."
 					),
-				},
-			],
-			"POS Profile": [
-				{
-					"fieldname": "vunapos_workflow_configuration",
-					"label": "Workflow Configuration",
-					"fieldtype": "Table",
-					"options": "VunaPOS Workflow Configuration",
-					"insert_after": "vunapos_tab",
-					"description": "Choose which transaction DocTypes use their active ERPNext Workflow in VunaPOS.",
-				},
-				{
-					"fieldname": "vunapos_checkout_fields",
-					"label": "Checkout Field Overrides",
-					"fieldtype": "Table",
-					"options": "VunaPOS Checkout Field",
-					"insert_after": "vunapos_tab",
-					"description": "Override global VunaPOS checkout fields for this POS Profile.",
-				},
-				{
-					"fieldname": "vunapos_tab",
-					"label": "VunaPOS",
-					"fieldtype": "Tab Break",
-					"insert_after": "column_break_hwfg",
-				},
-				{
-					"fieldname": "vunapos_sales_section",
-					"label": "Sales Settings",
-					"fieldtype": "Section Break",
-					"insert_after": "vunapos_tab",
-				},
-				{
-					"fieldname": "vunapos_item_prices_include_tax",
-					"label": "Item Prices Include Tax",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_sales_section",
-					"description": (
-						"Treat prices for items with an Item Tax Template as tax-inclusive in VunaPOS. "
-						"Leave unchecked to add item taxes on top of the listed price."
-					),
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_allow_credit_sales",
-					"label": "Allow Credit Sales",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_item_prices_include_tax",
-					"description": "Allow VunaPOS invoices to be submitted with an unpaid customer balance.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_auto_allocate_payment_balance",
-					"label": "Automatically Allocate Payment Balance",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_credit_sales",
-					"description": "Assign the remaining balance to the next eligible manual payment mode while entering payments.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_new_item_position",
-					"label": "New Cart Item Position",
-					"fieldtype": "Select",
-					"options": "Bottom\nTop",
-					"insert_after": "vunapos_auto_allocate_payment_balance",
-					"description": "Choose where newly added cart items appear.",
-					"default": "Bottom",
-				},
-				{
-					"fieldname": "vunapos_default_sale_type",
-					"label": "Default Sale Type",
-					"fieldtype": "Select",
-					"options": "Cash Sale\nCredit Sale",
-					"insert_after": "vunapos_allow_credit_sales",
-					"description": "Choose whether VunaPOS checkout starts as a cash or credit sale.",
-					"default": "Cash Sale",
-					"depends_on": "eval:doc.vunapos_allow_credit_sales",
-				},
-				{
-					"fieldname": "vunapos_allow_price_list_switching",
-					"label": "Allow Price List Switching",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_default_sale_type",
-					"description": "Allow cashiers to select an approved selling price list for one VunaPOS sale.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_allowed_price_lists",
-					"label": "Allowed Price Lists",
-					"fieldtype": "Table",
-					"options": "VunaPOS Allowed Price List",
-					"insert_after": "vunapos_allow_price_list_switching",
-					"depends_on": "eval:doc.vunapos_allow_price_list_switching",
-				},
-				{
-					"fieldname": "vunapos_queue_column_break",
-					"fieldtype": "Column Break",
-					"insert_after": "vunapos_allowed_price_lists",
-				},
-				{
-					"fieldname": "vunapos_enable_background_submission",
-					"label": "Enable Background Invoice Submission",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_queue_column_break",
-					"description": (
-						"Accept validated VunaPOS sales after stock is reserved and submit their invoice "
-						"in a background worker. Requires Enable Stock Reservation in Stock Settings; "
-						"otherwise VunaPOS uses direct submission."
-					),
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_queue_max_attempts",
-					"label": "Background Submission Attempts",
-					"fieldtype": "Int",
-					"insert_after": "vunapos_enable_background_submission",
-					"description": "Maximum number of background submission attempts before review is required.",
-					"default": "3",
-					"depends_on": "eval:doc.vunapos_enable_background_submission",
-				},
-				{
-					"fieldname": "vunapos_queue_processing_timeout_minutes",
-					"label": "Background Processing Timeout (Minutes)",
-					"fieldtype": "Int",
-					"insert_after": "vunapos_queue_max_attempts",
-					"description": "Time after which an abandoned processing attempt may be recovered.",
-					"default": "5",
-					"depends_on": "eval:doc.vunapos_enable_background_submission",
-				},
-				{
-					"fieldname": "vunapos_operations_section",
-					"label": "POS Operations",
-					"fieldtype": "Section Break",
-					"insert_after": "vunapos_queue_processing_timeout_minutes",
-				},
-				{
-					"fieldname": "vunapos_pin_security_section",
-					"label": "PIN Security",
-					"fieldtype": "Section Break",
-					"insert_after": "vunapos_sales_section",
-				},
-				{
-					"fieldname": "vunapos_enable_salesperson_pin",
-					"label": "Require Salesperson PIN",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_pin_security_section",
-					"description": "Lock VunaPOS until an enabled salesperson PIN is verified.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_pin_users",
-					"label": "Salespeople and Managers",
-					"fieldtype": "Table",
-					"options": "VunaPOS POS PIN User",
-					"insert_after": "vunapos_enable_salesperson_pin",
-					"depends_on": "eval:doc.vunapos_enable_salesperson_pin",
-				},
-				{
-					"fieldname": "vunapos_require_manager_pin_item_removal",
-					"label": "Require Manager PIN to Remove Items",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_pin_users",
-					"description": "Require an enabled manager PIN before a cashier can remove a cart item.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_pin_max_attempts",
-					"label": "PIN Attempts Before Lockout",
-					"fieldtype": "Int",
-					"insert_after": "vunapos_require_manager_pin_item_removal",
-					"description": "Maximum failed PIN attempts before temporary lockout.",
-					"default": "5",
-					"depends_on": "eval:doc.vunapos_enable_salesperson_pin || doc.vunapos_require_manager_pin_item_removal",
-				},
-				{
-					"fieldname": "vunapos_pin_lockout_minutes",
-					"label": "PIN Lockout Duration (Minutes)",
-					"fieldtype": "Int",
-					"insert_after": "vunapos_pin_max_attempts",
-					"description": "Temporary lockout duration after too many failed PIN attempts.",
-					"default": "5",
-					"depends_on": "eval:doc.vunapos_enable_salesperson_pin || doc.vunapos_require_manager_pin_item_removal",
-				},
-				{
-					"fieldname": "vunapos_require_pin_before_every_sale",
-					"label": "Require PIN Before Every Sale",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_pin_lockout_minutes",
-					"description": "Automatically lock the POS after each completed sale and require salesperson verification before the next sale.",
-					"default": "0",
-					"depends_on": "eval:doc.vunapos_enable_salesperson_pin",
-				},
-				{
-					"fieldname": "vunapos_default_order_type",
-					"label": "Default Order Type",
-					"fieldtype": "Select",
-					"options": "Sales Invoice\nSales Order",
-					"insert_after": "vunapos_operations_section",
-					"description": "Choose the default transaction type shown in the VunaPOS header.",
-					"default": "Sales Invoice",
-				},
-				{
-					"fieldname": "vunapos_allow_service_items",
-					"label": "Allow Service Items",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_default_order_type",
-					"description": "Allow non-stock service items to be sold from VunaPOS.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_allow_delivery_charges",
-					"label": "Allow Delivery Charges",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_service_items",
-					"description": "Allow the configured delivery-charge service item in VunaPOS.",
-					"default": "0",
-				},
-				{
-					"fieldname": "vunapos_delivery_charge_item",
-					"label": "Delivery Charge Item",
-					"fieldtype": "Link",
-					"options": "Item",
-					"link_filters": '[["Item","is_stock_item","=",0],["Item","is_sales_item","=",1]]',
-					"insert_after": "vunapos_allow_delivery_charges",
-					"depends_on": "eval:doc.vunapos_allow_delivery_charges",
-				},
-				{
-					"fieldname": "vunapos_allow_delivery_charge_change",
-					"label": "Allow Delivery Charge Change",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_delivery_charge_item",
-					"description": "Allow cashiers to enter or change the delivery amount during checkout.",
-					"default": "1",
-					"depends_on": "eval:doc.vunapos_allow_delivery_charges",
-				},
-				{
-					"fieldname": "vunapos_allow_order_type_change",
-					"label": "Allow Order Type Change",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_default_order_type",
-					"description": "Allow cashiers to switch between configured order types during a sale.",
-					"default": "1",
-				},
-				{
-					"fieldname": "vunapos_allow_customer_management",
-					"label": "Allow Customer Management",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_order_type_change",
-					"description": "Allow access to the VunaPOS Customers page and customer detail views.",
-					"default": "1",
-				},
-				{
-					"fieldname": "vunapos_allow_customer_creation",
-					"label": "Allow Customer Creation",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_customer_management",
-					"description": "Allow cashiers to create simple customer records from VunaPOS.",
-					"default": "1",
-				},
-				{
-					"fieldname": "vunapos_operations_column_break",
-					"fieldtype": "Column Break",
-					"insert_after": "vunapos_allow_customer_creation",
-				},
-				{
-					"fieldname": "vunapos_allow_customer_payments",
-					"label": "Allow Customer Payments",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_operations_column_break",
-					"description": "Allow cashiers to receive outstanding invoice payments and customer advances.",
-					"default": "1",
-				},
-				{
-					"fieldname": "vunapos_allow_payment_reconciliation",
-					"label": "Allow Payment Reconciliation",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_customer_payments",
-					"description": "Allow cashiers to allocate and reconcile existing customer credits.",
-					"default": "1",
-					"depends_on": "eval:doc.vunapos_allow_customer_payments",
-				},
-				{
-					"fieldname": "vunapos_allow_sales_order_payments",
-					"label": "Allow Sales Order Advance Payments",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_customer_payments",
-					"description": "Allow cashiers to collect advance payments against submitted Sales Orders during checkout.",
-					"default": "0",
-					"depends_on": "eval:doc.vunapos_allow_customer_payments",
-				},
-				{
-					"fieldname": "vunapos_allow_payment_history",
-					"label": "Allow Payment History",
-					"fieldtype": "Check",
-					"insert_after": "vunapos_allow_payment_reconciliation",
-					"description": "Allow cashiers to view VunaPOS customer payment history.",
-					"default": "1",
-					"depends_on": "eval:doc.vunapos_allow_customer_payments",
 				},
 			],
 			"Sales Invoice Item": [
@@ -912,8 +633,8 @@ def ensure_vunapos_custom_fields():
 				},
 			],
 		},
-		ignore_validate=True,
 	)
+	create_custom_fields(custom_fields, ignore_validate=True)
 	ensure_sales_invoice_stock_reservation_option()
 
 

@@ -10,6 +10,15 @@ from frappe.utils import cint, flt, today
 from pypika import Order
 
 from vunapos.dto.item import item_to_dict
+from vunapos.services.catalogue_cache import (
+	get as get_catalogue_cache,
+)
+from vunapos.services.catalogue_cache import (
+	item_search_key,
+)
+from vunapos.services.catalogue_cache import (
+	set as set_catalogue_cache,
+)
 from vunapos.services.price_list_service import get_default_price_list, resolve_price_list
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.utils.permissions import require_read
@@ -684,7 +693,9 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 	return payload
 
 
-def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+def _search_items_uncached(
+	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None
+):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
@@ -847,6 +858,31 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		)
 		for item_code in item_codes
 	]
+
+
+def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+	"""Search the POS catalogue, using a short-lived Redis snapshot for stable reads."""
+	if since or frappe.flags.in_test:
+		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since)
+	profile = resolve_pos_profile(pos_profile)
+	resolved_customer = customer or profile.customer
+	resolved_price_list = resolve_price_list(
+		profile, customer=resolved_customer, requested_price_list=price_list
+	)
+	key = item_search_key(
+		frappe.session.user,
+		(query or "").strip(),
+		profile.name,
+		resolved_customer,
+		resolved_price_list,
+		cint(limit),
+	)
+	cached = get_catalogue_cache(key)
+	if cached is not None:
+		return cached
+	result = _search_items_uncached(query, profile.name, resolved_customer, resolved_price_list, limit, None)
+	set_catalogue_cache(key, result)
+	return result
 
 
 def get_item_details_for_pos(item_code, pos_profile=None, customer=None, price_list=None):

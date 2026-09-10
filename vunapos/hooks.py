@@ -181,6 +181,14 @@ doc_events["POS Profile"] = {
 	"on_trash": "vunapos.realtime.publish_configuration_change",
 }
 
+# Stock and tracking changes do not publish POS configuration events, but they
+# must invalidate cached catalogue balances immediately.
+for _doctype in ("Bin", "Stock Ledger Entry", "Batch", "Serial No", "Serial and Batch Bundle"):
+	doc_events[_doctype] = {
+		"on_update": "vunapos.services.catalogue_cache.invalidate_catalogue_cache",
+		"on_trash": "vunapos.services.catalogue_cache.invalidate_catalogue_cache",
+	}
+
 doc_events.update(
 	{
 		"VunaPOS Gateway Payment Link": {
