@@ -17,11 +17,11 @@ def assert_pos_workflow_editable(doc, profile):
 	state = doc.get(workflow.workflow_state_field)
 	state_row = next((row for row in workflow.states if row.state == state), None)
 	if not state_row:
-		frappe.throw("The transaction has no valid workflow state.")
+		frappe.throw(frappe._("The transaction has no valid workflow state."))
 	allowed = state_row.allow_edit
 	if allowed and allowed != "All" and allowed not in frappe.get_roles():
 		frappe.throw(
-			"You are not allowed to edit this transaction in its current workflow state.",
+			frappe._("You are not allowed to edit this transaction in its current workflow state."),
 			frappe.PermissionError,
 		)
 
@@ -33,17 +33,17 @@ def apply_pos_workflow_action(
 	pos_profile: str | None = None,
 ):
 	if doctype not in SUPPORTED_WORKFLOW_DOCTYPES:
-		frappe.throw("This transaction type is not supported by VunaPOS.")
+		frappe.throw(frappe._("This transaction type is not supported by VunaPOS."))
 	doc = frappe.get_doc(doctype, docname)
 	profile = frappe.get_doc("POS Profile", pos_profile or doc.get("pos_profile"))
 	if doc.get("pos_profile") and doc.get("pos_profile") != profile.name:
-		frappe.throw("This transaction does not belong to the selected POS Profile.")
+		frappe.throw(frappe._("This transaction does not belong to the selected POS Profile."))
 	if not workflow_enabled_for(profile, doctype):
-		frappe.throw("Workflow actions are not enabled for this POS Profile.")
+		frappe.throw(frappe._("Workflow actions are not enabled for this POS Profile."))
 	if doc.docstatus != 0:
-		frappe.throw("Only draft transactions can receive a POS workflow action.")
+		frappe.throw(frappe._("Only draft transactions can receive a POS workflow action."))
 	if not cstr(action).strip():
-		frappe.throw("A workflow action is required.")
+		frappe.throw(frappe._("A workflow action is required."))
 	result = apply_workflow(doc, cstr(action).strip())
 	return {
 		"doctype": result.doctype,
@@ -56,11 +56,11 @@ def apply_pos_workflow_action(
 def get_pos_workflow_actions(doctype: str, docname: str, pos_profile: str | None = None):
 	"""Return native permission- and condition-aware actions for a POS draft."""
 	if doctype not in SUPPORTED_WORKFLOW_DOCTYPES:
-		frappe.throw("This transaction type is not supported by VunaPOS.")
+		frappe.throw(frappe._("This transaction type is not supported by VunaPOS."))
 	doc = frappe.get_doc(doctype, docname)
 	profile = frappe.get_doc("POS Profile", pos_profile or doc.get("pos_profile"))
 	if doc.get("pos_profile") and doc.get("pos_profile") != profile.name:
-		frappe.throw("This transaction does not belong to the selected POS Profile.")
+		frappe.throw(frappe._("This transaction does not belong to the selected POS Profile."))
 	if not workflow_enabled_for(profile, doctype) or doc.docstatus != 0:
 		return []
 	return [
