@@ -53,7 +53,10 @@ fixtures = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-doctype_js = {"POS Profile": "public/js/pos_profile.js"}
+doctype_js = {
+	"POS Profile": "public/js/pos_profile.js",
+	"POS Settings": "public/js/pos_profile.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -167,6 +170,24 @@ doc_events = {
 		"Mode of Payment",
 	)
 }
+doc_events["POS Settings"] = {
+	"validate": "vunapos.services.checkout_field_service.validate_global_checkout_fields",
+	"on_update": "vunapos.realtime.publish_configuration_change",
+	"on_trash": "vunapos.realtime.publish_configuration_change",
+}
+doc_events["POS Profile"] = {
+	"validate": "vunapos.services.checkout_field_service.validate_global_checkout_fields",
+	"on_update": "vunapos.realtime.publish_configuration_change",
+	"on_trash": "vunapos.realtime.publish_configuration_change",
+}
+
+# Stock and tracking changes do not publish POS configuration events, but they
+# must invalidate cached catalogue balances immediately.
+for _doctype in ("Bin", "Stock Ledger Entry", "Batch", "Serial No", "Serial and Batch Bundle"):
+	doc_events[_doctype] = {
+		"on_update": "vunapos.services.catalogue_cache.invalidate_catalogue_cache",
+		"on_trash": "vunapos.services.catalogue_cache.invalidate_catalogue_cache",
+	}
 
 doc_events.update(
 	{

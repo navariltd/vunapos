@@ -10,6 +10,15 @@ from frappe.utils import cint, flt, today
 from pypika import Order
 
 from vunapos.dto.item import item_to_dict
+from vunapos.services.catalogue_cache import (
+	get as get_catalogue_cache,
+)
+from vunapos.services.catalogue_cache import (
+	item_search_key,
+)
+from vunapos.services.catalogue_cache import (
+	set as set_catalogue_cache,
+)
 from vunapos.services.price_list_service import get_default_price_list, resolve_price_list
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.utils.permissions import require_read
@@ -54,6 +63,8 @@ def _get_rate(item_code, profile, price_list=None):
 def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
+	if item.get("is_fixed_asset"):
+		frappe.throw(_("Fixed Asset item {0} cannot be sold through VunaPOS.").format(item_code))
 	price_list = price_list or get_priority_price_list(customer=profile.customer, pos_profile=profile)
 	uom_rates = _get_uom_rate_map([item_code], price_list, profile.customer)
 	uoms = []
@@ -288,7 +299,7 @@ def _get_variant_count_map(item_codes):
 		return {}
 	rows = frappe.get_all(
 		"Item",
-		filters={"variant_of": ["in", item_codes], "disabled": 0, "is_sales_item": 1},
+		filters={"variant_of": ["in", item_codes], "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
 		fields=["variant_of"],
 	)
 	counts = {}
@@ -628,7 +639,11 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 		row.item_code
 		for row in [*item_barcode_rows, *serial_rows, *batch_rows]
 		if row.item_code
-		and frappe.db.get_value("Item", {"name": row.item_code, "disabled": 0, "is_sales_item": 1}, "name")
+		and frappe.db.get_value(
+			"Item",
+			{"name": row.item_code, "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
+			"name",
+		)
 	}
 	if len(item_codes) != 1:
 		if not item_codes:
@@ -678,7 +693,9 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 	return payload
 
 
-def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+def _search_items_uncached(
+	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None
+):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
@@ -689,7 +706,7 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	# Keep variant children out of the main catalogue. Cashiers select a template
 	# first and choose its concrete variant in the variant picker; barcode scans
 	# still resolve an exact variant through the separate fallback lookup below.
-	filters = {"disabled": 0, "is_sales_item": 1}
+	filters = {"disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0}
 	query_filters = dict(filters)
 	query_filters["variant_of"] = ["is", "not set"]
 	or_filters = []
@@ -843,6 +860,31 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 	]
 
 
+def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+	"""Search the POS catalogue, using a short-lived Redis snapshot for stable reads."""
+	if since or frappe.flags.in_test:
+		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since)
+	profile = resolve_pos_profile(pos_profile)
+	resolved_customer = customer or profile.customer
+	resolved_price_list = resolve_price_list(
+		profile, customer=resolved_customer, requested_price_list=price_list
+	)
+	key = item_search_key(
+		frappe.session.user,
+		(query or "").strip(),
+		profile.name,
+		resolved_customer,
+		resolved_price_list,
+		cint(limit),
+	)
+	cached = get_catalogue_cache(key)
+	if cached is not None:
+		return cached
+	result = _search_items_uncached(query, profile.name, resolved_customer, resolved_price_list, limit, None)
+	set_catalogue_cache(key, result)
+	return result
+
+
 def get_item_details_for_pos(item_code, pos_profile=None, customer=None, price_list=None):
 	profile = resolve_pos_profile(pos_profile)
 	if customer:
@@ -880,11 +922,13 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 		profile, customer=customer or profile.customer, requested_price_list=price_list
 	)
 	template = frappe.get_cached_doc("Item", template_item_code)
+	if template.get("is_fixed_asset"):
+		frappe.throw(_("Fixed Asset item {0} cannot be sold through VunaPOS.").format(template_item_code))
 	if not template.has_variants:
 		frappe.throw(_("Item {0} is not a variant template").format(template_item_code))
 	variants = frappe.get_all(
 		"Item",
-		filters={"variant_of": template_item_code, "disabled": 0, "is_sales_item": 1},
+		filters={"variant_of": template_item_code, "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
 		fields=["name", "item_name", "description", "item_group", "variant_based_on"],
 		order_by="item_name asc",
 	)

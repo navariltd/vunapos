@@ -49,6 +49,9 @@ export class VunaApiError extends Error {
 export const vunaMethods = {
 	getBootstrapData: "vunapos.api.profile.get_bootstrap_data",
 	getPosProfilesForUser: "vunapos.api.profile.get_pos_profiles_for_user",
+	applyWorkflowAction: "vunapos.api.profile.apply_workflow_action",
+	getWorkflowActions: "vunapos.api.profile.get_workflow_actions",
+	searchCheckoutLinkOptions: "vunapos.api.profile.search_checkout_link_options",
 	searchItems: "vunapos.api.item.search_items",
 	resolveBarcode: "vunapos.api.item.resolve_barcode",
 	getItemDetails: "vunapos.api.item.get_item_details",
@@ -139,8 +142,25 @@ export function getBootstrapData(call: FrappeCall, posProfile?: string) {
 	return callAndUnwrap<BootstrapData>(call, { pos_profile: posProfile });
 }
 
+export function searchCheckoutLinkOptions(
+	call: FrappeCall,
+	params: { doctype: string; fieldname: string; query?: string },
+) {
+	return callAndUnwrap<Array<{ value: string; label: string }>>(
+		call,
+		params,
+	);
+}
+
 export function getClosingPreview(call: FrappeCall, posProfile: string) {
 	return callAndUnwrap<POSClosingPreviewDTO>(call, { pos_profile: posProfile });
+}
+
+export function getWorkflowActions(
+	call: FrappeCall,
+	params: { doctype: string; docname: string; pos_profile?: string },
+) {
+	return callAndUnwrap<Array<{ action: string; next_state: string }>>(call, params);
 }
 
 export function closePosSession(
@@ -395,11 +415,13 @@ export function submitInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -417,11 +439,13 @@ export function checkoutInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -436,6 +460,10 @@ type CartItemInput = {
 	pricing_override?: { type: string; value: number };
 };
 
+export function applyWorkflowAction(call: FrappeCall, params: { doctype: string; docname: string; action: string; pos_profile?: string }) {
+	return callAndUnwrap<{ doctype: string; name: string; docstatus: number; workflow_state?: string }>(call, params);
+}
+
 export function createAndSubmitInvoice(
 	call: FrappeCall,
 	params: {
@@ -443,6 +471,7 @@ export function createAndSubmitInvoice(
 		customer?: string;
 		price_list?: string;
 		loyalty_points?: number;
+		invoice_doctype?: string;
 		items: CartItemInput[];
 		payments?: PaymentInput[];
 		idempotency_key?: string;
@@ -452,12 +481,14 @@ export function createAndSubmitInvoice(
 		shipping_address_name?: string;
 		salesperson?: string;
 		salesperson_token?: string;
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -475,12 +506,14 @@ export function createAndSubmitSalesOrder(
 		salesperson?: string;
 		salesperson_token?: string;
 		payments?: PaymentInput[];
+		checkout_fields?: Record<string, string | number | boolean | null>;
 	},
 ) {
 	return callAndUnwrap<InvoiceDTO>(call, {
 		...params,
 		items: JSON.stringify(params.items),
 		payments: JSON.stringify(params.payments || []),
+		checkout_fields: params.checkout_fields ? JSON.stringify(params.checkout_fields) : undefined,
 	});
 }
 
@@ -491,6 +524,7 @@ export function createInvoiceFromCart(
 		customer?: string;
 		price_list?: string;
 		loyalty_points?: number;
+		invoice_doctype?: string;
 		items: CartItemInput[];
 	},
 ) {

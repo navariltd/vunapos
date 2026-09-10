@@ -4,12 +4,26 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from vunapos.api.profile import get_bootstrap_data
+from vunapos.services.checkout_field_service import validate_global_checkout_fields
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.setup.utils import ensure_vunapos_custom_fields
 from vunapos.tests.helpers import ensure_test_pos_profile, set_invoice_mode
 
 
 class TestVunaPOSProfile(IntegrationTestCase):
+	def test_workflow_configuration_rejects_duplicate_transaction_doctypes(self):
+		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
+		profile.set(
+			"vunapos_workflow_configuration",
+			[
+				{"doctype": "VunaPOS Workflow Configuration", "transaction_doctype": "Sales Order"},
+				{"doctype": "VunaPOS Workflow Configuration", "transaction_doctype": "Sales Order"},
+			],
+		)
+
+		with self.assertRaises(frappe.ValidationError):
+			validate_global_checkout_fields(profile)
+
 	def test_default_profile_prefers_the_cashiers_open_session(self):
 		with (
 			patch(
