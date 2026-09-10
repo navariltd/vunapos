@@ -29,6 +29,7 @@ export function useCartActions() {
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
+	const editDraftInvoiceAction = useCartStore((s) => s.editDraftInvoice);
 
 	return useMemo(
 		() => ({
@@ -64,15 +65,17 @@ export function useCartActions() {
 				dueDate?: string,
 				loyaltyPoints?: number,
 				taxId?: string,
-				shippingAddressName?: string,
-				orderType?: "Sales Invoice" | "Sales Order",
+			shippingAddressName?: string,
+			checkoutFields?: Record<string, string | number | boolean | null>,
+			orderType?: "Sales Invoice" | "Sales Order",
 				salesperson?: string,
 				salespersonToken?: string,
 			) => submitCartAction(
-				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, shippingAddressName, orderType, salesperson, salespersonToken,
+				payments, printFormat, idempotencyKey, api, isOnline, isCreditSale, dueDate, loyaltyPoints, taxId, shippingAddressName, checkoutFields, orderType, salesperson, salespersonToken,
 			),
-			holdCart: () => holdCartAction(api),
+			holdCart: (orderType?: "Sales Invoice" | "Sales Order") => holdCartAction(api, orderType),
 			restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO) => restoreHeldInvoiceAction(heldInvoice, api),
+			editDraftInvoice: (doctype: string, name: string) => editDraftInvoiceAction(doctype, name, api),
 		}),
 		[
 			api,

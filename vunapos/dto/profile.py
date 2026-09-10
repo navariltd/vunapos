@@ -3,9 +3,11 @@ from erpnext.accounts.utils import get_currency_precision
 from frappe.utils import cint
 
 from vunapos.dto.customer import customer_to_dict
+from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.checkout_queue_service import get_queue_limits
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
+from vunapos.services.workflow_service import get_pos_workflow_metadata
 
 
 def profile_to_dict(profile, invoice_mode):
@@ -108,4 +110,6 @@ def profile_to_dict(profile, invoice_mode):
 		"print_format": profile.get("print_format"),
 		"invoice_mode": invoice_mode,
 		"background_submission": queue,
+		"checkout_fields": get_global_checkout_fields(profile),
+		"workflow": get_pos_workflow_metadata(profile),
 	}

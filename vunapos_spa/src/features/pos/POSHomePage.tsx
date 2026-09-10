@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
-import { ShoppingCart, X } from "lucide-react";
+import { Loader2, ShoppingCart, X } from "lucide-react";
 
 import type {
 	CustomerAddressDTO,
@@ -24,6 +24,8 @@ import {
 import {
   getItemDetails,
   getCustomerAddresses,
+  searchCheckoutLinkOptions,
+  applyWorkflowAction,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -40,7 +42,7 @@ import { CloseShiftPage } from "./components/CloseShiftPage";
 import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
 import { ItemGrid } from "./components/ItemGrid";
-import { ItemSearch } from "./components/ItemSearch";
+import { ItemSearch, type CatalogueView } from "./components/ItemSearch";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import {
@@ -156,6 +158,10 @@ export function POSHomePage({
   onSalespersonVerified,
   onLockSalesperson,
 }: POSHomePageProps) {
+  const [catalogueView, setCatalogueView] = useState<CatalogueView>(() => {
+    if (typeof window === "undefined") return "grid";
+    return window.localStorage.getItem("vunapos.catalogue-view") === "list" ? "list" : "grid";
+  });
   const [itemSearchQuery, setItemSearchQuery] = useState("");
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -204,6 +210,10 @@ export function POSHomePage({
 
   const items = useItemSearch(itemSearchQuery);
   const cartInvoice = useCartStore((s) => s.invoice);
+  // Drafts edited from history retain their original doctype. Prefer it over
+  // the workspace selector so Sales Orders never enter the invoice checkout path.
+  const effectiveOrderType: OrderType =
+    cartInvoice?.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
   const cartQuantity =
     cartInvoice?.items.reduce(
       (total, item) => total + Number(item.qty || 0),
@@ -220,6 +230,10 @@ export function POSHomePage({
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
 
   useEffect(() => {
+    window.localStorage.setItem("vunapos.catalogue-view", catalogueView);
+  }, [catalogueView]);
+
+  useEffect(() => {
     setCartNewItemPosition(bootstrap.data?.new_item_position);
   }, [bootstrap.data?.new_item_position, setCartNewItemPosition]);
   const cartActions = useCartActions();
@@ -227,6 +241,8 @@ export function POSHomePage({
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
+  const checkoutLinkOptionsCall = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
+  const workflowActionCall = useFrappePostCall(vunaMethods.applyWorkflowAction);
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
@@ -322,7 +338,7 @@ export function POSHomePage({
 
   const error = pageError || bootstrap.error || items.error;
 
-  useConfigurationRealtime(async (event) => {
+  useConfigurationRealtime(async () => {
     if (!isReachable || navigator.onLine === false) return;
     try {
       await hydrate(bootstrap.data?.pos_profile);
@@ -345,10 +361,6 @@ export function POSHomePage({
         else if (cartState.invoice?.items.length)
           await cartActions.refreshCartConfiguration();
       }
-      showToast({
-        type: "info",
-        message: `${event.doctype || "POS"} configuration updated.`,
-      });
     } catch (refreshError) {
       showToast({
         type: "error",
@@ -732,7 +744,9 @@ export function POSHomePage({
       return;
     }
     try {
-      const heldInvoice = await cartActions.holdCart();
+      const heldInvoice = await cartActions.holdCart(
+        effectiveOrderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
+      );
       if (heldInvoice) {
         showToast({ type: "held", invoice: heldInvoice });
         void handleSelectCustomer(undefined, false);
@@ -812,6 +826,8 @@ export function POSHomePage({
     loyaltyPoints?: number,
     taxId?: string,
     shippingAddressName?: string,
+    checkoutFields?: Record<string, string | number | boolean | null>,
+	workflowAction?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -833,10 +849,24 @@ export function POSHomePage({
         loyaltyPoints,
         taxId,
         shippingAddressName,
-        orderType,
+        checkoutFields,
+        effectiveOrderType,
         salesperson?.name,
         salesperson?.token,
       );
+		if (workflowAction && result?.invoice?.docstatus === 0) {
+			try {
+				await applyWorkflowAction(workflowActionCall.call, {
+					doctype: result.invoice.doctype,
+					docname: result.invoice.name,
+					action: workflowAction,
+					pos_profile: bootstrap.data?.pos_profile,
+				});
+				showToast({ type: "info", message: `Workflow action “${workflowAction}” applied.` });
+			} catch (workflowError) {
+				showToast({ type: "error", message: workflowError instanceof Error ? workflowError.message : "Workflow action could not be applied." });
+			}
+		}
       setIsCheckoutOpen(false);
       if (bootstrap.data?.require_pin_before_every_sale) {
         onLockSalesperson?.();
@@ -892,10 +922,9 @@ export function POSHomePage({
 
   if (bootstrap.isLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <p className="text-sm font-medium text-on-surface-variant">
-          Loading POS workspace...
-        </p>
+      <div className="flex min-h-[60vh] items-center justify-center gap-2 text-sm font-medium text-on-surface-variant">
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        <span>Loading...</span>
       </div>
     );
   }
@@ -918,6 +947,21 @@ export function POSHomePage({
             onStartSale={(customer) => {
               void handleSelectCustomer(customer);
               navigateToPosPage("Home");
+            }}
+            onEdit={async () => {
+              try {
+                await cartActions.editDraftInvoice(
+                  getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
+                  getInvoiceFromPath(currentPath) || "",
+                );
+                navigateToPosPage("Home");
+                setIsCartOpen(true);
+              } catch (err) {
+                showToast({
+                  type: "error",
+                  message: err instanceof Error ? err.message : "Unable to edit draft",
+                });
+              }
             }}
           />
         ) : (
@@ -999,6 +1043,8 @@ export function POSHomePage({
               onChange={setItemSearchQuery}
               onScan={handleScanBarcode}
               onOpenCamera={() => setIsBarcodeScannerOpen(true)}
+              view={catalogueView}
+              onViewChange={setCatalogueView}
             />
             <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
               <ItemGrid
@@ -1008,6 +1054,7 @@ export function POSHomePage({
                 items={items.items}
                 pendingItemCode={pendingItemCode}
                 onAddItem={handleAddItem}
+                view={catalogueView}
               />
             </div>
           </section>
@@ -1147,7 +1194,7 @@ export function POSHomePage({
         </div>
       ) : null}
 
-      <CheckoutDialog
+          <CheckoutDialog
         allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
@@ -1169,6 +1216,9 @@ export function POSHomePage({
         isOpen={isCheckoutOpen}
         modesOfPayment={paymentModes}
         customerLoyalty={customerLoyalty.data}
+          checkoutFields={bootstrap.data?.checkout_fields}
+          workflow={bootstrap.data?.workflow}
+          onSearchCheckoutLinkOptions={(params) => searchCheckoutLinkOptions(checkoutLinkOptionsCall.call, params)}
         onClear={() => {
           if (handleClearCart(true)) setIsCheckoutOpen(false);
         }}
@@ -1210,7 +1260,7 @@ export function POSHomePage({
         onPreviewLoyalty={(points) =>
           cartActions.previewLoyaltyRedemption(points)
         }
-        orderType={orderType}
+            orderType={effectiveOrderType}
         posProfile={bootstrap.data?.pos_profile}
       />
 

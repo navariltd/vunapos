@@ -2,6 +2,7 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import type { ItemDTO } from "../types";
 import { ItemCard } from "./ItemCard";
 import { ItemListRow } from "./ItemListRow";
+import type { CatalogueView } from "./ItemSearch";
 
 type ItemGridProps = {
   currency?: string;
@@ -10,6 +11,7 @@ type ItemGridProps = {
   items?: ItemDTO[];
   pendingItemCode?: string | null;
   onAddItem: (item: ItemDTO) => void;
+  view?: CatalogueView;
 };
 
 export function ItemGrid({
@@ -19,6 +21,7 @@ export function ItemGrid({
   items,
   pendingItemCode,
   onAddItem,
+  view = "grid",
 }: ItemGridProps) {
   if (isLoading && items?.length === 0) {
     return (
@@ -38,7 +41,7 @@ export function ItemGrid({
     );
   }
 
-  return hideImages ? (
+  return hideImages || view === "list" ? (
     <div>
       {items?.map((item) => (
         <ItemListRow

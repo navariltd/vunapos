@@ -4,6 +4,7 @@ from frappe.utils import flt, getdate, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
+from vunapos.services.workflow_service import assert_pos_workflow_editable
 from vunapos.utils.permissions import require_read
 
 
@@ -22,6 +23,8 @@ def _status(row):
 
 
 def _sales_order_status(row):
+	if row.docstatus == 0:
+		return "Draft"
 	if row.docstatus == 2:
 		return "Cancelled"
 	total = flt(row.rounded_total or row.grand_total)
@@ -44,6 +47,7 @@ def _get_sales_order_history(
 	current_shift=1,
 	start=0,
 	page_length=50,
+	draft_only=False,
 ):
 	page_length = min(max(int(page_length or 50), 1), 200)
 	start = max(int(start or 0), 0)
@@ -52,7 +56,7 @@ def _get_sales_order_history(
 		"company": profile.company,
 		"vunapos_pos_profile": profile.name,
 		"vunapos_invoice": 1,
-		"docstatus": ["in", [1, 2]],
+		"docstatus": 0 if draft_only else ["in", [1, 2]],
 	}
 	opening_entry = None
 	if customer:
@@ -73,6 +77,7 @@ def _get_sales_order_history(
 	fields = [
 		"name",
 		"transaction_date",
+		"transaction_time",
 		"customer",
 		"customer_name",
 		"currency",
@@ -82,7 +87,12 @@ def _get_sales_order_history(
 		"total_qty",
 		"delivery_date",
 		"docstatus",
+		"creation",
 	]
+	# ``name`` is Frappe's implicit document identifier and is not always
+	# reported by ``Meta.has_field``. Keep it explicitly so draft-order rows
+	# retain the identifier needed by the POS list and details view.
+	fields = [field for field in fields if field in {"name", "creation"} or meta.has_field(field)]
 	for fieldname in (
 		"vunapos_opening_entry",
 		"vunapos_session_cashier",
@@ -143,6 +153,7 @@ def _get_sales_order_history(
 				"name": row.name,
 				"doctype": "Sales Order",
 				"posting_date": row.transaction_date,
+				"posting_time": row.get("transaction_time") or row.get("creation"),
 				"customer": row.customer,
 				"customer_name": row.customer_name,
 				"currency": row.currency,
@@ -170,7 +181,7 @@ def _get_sales_order_history(
 		"has_more": len(result) > start + page_length,
 		"opening_entry": (opening_entry.name if frappe.utils.cint(current_shift) and opening_entry else None),
 		"summary": {
-			"invoice_count": len(active_rows),
+			"invoice_count": len(result),
 			"returns_count": 0,
 			"gross_sales": sum(flt(row["grand_total"]) for row in active_rows),
 			"returns": 0,
@@ -209,6 +220,20 @@ def get_invoice_history(
 			current_shift=current_shift,
 			start=start,
 			page_length=page_length,
+		)
+	if document_type == "Draft Order":
+		return _get_sales_order_history(
+			profile,
+			invoice=invoice,
+			customer=customer,
+			from_date=from_date,
+			to_date=to_date,
+			status=status,
+			payment_mode=payment_mode,
+			current_shift=current_shift,
+			start=start,
+			page_length=page_length,
+			draft_only=True,
 		)
 	doctype = get_invoice_mode()
 	filters = {
@@ -389,6 +414,13 @@ def get_invoice_details(pos_profile=None, invoice_name=None, invoice_doctype=Non
 		]
 
 	result = invoice_to_dict(doc)
+	can_edit = doc.docstatus == 0
+	if can_edit:
+		try:
+			assert_pos_workflow_editable(doc, profile)
+		except frappe.PermissionError:
+			can_edit = False
+	result["can_edit"] = can_edit
 	if doctype == "Sales Order":
 		order_total = flt(doc.get("rounded_total") or doc.get("grand_total"))
 		result["posting_date"] = doc.get("transaction_date")
