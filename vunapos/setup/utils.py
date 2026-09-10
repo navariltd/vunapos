@@ -9,8 +9,7 @@ def ensure_vunapos_custom_fields():
 		custom_field = f"POS Profile-{fieldname}"
 		if frappe.db.exists("Custom Field", custom_field):
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
-	custom_fields = (
-		{
+	custom_fields = {
 			"POS Settings": [
 				{
 					"fieldname": "vunapos_checkout_section",
@@ -632,8 +631,7 @@ def ensure_vunapos_custom_fields():
 					"allow_on_submit": 1,
 				},
 			],
-		},
-	)
+		}
 	create_custom_fields(custom_fields, ignore_validate=True)
 	ensure_sales_invoice_stock_reservation_option()
 
