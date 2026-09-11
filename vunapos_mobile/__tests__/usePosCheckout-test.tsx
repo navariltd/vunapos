@@ -103,6 +103,18 @@ describe('POS checkout hooks', () => {
     }));
   });
 
+  it('preserves the selected price list through preview and final submission', async () => {
+    mockGetVunaMethod.mockResolvedValue({ totals: { grand_total: 180, net_total: 180 } });
+    const preview = await renderHook(() => usePosCheckoutPreview({ customer: 'CUST-001', items: [item], posProfile: 'POS-001', priceList: 'Wholesale' }));
+    await waitFor(() => expect(preview.result.current.data?.totals.grand_total).toBe(180));
+    expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.preview_invoice', expect.objectContaining({ price_list: 'Wholesale' }), expect.any(AbortSignal));
+
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-PRICE-001' });
+    const submit = await renderHook(() => useSubmitPosCheckout());
+    await act(async () => { await submit.result.current.submit({ customer: 'CUST-001', isCreditSale: false, items: [item], orderType: 'Invoice', payments: [{ amount: 180, mode_of_payment: 'Cash' }], posProfile: 'POS-001', priceList: 'Wholesale' }); });
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({ price_list: 'Wholesale' }));
+  });
+
   it('submits only server-validated loyalty points with an Invoice', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0004' });
     const hook = await renderHook(() => useSubmitPosCheckout());

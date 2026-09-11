@@ -50,4 +50,17 @@ describe('usePosItemSearch', () => {
     await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
   });
+
+  it('loads the catalogue again with an explicitly selected permitted price list', async () => {
+    mockGetVunaMethod.mockResolvedValue([{ actual_qty: 4, item_code: 'BAR-001', item_name: 'Wholesale item', rate: 90 }]);
+    const hook = await renderHook(() => usePosItemSearch({ customer: 'CUST-001', loadAll: true, posProfile: 'POS-001', priceList: 'Wholesale', query: '' }));
+
+    await waitFor(() => expect(hook.result.current.items[0]?.rate).toBe(90));
+    expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.item.search_items', expect.objectContaining({
+      customer: 'CUST-001',
+      pos_profile: 'POS-001',
+      price_list: 'Wholesale',
+      query: '',
+    }), expect.any(AbortSignal));
+  });
 });

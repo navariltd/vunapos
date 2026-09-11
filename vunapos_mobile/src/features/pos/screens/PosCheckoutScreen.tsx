@@ -34,6 +34,7 @@ type PosCheckoutScreenProps = {
   onBack: () => void;
   onComplete: (result: PosCheckoutResult) => void;
   orderType: PosOrderType;
+  priceList?: string;
   saleCustomer: PosSaleCustomer | null;
   salesperson?: PosSalespersonSession | null;
   subtotal: number;
@@ -85,7 +86,7 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
  */
-export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, saleCustomer, salesperson, subtotal }: PosCheckoutScreenProps) {
+export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, priceList, saleCustomer, salesperson, subtotal }: PosCheckoutScreenProps) {
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === 'Invoice';
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -99,7 +100,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
   const [shippingAddressName, setShippingAddressName] = useState('');
   const [isShippingAddressPickerVisible, setIsShippingAddressPickerVisible] = useState(false);
   const preview = usePosCheckoutPreview(isInvoice && bootstrap.data
-    ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name }
+    ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name, priceList }
     : null);
   const checkout = useSubmitPosCheckout();
   const receipt = useInvoiceReceipt();
@@ -542,6 +543,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
       orderType,
       payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
+      priceList,
       salesperson: salesperson?.name,
       salespersonToken: salesperson?.token,
       shippingAddressName: selectedShippingAddress?.name,

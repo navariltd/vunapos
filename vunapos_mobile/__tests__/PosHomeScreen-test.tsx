@@ -52,7 +52,7 @@ describe('PosHomeScreen', () => {
       isLoading: false,
       reload: jest.fn(),
     });
-    mockUsePosItemSearch.mockReturnValue({ error: null, isLoading: false, items: [] });
+    mockUsePosItemSearch.mockReturnValue({ error: null, hasLoaded: false, isLoading: false, items: [] });
   });
 
   afterEach(async () => {

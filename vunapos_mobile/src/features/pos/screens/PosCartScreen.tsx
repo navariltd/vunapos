@@ -4,13 +4,15 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosCustomerPickerSheet } from '@/features/pos/components/PosCustomerPickerSheet';
+import { PosPriceListPickerSheet } from '@/features/pos/components/PosPriceListPickerSheet';
 import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
-import { PosCartItem, PosCartTax, PosCartTotals, PosCustomerSearchResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
+import { PosCartItem, PosCartTax, PosCartTotals, PosCustomerSearchResult, PosOrderType, PosPriceList, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
+  allowPriceListSwitching?: boolean;
   currency: string;
   error: string | null;
   isUpdating: boolean;
@@ -19,12 +21,15 @@ type PosCartScreenProps = {
   onCheckout: () => void;
   onClearSaleCustomer: () => void;
   onSelectSaleCustomer: (customer: PosCustomerSearchResult) => void;
+  onSelectPriceList?: (priceList?: string) => void;
   onClear: () => void;
   onRemove: (itemCode: string) => void;
   onRetry: () => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
   orderType: PosOrderType;
   posProfile?: string;
+  priceList?: string;
+  priceListOptions?: PosPriceList[];
   requiresCustomer: boolean;
   defaultSaleCustomer: PosSaleCustomer | null;
   saleCustomer: PosSaleCustomer | null;
@@ -37,9 +42,17 @@ function formatCurrency(amount: number, currency: string) {
   return new Intl.NumberFormat(undefined, { currency, currencyDisplay: 'code', minimumFractionDigits: 2, maximumFractionDigits: 2, style: 'currency' }).format(amount);
 }
 
+function pricingRuleLabel(pricingRules: PosCartItem['pricing_rules']) {
+  if (Array.isArray(pricingRules)) return pricingRules.filter(Boolean).join(', ');
+  return pricingRules?.trim() || '';
+}
+
 function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { currency: string; disabled: boolean; item: PosCartItem; onRemove: () => void; onUpdateQuantity: (quantity: number) => void }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
   const maximum = item.is_stock_item && !item.allow_negative_stock && item.available_qty !== null ? item.available_qty : null;
+  const itemDisabled = disabled || Boolean(item.is_free_item);
+  const pricingRule = pricingRuleLabel(item.pricing_rules);
+  const hasRuleDiscount = Boolean(item.price_list_rate && item.price_list_rate > item.rate && (pricingRule || item.discount_amount || item.discount_percentage));
 
   function changeQuantity(value: string) {
     if (/^\d*\.?\d*$/.test(value)) setDraftQuantity(value);
@@ -58,31 +71,32 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
     <View style={styles.item}>
       <View style={styles.itemHeader}>
         <View style={styles.itemMain}>
-          <Text numberOfLines={2} style={styles.itemName}>{item.item_name}</Text>
+          <View style={styles.itemNameRow}><Text numberOfLines={2} style={styles.itemName}>{item.item_name}</Text>{item.is_free_item ? <Text style={styles.freeBadge}>Free item</Text> : null}{item.is_product_bundle ? <Text style={styles.bundleBadge}>Bundle</Text> : null}</View>
           <Text style={styles.itemCode}>{item.item_code}</Text>
+          {hasRuleDiscount ? <Text style={styles.originalRate}>{formatCurrency(item.price_list_rate || 0, currency)}</Text> : null}
           <Text style={styles.itemRate}>{formatCurrency(item.rate, currency)} · {item.uom || 'Unit'}</Text>
         </View>
-        <Pressable accessibilityLabel={`Remove ${item.item_name} from cart`} disabled={disabled} onPress={onRemove} style={[styles.removeButton, disabled && styles.controlDisabled]}>
+        <Pressable accessibilityLabel={`Remove ${item.item_name} from cart`} disabled={itemDisabled} onPress={onRemove} style={[styles.removeButton, itemDisabled && styles.controlDisabled]}>
           <MaterialCommunityIcons color={posDarkColors.error} name="trash-can-outline" size={19} />
         </Pressable>
       </View>
       <View style={styles.itemFooter}>
         <View style={styles.quantityControl}>
-          <Pressable accessibilityLabel={`Decrease quantity for ${item.item_name}`} disabled={disabled} onPress={() => onUpdateQuantity(item.qty - 1)} style={[styles.quantityButton, disabled && styles.controlDisabled]}>
+          <Pressable accessibilityLabel={`Decrease quantity for ${item.item_name}`} disabled={itemDisabled} onPress={() => onUpdateQuantity(item.qty - 1)} style={[styles.quantityButton, itemDisabled && styles.controlDisabled]}>
             <MaterialCommunityIcons color={posDarkColors.onSurface} name="minus" size={18} />
           </Pressable>
           <TextInput
             accessibilityLabel={`Quantity for ${item.item_name}`}
             inputMode="decimal"
             keyboardType="decimal-pad"
-            editable={!disabled}
+            editable={!itemDisabled}
             onBlur={commitQuantity}
             onChangeText={changeQuantity}
             selectTextOnFocus
             style={styles.quantityInput}
             value={draftQuantity}
           />
-          <Pressable accessibilityLabel={`Increase quantity for ${item.item_name}`} disabled={disabled || (maximum !== null && item.qty >= maximum)} onPress={() => onUpdateQuantity(item.qty + 1)} style={[styles.quantityButton, (disabled || (maximum !== null && item.qty >= maximum)) && styles.quantityButtonDisabled]}>
+          <Pressable accessibilityLabel={`Increase quantity for ${item.item_name}`} disabled={itemDisabled || (maximum !== null && item.qty >= maximum)} onPress={() => onUpdateQuantity(item.qty + 1)} style={[styles.quantityButton, (itemDisabled || (maximum !== null && item.qty >= maximum)) && styles.quantityButtonDisabled]}>
             <MaterialCommunityIcons color={posDarkColors.onSurface} name="plus" size={18} />
           </Pressable>
         </View>
@@ -92,18 +106,24 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
         </View>
       </View>
       {maximum !== null ? <Text style={styles.stockHint}>Available {maximum} {item.uom || ''}</Text> : null}
+      {item.item_tax_template ? <Text style={styles.itemContext}>Tax: {item.item_tax_template}</Text> : null}
+      {pricingRule ? <Text style={styles.pricingRule}>Promotion applied: {pricingRule}{item.discount_percentage ? ` · ${item.discount_percentage}% off` : ''}</Text> : null}
+      {item.is_product_bundle && item.bundle_items?.length ? <Text style={styles.itemContext}>Includes {item.bundle_items.length} bundle component{item.bundle_items.length === 1 ? '' : 's'}.</Text> : null}
     </View>
   );
 }
 
-export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, posProfile, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
+export function PosCartScreen({ allowCustomerCreation, allowPriceListSwitching = false, currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectPriceList, onSelectSaleCustomer, onUpdateQuantity, orderType, posProfile, priceList, priceListOptions = [], requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+  const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const customerLoyalty = usePosCustomerLoyalty(saleCustomer?.customer, posProfile);
   const isUsingDefaultCustomer = Boolean(
     saleCustomer?.customer
     && defaultSaleCustomer?.customer
     && saleCustomer.customer === defaultSaleCustomer.customer,
   );
+  const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
+  const activePriceList = priceList || defaultPriceList;
 
   return (
     <KeyboardAwareFormScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scrollView}>
@@ -138,6 +158,7 @@ export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCust
               </View>
             </View>
           ) : null}
+          {allowPriceListSwitching && priceListOptions.length ? <Pressable accessibilityLabel="Select price list for this sale" disabled={isUpdating} onPress={() => setPriceListPickerVisible(true)} style={[styles.priceListSelector, isUpdating && styles.controlDisabled]}><View><Text style={styles.priceListLabel}>Price list</Text><Text style={styles.priceListValue}>{activePriceList || 'Profile default'}</Text></View><MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} /></Pressable> : null}
           <View style={styles.itemList}>
             {items.map((item) => <CartLine currency={currency} disabled={isUpdating} item={item} key={item.item_code} onRemove={() => onRemove(item.item_code)} onUpdateQuantity={(quantity) => onUpdateQuantity(item.item_code, quantity)} />)}
           </View>
@@ -174,6 +195,7 @@ export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCust
         posProfile={posProfile}
         visible={customerPickerVisible}
       />
+      <PosPriceListPickerSheet defaultPriceList={defaultPriceList} onDismiss={() => setPriceListPickerVisible(false)} onSelect={onSelectPriceList || (() => undefined)} options={priceListOptions} selectedPriceList={priceList} visible={priceListPickerVisible} />
     </KeyboardAwareFormScroll>
   );
 }
@@ -182,6 +204,7 @@ const styles = StyleSheet.create({
   backButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, height: 40, justifyContent: 'center', width: 40 },
   browseButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   browseButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  bundleBadge: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 10, overflow: 'hidden', paddingHorizontal: spacing.xs, paddingVertical: 2, textTransform: 'uppercase' },
   checkoutButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 48 },
   checkoutButtonDisabled: { backgroundColor: posDarkColors.disabled, opacity: 0.5 },
   checkoutButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
@@ -206,17 +229,24 @@ const styles = StyleSheet.create({
   heading: { flex: 1, gap: 2 },
   item: { backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, gap: spacing.sm, padding: spacing.md },
   itemCode: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  itemContext: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   itemFooter: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   itemHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   itemList: { gap: spacing.sm },
   itemMain: { flex: 1, gap: 2 },
+  itemNameRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
   loyaltyCard: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
   loyaltyContent: { flex: 1, gap: 2 },
   loyaltyLoading: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, textAlign: 'center' },
   loyaltyMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   loyaltyTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  priceListLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  priceListSelector: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 54, paddingHorizontal: spacing.md },
+  priceListValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body, marginTop: 2 },
+  pricingRule: { backgroundColor: posDarkColors.surfaceContainer, borderRadius: radii.sm, color: posDarkColors.primary, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny, paddingHorizontal: spacing.xs, paddingVertical: spacing.xs },
   itemName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   itemRate: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  originalRate: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, textDecorationLine: 'line-through' },
   lineTotal: { alignItems: 'flex-end', gap: 2 },
   lineTotalAmount: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   lineTotalLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
@@ -228,6 +258,7 @@ const styles = StyleSheet.create({
   quantityInput: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.sm, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small, height: 34, includeFontPadding: false, lineHeight: typography.lineHeight.compact, minWidth: 52, paddingHorizontal: spacing.xs, paddingVertical: 0, textAlign: 'center', textAlignVertical: 'center' },
   removeButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, height: 36, justifyContent: 'center', width: 36 },
   stockHint: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  freeBadge: { backgroundColor: posDarkColors.primary, borderRadius: radii.pill, color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: 10, overflow: 'hidden', paddingHorizontal: spacing.xs, paddingVertical: 2, textTransform: 'uppercase' },
   scrollView: { flex: 1 },
   subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
   summary: { borderTopColor: posDarkColors.border, borderTopWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingTop: spacing.md },

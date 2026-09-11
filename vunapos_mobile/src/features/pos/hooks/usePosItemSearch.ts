@@ -5,7 +5,10 @@ import { PosCatalogueItem } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
 type UsePosItemSearchArgs = {
+  customer?: string;
+  loadAll?: boolean;
   posProfile: string | undefined;
+  priceList?: string;
   query: string;
 };
 
@@ -16,13 +19,13 @@ type ItemSearchState = {
 };
 
 /** Searches the live, profile-scoped catalogue after a short typing pause. */
-export function usePosItemSearch({ posProfile, query }: UsePosItemSearchArgs) {
+export function usePosItemSearch({ customer, loadAll = false, posProfile, priceList, query }: UsePosItemSearchArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
   const [state, setState] = useState<ItemSearchState>({ error: null, items: [], requestKey: null });
   const normalizedQuery = query.trim();
-  const requestKey = companyUrl && sessionId && posProfile && debouncedQuery
-    ? JSON.stringify({ companyUrl, debouncedQuery, posProfile, sessionId })
+  const requestKey = companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
+    ? JSON.stringify({ companyUrl, customer, debouncedQuery, posProfile, priceList, sessionId })
     : null;
 
   useEffect(() => {
@@ -36,7 +39,9 @@ export function usePosItemSearch({ posProfile, query }: UsePosItemSearchArgs) {
 
     void getVunaMethod<PosCatalogueItem[]>(companyUrl, sessionId, 'vunapos.api.item.search_items', {
       limit: 60,
+      customer,
       pos_profile: posProfile,
+      price_list: priceList,
       query: debouncedQuery,
     }, controller.signal)
       .then((items) => setState({ error: null, items, requestKey }))
@@ -50,11 +55,12 @@ export function usePosItemSearch({ posProfile, query }: UsePosItemSearchArgs) {
       });
 
     return () => controller.abort();
-  }, [companyUrl, debouncedQuery, invalidateSession, posProfile, requestKey, sessionId]);
+  }, [companyUrl, customer, debouncedQuery, invalidateSession, posProfile, priceList, requestKey, sessionId]);
 
   return {
     error: state.requestKey === requestKey ? state.error : null,
-    isLoading: Boolean(normalizedQuery) && (normalizedQuery !== debouncedQuery || state.requestKey !== requestKey),
+    hasLoaded: state.requestKey === requestKey,
+    isLoading: Boolean(requestKey) && (normalizedQuery !== debouncedQuery || state.requestKey !== requestKey),
     items: state.requestKey === requestKey ? state.items : [],
   };
 }

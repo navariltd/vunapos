@@ -30,11 +30,12 @@ export function PosWorkspaceScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{ currency: string; paymentEntry: PosInvoicePaymentEntry } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
+  const [selectedPriceList, setSelectedPriceList] = useState<string>();
   const [defaultSaleCustomer, setDefaultSaleCustomer] = useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
   const [posProfileConfig, setPosProfileConfig] = useState<PosBootstrapData['pos_profile']>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
-  const cart = usePosCart({ customer: saleCustomer, posProfile });
+  const cart = usePosCart({ customer: saleCustomer, posProfile, priceList: selectedPriceList });
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
     const defaultCustomer = bootstrap.default_customer;
@@ -43,6 +44,7 @@ export function PosWorkspaceScreen() {
     setDefaultSaleCustomer(defaultCustomer ? {
       customer: defaultCustomer.customer,
       customerName: defaultCustomer.customer_name,
+      defaultPriceList: defaultCustomer.default_price_list,
       isWalkin: Boolean(defaultCustomer.is_walkin),
       mobile: defaultCustomer.mobile_no || undefined,
       taxId: defaultCustomer.tax_id || undefined,
@@ -61,6 +63,7 @@ export function PosWorkspaceScreen() {
 
   function startSale(customer: PosSaleCustomer) {
     cart.clear();
+    setSelectedPriceList(undefined);
     setSaleCustomer(customer);
     setSelectedCustomer(null);
     setSelectedInvoice(null);
@@ -101,6 +104,7 @@ export function PosWorkspaceScreen() {
               setSelectedInvoice({ doctype: result.doctype, name: result.name });
             }}
             orderType={orderType}
+            priceList={selectedPriceList}
             saleCustomer={saleCustomer}
             salesperson={salespersonPin.session}
             subtotal={cart.subtotal}
@@ -115,12 +119,22 @@ export function PosWorkspaceScreen() {
               if (!cart.requiresCustomer && !cart.isUpdating && !cart.error) setCheckoutVisible(true);
             }}
             onClear={cart.clear}
-            onClearSaleCustomer={() => setSaleCustomer(defaultSaleCustomer)}
+            onClearSaleCustomer={() => {
+              setSelectedPriceList(undefined);
+              setSaleCustomer(defaultSaleCustomer);
+            }}
             onRemove={cart.remove}
-            onSelectSaleCustomer={setSaleCustomer}
+            onSelectSaleCustomer={(customer) => {
+              setSelectedPriceList(undefined);
+              setSaleCustomer(customer);
+            }}
+            onSelectPriceList={setSelectedPriceList}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
             posProfile={posProfile}
+            priceList={selectedPriceList}
+            priceListOptions={posProfileConfig?.allowed_price_lists}
+            allowPriceListSwitching={Boolean(posProfileConfig?.allow_price_list_switching)}
             requiresCustomer={cart.requiresCustomer}
             saleCustomer={saleCustomer}
             defaultSaleCustomer={defaultSaleCustomer}
@@ -137,6 +151,7 @@ export function PosWorkspaceScreen() {
             onAddToCart={(item, currency) => { setCartCurrency(currency); void cart.add(item); }}
             onOpenCart={() => setCartVisible(true)}
             onPosProfileLoaded={receivePosProfile}
+            pricingContext={{ customer: saleCustomer?.customer, priceList: selectedPriceList }}
             refreshKey={postSaleRefreshKey}
           />
         : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}

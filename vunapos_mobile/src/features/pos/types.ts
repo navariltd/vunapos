@@ -24,18 +24,32 @@ export type PosCartItem = {
   amount?: number;
   allow_negative_stock: boolean;
   available_qty: number | null;
+  bundle_items?: PosCartBundleItem[];
   conversion_factor?: number;
+  description?: string | null;
+  discount_amount?: number;
+  discount_percentage?: number;
   is_free_item?: boolean;
+  is_product_bundle?: boolean;
   is_stock_item: boolean;
   item_code: string;
   item_name: string;
+  item_tax_template?: string | null;
   price_list_rate?: number;
   pricing_override?: {
     type: 'rate';
     value: number;
   };
+  pricing_rules?: string | string[] | null;
   qty: number;
   rate: number;
+  uom?: string | null;
+};
+
+export type PosCartBundleItem = {
+  item_code: string;
+  item_name?: string | null;
+  qty?: number | null;
   uom?: string | null;
 };
 
@@ -85,6 +99,7 @@ export type PosBootstrapData = {
   default_customer?: {
     customer: string;
     customer_name: string;
+    default_price_list?: string | null;
     is_walkin?: boolean | number;
     mobile_no?: string | null;
     tax_id?: string | null;
@@ -98,6 +113,7 @@ export type PosBootstrapData = {
     allow_delivery_charge_change?: boolean;
     allow_delivery_charges?: boolean;
     allow_partial_payment?: boolean;
+    allow_price_list_switching?: boolean;
     allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
     currency?: string;
@@ -106,12 +122,16 @@ export type PosBootstrapData = {
     default_sale_type?: 'Cash Sale' | 'Credit Sale';
     modes_of_payment?: PosPaymentMode[];
     name: string;
+    price_list?: string | null;
+    allowed_price_lists?: PosPriceList[];
     enable_salesperson_pin?: boolean;
     pin_users?: PosPinUser[];
     require_pin_before_every_sale?: boolean;
     salesperson_pin_session_minutes?: number;
   };
 };
+
+export type PosPriceList = { currency?: string | null; name: string };
 
 export type PosPinUser = {
   display_name?: string | null;
@@ -379,6 +399,7 @@ export type PosCustomerSummary = {
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;
+  defaultPriceList?: string | null;
   isWalkin?: boolean;
   mobile?: string | null;
   taxId?: string | null;

@@ -20,16 +20,23 @@ type PosHomeScreenProps = {
   onAddToCart: (item: PosCatalogueItem, currency: string) => void;
   onOpenCart: () => void;
   onPosProfileLoaded: (bootstrap: PosBootstrapData) => void;
+  pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
 };
 
-export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded, refreshKey = 0 }: PosHomeScreenProps) {
+export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded, pricingContext, refreshKey = 0 }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const bootstrap = usePosBootstrap();
-  const itemSearch = usePosItemSearch({ posProfile: bootstrap.data?.pos_profile.name, query: searchQuery });
+  const itemSearch = usePosItemSearch({
+    customer: pricingContext?.customer,
+    loadAll: Boolean(pricingContext?.customer || pricingContext?.priceList),
+    posProfile: bootstrap.data?.pos_profile.name,
+    priceList: pricingContext?.priceList,
+    query: searchQuery,
+  });
   const bootstrapItems = bootstrap.data?.items ?? [];
   const localMatches = bootstrapItems.filter((item) => matchesSearch(item, searchQuery));
-  const items = searchQuery.trim() ? itemSearch.items : localMatches;
+  const items = searchQuery.trim() || itemSearch.hasLoaded ? itemSearch.items : localMatches;
   const currency = bootstrap.data?.pos_profile.currency || 'KES';
   const handledRefreshKey = useRef(refreshKey);
   const reloadBootstrap = bootstrap.reload;

@@ -10,6 +10,7 @@ type PreviewInput = {
   items: PosCartItem[];
   loyaltyPoints?: number;
   posProfile?: string;
+  priceList?: string;
 };
 
 type SubmitInput = PreviewInput & {
@@ -45,9 +46,10 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   const customer = input?.customer;
   const loyaltyPoints = input?.loyaltyPoints;
   const posProfile = input?.posProfile;
+  const priceList = input?.priceList;
   const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : '';
   const requestKey = hasInput && companyUrl && sessionId && posProfile && input?.items.length
-    ? JSON.stringify({ companyUrl, customer, items: itemsPayload, loyaltyPoints, posProfile, sessionId })
+    ? JSON.stringify({ companyUrl, customer, items: itemsPayload, loyaltyPoints, posProfile, priceList, sessionId })
     : null;
   const [state, setState] = useState<{ data: PosCheckoutPreview | null; error: string | null; key: string | null }>({ data: null, error: null, key: null });
 
@@ -61,12 +63,13 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
         items: itemsPayload,
         loyalty_points: points || undefined,
         pos_profile: posProfile,
+        price_list: priceList,
       });
     } catch (requestError) {
       if (requestError instanceof FrappeClientError && requestError.code === 'session') void invalidateSession();
       throw requestError;
     }
-  }, [companyUrl, customer, invalidateSession, itemsPayload, posProfile, sessionId]);
+  }, [companyUrl, customer, invalidateSession, itemsPayload, posProfile, priceList, sessionId]);
 
   useEffect(() => {
     if (!hasInput || !companyUrl || !sessionId || !posProfile || !itemsPayload || !requestKey) return;
@@ -77,6 +80,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
       items: itemsPayload,
       loyalty_points: loyaltyPoints || undefined,
       pos_profile: posProfile,
+      price_list: priceList,
     }, controller.signal)
       .then((data) => setState({ data, error: null, key: requestKey }))
       .catch((requestError: unknown) => {
@@ -88,7 +92,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
         setState({ data: null, error: requestError instanceof Error ? requestError.message : 'Could not calculate this sale.', key: requestKey });
       });
     return () => controller.abort();
-  }, [companyUrl, customer, hasInput, invalidateSession, itemsPayload, loyaltyPoints, posProfile, requestKey, sessionId]);
+  }, [companyUrl, customer, hasInput, invalidateSession, itemsPayload, loyaltyPoints, posProfile, priceList, requestKey, sessionId]);
 
   return {
     data: state.key === requestKey ? state.data : null,
@@ -128,6 +132,7 @@ export function useSubmitPosCheckout() {
           items: JSON.stringify(cartPayload(input.items)),
           payments: JSON.stringify(input.payments),
           pos_profile: input.posProfile,
+          price_list: input.priceList,
           ...(input.orderType === 'Invoice' && input.isCreditSale
             ? { due_date: input.dueDate, is_credit_sale: true }
             : {}),

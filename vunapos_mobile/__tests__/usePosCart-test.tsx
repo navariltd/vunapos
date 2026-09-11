@@ -110,6 +110,23 @@ describe('usePosCart', () => {
     expect(hook.result.current.items).toEqual([expect.objectContaining({ qty: 1 })]);
   });
 
+  it('recalculates the current cart when the cashier switches price lists', async () => {
+    const hook = await renderHook<ReturnType<typeof usePosCart>, { priceList?: string }>(
+      ({ priceList }) => usePosCart({ customer: { customer: 'CUST-001', customerName: 'Example customer' }, posProfile: 'POS-001', priceList }),
+      { initialProps: { priceList: undefined } },
+    );
+
+    await act(async () => hook.result.current.add(item));
+    await hook.rerender({ priceList: 'Wholesale' });
+
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      'https://vuna.example.com',
+      'sid-1',
+      'vunapos.api.sales.preview_invoice',
+      expect.objectContaining({ price_list: 'Wholesale' }),
+    ));
+  });
+
   it('adds the configured delivery item with its server-approved rate override', async () => {
     mockGetVunaMethod.mockImplementation(async (_companyUrl, _sessionId, method, params) => {
       if (method === 'vunapos.api.item.get_item_details') {

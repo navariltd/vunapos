@@ -7,6 +7,7 @@ import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
 type CustomerResponse = {
   customer: string;
   customer_name: string;
+  default_price_list?: string | null;
   email_id?: string | null;
   is_walkin?: boolean;
   mobile_no?: string | null;
@@ -40,6 +41,7 @@ export function useCreatePosCustomer() {
       return {
         customer: customer.customer,
         customerName: customer.customer_name,
+        defaultPriceList: customer.default_price_list,
         email: customer.email_id,
         ...(customer.is_walkin ? { isWalkin: true } : {}),
         mobile: customer.mobile_no,

@@ -8,6 +8,10 @@ jest.mock('@/features/pos/components/PosCustomerPickerSheet', () => ({
   PosCustomerPickerSheet: () => null,
 }));
 
+jest.mock('@/features/pos/components/PosPriceListPickerSheet', () => ({
+  PosPriceListPickerSheet: () => null,
+}));
+
 jest.mock('@/features/pos/hooks/usePosCustomerLoyalty', () => ({
   usePosCustomerLoyalty: jest.fn(),
 }));
@@ -181,5 +185,27 @@ describe('PosCartScreen', () => {
     expect(screen.getByLabelText('Customer loyalty status')).toBeTruthy();
     expect(screen.getByText('Vuna Rewards · Gold')).toBeTruthy();
     expect(screen.getByText('60 points available · KES 120.00')).toBeTruthy();
+  });
+
+  it('shows the server-permitted price-list selector only when profile switching is enabled', async () => {
+    const screen = await render(
+      <PosCartScreen allowCustomerCreation={false} allowPriceListSwitching currency="KES" defaultSaleCustomer={null} error={null} isUpdating={false} items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 125, uom: 'Nos' }]} onBack={onBack} onCheckout={onCheckout} onClear={onClear} onClearSaleCustomer={onClearSaleCustomer} onRemove={onRemove} onRetry={onRetry} onSelectPriceList={jest.fn()} onSelectSaleCustomer={onSelectSaleCustomer} onUpdateQuantity={onUpdateQuantity} orderType="Invoice" priceList="Wholesale" priceListOptions={[{ name: 'Retail' }, { name: 'Wholesale' }]} requiresCustomer={false} saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }} subtotal={125} taxes={[]} totals={{ grand_total: 125, net_total: 125 }} />,
+    );
+
+    expect(screen.getByLabelText('Select price list for this sale')).toBeTruthy();
+    expect(screen.getByText('Wholesale')).toBeTruthy();
+  });
+
+  it('presents server-authoritative promotion, tax, free-item, and bundle context', async () => {
+    const screen = await render(
+      <PosCartScreen allowCustomerCreation={false} currency="KES" defaultSaleCustomer={null} error={null} isUpdating={false} items={[{ allow_negative_stock: false, available_qty: 4, amount: 0, bundle_items: [{ item_code: 'COMP-001', qty: 2 }], discount_percentage: 20, is_free_item: true, is_product_bundle: true, is_stock_item: false, item_code: 'ITEM-FREE', item_name: 'Promotional bundle', item_tax_template: 'VAT 16%', price_list_rate: 125, pricing_rules: ['September promotion'], qty: 1, rate: 0, uom: 'Nos' }]} onBack={onBack} onCheckout={onCheckout} onClear={onClear} onClearSaleCustomer={onClearSaleCustomer} onRemove={onRemove} onRetry={onRetry} onSelectSaleCustomer={onSelectSaleCustomer} onUpdateQuantity={onUpdateQuantity} orderType="Invoice" requiresCustomer={false} saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }} subtotal={0} taxes={[]} totals={{ grand_total: 0, net_total: 0 }} />,
+    );
+
+    expect(screen.getByText('Free item')).toBeTruthy();
+    expect(screen.getByText('Bundle')).toBeTruthy();
+    expect(screen.getByText('Tax: VAT 16%')).toBeTruthy();
+    expect(screen.getByText('Promotion applied: September promotion · 20% off')).toBeTruthy();
+    expect(screen.getByText('Includes 1 bundle component.')).toBeTruthy();
+    expect(screen.getByLabelText('Remove Promotional bundle from cart').props.accessibilityState.disabled).toBe(true);
   });
 });

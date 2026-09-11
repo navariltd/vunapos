@@ -7,6 +7,7 @@ import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 type CustomerResponse = {
   customer: string;
   customer_name: string;
+  default_price_list?: string | null;
   email_id?: string | null;
   is_walkin?: boolean;
   mobile_no?: string | null;
@@ -36,6 +37,7 @@ export function usePosCustomerSearch(query: string, enabled: boolean) {
       .then((rows) => setState({ error: null, key: requestKey, rows: rows.map((row) => ({
         customer: row.customer,
         customerName: row.customer_name,
+        defaultPriceList: row.default_price_list,
         email: row.email_id,
         mobile: row.mobile_no,
         ...(row.is_walkin ? { isWalkin: true } : {}),

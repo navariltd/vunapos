@@ -20,6 +20,7 @@ function toCartItem(item: PosCatalogueItem): PosCartItem {
 type UsePosCartArgs = {
   customer: PosSaleCustomer | null;
   posProfile?: string;
+  priceList?: string;
 };
 
 type CartResponse = Omit<PosCartData, 'items'> & {
@@ -59,7 +60,7 @@ function cartFromResponse(data: CartResponse, previousItems: PosCartItem[]): Pos
 }
 
 /** Session-only cart state calculated by Frappe after each cart change. */
-export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
+export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [data, setData] = useState<PosCartData>({ items: [], taxes: [], totals: {} });
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +72,8 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
   const customerKey = customer?.customer || '';
+  const priceListRef = useRef(priceList);
+  const priceListKey = priceList || '';
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -81,7 +84,11 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
     customerRef.current = customer;
   }, [customer]);
 
-  const refresh = useCallback(async (nextItems = itemsRef.current, cartCustomer = customerRef.current): Promise<PosCartData | null> => {
+  useEffect(() => {
+    priceListRef.current = priceList;
+  }, [priceList]);
+
+  const refresh = useCallback(async (nextItems = itemsRef.current, cartCustomer = customerRef.current, cartPriceList = priceListRef.current): Promise<PosCartData | null> => {
     if (!nextItems.length) {
       const emptyCart = localCart([]);
       itemsRef.current = emptyCart.items;
@@ -115,6 +122,7 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
         customer: cartCustomer?.customer || undefined,
         items: JSON.stringify(toCartPayload(nextItems)),
         pos_profile: posProfile,
+        price_list: cartPriceList,
       });
       const nextData = cartFromResponse(response, nextItems);
       if (request === requestNumber.current) {
@@ -138,8 +146,8 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
   }, [companyUrl, invalidateSession, posProfile, sessionId]);
 
   useEffect(() => {
-    if (itemsRef.current.length) void refresh(itemsRef.current, customerRef.current);
-  }, [customerKey, refresh]);
+    if (itemsRef.current.length) void refresh(itemsRef.current, customerRef.current, priceListRef.current);
+  }, [customerKey, priceListKey, refresh]);
 
   async function add(item: PosCatalogueItem, cartCustomer = customerRef.current) {
     const current = itemsRef.current;
