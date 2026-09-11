@@ -5,6 +5,7 @@ import {
   PosCartData,
   PosCartItem,
   PosCatalogueItem,
+  PosPricingOverride,
   PosSaleCustomer,
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
@@ -259,6 +260,63 @@ export function usePosCart({
     );
   }
 
+  /** Applies a permitted manual rate or discount before Frappe validates and audits it. */
+  async function updatePricing(
+    itemCode: string,
+    pricingOverride?: PosPricingOverride,
+  ) {
+    if (
+      pricingOverride &&
+      (!Number.isFinite(pricingOverride.value) ||
+        pricingOverride.value < 0 ||
+        (pricingOverride.type === "discount_percentage" &&
+          pricingOverride.value > 100))
+    ) {
+      setError("Enter a valid non-negative pricing value.");
+      return null;
+    }
+    return refresh(
+      itemsRef.current.map((item) => {
+        if (item.item_code !== itemCode) return item;
+        const priceListRate = item.price_list_rate ?? item.rate;
+        if (!pricingOverride) {
+          return {
+            ...item,
+            discount_amount: 0,
+            discount_percentage: 0,
+            pricing_override: undefined,
+            rate: priceListRate,
+          };
+        }
+        if (pricingOverride.type === "rate") {
+          return {
+            ...item,
+            discount_amount: 0,
+            discount_percentage: 0,
+            pricing_override: pricingOverride,
+            rate: pricingOverride.value,
+          };
+        }
+        const discountAmount =
+          pricingOverride.type === "discount_percentage"
+            ? (priceListRate * pricingOverride.value) / 100
+            : pricingOverride.value;
+        return {
+          ...item,
+          discount_amount: discountAmount,
+          discount_percentage:
+            pricingOverride.type === "discount_percentage"
+              ? pricingOverride.value
+              : priceListRate
+                ? (discountAmount / priceListRate) * 100
+                : 0,
+          pricing_override: pricingOverride,
+          rate: Math.max(priceListRate - discountAmount, 0),
+        };
+      }),
+    );
+  }
+
   /** Changes to an Item-configured UOM only; Frappe recalculates its rate, tax, and stock quantities. */
   async function updateUom(itemCode: string, uom: string) {
     if (!uom) return;
@@ -374,6 +432,7 @@ export function usePosCart({
     taxes: data.taxes,
     totals: data.totals,
     updateItemNote,
+    updatePricing,
     updateQuantity,
     updateUom,
   };

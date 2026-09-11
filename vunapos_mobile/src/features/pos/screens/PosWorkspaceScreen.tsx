@@ -160,6 +160,8 @@ export function PosWorkspaceScreen() {
           allowCustomerCreation={Boolean(
             posProfileConfig?.allow_customer_creation,
           )}
+          allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
+          allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
           items={cart.items}
           onBack={() => setCartVisible(false)}
@@ -179,6 +181,7 @@ export function PosWorkspaceScreen() {
           }}
           onSelectPriceList={setSelectedPriceList}
           onUpdateItemNote={cart.updateItemNote}
+          onUpdatePricing={cart.updatePricing}
           onUpdateQuantity={cart.updateQuantity}
           onUpdateUom={cart.updateUom}
           orderType={orderType}

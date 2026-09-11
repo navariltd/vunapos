@@ -32,6 +32,7 @@ const onClear = jest.fn();
 const onRemove = jest.fn();
 const onRetry = jest.fn();
 const onUpdateItemNote = jest.fn();
+const onUpdatePricing = jest.fn();
 const onUpdateQuantity = jest.fn();
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
 
@@ -561,5 +562,75 @@ describe("PosCartScreen", () => {
     await fireEvent(screen.getByLabelText("Note for Stock item"), "blur");
     expect(onUpdateItemNote).toHaveBeenCalledWith("ITEM-001", "Fragile");
     expect(screen.getByText("11/500")).toBeTruthy();
+  });
+
+  it("offers profile-permitted manual pricing controls and identifies the cashier audit", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        allowDiscountChange
+        allowRateChange
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            price_list_rate: 125,
+            pricing_override: { type: "rate", value: 100 },
+            pricing_override_by: "cashier@example.com",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdatePricing={onUpdatePricing}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        subtotal={100}
+        taxes={[]}
+        totals={{ grand_total: 100, net_total: 100 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("View details for Stock item"));
+    expect(screen.getByText("Manual pricing")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Manual price override: rate set to KES 100.00 · cashier@example.com",
+      ),
+    ).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Discount percentage for Stock item"),
+      "10",
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Apply discount percentage for Stock item"),
+    );
+    expect(onUpdatePricing).toHaveBeenCalledWith("ITEM-001", {
+      type: "discount_percentage",
+      value: 10,
+    });
+    await fireEvent.press(
+      screen.getByLabelText("Reset manual price for Stock item"),
+    );
+    expect(onUpdatePricing).toHaveBeenCalledWith("ITEM-001", undefined);
   });
 });

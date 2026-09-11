@@ -37,15 +37,19 @@ export type PosCartItem = {
   item_note?: string | null;
   item_tax_template?: string | null;
   price_list_rate?: number;
-  pricing_override?: {
-    type: "rate";
-    value: number;
-  };
+  pricing_override?: PosPricingOverride;
+  pricing_override_audit?: string | null;
+  pricing_override_by?: string | null;
   pricing_rules?: string | string[] | null;
   qty: number;
   rate: number;
   uom?: string | null;
   uoms?: PosItemUom[];
+};
+
+export type PosPricingOverride = {
+  type: "discount_amount" | "discount_percentage" | "rate";
+  value: number;
 };
 
 /** A unit permitted by the Item record. Frappe remains authoritative for its rate and stock conversion. */
@@ -124,6 +128,8 @@ export type PosBootstrapData = {
     allow_delivery_charges?: boolean;
     allow_partial_payment?: boolean;
     allow_price_list_switching?: boolean;
+    allow_discount_change?: boolean;
+    allow_rate_change?: boolean;
     allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
     currency?: string;

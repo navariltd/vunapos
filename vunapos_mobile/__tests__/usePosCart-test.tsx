@@ -360,6 +360,84 @@ describe("usePosCart", () => {
     expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
   });
 
+  it("sends permitted manual pricing overrides through the authoritative cart preview", async () => {
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const cartItem = JSON.parse(String(params?.items ?? "[]"))[0];
+        const override = cartItem.pricing_override;
+        const priceListRate = 125;
+        const rate =
+          override?.type === "discount_percentage" ? 112.5 : priceListRate;
+        return {
+          items: [
+            {
+              actual_qty: 4,
+              allow_negative_stock: false,
+              amount: rate,
+              discount_percentage:
+                override?.type === "discount_percentage" ? 10 : 0,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              price_list_rate: priceListRate,
+              pricing_override_by: override ? "cashier@example.com" : null,
+              qty: 1,
+              rate,
+              uom: "Nos",
+            },
+          ],
+          taxes: [],
+          totals: { grand_total: rate, net_total: rate },
+        };
+      },
+    );
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.updatePricing("ITEM-001", {
+        type: "discount_percentage",
+        value: 10,
+      });
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items:
+          '[{"item_code":"ITEM-001","pricing_override":{"type":"discount_percentage","value":10},"qty":1,"uom":"Nos"}]',
+      }),
+    );
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({
+        discount_percentage: 10,
+        pricing_override: { type: "discount_percentage", value: 10 },
+        pricing_override_by: "cashier@example.com",
+        rate: 112.5,
+      }),
+    ]);
+
+    await act(async () => {
+      await hook.result.current.updatePricing("ITEM-001", {
+        type: "discount_percentage",
+        value: 101,
+      });
+    });
+    expect(hook.result.current.error).toBe(
+      "Enter a valid non-negative pricing value.",
+    );
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+  });
+
   it("adds the configured delivery item with its server-approved rate override", async () => {
     mockGetVunaMethod.mockImplementation(
       async (_companyUrl, _sessionId, method, params) => {

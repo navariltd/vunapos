@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { PaymentInput } from '@/features/pos/paymentAllocation';
-import { PosCartItem, PosCheckoutPreview, PosCheckoutResult, PosOrderType } from '@/features/pos/types';
-import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/frappeClient';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { PaymentInput } from "@/features/pos/paymentAllocation";
+import {
+  PosCartItem,
+  PosCheckoutPreview,
+  PosCheckoutResult,
+  PosOrderType,
+} from "@/features/pos/types";
+import {
+  FrappeClientError,
+  getVunaMethod,
+  postVunaMethod,
+} from "@/services/frappeClient";
 
 type PreviewInput = {
   customer?: string;
@@ -29,6 +38,7 @@ type SubmitInput = PreviewInput & {
 function cartPayload(items: PosCartItem[]) {
   return items.map((item) => ({
     item_code: item.item_code,
+    item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
     qty: item.qty,
     uom: item.uom || undefined,
@@ -47,52 +57,122 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   const loyaltyPoints = input?.loyaltyPoints;
   const posProfile = input?.posProfile;
   const priceList = input?.priceList;
-  const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : '';
-  const requestKey = hasInput && companyUrl && sessionId && posProfile && input?.items.length
-    ? JSON.stringify({ companyUrl, customer, items: itemsPayload, loyaltyPoints, posProfile, priceList, sessionId })
-    : null;
-  const [state, setState] = useState<{ data: PosCheckoutPreview | null; error: string | null; key: string | null }>({ data: null, error: null, key: null });
+  const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : "";
+  const requestKey =
+    hasInput && companyUrl && sessionId && posProfile && input?.items.length
+      ? JSON.stringify({
+          companyUrl,
+          customer,
+          items: itemsPayload,
+          loyaltyPoints,
+          posProfile,
+          priceList,
+          sessionId,
+        })
+      : null;
+  const [state, setState] = useState<{
+    data: PosCheckoutPreview | null;
+    error: string | null;
+    key: string | null;
+  }>({ data: null, error: null, key: null });
 
-  const previewLoyalty = useCallback(async (points: number): Promise<PosCheckoutPreview> => {
-    if (!companyUrl || !sessionId || !posProfile || !itemsPayload) {
-      throw new Error('Your session is no longer available. Sign in again to continue.');
-    }
-    try {
-      return await getVunaMethod<PosCheckoutPreview>(companyUrl, sessionId, 'vunapos.api.sales.preview_invoice', {
-        customer,
-        items: itemsPayload,
-        loyalty_points: points || undefined,
-        pos_profile: posProfile,
-        price_list: priceList,
-      });
-    } catch (requestError) {
-      if (requestError instanceof FrappeClientError && requestError.code === 'session') void invalidateSession();
-      throw requestError;
-    }
-  }, [companyUrl, customer, invalidateSession, itemsPayload, posProfile, priceList, sessionId]);
+  const previewLoyalty = useCallback(
+    async (points: number): Promise<PosCheckoutPreview> => {
+      if (!companyUrl || !sessionId || !posProfile || !itemsPayload) {
+        throw new Error(
+          "Your session is no longer available. Sign in again to continue.",
+        );
+      }
+      try {
+        return await getVunaMethod<PosCheckoutPreview>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.sales.preview_invoice",
+          {
+            customer,
+            items: itemsPayload,
+            loyalty_points: points || undefined,
+            pos_profile: posProfile,
+            price_list: priceList,
+          },
+        );
+      } catch (requestError) {
+        if (
+          requestError instanceof FrappeClientError &&
+          requestError.code === "session"
+        )
+          void invalidateSession();
+        throw requestError;
+      }
+    },
+    [
+      companyUrl,
+      customer,
+      invalidateSession,
+      itemsPayload,
+      posProfile,
+      priceList,
+      sessionId,
+    ],
+  );
 
   useEffect(() => {
-    if (!hasInput || !companyUrl || !sessionId || !posProfile || !itemsPayload || !requestKey) return;
+    if (
+      !hasInput ||
+      !companyUrl ||
+      !sessionId ||
+      !posProfile ||
+      !itemsPayload ||
+      !requestKey
+    )
+      return;
 
     const controller = new AbortController();
-    void getVunaMethod<PosCheckoutPreview>(companyUrl, sessionId, 'vunapos.api.sales.preview_invoice', {
-      customer,
-      items: itemsPayload,
-      loyalty_points: loyaltyPoints || undefined,
-      pos_profile: posProfile,
-      price_list: priceList,
-    }, controller.signal)
+    void getVunaMethod<PosCheckoutPreview>(
+      companyUrl,
+      sessionId,
+      "vunapos.api.sales.preview_invoice",
+      {
+        customer,
+        items: itemsPayload,
+        loyalty_points: loyaltyPoints || undefined,
+        pos_profile: posProfile,
+        price_list: priceList,
+      },
+      controller.signal,
+    )
       .then((data) => setState({ data, error: null, key: requestKey }))
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) return;
-        if (requestError instanceof FrappeClientError && requestError.code === 'session') {
+        if (
+          requestError instanceof FrappeClientError &&
+          requestError.code === "session"
+        ) {
           void invalidateSession();
           return;
         }
-        setState({ data: null, error: requestError instanceof Error ? requestError.message : 'Could not calculate this sale.', key: requestKey });
+        setState({
+          data: null,
+          error:
+            requestError instanceof Error
+              ? requestError.message
+              : "Could not calculate this sale.",
+          key: requestKey,
+        });
       });
     return () => controller.abort();
-  }, [companyUrl, customer, hasInput, invalidateSession, itemsPayload, loyaltyPoints, posProfile, priceList, requestKey, sessionId]);
+  }, [
+    companyUrl,
+    customer,
+    hasInput,
+    invalidateSession,
+    itemsPayload,
+    loyaltyPoints,
+    posProfile,
+    priceList,
+    requestKey,
+    sessionId,
+  ]);
 
   return {
     data: state.key === requestKey ? state.data : null,
@@ -115,7 +195,9 @@ export function useSubmitPosCheckout() {
 
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
     if (!companyUrl || !sessionId || !input.posProfile) {
-      setError('Your session is no longer available. Sign in again to continue.');
+      setError(
+        "Your session is no longer available. Sign in again to continue.",
+      );
       return null;
     }
 
@@ -125,7 +207,9 @@ export function useSubmitPosCheckout() {
       const result = await postVunaMethod<PosCheckoutResult>(
         companyUrl,
         sessionId,
-        input.orderType === 'Order' ? 'vunapos.api.sales.create_and_submit_sales_order' : 'vunapos.api.sales.create_and_submit_invoice',
+        input.orderType === "Order"
+          ? "vunapos.api.sales.create_and_submit_sales_order"
+          : "vunapos.api.sales.create_and_submit_invoice",
         {
           customer: input.customer,
           idempotency_key: idempotencyKey.current,
@@ -133,31 +217,43 @@ export function useSubmitPosCheckout() {
           payments: JSON.stringify(input.payments),
           pos_profile: input.posProfile,
           price_list: input.priceList,
-          ...(input.orderType === 'Invoice' && input.isCreditSale
+          ...(input.orderType === "Invoice" && input.isCreditSale
             ? { due_date: input.dueDate, is_credit_sale: true }
             : {}),
-          ...(input.orderType === 'Invoice' && input.loyaltyPoints
+          ...(input.orderType === "Invoice" && input.loyaltyPoints
             ? { loyalty_points: input.loyaltyPoints }
             : {}),
-          ...(input.orderType === 'Invoice' && input.taxId?.trim()
+          ...(input.orderType === "Invoice" && input.taxId?.trim()
             ? { tax_id: input.taxId.trim() }
             : {}),
           ...(input.shippingAddressName?.trim()
             ? { shipping_address_name: input.shippingAddressName.trim() }
             : {}),
           ...(input.salesperson?.trim() && input.salespersonToken?.trim()
-            ? { salesperson: input.salesperson.trim(), salesperson_token: input.salespersonToken.trim() }
+            ? {
+                salesperson: input.salesperson.trim(),
+                salesperson_token: input.salespersonToken.trim(),
+              }
             : {}),
-          ...(input.orderType === 'Order' ? { delivery_date: input.deliveryDate } : {}),
+          ...(input.orderType === "Order"
+            ? { delivery_date: input.deliveryDate }
+            : {}),
         },
       );
       idempotencyKey.current = createIdempotencyKey();
       return result;
     } catch (requestError) {
-      if (requestError instanceof FrappeClientError && requestError.code === 'session') {
+      if (
+        requestError instanceof FrappeClientError &&
+        requestError.code === "session"
+      ) {
         void invalidateSession();
       }
-      setError(requestError instanceof Error ? requestError.message : 'Could not complete this sale.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not complete this sale.",
+      );
       return null;
     } finally {
       setIsSubmitting(false);

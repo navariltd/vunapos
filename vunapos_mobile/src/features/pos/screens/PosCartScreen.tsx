@@ -14,6 +14,7 @@ import {
   PosCartTotals,
   PosCustomerSearchResult,
   PosOrderType,
+  PosPricingOverride,
   PosPriceList,
   PosSaleCustomer,
 } from "@/features/pos/types";
@@ -21,7 +22,9 @@ import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
+  allowDiscountChange?: boolean;
   allowPriceListSwitching?: boolean;
+  allowRateChange?: boolean;
   currency: string;
   error: string | null;
   isUpdating: boolean;
@@ -35,6 +38,7 @@ type PosCartScreenProps = {
   onRemove: (itemCode: string) => void;
   onRetry: () => void;
   onUpdateItemNote?: (itemCode: string, note: string) => void;
+  onUpdatePricing?: (itemCode: string, override?: PosPricingOverride) => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
   onUpdateUom?: (itemCode: string, uom: string) => void;
   orderType: PosOrderType;
@@ -65,21 +69,206 @@ function pricingRuleLabel(pricingRules: PosCartItem["pricing_rules"]) {
   return pricingRules?.trim() || "";
 }
 
+function pricingOverrideLabel(override: PosPricingOverride, currency: string) {
+  if (override.type === "rate")
+    return `rate set to ${formatCurrency(override.value, currency)}`;
+  if (override.type === "discount_percentage")
+    return `${override.value}% discount`;
+  return `${formatCurrency(override.value, currency)} discount`;
+}
+
+function PricingEditor({
+  allowDiscountChange,
+  allowRateChange,
+  currency,
+  disabled,
+  item,
+  onUpdate,
+}: {
+  allowDiscountChange: boolean;
+  allowRateChange: boolean;
+  currency: string;
+  disabled: boolean;
+  item: PosCartItem;
+  onUpdate: (override?: PosPricingOverride) => void;
+}) {
+  const [rate, setRate] = useState(String(item.rate));
+  const [discountPercentage, setDiscountPercentage] = useState(
+    String(item.discount_percentage || 0),
+  );
+  const [discountAmount, setDiscountAmount] = useState(
+    String(item.discount_amount || 0),
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  function apply(type: PosPricingOverride["type"], rawValue: string) {
+    const value = Number(rawValue);
+    if (
+      !rawValue.trim() ||
+      !Number.isFinite(value) ||
+      value < 0 ||
+      (type === "discount_percentage" && value > 100)
+    ) {
+      setError(
+        type === "discount_percentage"
+          ? "Enter a discount from 0 to 100%."
+          : "Enter a valid non-negative amount.",
+      );
+      return;
+    }
+    setError(null);
+    onUpdate({ type, value });
+  }
+
+  function updateDiscountPercentage(value: string) {
+    setDiscountPercentage(value);
+    const percentage = Number(value);
+    if (value && Number.isFinite(percentage))
+      setDiscountAmount(
+        String(
+          Math.round((item.price_list_rate ?? item.rate) * percentage) / 100,
+        ),
+      );
+  }
+
+  function updateDiscountAmount(value: string) {
+    setDiscountAmount(value);
+    const amount = Number(value);
+    const priceListRate = item.price_list_rate ?? item.rate;
+    if (value && Number.isFinite(amount) && priceListRate > 0)
+      setDiscountPercentage(
+        String(Math.round((amount / priceListRate) * 10000) / 100),
+      );
+  }
+
+  if (!allowRateChange && !allowDiscountChange) return null;
+  return (
+    <View style={styles.pricingEditor}>
+      <Text style={styles.pricingEditorTitle}>Manual pricing</Text>
+      <Text style={styles.pricingEditorMeta}>
+        Price-list rate:{" "}
+        {formatCurrency(item.price_list_rate ?? item.rate, currency)}
+      </Text>
+      {allowRateChange ? (
+        <View style={styles.pricingField}>
+          <Text style={styles.pricingFieldLabel}>Selling rate</Text>
+          <View style={styles.pricingInputRow}>
+            <TextInput
+              accessibilityLabel={`Selling rate for ${item.item_name}`}
+              editable={!disabled}
+              inputMode="decimal"
+              keyboardType="decimal-pad"
+              onChangeText={setRate}
+              style={styles.pricingInput}
+              value={rate}
+            />
+            <Pressable
+              accessibilityLabel={`Apply selling rate for ${item.item_name}`}
+              disabled={disabled}
+              onPress={() => apply("rate", rate)}
+              style={[
+                styles.pricingApplyButton,
+                disabled && styles.controlDisabled,
+              ]}
+            >
+              <Text style={styles.pricingApplyLabel}>Apply</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
+      {allowDiscountChange ? (
+        <View style={styles.pricingFields}>
+          <View style={styles.pricingField}>
+            <Text style={styles.pricingFieldLabel}>Discount %</Text>
+            <View style={styles.pricingInputRow}>
+              <TextInput
+                accessibilityLabel={`Discount percentage for ${item.item_name}`}
+                editable={!disabled}
+                inputMode="decimal"
+                keyboardType="decimal-pad"
+                onChangeText={updateDiscountPercentage}
+                style={styles.pricingInput}
+                value={discountPercentage}
+              />
+              <Pressable
+                accessibilityLabel={`Apply discount percentage for ${item.item_name}`}
+                disabled={disabled}
+                onPress={() => apply("discount_percentage", discountPercentage)}
+                style={[
+                  styles.pricingApplyButton,
+                  disabled && styles.controlDisabled,
+                ]}
+              >
+                <Text style={styles.pricingApplyLabel}>Apply</Text>
+              </Pressable>
+            </View>
+          </View>
+          <View style={styles.pricingField}>
+            <Text style={styles.pricingFieldLabel}>Discount amount</Text>
+            <View style={styles.pricingInputRow}>
+              <TextInput
+                accessibilityLabel={`Discount amount for ${item.item_name}`}
+                editable={!disabled}
+                inputMode="decimal"
+                keyboardType="decimal-pad"
+                onChangeText={updateDiscountAmount}
+                style={styles.pricingInput}
+                value={discountAmount}
+              />
+              <Pressable
+                accessibilityLabel={`Apply discount amount for ${item.item_name}`}
+                disabled={disabled}
+                onPress={() => apply("discount_amount", discountAmount)}
+                style={[
+                  styles.pricingApplyButton,
+                  disabled && styles.controlDisabled,
+                ]}
+              >
+                <Text style={styles.pricingApplyLabel}>Apply</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+      {item.pricing_override ? (
+        <Pressable
+          accessibilityLabel={`Reset manual price for ${item.item_name}`}
+          disabled={disabled}
+          onPress={() => onUpdate(undefined)}
+          style={[
+            styles.pricingResetButton,
+            disabled && styles.controlDisabled,
+          ]}
+        >
+          <Text style={styles.pricingResetLabel}>Reset to price-list rate</Text>
+        </Pressable>
+      ) : null}
+      {error ? <Text style={styles.pricingError}>{error}</Text> : null}
+    </View>
+  );
+}
+
 function CartLine({
+  allowDiscountChange,
+  allowRateChange,
   currency,
   disabled,
   item,
   onOpenUomPicker,
   onRemove,
   onUpdateNote,
+  onUpdatePricing,
   onUpdateQuantity,
 }: {
+  allowDiscountChange: boolean;
+  allowRateChange: boolean;
   currency: string;
   disabled: boolean;
   item: PosCartItem;
   onOpenUomPicker: () => void;
   onRemove: () => void;
   onUpdateNote: (note: string) => void;
+  onUpdatePricing: (override?: PosPricingOverride) => void;
   onUpdateQuantity: (quantity: number) => void;
 }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
@@ -187,6 +376,22 @@ function CartLine({
         >
           {item.description?.trim() ? (
             <Text style={styles.description}>{item.description.trim()}</Text>
+          ) : null}
+          <PricingEditor
+            allowDiscountChange={allowDiscountChange}
+            allowRateChange={allowRateChange}
+            currency={currency}
+            disabled={itemDisabled}
+            item={item}
+            key={`${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
+            onUpdate={onUpdatePricing}
+          />
+          {item.pricing_override ? (
+            <Text style={styles.pricingAudit}>
+              Manual price override:{" "}
+              {pricingOverrideLabel(item.pricing_override, currency)} ·{" "}
+              {item.pricing_override_by || "current cashier"}
+            </Text>
           ) : null}
           {canChangeUom ? (
             <Pressable
@@ -344,7 +549,9 @@ function CartLine({
 
 export function PosCartScreen({
   allowCustomerCreation,
+  allowDiscountChange = false,
   allowPriceListSwitching = false,
+  allowRateChange = false,
   currency,
   defaultSaleCustomer,
   error,
@@ -359,6 +566,7 @@ export function PosCartScreen({
   onSelectPriceList,
   onSelectSaleCustomer,
   onUpdateItemNote,
+  onUpdatePricing,
   onUpdateQuantity,
   onUpdateUom,
   orderType,
@@ -520,6 +728,8 @@ export function PosCartScreen({
           <View style={styles.itemList}>
             {items.map((item) => (
               <CartLine
+                allowDiscountChange={allowDiscountChange}
+                allowRateChange={allowRateChange}
                 currency={currency}
                 disabled={isUpdating}
                 item={item}
@@ -528,6 +738,9 @@ export function PosCartScreen({
                 onRemove={() => onRemove(item.item_code)}
                 onUpdateNote={(note) =>
                   onUpdateItemNote?.(item.item_code, note)
+                }
+                onUpdatePricing={(override) =>
+                  onUpdatePricing?.(item.item_code, override)
                 }
                 onUpdateQuantity={(quantity) =>
                   onUpdateQuantity(item.item_code, quantity)
@@ -1026,6 +1239,92 @@ const styles = StyleSheet.create({
     fontSize: typography.size.tiny,
     paddingHorizontal: spacing.xs,
     paddingVertical: spacing.xs,
+  },
+  pricingApplyButton: {
+    alignItems: "center",
+    backgroundColor: posDarkColors.primary,
+    borderRadius: radii.sm,
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  pricingApplyLabel: {
+    color: posDarkColors.onPrimary,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  pricingAudit: {
+    backgroundColor: posDarkColors.surfaceContainer,
+    borderColor: posDarkColors.primary,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+    lineHeight: typography.lineHeight.body,
+    padding: spacing.sm,
+  },
+  pricingEditor: {
+    backgroundColor: posDarkColors.surface,
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  pricingEditorMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  pricingEditorTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  pricingError: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  pricingField: { flex: 1, gap: spacing.xs },
+  pricingFieldLabel: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+  },
+  pricingFields: { flexDirection: "row", gap: spacing.sm },
+  pricingInput: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    flex: 1,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    height: 36,
+    includeFontPadding: false,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 0,
+    textAlignVertical: "center",
+  },
+  pricingInputRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  pricingResetButton: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  pricingResetLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
   },
   itemName: {
     color: posDarkColors.onSurface,
