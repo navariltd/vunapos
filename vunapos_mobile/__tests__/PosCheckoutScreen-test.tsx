@@ -205,6 +205,36 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({ taxId: 'A123456789Z' })));
   });
 
+  it('allows a permitted delivery charge to be applied through the parent cart', async () => {
+    const applyDeliveryCharge = jest.fn().mockResolvedValue({ items: [], taxes: [], totals: { grand_total: 141, net_total: 125 } });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: 'Cash' }],
+        pos_profile: { allow_delivery_charge_change: true, allow_delivery_charges: true, delivery_charge_item: 'DELIVERY', name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onApplyDeliveryCharge={applyDeliveryCharge}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.changeText(screen.getByLabelText('Delivery charge amount'), '25');
+    await fireEvent.press(screen.getByLabelText('Apply delivery charge'));
+
+    await waitFor(() => expect(applyDeliveryCharge).toHaveBeenCalledWith('DELIVERY', 25));
+  });
+
   it('selects a permitted shipping address and submits its Frappe address name', async () => {
     submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-SHIP-001' });
     mockUsePosCustomerShippingAddresses.mockReturnValue({

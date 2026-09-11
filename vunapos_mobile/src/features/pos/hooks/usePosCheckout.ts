@@ -24,7 +24,12 @@ type SubmitInput = PreviewInput & {
 };
 
 function cartPayload(items: PosCartItem[]) {
-  return items.map((item) => ({ item_code: item.item_code, qty: item.qty, uom: item.uom || undefined }));
+  return items.map((item) => ({
+    item_code: item.item_code,
+    pricing_override: item.pricing_override,
+    qty: item.qty,
+    uom: item.uom || undefined,
+  }));
 }
 
 function createIdempotencyKey() {

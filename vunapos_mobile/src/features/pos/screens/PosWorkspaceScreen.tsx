@@ -71,6 +71,7 @@ export function PosWorkspaceScreen() {
         ? <PosCheckoutScreen
             currency={cartCurrency}
             items={cart.items}
+            onApplyDeliveryCharge={cart.applyDeliveryCharge}
             onBack={() => setCheckoutVisible(false)}
             onComplete={(result) => {
               cart.clear();

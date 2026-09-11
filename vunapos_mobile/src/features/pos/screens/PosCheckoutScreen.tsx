@@ -23,12 +23,13 @@ import {
   parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
-import { PosC2BGatewayPayment, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
+import { PosC2BGatewayPayment, PosCartData, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCheckoutScreenProps = {
   currency: string;
   items: PosCartItem[];
+  onApplyDeliveryCharge?: (itemCode: string, amount?: number) => Promise<PosCartData | null>;
   onBack: () => void;
   onComplete: (result: PosCheckoutResult) => void;
   orderType: PosOrderType;
@@ -82,7 +83,7 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
  */
-export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderType, saleCustomer, subtotal }: PosCheckoutScreenProps) {
+export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, saleCustomer, subtotal }: PosCheckoutScreenProps) {
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === 'Invoice';
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -90,6 +91,9 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState('');
+  const [deliveryChargeAmount, setDeliveryChargeAmount] = useState<string | null>(null);
+  const [deliveryChargeError, setDeliveryChargeError] = useState<string | null>(null);
+  const [isApplyingDeliveryCharge, setIsApplyingDeliveryCharge] = useState(false);
   const [shippingAddressName, setShippingAddressName] = useState('');
   const [isShippingAddressPickerVisible, setIsShippingAddressPickerVisible] = useState(false);
   const preview = usePosCheckoutPreview(isInvoice && bootstrap.data
@@ -110,6 +114,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [isCreditSale, setIsCreditSale] = useState(false);
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
+  const previousPaymentTotalMinor = useRef<number | null>(null);
   const gatewayIdempotencyKeys = useRef<Record<string, string>>({});
   const [dueDate, setDueDate] = useState(today());
   const [deliveryDate, setDeliveryDate] = useState(today());
@@ -163,6 +168,13 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const appliedLoyaltyPoints = Math.floor(preview.data?.loyalty_points ?? 0);
   const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
   const isWalkinCustomer = Boolean(saleCustomer?.isWalkin);
+  const deliveryChargeItem = profile?.delivery_charge_item;
+  const deliveryChargeEnabled = Boolean(profile?.allow_delivery_charges && deliveryChargeItem);
+  const deliveryChargeCanChange = profile?.allow_delivery_charge_change !== false;
+  const deliveryChargeCartItem = items.find((item) => item.item_code === deliveryChargeItem);
+  const displayedDeliveryChargeAmount = deliveryChargeAmount ?? (deliveryChargeCartItem
+    ? minorUnitsToInput(totalToMinorUnits(deliveryChargeCartItem.rate, precision), precision)
+    : '');
   const selectedShippingAddress = customerShippingAddresses.data?.find((address) => address.name === shippingAddressName)
     || customerShippingAddresses.data?.find((address) => address.is_default)
     || customerShippingAddresses.data?.[0];
@@ -225,7 +237,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
                 ? 'Partial payment'
                 : 'Payment incomplete';
   const isReadyToSubmit = Boolean(
-    items.length && !checkout.isSubmitting && !isApplyingLoyalty && isLoyaltySelectionValid && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : deliveryDate >= today() && canSubmitPayment),
+    items.length && !checkout.isSubmitting && !isApplyingDeliveryCharge && !isApplyingLoyalty && isLoyaltySelectionValid && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : deliveryDate >= today() && canSubmitPayment),
   );
   const paidAmount = allocation.allocatedMinor / currencyScale(precision);
   const checkoutBalanceAmount = Math.abs(allocation.remainingMinor / currencyScale(precision));
@@ -246,7 +258,26 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     const nextKey = `${paymentModeKey}:${totalMinor}`;
     if (initializedPaymentKey.current === nextKey) return;
     initializedPaymentKey.current = nextKey;
-    setPaymentAmounts(createInitialPaymentAmounts(manualModes, totalMinor, precision));
+    const previousTotalMinor = previousPaymentTotalMinor.current;
+    previousPaymentTotalMinor.current = totalMinor;
+    if (previousTotalMinor === null || previousTotalMinor === totalMinor) {
+      setPaymentAmounts(createInitialPaymentAmounts(manualModes, totalMinor, precision));
+      return;
+    }
+
+    // A server-applied delivery charge changes the amount due after payment has
+    // been allocated. Keep a settled allocation settled by adding only the
+    // delta to the profile's default mode; keep incomplete allocations intact.
+    setPaymentAmounts((current) => {
+      const previousAllocation = calculatePaymentAllocation(manualModes, current, previousTotalMinor, precision);
+      if (previousAllocation.remainingMinor !== 0) return current;
+      const defaultMode = manualModes.find((mode) => mode.default) || manualModes[0];
+      const currentMinor = parsePaymentAmount(current[defaultMode.mode_of_payment] || '', precision) || 0;
+      return {
+        ...current,
+        [defaultMode.mode_of_payment]: minorUnitsToInput(Math.max(currentMinor + totalMinor - previousTotalMinor, 0), precision),
+      };
+    });
   }, [isCreditSale, isInvoice, manualModes, paymentModeKey, precision, totalMinor]);
 
   useEffect(() => {
@@ -385,6 +416,20 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     initializedPaymentKey.current = nextCreditSale ? null : `${paymentModeKey}:${totalMinor}`;
     setValidationError(null);
     checkout.clearError();
+  }
+
+  async function applyDeliveryCharge() {
+    if (!deliveryChargeItem || !onApplyDeliveryCharge) return;
+    const amountMinor = parsePaymentAmount(displayedDeliveryChargeAmount, precision);
+    if (amountMinor === null) {
+      setDeliveryChargeError(`Enter a valid delivery charge using up to ${precision} decimal places.`);
+      return;
+    }
+    setDeliveryChargeError(null);
+    setIsApplyingDeliveryCharge(true);
+    const applied = await onApplyDeliveryCharge(deliveryChargeItem, amountMinor / currencyScale(precision));
+    if (!applied) setDeliveryChargeError('Could not update the delivery charge. Try again.');
+    setIsApplyingDeliveryCharge(false);
   }
 
   async function applyLoyaltyPoints(points: number) {
@@ -674,6 +719,37 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           style={styles.input}
           value={checkoutTaxId}
         />
+      </View> : null}
+
+      {deliveryChargeEnabled ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>Delivery charge</Text>
+        <Text style={styles.cardHint}>Optionally add the configured delivery item to this sale. Frappe will recalculate the total before payment.</Text>
+        <View style={styles.deliveryChargeRow}>
+          <View style={styles.paymentAmountWrap}>
+            <Text style={styles.currencyPrefix}>{currency}</Text>
+            <TextInput
+              accessibilityLabel="Delivery charge amount"
+              editable={deliveryChargeCanChange && !isApplyingDeliveryCharge}
+              inputMode="decimal"
+              keyboardType="decimal-pad"
+              onChangeText={setDeliveryChargeAmount}
+              placeholder="Optional"
+              placeholderTextColor="#8f8f8f"
+              style={styles.paymentAmountInput}
+              value={displayedDeliveryChargeAmount}
+            />
+          </View>
+          <Pressable
+            accessibilityLabel="Apply delivery charge"
+            disabled={!deliveryChargeCanChange || isApplyingDeliveryCharge}
+            onPress={() => void applyDeliveryCharge()}
+            style={[styles.secondaryButton, (!deliveryChargeCanChange || isApplyingDeliveryCharge) && styles.secondaryButtonDisabled]}
+          >
+            {isApplyingDeliveryCharge ? <ActivityIndicator color={posDarkColors.onSurface} size="small" /> : <Text style={styles.secondaryButtonLabel}>Apply</Text>}
+          </Pressable>
+        </View>
+        {!deliveryChargeCanChange ? <Text style={styles.cardHint}>This POS profile does not allow changing the delivery charge.</Text> : null}
+        {deliveryChargeError ? <Text style={styles.errorText}>{deliveryChargeError}</Text> : null}
       </View> : null}
 
       {customerShippingAddresses.isLoading || customerShippingAddresses.data?.length ? <View style={styles.card}>
@@ -985,6 +1061,7 @@ const styles = StyleSheet.create({
   creditSaleText: { flex: 1, gap: 3 },
   datePickerButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.sm },
   datePickerButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
+  deliveryChargeRow: { alignItems: 'stretch', flexDirection: 'row', gap: spacing.sm },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
   fieldLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
   gatewayActions: { flexDirection: 'row', gap: spacing.sm },

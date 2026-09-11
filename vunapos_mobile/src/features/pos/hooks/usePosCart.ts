@@ -27,7 +27,12 @@ type CartResponse = Omit<PosCartData, 'items'> & {
 };
 
 function toCartPayload(items: PosCartItem[]) {
-  return items.map((item) => ({ item_code: item.item_code, qty: item.qty, uom: item.uom || undefined }));
+  return items.map((item) => ({
+    item_code: item.item_code,
+    pricing_override: item.pricing_override,
+    qty: item.qty,
+    uom: item.uom || undefined,
+  }));
 }
 
 function localCart(items: PosCartItem[]): PosCartData {
@@ -46,6 +51,7 @@ function cartFromResponse(data: CartResponse, previousItems: PosCartItem[]): Pos
         allow_negative_stock: Boolean(item.allow_negative_stock),
         available_qty: item.actual_qty ?? previous?.available_qty ?? null,
         is_stock_item: Boolean(item.is_stock_item),
+        pricing_override: previous?.pricing_override,
         rate: Number(item.rate || 0),
       };
     }),
@@ -168,6 +174,46 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
     await refresh(nextItems);
   }
 
+  /** Adds, updates, or removes the profile-configured delivery line through Frappe. */
+  async function applyDeliveryCharge(itemCode: string, amount?: number): Promise<PosCartData | null> {
+    if (amount === undefined || amount <= 0) {
+      return refresh(itemsRef.current.filter((item) => item.item_code !== itemCode));
+    }
+    if (!Number.isFinite(amount)) return null;
+
+    const existing = itemsRef.current.find((item) => item.item_code === itemCode);
+    if (existing) {
+      return refresh(itemsRef.current.map((item) => item.item_code === itemCode
+        ? { ...item, pricing_override: { type: 'rate', value: amount }, qty: 1, rate: amount }
+        : item));
+    }
+    if (!companyUrl || !sessionId || !posProfile) {
+      setError('Your POS session is not ready. Try again once the workspace has loaded.');
+      return null;
+    }
+
+    setError(null);
+    setIsUpdating(true);
+    try {
+      const deliveryItem = await getVunaMethod<PosCatalogueItem>(companyUrl, sessionId, 'vunapos.api.item.get_item_details', {
+        customer: customerRef.current?.customer,
+        item_code: itemCode,
+        pos_profile: posProfile,
+      });
+      return refresh([
+        ...itemsRef.current,
+        { ...toCartItem(deliveryItem), pricing_override: { type: 'rate', value: amount }, rate: amount },
+      ]);
+    } catch (requestError) {
+      if (requestError instanceof FrappeClientError && requestError.code === 'session') {
+        void invalidateSession();
+      }
+      setError(requestError instanceof Error ? requestError.message : 'Could not update the delivery charge.');
+      setIsUpdating(false);
+      return null;
+    }
+  }
+
   async function retry() {
     await refresh(attemptedItemsRef.current, attemptedCustomerRef.current);
   }
@@ -176,5 +222,5 @@ export function usePosCart({ customer, posProfile }: UsePosCartArgs) {
   const subtotal = data.totals.net_total ?? data.items.reduce((total, item) => total + (item.qty * item.rate), 0);
   const requiresCustomer = Boolean(data.items.length && !customer);
 
-  return { add, clear, error, itemCount, isUpdating, items: data.items, refresh, remove, requiresCustomer, retry, subtotal, taxes: data.taxes, totals: data.totals, updateQuantity };
+  return { add, applyDeliveryCharge, clear, error, itemCount, isUpdating, items: data.items, refresh, remove, requiresCustomer, retry, subtotal, taxes: data.taxes, totals: data.totals, updateQuantity };
 }

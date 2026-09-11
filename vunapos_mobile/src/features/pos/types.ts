@@ -30,6 +30,10 @@ export type PosCartItem = {
   item_code: string;
   item_name: string;
   price_list_rate?: number;
+  pricing_override?: {
+    type: 'rate';
+    value: number;
+  };
   qty: number;
   rate: number;
   uom?: string | null;
@@ -87,11 +91,14 @@ export type PosBootstrapData = {
   pos_profile: {
     allow_credit_sales?: boolean;
     allow_customer_payments?: boolean;
+    allow_delivery_charge_change?: boolean;
+    allow_delivery_charges?: boolean;
     allow_partial_payment?: boolean;
     allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
     currency?: string;
     currency_precision?: number;
+    delivery_charge_item?: string | null;
     default_sale_type?: 'Cash Sale' | 'Credit Sale';
     modes_of_payment?: PosPaymentMode[];
     name: string;

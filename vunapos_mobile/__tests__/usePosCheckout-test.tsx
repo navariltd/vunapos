@@ -160,6 +160,26 @@ describe('POS checkout hooks', () => {
     expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({ shipping_address_name: 'ADDR-001' }));
   });
 
+  it('preserves the configured delivery-rate override in the final server submission', async () => {
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-DELIVERY-001' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-001',
+        isCreditSale: false,
+        items: [...[item], { allow_negative_stock: false, available_qty: null, is_stock_item: false, item_code: 'DELIVERY', item_name: 'Delivery charge', pricing_override: { type: 'rate', value: 50 }, qty: 1, rate: 50, uom: 'Nos' }],
+        orderType: 'Invoice',
+        payments: [{ amount: 340, mode_of_payment: 'Cash' }],
+        posProfile: 'POS-001',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({
+      items: '[{"item_code":"ITEM-001","qty":2,"uom":"Nos"},{"item_code":"DELIVERY","pricing_override":{"type":"rate","value":50},"qty":1,"uom":"Nos"}]',
+    }));
+  });
+
   it('serializes manual payment transaction references for invoice checkout', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0003' });
     const hook = await renderHook(() => useSubmitPosCheckout());
