@@ -16,6 +16,32 @@ jest.mock("@/features/pos/components/PosUomPickerSheet", () => ({
   PosUomPickerSheet: () => null,
 }));
 
+jest.mock("@/features/pos/components/ClearCartConfirmationDialog", () => ({
+  ClearCartConfirmationDialog: ({
+    onConfirm,
+    onDismiss,
+    visible,
+  }: {
+    onConfirm: () => void;
+    onDismiss: () => void;
+    visible: boolean;
+  }) =>
+    visible
+      ? require("react").createElement(
+          require("react-native").View,
+          null,
+          require("react").createElement(require("react-native").Pressable, {
+            accessibilityLabel: "Cancel clear cart",
+            onPress: onDismiss,
+          }),
+          require("react").createElement(require("react-native").Pressable, {
+            accessibilityLabel: "Confirm clear cart",
+            onPress: onConfirm,
+          }),
+        )
+      : null,
+}));
+
 jest.mock("@/features/pos/components/ManagerPinApprovalDialog", () => ({
   ManagerPinApprovalDialog: ({
     onApproved,
@@ -169,6 +195,53 @@ describe("PosCartScreen", () => {
 
     await fireEvent.press(screen.getByLabelText("Use default sale customer"));
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires confirmation before clearing the whole cart", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={null}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Clear cart"));
+    expect(onClear).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Cancel clear cart"));
+    expect(onClear).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByLabelText("Clear cart"));
+    await fireEvent.press(screen.getByLabelText("Confirm clear cart"));
+    expect(onClear).toHaveBeenCalledTimes(1);
   });
 
   it("requires a customer before checkout while retaining the temporary cart", async () => {

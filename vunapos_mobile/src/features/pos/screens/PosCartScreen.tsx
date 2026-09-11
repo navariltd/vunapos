@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
+import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
@@ -1037,6 +1038,8 @@ export function PosCartScreen({
   taxes,
   totals,
 }: PosCartScreenProps) {
+  const [clearConfirmationVisible, setClearConfirmationVisible] =
+    useState(false);
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
@@ -1081,7 +1084,7 @@ export function PosCartScreen({
           <Pressable
             accessibilityLabel="Clear cart"
             disabled={isUpdating}
-            onPress={onClear}
+            onPress={() => setClearConfirmationVisible(true)}
             style={[styles.clearButton, isUpdating && styles.controlDisabled]}
           >
             <Text style={styles.clearButtonLabel}>Clear</Text>
@@ -1375,6 +1378,14 @@ export function PosCartScreen({
         onDismiss={() => setManagerPinItem(null)}
         posProfile={posProfile}
         visible={Boolean(managerPinItem)}
+      />
+      <ClearCartConfirmationDialog
+        onConfirm={() => {
+          onClear();
+          setClearConfirmationVisible(false);
+        }}
+        onDismiss={() => setClearConfirmationVisible(false)}
+        visible={clearConfirmationVisible}
       />
     </KeyboardAwareFormScroll>
   );
