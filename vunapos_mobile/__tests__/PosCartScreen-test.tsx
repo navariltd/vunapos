@@ -31,6 +31,7 @@ const onSelectSaleCustomer = jest.fn();
 const onClear = jest.fn();
 const onRemove = jest.fn();
 const onRetry = jest.fn();
+const onUpdateItemNote = jest.fn();
 const onUpdateQuantity = jest.fn();
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
 
@@ -507,5 +508,58 @@ describe("PosCartScreen", () => {
     await fireEvent.press(screen.getByLabelText("View details for Stock item"));
     expect(screen.getByLabelText("Change unit for Stock item")).toBeTruthy();
     expect(screen.getByText("Unit of measure")).toBeTruthy();
+  });
+
+  it("edits an item note from its expanded cart details", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateItemNote={onUpdateItemNote}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("View details for Stock item"));
+    expect(screen.getByText("No note added")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Edit note for Stock item"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Note for Stock item"),
+      "  Fragile  ",
+    );
+    await fireEvent(screen.getByLabelText("Note for Stock item"), "blur");
+    expect(onUpdateItemNote).toHaveBeenCalledWith("ITEM-001", "Fragile");
+    expect(screen.getByText("11/500")).toBeTruthy();
   });
 });

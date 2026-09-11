@@ -34,6 +34,7 @@ export type PosCartItem = {
   is_stock_item: boolean;
   item_code: string;
   item_name: string;
+  item_note?: string | null;
   item_tax_template?: string | null;
   price_list_rate?: number;
   pricing_override?: {

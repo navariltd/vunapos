@@ -178,6 +178,7 @@ export function PosWorkspaceScreen() {
             setSaleCustomer(customer);
           }}
           onSelectPriceList={setSelectedPriceList}
+          onUpdateItemNote={cart.updateItemNote}
           onUpdateQuantity={cart.updateQuantity}
           onUpdateUom={cart.updateUom}
           orderType={orderType}

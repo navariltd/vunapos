@@ -37,6 +37,7 @@ type CartResponse = Omit<PosCartData, "items"> & {
 function toCartPayload(items: PosCartItem[]) {
   return items.map((item) => ({
     item_code: item.item_code,
+    item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
     qty: item.qty,
     uom: item.uom || undefined,
@@ -242,6 +243,22 @@ export function usePosCart({
     await refresh(nextItems);
   }
 
+  /** Stores a concise packing, handling, or cashier note with its cart item. */
+  async function updateItemNote(itemCode: string, note: string) {
+    const cleanNote = note.trim();
+    if (cleanNote.length > 500) {
+      setError("Item notes cannot exceed 500 characters.");
+      return null;
+    }
+    return refresh(
+      itemsRef.current.map((item) =>
+        item.item_code === itemCode
+          ? { ...item, item_note: cleanNote || null }
+          : item,
+      ),
+    );
+  }
+
   /** Changes to an Item-configured UOM only; Frappe recalculates its rate, tax, and stock quantities. */
   async function updateUom(itemCode: string, uom: string) {
     if (!uom) return;
@@ -356,6 +373,7 @@ export function usePosCart({
     subtotal,
     taxes: data.taxes,
     totals: data.totals,
+    updateItemNote,
     updateQuantity,
     updateUom,
   };

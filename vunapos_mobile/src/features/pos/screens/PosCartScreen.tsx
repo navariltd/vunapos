@@ -34,6 +34,7 @@ type PosCartScreenProps = {
   onClear: () => void;
   onRemove: (itemCode: string) => void;
   onRetry: () => void;
+  onUpdateItemNote?: (itemCode: string, note: string) => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
   onUpdateUom?: (itemCode: string, uom: string) => void;
   orderType: PosOrderType;
@@ -70,6 +71,7 @@ function CartLine({
   item,
   onOpenUomPicker,
   onRemove,
+  onUpdateNote,
   onUpdateQuantity,
 }: {
   currency: string;
@@ -77,10 +79,13 @@ function CartLine({
   item: PosCartItem;
   onOpenUomPicker: () => void;
   onRemove: () => void;
+  onUpdateNote: (note: string) => void;
   onUpdateQuantity: (quantity: number) => void;
 }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
+  const [draftNote, setDraftNote] = useState(item.item_note || "");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [noteExpanded, setNoteExpanded] = useState(false);
   const maximum =
     item.is_stock_item &&
     !item.allow_negative_stock &&
@@ -99,11 +104,7 @@ function CartLine({
       options.findIndex((candidate) => candidate.uom === option.uom) === index,
   );
   const canChangeUom = !item.is_free_item && uomOptions.length > 1;
-  const canExpandDetails =
-    !item.is_free_item &&
-    Boolean(
-      item.description?.trim() || item.bundle_items?.length || canChangeUom,
-    );
+  const canExpandDetails = !item.is_free_item;
 
   function changeQuantity(value: string) {
     if (/^\d*\.?\d*$/.test(value)) setDraftQuantity(value);
@@ -116,6 +117,11 @@ function CartLine({
       return;
     }
     onUpdateQuantity(quantity);
+  }
+
+  function saveNote() {
+    const note = draftNote.trim();
+    if (note !== (item.item_note || "")) onUpdateNote(note);
   }
 
   return (
@@ -200,6 +206,42 @@ function CartLine({
               />
             </Pressable>
           ) : null}
+          <View style={styles.noteEditor}>
+            <Pressable
+              accessibilityLabel={`${noteExpanded ? "Hide" : "Edit"} note for ${item.item_name}`}
+              onPress={() => setNoteExpanded((current) => !current)}
+              style={styles.noteHeader}
+            >
+              <View style={styles.noteHeaderContent}>
+                <Text style={styles.noteLabel}>Item note</Text>
+                <Text numberOfLines={1} style={styles.notePreview}>
+                  {draftNote.trim() || "No note added"}
+                </Text>
+              </View>
+              <MaterialCommunityIcons
+                color={posDarkColors.onSurfaceMuted}
+                name={noteExpanded ? "chevron-up" : "chevron-down"}
+                size={20}
+              />
+            </Pressable>
+            {noteExpanded ? (
+              <View style={styles.noteContent}>
+                <TextInput
+                  accessibilityLabel={`Note for ${item.item_name}`}
+                  editable={!disabled}
+                  maxLength={500}
+                  multiline
+                  onBlur={saveNote}
+                  onChangeText={setDraftNote}
+                  placeholder="Add packing, handling, or cashier notes…"
+                  placeholderTextColor={posDarkColors.onSurfaceMuted}
+                  style={styles.noteInput}
+                  value={draftNote}
+                />
+                <Text style={styles.noteCount}>{draftNote.length}/500</Text>
+              </View>
+            ) : null}
+          </View>
           {item.bundle_items?.length ? (
             <View style={styles.bundleComponents}>
               <Text style={styles.bundleComponentsTitle}>
@@ -316,6 +358,7 @@ export function PosCartScreen({
   onRetry,
   onSelectPriceList,
   onSelectSaleCustomer,
+  onUpdateItemNote,
   onUpdateQuantity,
   onUpdateUom,
   orderType,
@@ -483,6 +526,9 @@ export function PosCartScreen({
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
                 onRemove={() => onRemove(item.item_code)}
+                onUpdateNote={(note) =>
+                  onUpdateItemNote?.(item.item_code, note)
+                }
                 onUpdateQuantity={(quantity) =>
                   onUpdateQuantity(item.item_code, quantity)
                 }
@@ -900,6 +946,55 @@ const styles = StyleSheet.create({
     color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
+  },
+  noteContent: {
+    borderTopColor: posDarkColors.border,
+    borderTopWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.sm,
+  },
+  noteCount: {
+    alignSelf: "flex-end",
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  noteEditor: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  noteHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
+  noteHeaderContent: { flex: 1, gap: 2 },
+  noteInput: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    minHeight: 84,
+    padding: spacing.sm,
+    textAlignVertical: "top",
+  },
+  noteLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+    textTransform: "uppercase",
+  },
+  notePreview: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
   },
   priceListLabel: {
     color: posDarkColors.onSurfaceMuted,
