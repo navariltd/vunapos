@@ -37,11 +37,16 @@ jest.mock('@/features/pos/hooks/useGatewayPaymentRealtime', () => ({
   useGatewayPaymentRealtime: jest.fn(),
 }));
 
+jest.mock('@/features/pos/hooks/useInvoiceReceipt', () => ({
+  useInvoiceReceipt: jest.fn(),
+}));
+
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { usePosCustomerShippingAddresses } from '@/features/pos/hooks/usePosCustomerShippingAddresses';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
+import { useInvoiceReceipt } from '@/features/pos/hooks/useInvoiceReceipt';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
 
@@ -52,7 +57,9 @@ const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
 const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
 const mockUseGatewayPaymentRealtime = jest.mocked(useGatewayPaymentRealtime);
+const mockUseInvoiceReceipt = jest.mocked(useInvoiceReceipt);
 const clearError = jest.fn();
+const printReceipt = jest.fn();
 const submit = jest.fn();
 const onComplete = jest.fn();
 
@@ -77,6 +84,7 @@ describe('PosCheckoutScreen', () => {
     mockUsePosCustomerLoyalty.mockReturnValue({ data: null, error: null, isLoading: false });
     mockUsePosCustomerShippingAddresses.mockReturnValue({ data: null, error: null, isLoading: false });
     mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, submit });
+    mockUseInvoiceReceipt.mockReturnValue({ error: null, isWorking: false, printReceipt, shareReceipt: jest.fn() });
     mockUseGatewayPayment.mockReturnValue({
       attachC2B: jest.fn(),
       cancel: jest.fn(),
@@ -122,7 +130,33 @@ describe('PosCheckoutScreen', () => {
       payments: [{ amount: 116, mode_of_payment: 'Cash' }],
       posProfile: 'POS-001',
     })));
+    await waitFor(() => expect(printReceipt).toHaveBeenCalledWith({ invoiceDoctype: 'Sales Invoice', invoiceName: 'SINV-0001' }));
+    expect(screen.getByText('Sales invoice SINV-0001 submitted.')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('View submitted sales invoice'));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ doctype: 'Sales Invoice', name: 'SINV-0001' }));
+  });
+
+  it('shows a queued-success state without attempting to print an unsubmitted invoice', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-QUEUE-001', queue_status: 'Queued' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(screen.getByText('Sales invoice SINV-QUEUE-001 is queued.')).toBeTruthy());
+    expect(printReceipt).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText('View submitted sales invoice'));
+    expect(onComplete).toHaveBeenCalledWith({ doctype: 'Sales Invoice', name: 'SINV-QUEUE-001', queue_status: 'Queued' });
   });
 
   it('validates a loyalty redemption through the cart preview and recalculates the payment', async () => {

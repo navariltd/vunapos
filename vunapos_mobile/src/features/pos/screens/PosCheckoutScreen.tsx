@@ -9,6 +9,7 @@ import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalt
 import { usePosCustomerShippingAddresses } from '@/features/pos/hooks/usePosCustomerShippingAddresses';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
+import { useInvoiceReceipt } from '@/features/pos/hooks/useInvoiceReceipt';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import {
@@ -101,6 +102,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
     ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name }
     : null);
   const checkout = useSubmitPosCheckout();
+  const receipt = useInvoiceReceipt();
   const gatewayPayment = useGatewayPayment();
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
   const [paymentReferences, setPaymentReferences] = useState<Record<string, { referenceDate: string; referenceNo: string }>>({});
@@ -123,6 +125,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
   const [isDeliveryDatePickerVisible, setIsDeliveryDatePickerVisible] = useState(false);
   const [referenceDateMode, setReferenceDateMode] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [completedResult, setCompletedResult] = useState<PosCheckoutResult | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
 
   const updateGatewayPaymentFromRealtime = useCallback((payment: PosGatewayPaymentLink) => {
@@ -544,7 +547,11 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
       shippingAddressName: selectedShippingAddress?.name,
       taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
     });
-    if (result) onComplete(result);
+    if (!result) return;
+    setCompletedResult(result);
+    if (result.queue_status !== 'Queued' && result.queue_status !== 'Processing') {
+      void receipt.printReceipt({ invoiceDoctype: result.doctype, invoiceName: result.name });
+    }
   }
 
   const submissionLabel = isInvoice ? 'sales invoice' : 'sales order';
@@ -984,7 +991,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
 
       <Modal
         animationType="fade"
-        onRequestClose={() => { if (!checkout.isSubmitting) setIsSubmitConfirmationVisible(false); }}
+        onRequestClose={() => { if (!checkout.isSubmitting && !completedResult) setIsSubmitConfirmationVisible(false); }}
         presentationStyle="overFullScreen"
         statusBarTranslucent
         transparent
@@ -993,12 +1000,27 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
         <View style={styles.confirmationModalRoot}>
           <Pressable
             accessibilityLabel="Dismiss sale confirmation"
-            disabled={checkout.isSubmitting}
+            disabled={checkout.isSubmitting || Boolean(completedResult)}
             onPress={() => setIsSubmitConfirmationVisible(false)}
             style={styles.confirmationBackdrop}
           />
           <View accessibilityViewIsModal style={styles.confirmationDialog}>
-            {checkout.isSubmitting ? <>
+            {completedResult ? <>
+              <MaterialCommunityIcons color={completedResult.queue_status === 'Queued' || completedResult.queue_status === 'Processing' ? posDarkColors.primary : '#39b976'} name={completedResult.queue_status === 'Queued' || completedResult.queue_status === 'Processing' ? 'clock-outline' : 'check-circle-outline'} size={34} />
+              <Text style={styles.confirmationTitle}>{completedResult.queue_status === 'Queued' || completedResult.queue_status === 'Processing'
+                ? `${submissionLabel === 'sales invoice' ? 'Sales invoice' : 'Sales order'} ${completedResult.name} is queued.`
+                : `${submissionLabel === 'sales invoice' ? 'Sales invoice' : 'Sales order'} ${completedResult.name} submitted.`}</Text>
+              <Text style={styles.confirmationDescription}>{completedResult.queue_status === 'Queued' || completedResult.queue_status === 'Processing'
+                ? 'The sale is waiting for server processing. A receipt will be available once it is submitted.'
+                : receipt.isWorking
+                  ? 'Opening the native print preview…'
+                  : receipt.error
+                    ? 'The sale is complete, but its receipt could not be prepared. You can retry from the invoice details screen.'
+                    : 'The receipt was sent to the native print preview.'}</Text>
+              <Pressable accessibilityLabel={`View submitted ${submissionLabel}`} onPress={() => onComplete(completedResult)} style={styles.confirmConfirmationButton}>
+                <Text style={styles.confirmConfirmationLabel}>View {submissionLabel === 'sales invoice' ? 'invoice' : 'sales order'}</Text>
+              </Pressable>
+            </> : checkout.isSubmitting ? <>
               <ActivityIndicator color={posDarkColors.primary} size="small" />
               <Text style={styles.confirmationTitle}>Submitting {submissionLabel}…</Text>
               <Text style={styles.confirmationDescription}>Please wait while the sale is confirmed.</Text>
@@ -1011,7 +1033,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
                 : isCreditSale
                   ? 'This will submit the sale as credit with its payment due date.'
                   : 'This will submit the sale and its selected payment allocation.'}</Text>
-              {checkout.error ? <Text style={styles.errorText}>{checkout.error}</Text> : null}
+              {checkout.error ? <Text accessibilityRole="alert" style={styles.errorText}>{checkout.error}</Text> : null}
               <View style={styles.confirmationActions}>
                 <Pressable accessibilityLabel="Cancel sale submission" onPress={() => setIsSubmitConfirmationVisible(false)} style={styles.cancelConfirmationButton}>
                   <Text style={styles.cancelConfirmationLabel}>Cancel</Text>

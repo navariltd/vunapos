@@ -174,8 +174,10 @@ export type PosCheckoutTax = {
 };
 
 export type PosCheckoutResult = {
+  docstatus?: number;
   doctype: string;
   name: string;
+  queue_status?: string | null;
 };
 
 export type PosInvoiceHistoryFilters = {
