@@ -46,6 +46,7 @@ export type PosCartItem = {
   pricing_rules?: string | string[] | null;
   qty: number;
   rate: number;
+  serial_allocations?: PosSerialAllocation[];
   uom?: string | null;
   uoms?: PosItemUom[];
   warehouse?: string | null;
@@ -75,7 +76,13 @@ export type PosItemBatches = {
   item_code: string;
   requires_batch?: boolean;
   requires_serial?: boolean;
+  serials?: PosSerialAllocation[];
   warehouse?: string | null;
+};
+
+export type PosSerialAllocation = {
+  batch_no?: string | null;
+  serial_no: string;
 };
 
 export type PosCartBundleItem = {

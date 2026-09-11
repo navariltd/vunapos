@@ -7,6 +7,7 @@ import {
   PosCartItem,
   PosCatalogueItem,
   PosPricingOverride,
+  PosSerialAllocation,
   PosSaleCustomer,
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
@@ -46,6 +47,7 @@ function toCartPayload(items: PosCartItem[]) {
     item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
     qty: item.qty,
+    serial_allocations: item.serial_allocations,
     uom: item.uom || undefined,
   }));
 }
@@ -279,6 +281,20 @@ export function usePosCart({
     );
   }
 
+  /** Sends an exact serial selection to Frappe for live warehouse validation. */
+  async function updateSerialAllocations(
+    itemCode: string,
+    allocations: PosSerialAllocation[],
+  ) {
+    return refresh(
+      itemsRef.current.map((item) =>
+        item.item_code === itemCode
+          ? { ...item, serial_allocations: allocations }
+          : item,
+      ),
+    );
+  }
+
   /** Applies a permitted manual rate or discount before Frappe validates and audits it. */
   async function updatePricing(
     itemCode: string,
@@ -454,6 +470,7 @@ export function usePosCart({
     updateItemNote,
     updatePricing,
     updateQuantity,
+    updateSerialAllocations,
     updateUom,
   };
 }

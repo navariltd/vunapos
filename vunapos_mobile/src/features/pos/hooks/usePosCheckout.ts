@@ -45,6 +45,7 @@ function cartPayload(items: PosCartItem[]) {
     item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
     qty: item.qty,
+    serial_allocations: item.serial_allocations,
     uom: item.uom || undefined,
   }));
 }

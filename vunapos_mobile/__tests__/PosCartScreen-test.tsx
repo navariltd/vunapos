@@ -40,6 +40,7 @@ const onUpdateBatchAllocations = jest.fn();
 const onUpdateItemNote = jest.fn();
 const onUpdatePricing = jest.fn();
 const onUpdateQuantity = jest.fn();
+const onUpdateSerialAllocations = jest.fn();
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
 const mockUsePosItemBatches = jest.mocked(usePosItemBatches);
 
@@ -63,6 +64,10 @@ describe("PosCartScreen", () => {
         ],
         item_code: "ITEM-001",
         requires_batch: true,
+        serials: [
+          { serial_no: "SERIAL-001" },
+          { batch_no: "BATCH-001", serial_no: "SERIAL-002" },
+        ],
       },
       error: null,
       isLoading: false,
@@ -720,6 +725,63 @@ describe("PosCartScreen", () => {
         expiry_date: "2027-01-01",
         qty: 1,
       },
+    ]);
+  });
+
+  it("requires and persists the exact serial selection for a serial-tracked item", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 2,
+            has_serial_no: true,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 2,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        onUpdateSerialAllocations={onUpdateSerialAllocations}
+        orderType="Invoice"
+        posProfile="POS-001"
+        requiresCustomer={false}
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        subtotal={250}
+        taxes={[]}
+        totals={{ grand_total: 250, net_total: 250 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("View details for Stock item"));
+    await fireEvent.press(
+      screen.getByLabelText("Edit serial numbers for Stock item"),
+    );
+    expect(screen.getByText("Selected 0 / 2")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Select serial SERIAL-001"));
+    expect(onUpdateSerialAllocations).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Select serial SERIAL-002"));
+    expect(onUpdateSerialAllocations).toHaveBeenCalledWith("ITEM-001", [
+      { serial_no: "SERIAL-001" },
+      { batch_no: "BATCH-001", serial_no: "SERIAL-002" },
     ]);
   });
 });

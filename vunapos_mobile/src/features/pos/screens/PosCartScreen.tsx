@@ -19,6 +19,7 @@ import {
   PosPricingOverride,
   PosPriceList,
   PosSaleCustomer,
+  PosSerialAllocation,
 } from "@/features/pos/types";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
@@ -46,6 +47,10 @@ type PosCartScreenProps = {
   onUpdateItemNote?: (itemCode: string, note: string) => void;
   onUpdatePricing?: (itemCode: string, override?: PosPricingOverride) => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
+  onUpdateSerialAllocations?: (
+    itemCode: string,
+    allocations: PosSerialAllocation[],
+  ) => void;
   onUpdateUom?: (itemCode: string, uom: string) => void;
   orderType: PosOrderType;
   posProfile?: string;
@@ -456,6 +461,171 @@ function BatchAllocationEditor({
   );
 }
 
+function SerialAllocationEditor({
+  disabled,
+  item,
+  onSave,
+  posProfile,
+}: {
+  disabled: boolean;
+  item: PosCartItem;
+  onSave: (allocations: PosSerialAllocation[]) => void;
+  posProfile?: string;
+}) {
+  const serialData = usePosItemBatches({
+    enabled: true,
+    itemCode: item.item_code,
+    posProfile,
+  });
+  const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState(
+    () =>
+      new Set(
+        (item.serial_allocations || []).map(
+          (allocation) => allocation.serial_no,
+        ),
+      ),
+  );
+  const required = item.qty * Number(item.conversion_factor || 1);
+  const isWholeRequired = Number.isInteger(required) && required > 0;
+  const serials = serialData.data?.serials || [];
+  const filteredSerials = serials.filter((serial) =>
+    serial.serial_no.toLowerCase().includes(query.trim().toLowerCase()),
+  );
+
+  function persist(next: Set<string>) {
+    if (!isWholeRequired || next.size !== required) return;
+    onSave(serials.filter((serial) => next.has(serial.serial_no)));
+  }
+
+  function toggle(serialNo: string) {
+    const next = new Set(selected);
+    if (next.has(serialNo)) next.delete(serialNo);
+    else if (isWholeRequired && next.size < required) next.add(serialNo);
+    setSelected(next);
+    persist(next);
+  }
+
+  function addScannedSerial() {
+    const matched = serials.find(
+      (serial) => serial.serial_no.toLowerCase() === query.trim().toLowerCase(),
+    );
+    if (matched) {
+      toggle(matched.serial_no);
+      setQuery("");
+    }
+  }
+
+  return (
+    <View style={styles.serialEditor}>
+      <Text style={styles.serialEditorTitle}>Serial numbers</Text>
+      <View style={styles.serialSearchRow}>
+        <TextInput
+          accessibilityLabel={`Search serial numbers for ${item.item_name}`}
+          editable={!disabled}
+          onChangeText={setQuery}
+          placeholder="Scan or search serial number"
+          placeholderTextColor={posDarkColors.onSurfaceMuted}
+          style={styles.serialSearchInput}
+          value={query}
+        />
+        <Pressable
+          accessibilityLabel={`Add scanned serial for ${item.item_name}`}
+          disabled={disabled || !query.trim()}
+          onPress={addScannedSerial}
+          style={[
+            styles.serialScanButton,
+            (disabled || !query.trim()) && styles.controlDisabled,
+          ]}
+        >
+          <Text style={styles.serialScanLabel}>Add</Text>
+        </Pressable>
+      </View>
+      {serialData.isLoading ? (
+        <Text style={styles.serialMeta}>Loading available serials…</Text>
+      ) : null}
+      {serialData.error ? (
+        <Text style={styles.serialError}>{serialData.error}</Text>
+      ) : null}
+      {!isWholeRequired ? (
+        <Text style={styles.serialError}>
+          Serial-numbered items require a whole-number quantity.
+        </Text>
+      ) : null}
+      {serialData.data ? (
+        <>
+          {filteredSerials.map((serial) => {
+            const isSelected = selected.has(serial.serial_no);
+            const isDisabled =
+              disabled ||
+              (!isSelected && (!isWholeRequired || selected.size >= required));
+            return (
+              <Pressable
+                accessibilityLabel={`Select serial ${serial.serial_no}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{
+                  checked: isSelected,
+                  disabled: isDisabled,
+                }}
+                disabled={isDisabled}
+                key={serial.serial_no}
+                onPress={() => toggle(serial.serial_no)}
+                style={[
+                  styles.serialRow,
+                  isSelected && styles.serialRowSelected,
+                  isDisabled && styles.controlDisabled,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  color={
+                    isSelected
+                      ? posDarkColors.primary
+                      : posDarkColors.onSurfaceMuted
+                  }
+                  name={
+                    isSelected ? "checkbox-marked" : "checkbox-blank-outline"
+                  }
+                  size={21}
+                />
+                <View style={styles.serialRowContent}>
+                  <Text style={styles.serialName}>{serial.serial_no}</Text>
+                  {serial.batch_no ? (
+                    <Text style={styles.serialMeta}>
+                      Batch {serial.batch_no}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })}
+          {!filteredSerials.length ? (
+            <Text style={styles.serialMeta}>
+              No matching serial numbers are available.
+            </Text>
+          ) : null}
+          <View style={styles.serialSelectionStatus}>
+            <Text
+              style={[
+                styles.serialSelectionCount,
+                selected.size === required
+                  ? styles.serialMeta
+                  : styles.serialError,
+              ]}
+            >
+              Selected {selected.size} / {required}
+            </Text>
+            <Text style={styles.serialMeta}>
+              {selected.size === required
+                ? "Saved automatically"
+                : "Select the required serials"}
+            </Text>
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 function CartLine({
   allowDiscountChange,
   allowRateChange,
@@ -468,6 +638,7 @@ function CartLine({
   onUpdateNote,
   onUpdatePricing,
   onUpdateQuantity,
+  onUpdateSerialAllocations,
   posProfile,
 }: {
   allowDiscountChange: boolean;
@@ -481,12 +652,14 @@ function CartLine({
   onUpdateNote: (note: string) => void;
   onUpdatePricing: (override?: PosPricingOverride) => void;
   onUpdateQuantity: (quantity: number) => void;
+  onUpdateSerialAllocations: (allocations: PosSerialAllocation[]) => void;
   posProfile?: string;
 }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
   const [draftNote, setDraftNote] = useState(item.item_note || "");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [batchExpanded, setBatchExpanded] = useState(false);
+  const [serialExpanded, setSerialExpanded] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const maximum =
     item.is_stock_item &&
@@ -507,6 +680,7 @@ function CartLine({
   );
   const canChangeUom = !item.is_free_item && uomOptions.length > 1;
   const isBatchTracked = Boolean(item.has_batch_no && !item.has_serial_no);
+  const isSerialTracked = Boolean(item.has_serial_no);
   const canExpandDetails = !item.is_free_item;
 
   function changeQuantity(value: string) {
@@ -635,6 +809,38 @@ function CartLine({
                   item={item}
                   key={`${item.qty}-${item.conversion_factor || 1}-${JSON.stringify(item.batch_allocations || [])}`}
                   onSave={onUpdateBatchAllocations}
+                  posProfile={posProfile}
+                />
+              ) : null}
+            </View>
+          ) : null}
+          {isSerialTracked ? (
+            <View style={styles.serialSection}>
+              <Pressable
+                accessibilityLabel={`${serialExpanded ? "Hide" : "Edit"} serial numbers for ${item.item_name}`}
+                disabled={itemDisabled}
+                onPress={() => setSerialExpanded((current) => !current)}
+                style={styles.serialSectionHeader}
+              >
+                <View style={styles.batchHeading}>
+                  <Text style={styles.serialSectionTitle}>Serial numbers</Text>
+                  <Text style={styles.serialSectionMeta}>
+                    {item.serial_allocations?.length || 0} of{" "}
+                    {item.qty * Number(item.conversion_factor || 1)} selected
+                  </Text>
+                </View>
+                <MaterialCommunityIcons
+                  color={posDarkColors.onSurfaceMuted}
+                  name={serialExpanded ? "chevron-up" : "chevron-down"}
+                  size={20}
+                />
+              </Pressable>
+              {serialExpanded ? (
+                <SerialAllocationEditor
+                  disabled={itemDisabled}
+                  item={item}
+                  key={`${item.qty}-${item.conversion_factor || 1}-${JSON.stringify(item.serial_allocations || [])}`}
+                  onSave={onUpdateSerialAllocations}
                   posProfile={posProfile}
                 />
               ) : null}
@@ -816,6 +1022,7 @@ export function PosCartScreen({
   onUpdateItemNote,
   onUpdatePricing,
   onUpdateQuantity,
+  onUpdateSerialAllocations,
   onUpdateUom,
   orderType,
   posProfile,
@@ -995,6 +1202,9 @@ export function PosCartScreen({
                 }
                 onUpdateQuantity={(quantity) =>
                   onUpdateQuantity(item.item_code, quantity)
+                }
+                onUpdateSerialAllocations={(allocations) =>
+                  onUpdateSerialAllocations?.(item.item_code, allocations)
                 }
                 posProfile={posProfile}
               />
@@ -1825,6 +2035,108 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   scrollView: { flex: 1 },
+  serialEditor: {
+    borderTopColor: posDarkColors.border,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  serialEditorTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  serialError: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  serialMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  serialName: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+  },
+  serialRow: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  serialRowContent: { flex: 1, gap: 2 },
+  serialRowSelected: { borderColor: posDarkColors.primary },
+  serialScanButton: {
+    alignItems: "center",
+    backgroundColor: posDarkColors.primary,
+    borderRadius: radii.sm,
+    justifyContent: "center",
+    minHeight: 38,
+    paddingHorizontal: spacing.sm,
+  },
+  serialScanLabel: {
+    color: posDarkColors.onPrimary,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  serialSearchInput: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    height: 38,
+    includeFontPadding: false,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 0,
+    textAlignVertical: "center",
+  },
+  serialSearchRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  serialSection: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  serialSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
+  serialSectionMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  serialSectionTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+    textTransform: "uppercase",
+  },
+  serialSelectionCount: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  serialSelectionStatus: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
   subtitle: {
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,

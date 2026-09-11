@@ -502,6 +502,63 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("persists an exact serial selection through Frappe before checkout", async () => {
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const cartItem = JSON.parse(String(params?.items ?? "[]"))[0];
+        return {
+          items: [
+            {
+              actual_qty: 4,
+              allow_negative_stock: false,
+              amount: 125,
+              has_serial_no: true,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: 125,
+              serial_allocations: cartItem.serial_allocations || [],
+              uom: "Nos",
+            },
+          ],
+          taxes: [],
+          totals: { grand_total: 125, net_total: 125 },
+        };
+      },
+    );
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.updateSerialAllocations("ITEM-001", [
+        { serial_no: "SERIAL-001" },
+      ]);
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items:
+          '[{"item_code":"ITEM-001","qty":1,"serial_allocations":[{"serial_no":"SERIAL-001"}],"uom":"Nos"}]',
+      }),
+    );
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({
+        serial_allocations: [{ serial_no: "SERIAL-001" }],
+      }),
+    ]);
+  });
+
   it("adds the configured delivery item with its server-approved rate override", async () => {
     mockGetVunaMethod.mockImplementation(
       async (_companyUrl, _sessionId, method, params) => {

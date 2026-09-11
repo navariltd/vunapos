@@ -184,6 +184,7 @@ export function PosWorkspaceScreen() {
           onUpdateItemNote={cart.updateItemNote}
           onUpdatePricing={cart.updatePricing}
           onUpdateQuantity={cart.updateQuantity}
+          onUpdateSerialAllocations={cart.updateSerialAllocations}
           onUpdateUom={cart.updateUom}
           orderType={orderType}
           posProfile={posProfile}
