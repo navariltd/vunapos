@@ -1,35 +1,54 @@
-import { MD3LightTheme } from 'react-native-paper';
+import { MD3DarkTheme, MD3LightTheme } from "react-native-paper";
 
-import { colors, radii, typography } from '@/theme/tokens';
+import { AppPalette, radii, typography } from "@/theme/tokens";
 
-export const frappeTheme = {
-  ...MD3LightTheme,
-  roundness: radii.md / 4,
-  colors: {
-    ...MD3LightTheme.colors,
-    background: colors.surface.canvas,
-    error: colors.status.danger,
-    errorContainer: colors.status.dangerSurface,
-    onBackground: colors.ink.primary,
-    onError: colors.surface.base,
-    onErrorContainer: colors.status.dangerText,
-    onPrimary: colors.surface.base,
-    onSurface: colors.ink.primary,
-    onSurfaceVariant: colors.ink.secondary,
-    outline: colors.border.strong,
-    outlineVariant: colors.border.subtle,
-    primary: colors.ink.primary,
-    primaryContainer: colors.ink.primary,
-    secondary: colors.action.primary,
-    surface: colors.surface.base,
-    surfaceVariant: colors.surface.subtle,
-  },
-  fonts: {
-    ...MD3LightTheme.fonts,
-    bodyLarge: { ...MD3LightTheme.fonts.bodyLarge, fontFamily: typography.fontFamily.regular },
-    bodyMedium: { ...MD3LightTheme.fonts.bodyMedium, fontFamily: typography.fontFamily.regular },
-    bodySmall: { ...MD3LightTheme.fonts.bodySmall, fontFamily: typography.fontFamily.regular },
-    labelLarge: { ...MD3LightTheme.fonts.labelLarge, fontFamily: typography.fontFamily.medium },
-    titleMedium: { ...MD3LightTheme.fonts.titleMedium, fontFamily: typography.fontFamily.semibold },
-  },
-};
+/** Adapts the app tokens to React Native Paper's Material 3 theme contract. */
+export function createFrappeTheme(palette: AppPalette, isDark: boolean) {
+  const baseTheme = isDark ? MD3DarkTheme : MD3LightTheme;
+  return {
+    ...baseTheme,
+    roundness: radii.md / 4,
+    colors: {
+      ...baseTheme.colors,
+      background: palette.background,
+      error: palette.error,
+      errorContainer: palette.errorSurface,
+      onBackground: palette.onSurface,
+      onError: palette.onPrimary,
+      onErrorContainer: palette.onError,
+      onPrimary: palette.onPrimary,
+      onSurface: palette.onSurface,
+      onSurfaceVariant: palette.onSurfaceMuted,
+      outline: palette.border,
+      outlineVariant: palette.borderSubtle,
+      primary: palette.primary,
+      primaryContainer: palette.primary,
+      secondary: palette.success,
+      surface: palette.surface,
+      surfaceVariant: palette.surfaceContainer,
+    },
+    fonts: {
+      ...baseTheme.fonts,
+      bodyLarge: {
+        ...baseTheme.fonts.bodyLarge,
+        fontFamily: typography.fontFamily.regular,
+      },
+      bodyMedium: {
+        ...baseTheme.fonts.bodyMedium,
+        fontFamily: typography.fontFamily.regular,
+      },
+      bodySmall: {
+        ...baseTheme.fonts.bodySmall,
+        fontFamily: typography.fontFamily.regular,
+      },
+      labelLarge: {
+        ...baseTheme.fonts.labelLarge,
+        fontFamily: typography.fontFamily.medium,
+      },
+      titleMedium: {
+        ...baseTheme.fonts.titleMedium,
+        fontFamily: typography.fontFamily.semibold,
+      },
+    },
+  };
+}

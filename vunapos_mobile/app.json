@@ -4,9 +4,10 @@
     "slug": "vunapos-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
+    "backgroundColor": "#f8f8f8",
     "icon": "./assets/images/vuna-logo.png",
     "scheme": "vunapos",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/images/vuna-logo.png"
     },
@@ -31,6 +32,15 @@
       ],
       "expo-secure-store",
       "expo-sharing",
+      "expo-system-ui",
+      [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false,
+          "hidden": false,
+          "style": "light"
+        }
+      ],
       [
         "expo-camera",
         {

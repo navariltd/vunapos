@@ -1,19 +1,27 @@
-import { useEffect, useRef, useState } from 'react';
-import { FlatList, ListRenderItem, Pressable, StyleSheet, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { useEffect, useRef, useState } from "react";
+import {
+  FlatList,
+  ListRenderItem,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
+import { Text } from "react-native-paper";
 
-import { PosCartButton } from '@/features/pos/components/PosCartButton';
-import { PosBarcodeScannerModal } from '@/features/pos/components/PosBarcodeScannerModal';
-import { PosItemCard } from '@/features/pos/components/PosItemCard';
-import { PosItemSearch } from '@/features/pos/components/PosItemSearch';
-import { usePosBarcodeScan } from '@/features/pos/hooks/usePosBarcodeScan';
-import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
-import { usePosItemSearch } from '@/features/pos/hooks/usePosItemSearch';
-import { PosBootstrapData, PosCatalogueItem } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { PosCartButton } from "@/features/pos/components/PosCartButton";
+import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
+import { PosItemCard } from "@/features/pos/components/PosItemCard";
+import { PosItemSearch } from "@/features/pos/components/PosItemSearch";
+import { usePosBarcodeScan } from "@/features/pos/hooks/usePosBarcodeScan";
+import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
+import { PosBootstrapData, PosCatalogueItem } from "@/features/pos/types";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { radii, spacing, typography } from "@/theme/tokens";
 
 function matchesSearch(item: PosCatalogueItem, searchTerm: string) {
-  const normalizedItem = `${item.item_name} ${item.item_code} ${item.barcode || ''}`.toLowerCase();
+  const normalizedItem =
+    `${item.item_name} ${item.item_code} ${item.barcode || ""}`.toLowerCase();
   return normalizedItem.includes(searchTerm.trim().toLowerCase());
 }
 
@@ -26,8 +34,16 @@ type PosHomeScreenProps = {
   refreshKey?: number;
 };
 
-export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded, pricingContext, refreshKey = 0 }: PosHomeScreenProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+export function PosHomeScreen({
+  cartItemCount,
+  onAddToCart,
+  onOpenCart,
+  onPosProfileLoaded,
+  pricingContext,
+  refreshKey = 0,
+}: PosHomeScreenProps) {
+  const { palette } = useAppearance();
+  const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
@@ -38,9 +54,14 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
     query: searchQuery,
   });
   const bootstrapItems = bootstrap.data?.items ?? [];
-  const localMatches = bootstrapItems.filter((item) => matchesSearch(item, searchQuery));
-  const items = searchQuery.trim() || itemSearch.hasLoaded ? itemSearch.items : localMatches;
-  const currency = bootstrap.data?.pos_profile.currency || 'KES';
+  const localMatches = bootstrapItems.filter((item) =>
+    matchesSearch(item, searchQuery),
+  );
+  const items =
+    searchQuery.trim() || itemSearch.hasLoaded
+      ? itemSearch.items
+      : localMatches;
+  const currency = bootstrap.data?.pos_profile.currency || "KES";
   const barcodeScan = usePosBarcodeScan({
     customer: pricingContext?.customer,
     posProfile: bootstrap.data?.pos_profile.name,
@@ -60,7 +81,10 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
   }, [refreshKey, reloadBootstrap]);
 
   function addItem(item: PosCatalogueItem) {
-    const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
+    const outOfStock =
+      Boolean(item.is_stock_item) &&
+      !item.allow_negative_stock &&
+      Number(item.actual_qty || 0) <= 0;
     if (outOfStock) return;
     onAddToCart(item, currency);
   }
@@ -69,21 +93,44 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
     const result = await barcodeScan.resolve(barcode);
     if (!result.ok) return result.message;
     const item = result.item;
-    const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
-    if (outOfStock) return `${item.item_name || item.item_code} is out of stock.`;
-    setSearchQuery('');
+    const outOfStock =
+      Boolean(item.is_stock_item) &&
+      !item.allow_negative_stock &&
+      Number(item.actual_qty || 0) <= 0;
+    if (outOfStock)
+      return `${item.item_name || item.item_code} is out of stock.`;
+    setSearchQuery("");
     onAddToCart(item, currency);
     return null;
   }
 
-  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => <PosItemCard currency={currency} item={item} onAdd={addItem} />;
+  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => (
+    <PosItemCard currency={currency} item={item} onAdd={addItem} />
+  );
 
-  if (bootstrap.isLoading) return <View style={styles.state}><Text style={styles.stateText}>Loading your POS catalogue…</Text></View>;
+  if (bootstrap.isLoading)
+    return (
+      <View style={styles.state}>
+        <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+          Loading your POS catalogue…
+        </Text>
+      </View>
+    );
   if (bootstrap.error || !bootstrap.data) {
     return (
       <View style={styles.state}>
-        <Text style={styles.errorText}>{bootstrap.error || 'Could not load the POS catalogue.'}</Text>
-        <Pressable accessibilityLabel="Retry loading POS catalogue" onPress={bootstrap.reload} style={styles.retryButton}><Text style={styles.retryButtonLabel}>Try again</Text></Pressable>
+        <Text style={[styles.errorText, { color: palette.error }]}>
+          {bootstrap.error || "Could not load the POS catalogue."}
+        </Text>
+        <Pressable
+          accessibilityLabel="Retry loading POS catalogue"
+          onPress={bootstrap.reload}
+          style={[styles.retryButton, { borderColor: palette.border }]}
+        >
+          <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>
+            Try again
+          </Text>
+        </Pressable>
       </View>
     );
   }
@@ -95,12 +142,32 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
         contentContainerStyle={styles.listContent}
         data={items}
         keyExtractor={(item) => item.item_code}
-        ListEmptyComponent={<Text style={styles.emptyState}>{itemSearch.isLoading ? 'Searching the catalogue…' : itemSearch.error || 'No items found. Try another item name, code, or barcode.'}</Text>}
-        ListHeaderComponent={(
+        ListEmptyComponent={
+          <Text
+            style={[
+              styles.emptyState,
+              {
+                color: itemSearch.error
+                  ? palette.error
+                  : palette.onSurfaceMuted,
+              },
+            ]}
+          >
+            {itemSearch.isLoading
+              ? "Searching the catalogue…"
+              : itemSearch.error ||
+                "No items found. Try another item name, code, or barcode."}
+          </Text>
+        }
+        ListHeaderComponent={
           <View>
-            <PosItemSearch onChangeText={setSearchQuery} onScanBarcode={() => setBarcodeScannerVisible(true)} value={searchQuery} />
+            <PosItemSearch
+              onChangeText={setSearchQuery}
+              onScanBarcode={() => setBarcodeScannerVisible(true)}
+              value={searchQuery}
+            />
           </View>
-        )}
+        }
         numColumns={2}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
@@ -119,21 +186,19 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
 const styles = StyleSheet.create({
   content: {
     flex: 1,
-    position: 'relative',
+    position: "relative",
   },
   emptyState: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.xxl,
-    textAlign: 'center',
+    textAlign: "center",
   },
   errorText: {
-    color: posDarkColors.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
-    textAlign: 'center',
+    textAlign: "center",
   },
   listContent: {
     paddingBottom: 88,
@@ -144,28 +209,25 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
   },
   retryButton: {
-    borderColor: posDarkColors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   retryButtonLabel: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   state: {
-    alignItems: 'center',
+    alignItems: "center",
     flex: 1,
     gap: spacing.md,
-    justifyContent: 'center',
+    justifyContent: "center",
     padding: spacing.xl,
   },
   stateText: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });

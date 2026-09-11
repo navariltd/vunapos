@@ -1,12 +1,11 @@
-import { PropsWithChildren } from 'react';
-import { StyleSheet, View } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
+import { PropsWithChildren } from "react";
+import { StyleSheet, View } from "react-native";
 
-import { Screen } from '@/components/layout/Screen';
-import { PosBottomNavigation } from '@/features/pos/components/PosBottomNavigation';
-import { PosTopBar } from '@/features/pos/components/PosTopBar';
-import { PosNavigationTab, PosOrderType } from '@/features/pos/types';
-import { posDarkColors } from '@/theme/tokens';
+import { Screen } from "@/components/layout/Screen";
+import { PosBottomNavigation } from "@/features/pos/components/PosBottomNavigation";
+import { PosTopBar } from "@/features/pos/components/PosTopBar";
+import { PosNavigationTab, PosOrderType } from "@/features/pos/types";
+import { useAppearance } from "@/theme/AppearanceProvider";
 
 type AppShellProps = PropsWithChildren<{
   activeTab: PosNavigationTab;
@@ -15,10 +14,16 @@ type AppShellProps = PropsWithChildren<{
   orderType: PosOrderType;
 }>;
 
-export function AppShell({ activeTab, children, onOrderTypeChange, onTabChange, orderType }: AppShellProps) {
+export function AppShell({
+  activeTab,
+  children,
+  onOrderTypeChange,
+  onTabChange,
+  orderType,
+}: AppShellProps) {
+  const { palette } = useAppearance();
   return (
-    <Screen style={styles.screen}>
-      <StatusBar style="light" />
+    <Screen style={{ backgroundColor: palette.background }}>
       <PosTopBar onOrderTypeChange={onOrderTypeChange} orderType={orderType} />
       <View style={styles.content}>{children}</View>
       <PosBottomNavigation activeTab={activeTab} onTabChange={onTabChange} />
@@ -26,11 +31,4 @@ export function AppShell({ activeTab, children, onOrderTypeChange, onTabChange, 
   );
 }
 
-const styles = StyleSheet.create({
-  content: {
-    flex: 1,
-  },
-  screen: {
-    backgroundColor: posDarkColors.background,
-  },
-});
+const styles = StyleSheet.create({ content: { flex: 1 } });

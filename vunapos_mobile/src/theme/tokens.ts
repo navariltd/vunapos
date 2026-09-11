@@ -1,31 +1,87 @@
 /**
- * Native translation of the Frappe Desk/Frappe UI foundations used by the SPA.
- * Keep all visual values here so future screens remain visually consistent.
+ * Application design tokens. They are deliberately semantic rather than tied
+ * to a screen or framework, so the same hierarchy holds in light and dark
+ * appearances. The visual direction is modern Material 3 with the quiet,
+ * high-density practicality familiar from Frappe—not a literal Frappe port.
  */
+/** Semantic colours used by both application appearances. */
+export type AppPalette = {
+  background: string;
+  border: string;
+  borderSubtle: string;
+  disabled: string;
+  error: string;
+  errorSurface: string;
+  onError: string;
+  onPrimary: string;
+  onSurface: string;
+  onSurfaceMuted: string;
+  primary: string;
+  scrim: string;
+  success: string;
+  surface: string;
+  surfaceContainer: string;
+  surfaceContainerHigh: string;
+};
+
+export const lightPalette: AppPalette = {
+  background: "#f8f8f8",
+  border: "#c7c7c7",
+  borderSubtle: "#ededed",
+  disabled: "#a3a3a3",
+  error: "#cc2929",
+  errorSurface: "#fff0f0",
+  onError: "#941f1f",
+  onPrimary: "#ffffff",
+  onSurface: "#171717",
+  onSurfaceMuted: "#525252",
+  primary: "#16794c",
+  scrim: "rgba(23, 23, 23, 0.48)",
+  success: "#16794c",
+  surface: "#ffffff",
+  surfaceContainer: "#f3f3f3",
+  surfaceContainerHigh: "#e9e9e9",
+};
+
+export const darkPalette: AppPalette = {
+  background: "#171717",
+  border: "#383838",
+  borderSubtle: "#2a2a2a",
+  disabled: "#8a8a8a",
+  error: "#eb9091",
+  errorSurface: "#442126",
+  onError: "#ffd9db",
+  onPrimary: "#171717",
+  onSurface: "#f8f8f8",
+  onSurfaceMuted: "#c7c7c7",
+  primary: "#e2e2e2",
+  scrim: "rgba(0, 0, 0, 0.64)",
+  success: "#39b976",
+  surface: "#1c1c1c",
+  surfaceContainer: "#232323",
+  surfaceContainerHigh: "#2a2a2a",
+};
+
+/** Legacy aliases kept while each existing screen is migrated to useAppearance(). */
 export const colors = {
-  action: {
-    primary: '#16794c',
-  },
-  border: {
-    strong: '#c7c7c7',
-    subtle: '#ededed',
-  },
+  action: { primary: lightPalette.primary },
+  border: { strong: lightPalette.border, subtle: lightPalette.borderSubtle },
   ink: {
-    muted: '#737373',
-    primary: '#171717',
-    secondary: '#525252',
+    muted: "#737373",
+    primary: lightPalette.onSurface,
+    secondary: lightPalette.onSurfaceMuted,
   },
   status: {
-    danger: '#cc2929',
-    dangerSurface: '#fff0f0',
-    dangerText: '#941f1f',
-    success: '#16794c',
+    danger: lightPalette.error,
+    dangerSurface: lightPalette.errorSurface,
+    dangerText: lightPalette.onError,
+    success: lightPalette.success,
   },
   surface: {
-    base: '#ffffff',
-    canvas: '#f8f8f8',
-    elevated: '#ffffff',
-    subtle: '#f3f3f3',
+    base: lightPalette.surface,
+    canvas: lightPalette.background,
+    elevated: lightPalette.surface,
+    subtle: lightPalette.surfaceContainer,
   },
 } as const;
 
@@ -48,9 +104,9 @@ export const radii = {
 
 export const typography = {
   fontFamily: {
-    medium: 'Inter_500Medium',
-    regular: 'Inter_400Regular',
-    semibold: 'Inter_600SemiBold',
+    medium: "Inter_500Medium",
+    regular: "Inter_400Regular",
+    semibold: "Inter_600SemiBold",
   },
   lineHeight: {
     body: 21,
@@ -70,16 +126,4 @@ export const typography = {
  * It is kept separate from the setup/authentication palette because POS is
  * designed for long-running, high-density selling sessions.
  */
-export const posDarkColors = {
-  background: '#171717',
-  border: '#383838',
-  disabled: '#8a8a8a',
-  error: '#eb9091',
-  onPrimary: '#171717',
-  onSurface: '#f8f8f8',
-  onSurfaceMuted: '#c7c7c7',
-  primary: '#e2e2e2',
-  surface: '#1c1c1c',
-  surfaceContainer: '#232323',
-  surfaceContainerHigh: '#2a2a2a',
-} as const;
+export const posDarkColors = darkPalette;

@@ -1,10 +1,12 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Menu, Text } from 'react-native-paper';
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "react-native-paper";
 
-import { PosOrderType } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { WorkspaceSettingsSheet } from "@/features/shell/components/WorkspaceSettingsSheet";
+import { PosOrderType } from "@/features/pos/types";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { radii, spacing, typography } from "@/theme/tokens";
 
 type PosTopBarProps = {
   orderType: PosOrderType;
@@ -12,79 +14,69 @@ type PosTopBarProps = {
 };
 
 export function PosTopBar({ orderType, onOrderTypeChange }: PosTopBarProps) {
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const { palette } = useAppearance();
 
   function selectOrderType(nextOrderType: PosOrderType) {
     onOrderTypeChange(nextOrderType);
-    setMenuVisible(false);
+    setSettingsVisible(false);
   }
 
   return (
-    <View style={styles.bar}>
-      <Text style={styles.brand}>VunaPOS</Text>
-      <Menu
-        anchor={(
-          <Pressable
-            accessibilityHint="Choose the document type for this sale"
-            accessibilityLabel={`Order type: ${orderType}`}
-            accessibilityRole="button"
-            onPress={() => setMenuVisible(true)}
-            style={styles.orderTypeButton}
-          >
-            <Text style={styles.orderTypeLabel}>{orderType}</Text>
-            <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={18} />
-          </Pressable>
-        )}
-        contentStyle={styles.menuContent}
-        onDismiss={() => setMenuVisible(false)}
-        visible={menuVisible}
+    <View
+      style={[
+        styles.bar,
+        { backgroundColor: palette.surface, borderBottomColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.brand, { color: palette.onSurface }]}>VunaPOS</Text>
+      <Pressable
+        accessibilityLabel="Open workspace settings"
+        onPress={() => setSettingsVisible(true)}
+        style={[
+          styles.profileButton,
+          {
+            borderColor: palette.border,
+            backgroundColor: palette.surfaceContainer,
+          },
+        ]}
       >
-        <Menu.Item onPress={() => selectOrderType('Invoice')} title="Invoice" titleStyle={styles.menuItemLabel} />
-        <Menu.Item onPress={() => selectOrderType('Order')} title="Order" titleStyle={styles.menuItemLabel} />
-      </Menu>
+        <MaterialCommunityIcons
+          color={palette.onSurface}
+          name="account-circle-outline"
+          size={24}
+        />
+      </Pressable>
+      <WorkspaceSettingsSheet
+        onClose={() => setSettingsVisible(false)}
+        onOrderTypeChange={selectOrderType}
+        orderType={orderType}
+        visible={settingsVisible}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
-    alignItems: 'center',
-    backgroundColor: posDarkColors.surface,
-    borderBottomColor: posDarkColors.border,
+    alignItems: "center",
     borderBottomWidth: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     height: 48,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
     paddingHorizontal: spacing.md,
   },
   brand: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
-  menuContent: {
-    backgroundColor: posDarkColors.surfaceContainerHigh,
-    borderColor: posDarkColors.border,
-    borderRadius: radii.md,
+  profileButton: {
+    alignItems: "center",
+    borderRadius: radii.pill,
     borderWidth: 1,
-  },
-  menuItemLabel: {
-    color: posDarkColors.onSurface,
-    fontFamily: typography.fontFamily.medium,
-  },
-  orderTypeButton: {
-    alignItems: 'center',
-    borderColor: posDarkColors.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 4,
+    flexDirection: "row",
     height: 34,
-    paddingHorizontal: spacing.sm,
-  },
-  orderTypeLabel: {
-    color: posDarkColors.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
+    justifyContent: "center",
+    width: 34,
   },
 });

@@ -1,14 +1,21 @@
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold, useFonts } from '@expo-google-fonts/inter';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useCallback } from 'react';
-import { PaperProvider } from 'react-native-paper';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import {
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  useFonts,
+} from "@expo-google-fonts/inter";
+import { Stack } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useCallback } from "react";
+import { KeyboardProvider } from "react-native-keyboard-controller";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { AppLaunchScreen } from '@/components/splash/AppLaunchScreen';
-import { AppSessionProvider, useAppSession } from '@/features/auth/AppSessionProvider';
-import { frappeTheme } from '@/theme/frappeTheme';
+import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
+import {
+  AppSessionProvider,
+  useAppSession,
+} from "@/features/auth/AppSessionProvider";
+import { AppearanceProvider, useAppearance } from "@/theme/AppearanceProvider";
 
 SplashScreen.preventAutoHideAsync();
 SplashScreen.setOptions({ duration: 240, fade: true });
@@ -23,11 +30,11 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <KeyboardProvider>
-        <PaperProvider theme={frappeTheme}>
+        <AppearanceProvider>
           <AppSessionProvider>
             <RootNavigator fontsLoaded={fontsLoaded} />
           </AppSessionProvider>
-        </PaperProvider>
+        </AppearanceProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
   );
@@ -35,12 +42,18 @@ export default function RootLayout() {
 
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   const { isBootstrapping } = useAppSession();
+  const { isReady: isAppearanceReady } = useAppearance();
   const hideNativeSplash = useCallback(() => {
     void SplashScreen.hideAsync();
   }, []);
 
-  if (!fontsLoaded || isBootstrapping) {
-    return <AppLaunchScreen message="Preparing workspace…" onReady={hideNativeSplash} />;
+  if (!fontsLoaded || isBootstrapping || !isAppearanceReady) {
+    return (
+      <AppLaunchScreen
+        message="Preparing workspace…"
+        onReady={hideNativeSplash}
+      />
+    );
   }
 
   return (
