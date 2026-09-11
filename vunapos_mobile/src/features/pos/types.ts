@@ -113,6 +113,29 @@ export type PosCartData = {
   totals: PosCartTotals;
 };
 
+/** The server draft behind a restored cart. It must be submitted, not recreated. */
+export type PosCartSource = { doctype: string; name: string };
+
+export type PosRestoredInvoice = PosCartData & {
+  customer?: string;
+  customer_name?: string;
+  selling_price_list?: string;
+  source: PosCartSource;
+};
+
+export type PosHeldInvoice = {
+  currency?: string | null;
+  customer?: string | null;
+  customer_name?: string | null;
+  doctype: string;
+  grand_total?: number | null;
+  modified?: string | null;
+  name: string;
+  posting_date?: string | null;
+  rounded_total?: number | null;
+  total?: number | null;
+};
+
 export type PosInvoiceStatus =
   "Cancelled" | "Credit Note" | "Overdue" | "Paid" | "Partly Paid" | "Unpaid";
 

@@ -292,6 +292,47 @@ describe("PosCartScreen", () => {
     ).toBeTruthy();
   });
 
+  it("labels checkout as continuing when the cart comes from a held draft", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={null}
+        sourceInvoice={{ doctype: "Sales Invoice", name: "SINV-HELD-001" }}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    expect(screen.getByLabelText("Continue checkout")).toBeTruthy();
+  });
+
   it("requires a customer before checkout while retaining the temporary cart", async () => {
     const screen = await render(
       <PosCartScreen

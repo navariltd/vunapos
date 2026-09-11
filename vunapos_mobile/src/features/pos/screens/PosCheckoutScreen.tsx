@@ -24,7 +24,7 @@ import {
   parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
-import { PosC2BGatewayPayment, PosCartData, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer, PosSalespersonSession } from '@/features/pos/types';
+import { PosC2BGatewayPayment, PosCartData, PosCartItem, PosCartSource, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer, PosSalespersonSession } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCheckoutScreenProps = {
@@ -37,6 +37,7 @@ type PosCheckoutScreenProps = {
   priceList?: string;
   saleCustomer: PosSaleCustomer | null;
   salesperson?: PosSalespersonSession | null;
+  sourceInvoice?: PosCartSource | null;
   subtotal: number;
 };
 
@@ -86,7 +87,7 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
  */
-export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, priceList, saleCustomer, salesperson, subtotal }: PosCheckoutScreenProps) {
+export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, priceList, saleCustomer, salesperson, sourceInvoice, subtotal }: PosCheckoutScreenProps) {
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === 'Invoice';
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -547,6 +548,7 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
       salesperson: salesperson?.name,
       salespersonToken: salesperson?.token,
       shippingAddressName: selectedShippingAddress?.name,
+      sourceInvoice,
       taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
     });
     if (!result) return;
@@ -579,10 +581,11 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
           <MaterialCommunityIcons color={posDarkColors.onSurface} name="arrow-left" size={22} />
         </Pressable>
         <View style={styles.heading}>
-          <Text style={styles.title}>{isInvoice ? 'Checkout' : 'Submit order'}</Text>
+          <Text style={styles.title}>{sourceInvoice ? 'Continue checkout' : isInvoice ? 'Checkout' : 'Submit order'}</Text>
           <Text style={styles.subtitle}>{customerName} · {items.length} item{items.length === 1 ? '' : 's'}</Text>
         </View>
       </View>
+      {sourceInvoice ? <Text style={styles.restoredDraftHint}>Continuing held invoice {sourceInvoice.name}. Your current cart will be saved to this invoice before it is submitted.</Text> : null}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Checkout summary</Text>
@@ -1126,6 +1129,7 @@ const styles = StyleSheet.create({
   paymentSummaryLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   paymentSummaryRow: { backgroundColor: posDarkColors.surfaceContainer, borderRadius: radii.sm, flexDirection: 'row', gap: spacing.xs, padding: spacing.sm },
   paymentSummaryValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  restoredDraftHint: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body, padding: spacing.sm },
   scrollView: { flex: 1 },
   secondaryButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
   secondaryButtonDisabled: { opacity: 0.5 },

@@ -8,6 +8,9 @@ import {
   PosCatalogueItem,
   PosCheckoutResult,
   PosPricingOverride,
+  PosCartSource,
+  PosHeldInvoice,
+  PosRestoredInvoice,
   PosSerialAllocation,
   PosSaleCustomer,
 } from "@/features/pos/types";
@@ -40,6 +43,14 @@ type CartResponse = Omit<PosCartData, "items"> & {
   items: (Omit<PosCartItem, "available_qty"> & {
     actual_qty?: number | null;
   })[];
+};
+
+type RestoredInvoiceResponse = CartResponse & {
+  customer?: string;
+  customer_name?: string;
+  doctype: string;
+  name: string;
+  selling_price_list?: string;
 };
 
 function toCartPayload(items: PosCartItem[]) {
@@ -109,6 +120,9 @@ export function usePosCart({
   const [holdError, setHoldError] = useState<string | null>(null);
   const [isHolding, setIsHolding] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [sourceInvoice, setSourceInvoice] = useState<PosCartSource | null>(
+    null,
+  );
   const requestNumber = useRef(0);
   const attemptedItemsRef = useRef<PosCartItem[]>([]);
   const attemptedCustomerRef = useRef<PosSaleCustomer | null>(customer);
@@ -116,6 +130,7 @@ export function usePosCart({
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
   const holdDraftRef = useRef<PosCheckoutResult | null>(null);
+  const sourceInvoiceRef = useRef<PosCartSource | null>(null);
   const customerKey = customer?.customer || "";
   const priceListRef = useRef(priceList);
   const priceListKey = priceList || "";
@@ -242,12 +257,69 @@ export function usePosCart({
     attemptedItemsRef.current = emptyCart.items;
     dataRef.current = emptyCart;
     holdDraftRef.current = null;
+    sourceInvoiceRef.current = null;
     setData(emptyCart);
     setError(null);
     setHasPendingHold(false);
     setHoldError(null);
     setIsHolding(false);
     setIsUpdating(false);
+    setSourceInvoice(null);
+  }
+
+  /** Restores a held Frappe draft into the editable cart without losing its server identity. */
+  async function restoreHeldInvoice(
+    heldInvoice: PosHeldInvoice,
+  ): Promise<PosRestoredInvoice> {
+    if (!companyUrl || !sessionId || !posProfile) {
+      throw new Error(
+        "Your POS session is not ready. Try again once the workspace has loaded.",
+      );
+    }
+    setError(null);
+    setIsUpdating(true);
+    try {
+      const restored = await postVunaMethod<RestoredInvoiceResponse>(
+        companyUrl,
+        sessionId,
+        "vunapos.api.sales.restore_invoice",
+        {
+          invoice_doctype: heldInvoice.doctype,
+          invoice_name: heldInvoice.name,
+        },
+      );
+      const restoredItems = restored.items.map((item) => ({
+        ...item,
+        allow_negative_stock: Boolean(item.allow_negative_stock),
+        available_qty: item.actual_qty ?? null,
+        is_stock_item: Boolean(item.is_stock_item),
+        rate: Number(item.rate || 0),
+      }));
+      const nextData = cartFromResponse(restored, restoredItems);
+      const source = { doctype: restored.doctype, name: restored.name };
+      itemsRef.current = nextData.items;
+      dataRef.current = nextData;
+      sourceInvoiceRef.current = source;
+      setData(nextData);
+      setSourceInvoice(source);
+      return {
+        ...nextData,
+        customer: restored.customer,
+        customer_name: restored.customer_name,
+        selling_price_list: restored.selling_price_list,
+        source,
+      };
+    } catch (requestError) {
+      if (
+        requestError instanceof FrappeClientError &&
+        requestError.code === "session"
+      ) {
+        void invalidateSession();
+      }
+      throw requestError;
+    } finally {
+      setIsUpdating(false);
+    }
   }
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
@@ -269,17 +341,31 @@ export function usePosCart({
     try {
       let draft = holdDraftRef.current;
       if (!draft) {
-        draft = await postVunaMethod<PosCheckoutResult>(
-          companyUrl,
-          sessionId,
-          "vunapos.api.sales.create_invoice_from_cart",
-          {
-            customer: customerRef.current?.customer,
-            items: JSON.stringify(toCartPayload(cartItems)),
-            pos_profile: posProfile,
-            price_list: priceListRef.current,
-          },
-        );
+        const source = sourceInvoiceRef.current;
+        draft = source
+          ? await postVunaMethod<PosCheckoutResult>(
+              companyUrl,
+              sessionId,
+              "vunapos.api.sales.update_invoice_from_cart",
+              {
+                customer: customerRef.current?.customer,
+                invoice_doctype: source.doctype,
+                invoice_name: source.name,
+                items: JSON.stringify(toCartPayload(cartItems)),
+                price_list: priceListRef.current,
+              },
+            )
+          : await postVunaMethod<PosCheckoutResult>(
+              companyUrl,
+              sessionId,
+              "vunapos.api.sales.create_invoice_from_cart",
+              {
+                customer: customerRef.current?.customer,
+                items: JSON.stringify(toCartPayload(cartItems)),
+                pos_profile: posProfile,
+                price_list: priceListRef.current,
+              },
+            );
         holdDraftRef.current = draft;
         setHasPendingHold(true);
       }
@@ -542,9 +628,11 @@ export function usePosCart({
     items: data.items,
     refresh,
     remove,
+    restoreHeldInvoice,
     requiresCustomer,
     retry,
     subtotal,
+    sourceInvoice,
     taxes: data.taxes,
     totals: data.totals,
     updateBatchAllocations,

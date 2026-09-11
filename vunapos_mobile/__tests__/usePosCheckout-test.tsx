@@ -81,6 +81,38 @@ describe('POS checkout hooks', () => {
     });
   });
 
+  it('updates and submits the restored draft instead of creating a new invoice', async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({ doctype: 'Sales Invoice', name: 'SINV-HELD-001' })
+      .mockResolvedValueOnce({ doctype: 'Sales Invoice', name: 'SINV-HELD-001' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-001',
+        isCreditSale: false,
+        items: [item],
+        orderType: 'Invoice',
+        payments: [{ amount: 290, mode_of_payment: 'Cash' }],
+        posProfile: 'POS-001',
+        sourceInvoice: { doctype: 'Sales Invoice', name: 'SINV-HELD-001' },
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(1, 'https://vuna.example.com', 'sid-1', 'vunapos.api.sales.update_invoice_from_cart', {
+      customer: 'CUST-001',
+      invoice_doctype: 'Sales Invoice',
+      invoice_name: 'SINV-HELD-001',
+      items: '[{"item_code":"ITEM-001","qty":2,"uom":"Nos"}]',
+      price_list: undefined,
+    });
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(2, 'https://vuna.example.com', 'sid-1', 'vunapos.api.sales.checkout_invoice', expect.objectContaining({
+      invoice_doctype: 'Sales Invoice',
+      invoice_name: 'SINV-HELD-001',
+      payments: '[{"amount":290,"mode_of_payment":"Cash"}]',
+    }));
+  });
+
   it('sends credit-only fields only when the cashier enables a credit sale', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0002' });
     const hook = await renderHook(() => useSubmitPosCheckout());

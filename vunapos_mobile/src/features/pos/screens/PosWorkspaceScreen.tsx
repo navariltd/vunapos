@@ -49,6 +49,7 @@ export function PosWorkspaceScreen() {
   const [posProfileConfig, setPosProfileConfig] =
     useState<PosBootstrapData["pos_profile"]>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
+  const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const cart = usePosCart({
     customer: saleCustomer,
     posProfile,
@@ -143,6 +144,7 @@ export function PosWorkspaceScreen() {
             cart.clear();
             setSaleCustomer(null);
             setPostSaleRefreshKey((current) => current + 1);
+            setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)
               salespersonPin.lock();
             setCheckoutVisible(false);
@@ -153,6 +155,7 @@ export function PosWorkspaceScreen() {
           priceList={selectedPriceList}
           saleCustomer={saleCustomer}
           salesperson={salespersonPin.session}
+          sourceInvoice={cart.sourceInvoice}
           subtotal={cart.subtotal}
         />
       ) : cartVisible ? (
@@ -178,6 +181,7 @@ export function PosWorkspaceScreen() {
               setSelectedPriceList(undefined);
               setSaleCustomer(defaultSaleCustomer);
               setPostSaleRefreshKey((current) => current + 1);
+              setHeldRefreshKey((current) => current + 1);
               return { name: heldInvoice.name };
             }
             return null;
@@ -210,6 +214,7 @@ export function PosWorkspaceScreen() {
           )}
           requiresCustomer={cart.requiresCustomer}
           saleCustomer={saleCustomer}
+          sourceInvoice={cart.sourceInvoice}
           defaultSaleCustomer={defaultSaleCustomer}
           subtotal={cart.subtotal}
           taxes={cart.taxes}
@@ -238,8 +243,25 @@ export function PosWorkspaceScreen() {
         />
       ) : (
         <PosInvoicesScreen
+          heldRefreshKey={heldRefreshKey}
           onBackToPos={() => changeTab("Home")}
           onOpenInvoice={setSelectedInvoice}
+          onRestoreHeld={async (invoice) => {
+            const restored = await cart.restoreHeldInvoice(invoice);
+            setSelectedPriceList(restored.selling_price_list);
+            setSaleCustomer(
+              restored.customer
+                ? {
+                    customer: restored.customer,
+                    customerName: restored.customer_name || restored.customer,
+                  }
+                : defaultSaleCustomer,
+            );
+            setCheckoutVisible(false);
+            setCartVisible(true);
+            setActiveTab("Home");
+            setHeldRefreshKey((current) => current + 1);
+          }}
         />
       )}
       <SalespersonPinLock

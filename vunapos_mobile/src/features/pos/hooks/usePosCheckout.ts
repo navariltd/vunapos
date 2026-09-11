@@ -6,6 +6,7 @@ import {
   PosCartItem,
   PosCheckoutPreview,
   PosCheckoutResult,
+  PosCartSource,
   PosOrderType,
 } from "@/features/pos/types";
 import {
@@ -32,6 +33,7 @@ type SubmitInput = PreviewInput & {
   salesperson?: string;
   salespersonToken?: string;
   shippingAddressName?: string;
+  sourceInvoice?: PosCartSource | null;
   taxId?: string;
 };
 
@@ -209,37 +211,66 @@ export function useSubmitPosCheckout() {
     setError(null);
     setIsSubmitting(true);
     try {
+      const submitParams = {
+        customer: input.customer,
+        idempotency_key: idempotencyKey.current,
+        payments: JSON.stringify(input.payments),
+        ...(input.orderType === "Invoice" && input.isCreditSale
+          ? { due_date: input.dueDate, is_credit_sale: true }
+          : {}),
+        ...(input.orderType === "Invoice" && input.loyaltyPoints
+          ? { loyalty_points: input.loyaltyPoints }
+          : {}),
+        ...(input.orderType === "Invoice" && input.taxId?.trim()
+          ? { tax_id: input.taxId.trim() }
+          : {}),
+        ...(input.shippingAddressName?.trim()
+          ? { shipping_address_name: input.shippingAddressName.trim() }
+          : {}),
+        ...(input.salesperson?.trim() && input.salespersonToken?.trim()
+          ? {
+              salesperson: input.salesperson.trim(),
+              salesperson_token: input.salespersonToken.trim(),
+            }
+          : {}),
+      };
+      if (input.sourceInvoice) {
+        await postVunaMethod<PosCheckoutResult>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.sales.update_invoice_from_cart",
+          {
+            customer: input.customer,
+            invoice_doctype: input.sourceInvoice.doctype,
+            invoice_name: input.sourceInvoice.name,
+            items: JSON.stringify(cartPayload(input.items)),
+            price_list: input.priceList,
+            ...(input.loyaltyPoints
+              ? { loyalty_points: input.loyaltyPoints }
+              : {}),
+          },
+        );
+      }
       const result = await postVunaMethod<PosCheckoutResult>(
         companyUrl,
         sessionId,
-        input.orderType === "Order"
-          ? "vunapos.api.sales.create_and_submit_sales_order"
-          : "vunapos.api.sales.create_and_submit_invoice",
+        input.sourceInvoice
+          ? "vunapos.api.sales.checkout_invoice"
+          : input.orderType === "Order"
+            ? "vunapos.api.sales.create_and_submit_sales_order"
+            : "vunapos.api.sales.create_and_submit_invoice",
         {
-          customer: input.customer,
-          idempotency_key: idempotencyKey.current,
-          items: JSON.stringify(cartPayload(input.items)),
-          payments: JSON.stringify(input.payments),
-          pos_profile: input.posProfile,
-          price_list: input.priceList,
-          ...(input.orderType === "Invoice" && input.isCreditSale
-            ? { due_date: input.dueDate, is_credit_sale: true }
-            : {}),
-          ...(input.orderType === "Invoice" && input.loyaltyPoints
-            ? { loyalty_points: input.loyaltyPoints }
-            : {}),
-          ...(input.orderType === "Invoice" && input.taxId?.trim()
-            ? { tax_id: input.taxId.trim() }
-            : {}),
-          ...(input.shippingAddressName?.trim()
-            ? { shipping_address_name: input.shippingAddressName.trim() }
-            : {}),
-          ...(input.salesperson?.trim() && input.salespersonToken?.trim()
+          ...submitParams,
+          ...(input.sourceInvoice
             ? {
-                salesperson: input.salesperson.trim(),
-                salesperson_token: input.salespersonToken.trim(),
+                invoice_doctype: input.sourceInvoice.doctype,
+                invoice_name: input.sourceInvoice.name,
               }
-            : {}),
+            : {
+                items: JSON.stringify(cartPayload(input.items)),
+                pos_profile: input.posProfile,
+                price_list: input.priceList,
+              }),
           ...(input.orderType === "Order"
             ? { delivery_date: input.deliveryDate }
             : {}),

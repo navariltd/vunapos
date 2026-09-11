@@ -64,6 +64,7 @@ type PosCartScreenProps = {
   priceListOptions?: PosPriceList[];
   requireManagerPinForItemRemoval?: boolean;
   requiresCustomer: boolean;
+  sourceInvoice?: { doctype: string; name: string } | null;
   defaultSaleCustomer: PosSaleCustomer | null;
   saleCustomer: PosSaleCustomer | null;
   subtotal: number;
@@ -1042,6 +1043,7 @@ export function PosCartScreen({
   requireManagerPinForItemRemoval = false,
   requiresCustomer,
   saleCustomer,
+  sourceInvoice,
   subtotal,
   taxes,
   totals,
@@ -1351,7 +1353,9 @@ export function PosCartScreen({
               </Pressable>
             ) : null}
             <Pressable
-              accessibilityLabel="Proceed to checkout"
+              accessibilityLabel={
+                sourceInvoice ? "Continue checkout" : "Proceed to checkout"
+              }
               disabled={isCartBusy || Boolean(error) || requiresCustomer}
               onPress={onCheckout}
               style={[
@@ -1362,7 +1366,7 @@ export function PosCartScreen({
               ]}
             >
               <Text style={styles.checkoutButtonLabel}>
-                Proceed to checkout
+                {sourceInvoice ? "Continue checkout" : "Proceed to checkout"}
               </Text>
             </Pressable>
           </View>

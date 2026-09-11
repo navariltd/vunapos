@@ -286,6 +286,54 @@ describe("usePosCart", () => {
     expect(hook.result.current.items).toEqual([]);
   });
 
+  it("restores a held invoice into the cart while retaining its server draft identity", async () => {
+    mockPostVunaMethod.mockResolvedValueOnce({
+      customer: "CUST-001",
+      customer_name: "Example customer",
+      doctype: "Sales Invoice",
+      items: [
+        {
+          actual_qty: 4,
+          allow_negative_stock: false,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 2,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      name: "SINV-HELD-001",
+      selling_price_list: "Retail",
+      taxes: [{ description: "VAT", tax_amount: 40 }],
+      totals: { grand_total: 290, net_total: 250 },
+    });
+    const hook = await renderHook(() =>
+      usePosCart({ customer: null, posProfile: "POS-001" }),
+    );
+
+    await act(async () => {
+      await hook.result.current.restoreHeldInvoice({
+        doctype: "Sales Invoice",
+        name: "SINV-HELD-001",
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.restore_invoice",
+      { invoice_doctype: "Sales Invoice", invoice_name: "SINV-HELD-001" },
+    );
+    expect(hook.result.current.sourceInvoice).toEqual({
+      doctype: "Sales Invoice",
+      name: "SINV-HELD-001",
+    });
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({ item_code: "ITEM-001", qty: 2 }),
+    ]);
+  });
+
   it("recalculates the current cart when the cashier switches price lists", async () => {
     const hook = await renderHook<
       ReturnType<typeof usePosCart>,

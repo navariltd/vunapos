@@ -5,8 +5,9 @@ import { Text } from 'react-native-paper';
 import { PosInvoiceFiltersSheet } from '@/features/pos/components/PosInvoiceFiltersSheet';
 import { PosInvoiceListItem } from '@/features/pos/components/PosInvoiceListItem';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { usePosHeldInvoices } from '@/features/pos/hooks/usePosHeldInvoices';
 import { usePosInvoiceHistory } from '@/features/pos/hooks/usePosInvoiceHistory';
-import { PosInvoiceHistoryFilters, PosInvoiceHistoryRow, PosInvoiceListRow } from '@/features/pos/types';
+import { PosHeldInvoice, PosInvoiceHistoryFilters, PosInvoiceHistoryRow, PosInvoiceListRow } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 const initialFilters: PosInvoiceHistoryFilters = {
@@ -89,19 +90,32 @@ function SummaryCard({ label, value }: SummaryCardProps) {
 }
 
 type PosInvoicesScreenProps = {
+  heldRefreshKey?: number;
   onBackToPos: () => void;
   onOpenInvoice: (invoice: { doctype?: string; name: string }) => void;
+  onRestoreHeld: (invoice: PosHeldInvoice) => Promise<void>;
 };
 
-export function PosInvoicesScreen({ onBackToPos, onOpenInvoice }: PosInvoicesScreenProps) {
+function formatModified(value?: string | null) {
+  if (!value) return 'Modified recently';
+  const date = new Date(value.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, { day: '2-digit', hour: '2-digit', minute: '2-digit', month: 'short' });
+}
+
+export function PosInvoicesScreen({ heldRefreshKey = 0, onBackToPos, onOpenInvoice, onRestoreHeld }: PosInvoicesScreenProps) {
+  const [activeTab, setActiveTab] = useState<'history' | 'held'>('history');
   const [filters, setFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const [draftFilters, setDraftFilters] = useState<PosInvoiceHistoryFilters>(initialFilters);
   const [start, setStart] = useState(0);
   const bootstrap = usePosBootstrap();
   const history = usePosInvoiceHistory({ filters, posProfile: bootstrap.data?.pos_profile.name, start });
+  const held = usePosHeldInvoices({ enabled: activeTab === 'held', posProfile: bootstrap.data?.pos_profile.name, refreshKey: heldRefreshKey });
   const currency = bootstrap.data?.pos_profile.currency ?? 'KES';
   const invoiceRows = useMemo(() => history.data?.invoices.map(toListRow) ?? [], [history.data]);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoringName, setRestoringName] = useState<string | null>(null);
 
   function updateFilter<Key extends keyof PosInvoiceHistoryFilters>(field: Key, value: PosInvoiceHistoryFilters[Key]) {
     setFilters((current) => ({ ...current, [field]: value }));
@@ -127,6 +141,18 @@ export function PosInvoicesScreen({ onBackToPos, onOpenInvoice }: PosInvoicesScr
     setDraftFilters({ ...initialFilters, documentType: draftFilters.documentType });
   }
 
+  async function restoreHeld(invoice: PosHeldInvoice) {
+    setRestoreError(null);
+    setRestoringName(invoice.name);
+    try {
+      await onRestoreHeld(invoice);
+    } catch (error) {
+      setRestoreError(error instanceof Error ? error.message : 'Could not restore this held invoice.');
+    } finally {
+      setRestoringName(null);
+    }
+  }
+
   const historyError = bootstrap.error ?? history.error;
   const activeFilterCount = [
     filters.customer,
@@ -138,6 +164,61 @@ export function PosInvoicesScreen({ onBackToPos, onOpenInvoice }: PosInvoicesScr
     filters.toDate,
     filters.currentShift ? '' : 'currentShift',
   ].filter(Boolean).length;
+
+  const tabs = (
+    <View style={styles.documentTabs}>
+      <FilterChoice active={activeTab === 'history' && filters.documentType === 'Invoice'} label="Sales history" onPress={() => { setActiveTab('history'); updateFilter('documentType', 'Invoice'); }} />
+      <FilterChoice active={activeTab === 'history' && filters.documentType === 'Order'} label="Sales orders" onPress={() => { setActiveTab('history'); updateFilter('documentType', 'Order'); }} />
+      <FilterChoice active={activeTab === 'held'} label="Held invoices" onPress={() => setActiveTab('held')} />
+    </View>
+  );
+
+  if (activeTab === 'held') {
+    const heldError = bootstrap.error ?? held.error ?? restoreError;
+    return (
+      <FlatList
+        contentContainerStyle={styles.content}
+        data={held.data ?? []}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        keyExtractor={(invoice) => `${invoice.doctype}-${invoice.name}`}
+        ListEmptyComponent={bootstrap.isLoading || held.isLoading
+          ? <Text style={styles.emptyState}>{bootstrap.isLoading ? 'Loading POS workspace…' : 'Loading held invoices…'}</Text>
+          : heldError ? null
+          : <Text style={styles.emptyState}>No invoices are currently held.</Text>}
+        ListHeaderComponent={(
+          <View style={styles.header}>
+            <View style={styles.heading}>
+              <View style={styles.titleRow}>
+                <Text style={styles.title}>Invoices</Text>
+                <Pressable accessibilityLabel="Back to POS" onPress={onBackToPos} style={styles.backToPosButton}><Text style={styles.backToPosButtonLabel}>Back to POS</Text></Pressable>
+              </View>
+              <Text style={styles.subtitle}>Resume an online invoice without creating another draft.</Text>
+            </View>
+            {tabs}
+            <View style={styles.heldSummaryRow}>
+              <Text style={styles.filterSummary}>{held.data?.length ? `${held.data.length} waiting` : 'No held invoices'}</Text>
+              <Pressable accessibilityLabel="Refresh held invoices" disabled={held.isLoading} onPress={() => void held.reload()} style={[styles.filtersButton, held.isLoading && styles.paginationButtonDisabled]}><Text style={styles.filtersButtonLabel}>{held.isLoading ? 'Refreshing…' : 'Refresh'}</Text></Pressable>
+            </View>
+            {heldError ? <View style={styles.errorNotice}><Text style={styles.errorText}>{heldError}</Text></View> : null}
+          </View>
+        )}
+        renderItem={({ item }) => (
+          <View style={styles.heldInvoiceCard}>
+            <View style={styles.heldInvoiceMain}>
+              <Text numberOfLines={1} style={styles.heldInvoiceName}>{item.name}</Text>
+              <Text numberOfLines={1} style={styles.heldInvoiceCustomer}>{item.customer_name || item.customer || 'No customer'}</Text>
+              <Text style={styles.heldInvoiceModified}>{formatModified(item.modified)}</Text>
+            </View>
+            <View style={styles.heldInvoiceAside}>
+              <Text style={styles.heldInvoiceTotal}>{formatCurrency(Number(item.total ?? item.rounded_total ?? item.grand_total ?? 0), item.currency || currency)}</Text>
+              <Pressable accessibilityLabel={`Restore ${item.name}`} disabled={Boolean(restoringName)} onPress={() => void restoreHeld(item)} style={[styles.restoreButton, restoringName && styles.paginationButtonDisabled]}><Text style={styles.restoreButtonLabel}>{restoringName === item.name ? 'Restoring…' : 'Continue'}</Text></Pressable>
+            </View>
+          </View>
+        )}
+        showsVerticalScrollIndicator={false}
+      />
+    );
+  }
 
   return (
     <>
@@ -174,10 +255,7 @@ export function PosInvoicesScreen({ onBackToPos, onOpenInvoice }: PosInvoicesScr
             <Text style={styles.subtitle}>Review completed sales from this POS workspace.</Text>
           </View>
 
-          <View style={styles.documentTabs}>
-            <FilterChoice active={filters.documentType === 'Invoice'} label="Sales history" onPress={() => updateFilter('documentType', 'Invoice')} />
-            <FilterChoice active={filters.documentType === 'Order'} label="Sales orders" onPress={() => updateFilter('documentType', 'Order')} />
-          </View>
+          {tabs}
 
           <View style={styles.filterActionRow}>
             <Text style={styles.filterSummary}>{activeFilterCount ? `${activeFilterCount} active filter${activeFilterCount === 1 ? '' : 's'}` : 'All invoices in this shift'}</Text>
@@ -305,6 +383,46 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingBottom: spacing.lg,
   },
+  heldInvoiceAside: {
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+  },
+  heldInvoiceCard: {
+    backgroundColor: posDarkColors.surfaceContainer,
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    justifyContent: 'space-between',
+    padding: spacing.md,
+  },
+  heldInvoiceCustomer: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+  },
+  heldInvoiceMain: { flex: 1, gap: 3 },
+  heldInvoiceModified: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  heldInvoiceName: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  heldInvoiceTotal: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  heldSummaryRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
   heading: {
     gap: 4,
   },
@@ -332,6 +450,17 @@ const styles = StyleSheet.create({
   refreshingText: {
     color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  restoreButton: {
+    backgroundColor: posDarkColors.primary,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  restoreButtonLabel: {
+    color: posDarkColors.onPrimary,
+    fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   separator: {
