@@ -309,6 +309,14 @@ export type PosCustomerAddress = {
   state?: string | null;
 };
 
+/** A permitted ERPNext Address that can be applied as a transaction shipping address. */
+export type PosCustomerShippingAddress = PosCustomerAddress & {
+  address_title?: string | null;
+  formatted_address?: string | null;
+  is_default?: boolean;
+  name: string;
+};
+
 export type PosCustomerContact = {
   email_id?: string | null;
   mobile_no?: string | null;

@@ -6,6 +6,7 @@ import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
+import { usePosCustomerShippingAddresses } from '@/features/pos/hooks/usePosCustomerShippingAddresses';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
@@ -89,6 +90,8 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState('');
+  const [shippingAddressName, setShippingAddressName] = useState('');
+  const [isShippingAddressPickerVisible, setIsShippingAddressPickerVisible] = useState(false);
   const preview = usePosCheckoutPreview(isInvoice && bootstrap.data
     ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name }
     : null);
@@ -127,6 +130,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
 
   const profile = bootstrap.data?.pos_profile;
   const customerLoyalty = usePosCustomerLoyalty(isInvoice ? saleCustomer?.customer : undefined, profile?.name);
+  const customerShippingAddresses = usePosCustomerShippingAddresses(saleCustomer?.customer, profile?.name);
   const profilePaymentModes = profile?.modes_of_payment ?? [];
   const manualModes = (bootstrap.data?.payment_modes ?? [])
     .filter((mode) => !mode.payment_gateway)
@@ -159,6 +163,9 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const appliedLoyaltyPoints = Math.floor(preview.data?.loyalty_points ?? 0);
   const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
   const isWalkinCustomer = Boolean(saleCustomer?.isWalkin);
+  const selectedShippingAddress = customerShippingAddresses.data?.find((address) => address.name === shippingAddressName)
+    || customerShippingAddresses.data?.find((address) => address.is_default)
+    || customerShippingAddresses.data?.[0];
   const allocation = calculatePaymentAllocation(paymentModes, paymentAmounts, totalMinor, precision);
   const allocationInputs = buildPaymentInputs(paymentModes, paymentAmounts, precision, paymentReferences);
   const paymentInputs = allocationInputs.map((payment) => {
@@ -486,6 +493,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       orderType,
       payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
+      shippingAddressName: selectedShippingAddress?.name,
       taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
     });
     if (result) onComplete(result);
@@ -668,6 +676,25 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         />
       </View> : null}
 
+      {customerShippingAddresses.isLoading || customerShippingAddresses.data?.length ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>Shipping address</Text>
+        <Pressable
+          accessibilityLabel="Choose shipping address"
+          disabled={customerShippingAddresses.isLoading}
+          onPress={() => setIsShippingAddressPickerVisible(true)}
+          style={[styles.shippingAddressSelector, customerShippingAddresses.isLoading && styles.secondaryButtonDisabled]}
+        >
+          <View style={styles.shippingAddressText}>
+            <Text style={styles.shippingAddressTitle}>{customerShippingAddresses.isLoading
+              ? 'Loading shipping addresses…'
+              : selectedShippingAddress?.address_title || selectedShippingAddress?.name || 'Select shipping address'}</Text>
+            {selectedShippingAddress?.city ? <Text style={styles.cardHint}>{selectedShippingAddress.city}</Text> : null}
+          </View>
+          <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-right" size={22} />
+        </Pressable>
+        {selectedShippingAddress?.formatted_address ? <Text style={styles.cardHint}>{selectedShippingAddress.formatted_address}</Text> : null}
+      </View> : null}
+
       {(isInvoice || allowsSalesOrderAdvancePayments) ? <View style={styles.card}>
           <Text style={styles.cardTitle}>{isInvoice ? 'Payment methods' : 'Sales Order advance payment'}</Text>
           <View style={styles.paymentSummaryRow}>
@@ -837,6 +864,46 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       </Modal>
 
       <Modal
+        animationType="slide"
+        onRequestClose={() => setIsShippingAddressPickerVisible(false)}
+        presentationStyle="pageSheet"
+        visible={isShippingAddressPickerVisible}
+      >
+        <KeyboardAwareFormScroll contentContainerStyle={styles.shippingAddressModalContent} showsVerticalScrollIndicator={false} style={styles.scrollView}>
+          <View style={styles.header}>
+            <View style={styles.heading}>
+              <Text style={styles.title}>Shipping address</Text>
+              <Text style={styles.subtitle}>Choose a permitted address for this {isInvoice ? 'invoice' : 'sales order'}.</Text>
+            </View>
+            <Pressable accessibilityLabel="Close shipping address picker" onPress={() => setIsShippingAddressPickerVisible(false)} style={styles.backButton}>
+              <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={22} />
+            </Pressable>
+          </View>
+          <View style={styles.shippingAddressOptions}>
+            {customerShippingAddresses.data?.map((address) => {
+              const selected = address.name === selectedShippingAddress?.name;
+              return <Pressable
+                accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                accessibilityState={{ selected }}
+                key={address.name}
+                onPress={() => {
+                  setShippingAddressName(address.name);
+                  setIsShippingAddressPickerVisible(false);
+                }}
+                style={[styles.shippingAddressOption, selected && styles.shippingAddressOptionSelected]}
+              >
+                <View style={styles.shippingAddressText}>
+                  <Text style={styles.shippingAddressTitle}>{address.address_title || address.name}</Text>
+                  {address.formatted_address ? <Text style={styles.cardHint}>{address.formatted_address}</Text> : null}
+                </View>
+                {selected ? <MaterialCommunityIcons color={posDarkColors.primary} name="check-circle" size={22} /> : null}
+              </Pressable>;
+            })}
+          </View>
+        </KeyboardAwareFormScroll>
+      </Modal>
+
+      <Modal
         animationType="fade"
         onRequestClose={() => { if (!checkout.isSubmitting) setIsSubmitConfirmationVisible(false); }}
         presentationStyle="overFullScreen"
@@ -959,6 +1026,13 @@ const styles = StyleSheet.create({
   secondaryButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
   secondaryButtonDisabled: { opacity: 0.5 },
   secondaryButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  shippingAddressModalContent: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
+  shippingAddressOption: { alignItems: 'center', backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between', minHeight: 64, padding: spacing.md },
+  shippingAddressOptionSelected: { borderColor: posDarkColors.primary },
+  shippingAddressOptions: { gap: spacing.sm },
+  shippingAddressSelector: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between', minHeight: 56, paddingHorizontal: spacing.sm },
+  shippingAddressText: { flex: 1, gap: 2 },
+  shippingAddressTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.body },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
   submitButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 50, paddingHorizontal: spacing.md },
