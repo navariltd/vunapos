@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "VunaPOS",
+    "slug": "vunapos-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/vuna-logo.png",
+    "scheme": "vunapos",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "icon": "./assets/images/vuna-logo.png"
+    },
+    "android": {
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.vunaposmobile"
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/vuna-logo.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#f8f8f8",
+          "image": "./assets/images/vuna-logo.png",
+          "imageWidth": 128,
+          "resizeMode": "contain"
+        }
+      ],
+      "expo-secure-store",
+      "expo-sharing"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}
