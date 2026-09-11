@@ -19,6 +19,7 @@ type SubmitInput = PreviewInput & {
   loyaltyPoints?: number;
   orderType: PosOrderType;
   payments: PaymentInput[];
+  taxId?: string;
 };
 
 function cartPayload(items: PosCartItem[]) {
@@ -124,6 +125,9 @@ export function useSubmitPosCheckout() {
             : {}),
           ...(input.orderType === 'Invoice' && input.loyaltyPoints
             ? { loyalty_points: input.loyaltyPoints }
+            : {}),
+          ...(input.orderType === 'Invoice' && input.taxId?.trim()
+            ? { tax_id: input.taxId.trim() }
             : {}),
           ...(input.orderType === 'Order' ? { delivery_date: input.deliveryDate } : {}),
         },

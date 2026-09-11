@@ -43,6 +43,7 @@ describe('PosCustomerDetailsScreen', () => {
           customer_name: 'Example customer',
           customer_type: 'Company',
           email_id: 'customer@example.com',
+          is_walkin: true,
           tax_id: 'P012345678X',
           territory: 'Kenya',
         },
@@ -71,7 +72,7 @@ describe('PosCustomerDetailsScreen', () => {
     expect(screen.queryByText('Receive payment')).toBeNull();
 
     await fireEvent.press(screen.getByLabelText('Start new sale'));
-    expect(onStartSale).toHaveBeenCalledWith({ customer: 'CUST-001', customerName: 'Example customer' });
+    expect(onStartSale).toHaveBeenCalledWith({ customer: 'CUST-001', customerName: 'Example customer', isWalkin: true, mobile: '+254 700 000 000', taxId: 'P012345678X' });
   });
 
   it('returns to the invoice details screen', async () => {

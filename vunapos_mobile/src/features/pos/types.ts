@@ -332,6 +332,7 @@ export type PosCustomerSummary = {
   customer_name: string;
   customer_type?: string | null;
   email_id?: string | null;
+  is_walkin?: boolean;
   mobile_no?: string | null;
   tax_id?: string | null;
   territory?: string | null;
@@ -340,7 +341,9 @@ export type PosCustomerSummary = {
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;
+  isWalkin?: boolean;
   mobile?: string | null;
+  taxId?: string | null;
 };
 
 export type PosCustomerSearchResult = PosSaleCustomer & {

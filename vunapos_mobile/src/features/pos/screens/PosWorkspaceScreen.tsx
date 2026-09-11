@@ -93,7 +93,7 @@ export function PosWorkspaceScreen() {
             onClear={cart.clear}
             onClearSaleCustomer={() => setSaleCustomer(null)}
             onRemove={cart.remove}
-            onSelectSaleCustomer={(customer) => setSaleCustomer({ customer: customer.customer, customerName: customer.customerName })}
+            onSelectSaleCustomer={setSaleCustomer}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
             requiresCustomer={cart.requiresCustomer}

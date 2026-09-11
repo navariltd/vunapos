@@ -23,10 +23,10 @@ describe('usePosCustomerSearch', () => {
   afterEach(async () => cleanup());
 
   it('searches permitted Frappe customers and maps them for a POS sale', async () => {
-    mockGetVunaMethod.mockResolvedValue([{ customer: 'CUST-001', customer_name: 'Acme Stores', mobile_no: '+254700000000' }]);
+    mockGetVunaMethod.mockResolvedValue([{ customer: 'CUST-001', customer_name: 'Acme Stores', is_walkin: true, mobile_no: '+254700000000', tax_id: 'P012345678X' }]);
     const hook = await renderHook(() => usePosCustomerSearch('acme', true));
 
-    await waitFor(() => expect(hook.result.current.rows).toEqual([{ customer: 'CUST-001', customerName: 'Acme Stores', email: undefined, mobile: '+254700000000' }]));
+    await waitFor(() => expect(hook.result.current.rows).toEqual([{ customer: 'CUST-001', customerName: 'Acme Stores', email: undefined, isWalkin: true, mobile: '+254700000000', taxId: 'P012345678X' }]));
     expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.customer.search_customers', { limit: 20, query: 'acme' }, expect.any(AbortSignal));
   });
 });

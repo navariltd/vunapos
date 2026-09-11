@@ -122,6 +122,25 @@ describe('POS checkout hooks', () => {
     expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({ loyalty_points: 10 }));
   });
 
+  it('sends a Tax ID only when a walk-in checkout provides one', async () => {
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0005' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-WALKIN',
+        isCreditSale: false,
+        items: [item],
+        orderType: 'Invoice',
+        payments: [{ amount: 290, mode_of_payment: 'Cash' }],
+        posProfile: 'POS-001',
+        taxId: '  A123456789Z  ',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({ tax_id: 'A123456789Z' }));
+  });
+
   it('serializes manual payment transaction references for invoice checkout', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0003' });
     const hook = await renderHook(() => useSubmitPosCheckout());

@@ -88,6 +88,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [loyaltyInput, setLoyaltyInput] = useState('');
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
+  const [checkoutTaxId, setCheckoutTaxId] = useState('');
   const preview = usePosCheckoutPreview(isInvoice && bootstrap.data
     ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name }
     : null);
@@ -157,6 +158,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const loyaltyInputError = Boolean(loyaltyInput && (!loyaltyInputPoints || loyaltyInputPoints > maximumLoyaltyPoints));
   const appliedLoyaltyPoints = Math.floor(preview.data?.loyalty_points ?? 0);
   const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
+  const isWalkinCustomer = Boolean(saleCustomer?.isWalkin);
   const allocation = calculatePaymentAllocation(paymentModes, paymentAmounts, totalMinor, precision);
   const allocationInputs = buildPaymentInputs(paymentModes, paymentAmounts, precision, paymentReferences);
   const paymentInputs = allocationInputs.map((payment) => {
@@ -484,6 +486,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       orderType,
       payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
+      taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
     });
     if (result) onComplete(result);
   }
@@ -647,6 +650,22 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           <Text style={styles.cardHint}>Applied: {appliedLoyaltyPoints.toLocaleString()} points · {formatCurrency(loyaltyAmount, currency, precision)}</Text>
           <Pressable accessibilityLabel="Remove loyalty redemption" disabled={isApplyingLoyalty} onPress={() => void applyLoyaltyPoints(0)}><Text style={styles.loyaltyRemoveLabel}>Remove</Text></Pressable>
         </View> : null}
+      </View> : null}
+
+      {isInvoice && isWalkinCustomer ? <View style={styles.card}>
+        <Text style={styles.cardTitle}>Receipt Tax ID</Text>
+        <Text style={styles.cardHint}>Optionally add the walk-in customer’s PIN or Tax ID to this receipt.</Text>
+        <Text style={styles.fieldLabel}>Customer Tax ID</Text>
+        <TextInput
+          accessibilityLabel="Customer Tax ID"
+          autoCapitalize="characters"
+          maxLength={140}
+          onChangeText={setCheckoutTaxId}
+          placeholder={saleCustomer?.taxId || 'PIN / Tax ID for this receipt'}
+          placeholderTextColor="#8f8f8f"
+          style={styles.input}
+          value={checkoutTaxId}
+        />
       </View> : null}
 
       {(isInvoice || allowsSalesOrderAdvancePayments) ? <View style={styles.card}>

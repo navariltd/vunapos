@@ -8,7 +8,9 @@ type CustomerResponse = {
   customer: string;
   customer_name: string;
   email_id?: string | null;
+  is_walkin?: boolean;
   mobile_no?: string | null;
+  tax_id?: string | null;
 };
 
 /** Searches only customers the signed-in Frappe user is permitted to use. */
@@ -31,7 +33,14 @@ export function usePosCustomerSearch(query: string, enabled: boolean) {
       limit: 20,
       query: debouncedQuery,
     }, controller.signal)
-      .then((rows) => setState({ error: null, key: requestKey, rows: rows.map((row) => ({ customer: row.customer, customerName: row.customer_name, email: row.email_id, mobile: row.mobile_no })) }))
+      .then((rows) => setState({ error: null, key: requestKey, rows: rows.map((row) => ({
+        customer: row.customer,
+        customerName: row.customer_name,
+        email: row.email_id,
+        mobile: row.mobile_no,
+        ...(row.is_walkin ? { isWalkin: true } : {}),
+        ...(row.tax_id ? { taxId: row.tax_id } : {}),
+      })) }))
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) return;
         if (requestError instanceof FrappeClientError && requestError.code === 'session') {

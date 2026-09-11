@@ -101,6 +101,7 @@ describe('PosCheckoutScreen', () => {
       />,
     );
 
+    expect(screen.queryByLabelText('Customer Tax ID')).toBeNull();
     await fireEvent.press(screen.getByLabelText('Complete sale'));
 
     expect(screen.getByText('Confirm submission of sales invoice for ABC Corps?')).toBeTruthy();
@@ -173,6 +174,28 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(previewLoyalty).toHaveBeenCalledWith(0));
     await waitFor(() => expect(screen.queryByLabelText('Remove loyalty redemption')).toBeNull());
     await waitFor(() => expect(screen.getByLabelText('Cash amount').props.value).toBe('116.00'));
+  });
+
+  it('shows a Tax ID field only for a walk-in customer and submits its trimmed value', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-TAX-001' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-WALKIN', customerName: 'Walk-in customer', isWalkin: true, taxId: 'P012345678X' }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByLabelText('Customer Tax ID').props.placeholder).toBe('P012345678X');
+    await fireEvent.changeText(screen.getByLabelText('Customer Tax ID'), '  A123456789Z  ');
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({ taxId: 'A123456789Z' })));
   });
 
   it('keeps the confirmation dialog visible with a submitting state during submission', async () => {

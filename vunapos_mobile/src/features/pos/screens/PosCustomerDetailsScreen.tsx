@@ -102,7 +102,7 @@ export function PosCustomerDetailsScreen({ customer, onBack, onStartSale }: PosC
         <Text style={styles.detailText}>{address || 'No permitted primary address available.'}</Text>
       </DetailCard>
 
-      <Pressable accessibilityLabel="Start new sale" onPress={() => onStartSale({ customer: profile.customer, customerName: profile.customer_name })} style={styles.startSaleButton}>
+      <Pressable accessibilityLabel="Start new sale" onPress={() => onStartSale({ customer: profile.customer, customerName: profile.customer_name, isWalkin: profile.is_walkin, mobile: phone, taxId: profile.tax_id })} style={styles.startSaleButton}>
         <Text style={styles.startSaleButtonLabel}>Start new sale</Text>
       </Pressable>
     </ScrollView>
