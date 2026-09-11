@@ -32,6 +32,7 @@ export function PosWorkspaceScreen() {
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
   const [posProfileConfig, setPosProfileConfig] = useState<PosBootstrapData['pos_profile']>();
+  const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const cart = usePosCart({ customer: saleCustomer, posProfile });
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((profile: PosBootstrapData['pos_profile']) => {
@@ -83,6 +84,8 @@ export function PosWorkspaceScreen() {
             onBack={() => setCheckoutVisible(false)}
             onComplete={(result) => {
               cart.clear();
+              setSaleCustomer(null);
+              setPostSaleRefreshKey((current) => current + 1);
               if (posProfileConfig?.require_pin_before_every_sale) salespersonPin.lock();
               setCheckoutVisible(false);
               setCartVisible(false);
@@ -122,6 +125,7 @@ export function PosWorkspaceScreen() {
             onAddToCart={(item, currency) => { setCartCurrency(currency); void cart.add(item); }}
             onOpenCart={() => setCartVisible(true)}
             onPosProfileLoaded={receivePosProfile}
+            refreshKey={postSaleRefreshKey}
           />
         : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}
       <SalespersonPinLock

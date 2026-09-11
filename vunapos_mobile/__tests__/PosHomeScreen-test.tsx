@@ -89,4 +89,20 @@ describe('PosHomeScreen', () => {
     await fireEvent.press(screen.getByLabelText('Retry loading POS catalogue'));
     expect(reload).toHaveBeenCalledTimes(1);
   });
+
+  it('reloads the live catalogue after a completed sale invalidates the POS snapshot', async () => {
+    const reload = jest.fn();
+    mockUsePosBootstrap.mockReturnValue({
+      data: { default_customer: null, items: [], payment_modes: [], pos_profile: { currency: 'KES', name: 'POS-001' } },
+      error: null,
+      isLoading: false,
+      reload,
+    });
+    const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} onPosProfileLoaded={onPosProfileLoaded} refreshKey={0} />);
+
+    expect(reload).not.toHaveBeenCalled();
+    await screen.rerender(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} onPosProfileLoaded={onPosProfileLoaded} refreshKey={1} />);
+
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
 });

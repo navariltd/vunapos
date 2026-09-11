@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList, ListRenderItem, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
@@ -20,9 +20,10 @@ type PosHomeScreenProps = {
   onAddToCart: (item: PosCatalogueItem, currency: string) => void;
   onOpenCart: () => void;
   onPosProfileLoaded: (profile: PosBootstrapData['pos_profile']) => void;
+  refreshKey?: number;
 };
 
-export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded }: PosHomeScreenProps) {
+export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded, refreshKey = 0 }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({ posProfile: bootstrap.data?.pos_profile.name, query: searchQuery });
@@ -30,11 +31,19 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
   const localMatches = bootstrapItems.filter((item) => matchesSearch(item, searchQuery));
   const items = searchQuery.trim() ? itemSearch.items : localMatches;
   const currency = bootstrap.data?.pos_profile.currency || 'KES';
+  const handledRefreshKey = useRef(refreshKey);
+  const reloadBootstrap = bootstrap.reload;
 
   useEffect(() => {
     const profile = bootstrap.data?.pos_profile;
     if (profile) onPosProfileLoaded(profile);
   }, [bootstrap.data?.pos_profile, onPosProfileLoaded]);
+
+  useEffect(() => {
+    if (handledRefreshKey.current === refreshKey) return;
+    handledRefreshKey.current = refreshKey;
+    reloadBootstrap();
+  }, [refreshKey, reloadBootstrap]);
 
   function addItem(item: PosCatalogueItem) {
     const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
