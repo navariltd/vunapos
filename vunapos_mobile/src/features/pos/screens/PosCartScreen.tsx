@@ -32,6 +32,9 @@ type PosCartScreenProps = {
   allowRateChange?: boolean;
   currency: string;
   error: string | null;
+  hasPendingHold?: boolean;
+  holdError?: string | null;
+  isHolding?: boolean;
   isUpdating: boolean;
   items: PosCartItem[];
   onBack: () => void;
@@ -40,6 +43,7 @@ type PosCartScreenProps = {
   onSelectSaleCustomer: (customer: PosCustomerSearchResult) => void;
   onSelectPriceList?: (priceList?: string) => void;
   onClear: () => void;
+  onHold?: () => Promise<{ name: string } | null>;
   onRemove: (itemCode: string) => void;
   onRetry: () => void;
   onUpdateBatchAllocations?: (
@@ -1011,11 +1015,15 @@ export function PosCartScreen({
   currency,
   defaultSaleCustomer,
   error,
+  hasPendingHold = false,
+  holdError,
+  isHolding = false,
   isUpdating,
   items,
   onBack,
   onCheckout,
   onClear,
+  onHold,
   onClearSaleCustomer,
   onRemove,
   onRetry,
@@ -1040,6 +1048,7 @@ export function PosCartScreen({
 }: PosCartScreenProps) {
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
+  const [holdFeedback, setHoldFeedback] = useState<string | null>(null);
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
@@ -1057,6 +1066,16 @@ export function PosCartScreen({
   );
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
   const activePriceList = priceList || defaultPriceList;
+  const isCartBusy = isUpdating || isHolding || hasPendingHold;
+  const canHold = Boolean(onHold) && orderType === "Invoice";
+
+  async function holdCart() {
+    const heldInvoice = await onHold?.();
+    if (heldInvoice)
+      setHoldFeedback(
+        `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
+      );
+  }
 
   return (
     <KeyboardAwareFormScroll
@@ -1083,9 +1102,9 @@ export function PosCartScreen({
         {items.length ? (
           <Pressable
             accessibilityLabel="Clear cart"
-            disabled={isUpdating}
+            disabled={isCartBusy}
             onPress={() => setClearConfirmationVisible(true)}
-            style={[styles.clearButton, isUpdating && styles.controlDisabled]}
+            style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
           >
             <Text style={styles.clearButtonLabel}>Clear</Text>
           </Pressable>
@@ -1097,11 +1116,11 @@ export function PosCartScreen({
           <Pressable
             accessibilityHint="Opens a searchable customer list"
             accessibilityLabel="Select sale customer"
-            disabled={isUpdating}
+            disabled={isCartBusy}
             onPress={() => setCustomerPickerVisible(true)}
             style={[
               styles.customerSelector,
-              isUpdating && styles.controlDisabled,
+              isCartBusy && styles.controlDisabled,
             ]}
           >
             <View style={styles.customerSelectorMain}>
@@ -1121,11 +1140,11 @@ export function PosCartScreen({
           {saleCustomer && !isUsingDefaultCustomer ? (
             <Pressable
               accessibilityLabel="Use default sale customer"
-              disabled={isUpdating}
+              disabled={isCartBusy}
               onPress={onClearSaleCustomer}
               style={[
                 styles.clearCustomerButton,
-                isUpdating && styles.controlDisabled,
+                isCartBusy && styles.controlDisabled,
               ]}
             >
               <Text style={styles.clearCustomerButtonLabel}>
@@ -1169,11 +1188,11 @@ export function PosCartScreen({
           {allowPriceListSwitching && priceListOptions.length ? (
             <Pressable
               accessibilityLabel="Select price list for this sale"
-              disabled={isUpdating}
+              disabled={isCartBusy}
               onPress={() => setPriceListPickerVisible(true)}
               style={[
                 styles.priceListSelector,
-                isUpdating && styles.controlDisabled,
+                isCartBusy && styles.controlDisabled,
               ]}
             >
               <View>
@@ -1195,7 +1214,7 @@ export function PosCartScreen({
                 allowDiscountChange={allowDiscountChange}
                 allowRateChange={allowRateChange}
                 currency={currency}
-                disabled={isUpdating}
+                disabled={isCartBusy}
                 item={item}
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
@@ -1225,6 +1244,22 @@ export function PosCartScreen({
           </View>
           {isUpdating ? (
             <Text style={styles.updatingText}>Updating cart…</Text>
+          ) : null}
+          {isHolding ? (
+            <Text style={styles.updatingText}>Holding cart…</Text>
+          ) : null}
+          {holdError ? (
+            <View style={styles.errorState}>
+              <Text style={styles.errorText}>{holdError}</Text>
+              <Pressable
+                accessibilityLabel="Retry holding cart"
+                disabled={isHolding}
+                onPress={() => void holdCart()}
+                style={styles.retryButton}
+              >
+                <Text style={styles.retryButtonLabel}>Try again</Text>
+              </Pressable>
+            </View>
           ) : null}
           {error ? (
             <View style={styles.errorState}>
@@ -1291,18 +1326,46 @@ export function PosCartScreen({
           <Text style={styles.checkoutNote}>
             Payment is collected at checkout.
           </Text>
-          <Pressable
-            accessibilityLabel="Proceed to checkout"
-            disabled={isUpdating || Boolean(error) || requiresCustomer}
-            onPress={onCheckout}
-            style={[
-              styles.checkoutButton,
-              (isUpdating || error || requiresCustomer) &&
-                styles.checkoutButtonDisabled,
-            ]}
-          >
-            <Text style={styles.checkoutButtonLabel}>Proceed to checkout</Text>
-          </Pressable>
+          {holdFeedback ? (
+            <Text accessibilityLiveRegion="polite" style={styles.holdFeedback}>
+              {holdFeedback}
+            </Text>
+          ) : null}
+          <View style={styles.cartActions}>
+            {canHold ? (
+              <Pressable
+                accessibilityLabel="Hold cart"
+                disabled={isCartBusy}
+                onPress={() => void holdCart()}
+                style={[
+                  styles.holdButton,
+                  isCartBusy && styles.controlDisabled,
+                ]}
+              >
+                <MaterialCommunityIcons
+                  color={posDarkColors.onSurface}
+                  name="pause"
+                  size={18}
+                />
+                <Text style={styles.holdButtonLabel}>Hold</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityLabel="Proceed to checkout"
+              disabled={isCartBusy || Boolean(error) || requiresCustomer}
+              onPress={onCheckout}
+              style={[
+                styles.checkoutButton,
+                canHold && styles.checkoutButtonWithHold,
+                (isCartBusy || error || requiresCustomer) &&
+                  styles.checkoutButtonDisabled,
+              ]}
+            >
+              <Text style={styles.checkoutButtonLabel}>
+                Proceed to checkout
+              </Text>
+            </Pressable>
+          </View>
         </>
       ) : (
         <View style={styles.emptyState}>
@@ -1606,6 +1669,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 48,
   },
+  checkoutButtonWithHold: { flex: 1 },
   checkoutButtonDisabled: {
     backgroundColor: posDarkColors.disabled,
     opacity: 0.5,
@@ -1634,6 +1698,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
+  cartActions: { flexDirection: "row", gap: spacing.sm },
   clearCustomerButton: {
     alignItems: "center",
     borderColor: posDarkColors.border,
@@ -2248,5 +2313,30 @@ const styles = StyleSheet.create({
     color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
+  },
+  holdButton: {
+    alignItems: "center",
+    backgroundColor: posDarkColors.surfaceContainerHigh,
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "center",
+    minHeight: 48,
+    minWidth: 94,
+    paddingHorizontal: spacing.sm,
+  },
+  holdButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  holdFeedback: {
+    color: posDarkColors.primary,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.body,
+    textAlign: "center",
   },
 });

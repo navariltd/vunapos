@@ -244,6 +244,54 @@ describe("PosCartScreen", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
+  it("holds an invoice cart and explains where the cashier can continue it", async () => {
+    const onHold = jest.fn().mockResolvedValue({ name: "SINV-0001" });
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onHold={onHold}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={null}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Hold cart"));
+    expect(onHold).toHaveBeenCalledTimes(1);
+    expect(
+      screen.getByText(
+        "SINV-0001 is held. You can continue it from Held Invoices.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("requires a customer before checkout while retaining the temporary cart", async () => {
     const screen = await render(
       <PosCartScreen

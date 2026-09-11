@@ -6,11 +6,16 @@ import {
   PosCartData,
   PosCartItem,
   PosCatalogueItem,
+  PosCheckoutResult,
   PosPricingOverride,
   PosSerialAllocation,
   PosSaleCustomer,
 } from "@/features/pos/types";
-import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import {
+  FrappeClientError,
+  getVunaMethod,
+  postVunaMethod,
+} from "@/services/frappeClient";
 
 function toCartItem(item: PosCatalogueItem): PosCartItem {
   return {
@@ -100,6 +105,9 @@ export function usePosCart({
     totals: {},
   });
   const [error, setError] = useState<string | null>(null);
+  const [hasPendingHold, setHasPendingHold] = useState(false);
+  const [holdError, setHoldError] = useState<string | null>(null);
+  const [isHolding, setIsHolding] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const requestNumber = useRef(0);
   const attemptedItemsRef = useRef<PosCartItem[]>([]);
@@ -107,6 +115,7 @@ export function usePosCart({
   const dataRef = useRef(data);
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
+  const holdDraftRef = useRef<PosCheckoutResult | null>(null);
   const customerKey = customer?.customer || "";
   const priceListRef = useRef(priceList);
   const priceListKey = priceList || "";
@@ -155,6 +164,7 @@ export function usePosCart({
       }
 
       const request = ++requestNumber.current;
+      if (!holdDraftRef.current) setHoldError(null);
       attemptedItemsRef.current = nextItems;
       attemptedCustomerRef.current = cartCustomer;
       itemsRef.current = nextItems;
@@ -231,9 +241,76 @@ export function usePosCart({
     itemsRef.current = emptyCart.items;
     attemptedItemsRef.current = emptyCart.items;
     dataRef.current = emptyCart;
+    holdDraftRef.current = null;
     setData(emptyCart);
     setError(null);
+    setHasPendingHold(false);
+    setHoldError(null);
+    setIsHolding(false);
     setIsUpdating(false);
+  }
+
+  /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
+  async function hold(): Promise<PosCheckoutResult | null> {
+    const cartItems = itemsRef.current;
+    if (!cartItems.length) {
+      setHoldError("Add an item before holding this cart.");
+      return null;
+    }
+    if (!companyUrl || !sessionId || !posProfile) {
+      setHoldError(
+        "Your POS session is not ready. Try again once the workspace has loaded.",
+      );
+      return null;
+    }
+
+    setHoldError(null);
+    setIsHolding(true);
+    try {
+      let draft = holdDraftRef.current;
+      if (!draft) {
+        draft = await postVunaMethod<PosCheckoutResult>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.sales.create_invoice_from_cart",
+          {
+            customer: customerRef.current?.customer,
+            items: JSON.stringify(toCartPayload(cartItems)),
+            pos_profile: posProfile,
+            price_list: priceListRef.current,
+          },
+        );
+        holdDraftRef.current = draft;
+        setHasPendingHold(true);
+      }
+
+      const heldInvoice = await postVunaMethod<PosCheckoutResult>(
+        companyUrl,
+        sessionId,
+        "vunapos.api.sales.hold_invoice",
+        {
+          invoice_doctype: draft.doctype,
+          invoice_name: draft.name,
+        },
+      );
+      clear();
+      return heldInvoice;
+    } catch (requestError) {
+      if (
+        requestError instanceof FrappeClientError &&
+        requestError.code === "session"
+      ) {
+        void invalidateSession();
+      }
+      setHoldError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not hold this cart.",
+      );
+      return null;
+    } finally {
+      setIsHolding(false);
+    }
   }
 
   async function remove(itemCode: string) {
@@ -456,7 +533,11 @@ export function usePosCart({
     applyDeliveryCharge,
     clear,
     error,
+    hasPendingHold,
+    hold,
+    holdError,
     itemCount,
+    isHolding,
     isUpdating,
     items: data.items,
     refresh,

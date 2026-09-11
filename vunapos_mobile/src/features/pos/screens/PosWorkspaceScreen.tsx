@@ -163,6 +163,8 @@ export function PosWorkspaceScreen() {
           allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
+          hasPendingHold={cart.hasPendingHold}
+          holdError={cart.holdError}
           items={cart.items}
           onBack={() => setCartVisible(false)}
           onCheckout={() => {
@@ -170,6 +172,16 @@ export function PosWorkspaceScreen() {
               setCheckoutVisible(true);
           }}
           onClear={cart.clear}
+          onHold={async () => {
+            const heldInvoice = await cart.hold();
+            if (heldInvoice) {
+              setSelectedPriceList(undefined);
+              setSaleCustomer(defaultSaleCustomer);
+              setPostSaleRefreshKey((current) => current + 1);
+              return { name: heldInvoice.name };
+            }
+            return null;
+          }}
           onClearSaleCustomer={() => {
             setSelectedPriceList(undefined);
             setSaleCustomer(defaultSaleCustomer);
@@ -202,6 +214,7 @@ export function PosWorkspaceScreen() {
           subtotal={cart.subtotal}
           taxes={cart.taxes}
           totals={cart.totals}
+          isHolding={cart.isHolding}
           isUpdating={cart.isUpdating}
           error={cart.error}
           onRetry={() => {

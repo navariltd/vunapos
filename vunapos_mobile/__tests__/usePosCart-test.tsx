@@ -12,14 +12,16 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 jest.mock("@/services/frappeClient", () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),
+  postVunaMethod: jest.fn(),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { PosSaleCustomer } from "@/features/pos/types";
-import { getVunaMethod } from "@/services/frappeClient";
+import { getVunaMethod, postVunaMethod } from "@/services/frappeClient";
 
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
+const mockPostVunaMethod = jest.mocked(postVunaMethod);
 const mockUseAppSession = jest.mocked(useAppSession);
 const invalidateSession = jest.fn();
 const item = {
@@ -205,6 +207,83 @@ describe("usePosCart", () => {
     expect(hook.result.current.items).toEqual([
       expect.objectContaining({ qty: 1 }),
     ]);
+  });
+
+  it("creates a validated draft, holds it, then clears the local cart", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({ doctype: "Sales Invoice", name: "SINV-0001" })
+      .mockResolvedValueOnce({ doctype: "Sales Invoice", name: "SINV-0001" });
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    let heldInvoice: { doctype: string; name: string } | null = null;
+    await act(async () => {
+      heldInvoice = await hook.result.current.hold();
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      1,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.create_invoice_from_cart",
+      {
+        customer: "CUST-001",
+        items: '[{"item_code":"ITEM-001","qty":1,"uom":"Nos"}]',
+        pos_profile: "POS-001",
+        price_list: undefined,
+      },
+    );
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.hold_invoice",
+      { invoice_doctype: "Sales Invoice", invoice_name: "SINV-0001" },
+    );
+    expect(heldInvoice).toEqual({
+      doctype: "Sales Invoice",
+      name: "SINV-0001",
+    });
+    expect(hook.result.current.items).toEqual([]);
+  });
+
+  it("retries holding the same draft instead of creating a duplicate after the hold request fails", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({ doctype: "Sales Invoice", name: "SINV-0002" })
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({ doctype: "Sales Invoice", name: "SINV-0002" });
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.hold();
+    });
+    expect(hook.result.current.holdError).toBe("Network error");
+    expect(hook.result.current.hasPendingHold).toBe(true);
+
+    await act(async () => {
+      await hook.result.current.hold();
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledTimes(3);
+    expect(mockPostVunaMethod.mock.calls[2][2]).toBe(
+      "vunapos.api.sales.hold_invoice",
+    );
+    expect(hook.result.current.items).toEqual([]);
   });
 
   it("recalculates the current cart when the cashier switches price lists", async () => {
