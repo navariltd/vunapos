@@ -93,6 +93,7 @@ export type PosBootstrapData = {
   payment_modes: PosPaymentMode[];
   pos_profile: {
     allow_credit_sales?: boolean;
+    allow_customer_creation?: boolean;
     allow_customer_payments?: boolean;
     allow_delivery_charge_change?: boolean;
     allow_delivery_charges?: boolean;

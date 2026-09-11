@@ -5,26 +5,40 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
+import { useCreatePosCustomer } from '@/features/pos/hooks/useCreatePosCustomer';
 import { usePosCustomerSearch } from '@/features/pos/hooks/usePosCustomerSearch';
 import { PosCustomerSearchResult } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCustomerPickerSheetProps = {
+  allowCustomerCreation: boolean;
   onDismiss: () => void;
   onSelect: (customer: PosCustomerSearchResult) => void;
+  posProfile?: string;
   visible: boolean;
 };
 
 /** Native customer selection is deliberately available from the cart before checkout. */
-export function PosCustomerPickerSheet({ onDismiss, onSelect, visible }: PosCustomerPickerSheetProps) {
+export function PosCustomerPickerSheet({ allowCustomerCreation, onDismiss, onSelect, posProfile, visible }: PosCustomerPickerSheetProps) {
   const insets = useSafeAreaInsets();
+  const [customerName, setCustomerName] = useState('');
   const [query, setQuery] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
+  const customerCreation = useCreatePosCustomer();
   const search = usePosCustomerSearch(query, visible);
 
   function select(customer: PosCustomerSearchResult) {
     onSelect(customer);
     setQuery('');
     onDismiss();
+  }
+
+  async function createCustomer() {
+    const customer = await customerCreation.create(customerName, posProfile);
+    if (!customer) return;
+    setCustomerName('');
+    setShowCreate(false);
+    select(customer);
   }
 
   return (
@@ -56,6 +70,23 @@ export function PosCustomerPickerSheet({ onDismiss, onSelect, visible }: PosCust
                 <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-right" size={20} />
               </Pressable>)}
             </View>
+            {allowCustomerCreation ? (
+              <View style={styles.createSection}>
+                <Pressable accessibilityLabel="Create customer" disabled={customerCreation.isCreating} onPress={() => setShowCreate((current) => !current)} style={styles.createToggle}>
+                  <MaterialCommunityIcons color={posDarkColors.primary} name="plus" size={19} />
+                  <Text style={styles.createToggleLabel}>Create customer</Text>
+                </Pressable>
+                {showCreate ? (
+                  <View style={styles.createForm}>
+                    <TextInput accessibilityLabel="New customer name" autoCapitalize="words" editable={!customerCreation.isCreating} onChangeText={setCustomerName} placeholder="Customer name" placeholderTextColor="#8f8f8f" style={styles.createInput} value={customerName} />
+                    {customerCreation.error ? <Text accessibilityRole="alert" style={styles.errorText}>{customerCreation.error}</Text> : null}
+                    <Pressable accessibilityLabel="Save customer" disabled={customerCreation.isCreating || !customerName.trim()} onPress={() => { void createCustomer(); }} style={[styles.saveButton, (customerCreation.isCreating || !customerName.trim()) && styles.saveButtonDisabled]}>
+                      <Text style={styles.saveButtonLabel}>{customerCreation.isCreating ? 'Creating…' : 'Save customer'}</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </KeyboardAwareFormScroll>
         </KeyboardAvoidingView>
       </View>
@@ -67,6 +98,11 @@ const styles = StyleSheet.create({
   backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.6)', ...StyleSheet.absoluteFill },
   closeButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
   closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+  createForm: { gap: spacing.sm },
+  createInput: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  createSection: { borderTopColor: posDarkColors.border, borderTopWidth: 1, gap: spacing.sm, marginTop: spacing.sm, paddingTop: spacing.md },
+  createToggle: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: spacing.xs, minHeight: 40, paddingHorizontal: spacing.xs },
+  createToggleLabel: { color: posDarkColors.primary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   customerMain: { flex: 1, gap: 3 },
   customerMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   customerName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
@@ -80,6 +116,9 @@ const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   searchField: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.xs, marginTop: spacing.md, paddingHorizontal: spacing.sm },
   searchInput: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingVertical: spacing.sm },
+  saveButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
+  saveButtonDisabled: { backgroundColor: posDarkColors.disabled, opacity: 0.5 },
+  saveButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, flexShrink: 1, maxHeight: '88%' },
   sheetContent: { paddingHorizontal: spacing.md },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, paddingVertical: spacing.sm, textAlign: 'center' },

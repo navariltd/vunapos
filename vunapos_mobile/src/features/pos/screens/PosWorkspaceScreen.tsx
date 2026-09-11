@@ -107,6 +107,7 @@ export function PosWorkspaceScreen() {
           />
         : cartVisible
         ? <PosCartScreen
+            allowCustomerCreation={Boolean(posProfileConfig?.allow_customer_creation)}
             currency={cartCurrency}
             items={cart.items}
             onBack={() => setCartVisible(false)}
@@ -119,6 +120,7 @@ export function PosWorkspaceScreen() {
             onSelectSaleCustomer={setSaleCustomer}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
+            posProfile={posProfile}
             requiresCustomer={cart.requiresCustomer}
             saleCustomer={saleCustomer}
             defaultSaleCustomer={defaultSaleCustomer}

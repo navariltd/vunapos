@@ -28,6 +28,7 @@ describe('PosCartScreen', () => {
   it('shows editable cart lines, totals, and item removal controls', async () => {
     const screen = await render(
       <PosCartScreen
+        allowCustomerCreation={false}
         currency="KES"
         error={null}
         isUpdating={false}
@@ -74,6 +75,7 @@ describe('PosCartScreen', () => {
   it('requires a customer before checkout while retaining the temporary cart', async () => {
     const screen = await render(
       <PosCartScreen
+        allowCustomerCreation={false}
         currency="KES"
         error={null}
         isUpdating={false}
@@ -106,6 +108,7 @@ describe('PosCartScreen', () => {
     const defaultSaleCustomer = { customer: 'WALK-IN', customerName: 'Walk-in customer', isWalkin: true };
     const screen = await render(
       <PosCartScreen
+        allowCustomerCreation={false}
         currency="KES"
         defaultSaleCustomer={defaultSaleCustomer}
         error={null}

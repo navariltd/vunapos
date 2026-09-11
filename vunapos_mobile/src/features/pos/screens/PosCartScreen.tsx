@@ -9,6 +9,7 @@ import { PosCartItem, PosCartTax, PosCartTotals, PosCustomerSearchResult, PosOrd
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCartScreenProps = {
+  allowCustomerCreation: boolean;
   currency: string;
   error: string | null;
   isUpdating: boolean;
@@ -22,6 +23,7 @@ type PosCartScreenProps = {
   onRetry: () => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
   orderType: PosOrderType;
+  posProfile?: string;
   requiresCustomer: boolean;
   defaultSaleCustomer: PosSaleCustomer | null;
   saleCustomer: PosSaleCustomer | null;
@@ -93,7 +95,7 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
   );
 }
 
-export function PosCartScreen({ currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
+export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, posProfile, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const isUsingDefaultCustomer = Boolean(
     saleCustomer?.customer
@@ -151,11 +153,13 @@ export function PosCartScreen({ currency, defaultSaleCustomer, error, isUpdating
         </View>
       )}
       <PosCustomerPickerSheet
+        allowCustomerCreation={allowCustomerCreation}
         onDismiss={() => setCustomerPickerVisible(false)}
         onSelect={(customer) => {
           onSelectSaleCustomer(customer);
           setCustomerPickerVisible(false);
         }}
+        posProfile={posProfile}
         visible={customerPickerVisible}
       />
     </KeyboardAwareFormScroll>
