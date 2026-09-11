@@ -114,6 +114,15 @@ export type PosGatewayPaymentLink = {
   status: 'Authorized' | 'Cancelled' | 'Draft' | 'Expired' | 'Failed' | 'Paid' | 'Pending' | string;
 };
 
+export type PosC2BGatewayPayment = {
+  amount: number;
+  currency?: string | null;
+  name: string;
+  party_name?: string | null;
+  party_phone?: string | null;
+  transaction_id: string;
+};
+
 export type PosCheckoutPreview = {
   currency?: string;
   items: PosInvoiceDetailItem[];

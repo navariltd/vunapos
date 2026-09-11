@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { PosGatewayPaymentLink } from '@/features/pos/types';
+import { PosC2BGatewayPayment, PosGatewayPaymentLink } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/frappeClient';
 
 type InitiateGatewayPaymentInput = {
@@ -64,5 +64,20 @@ export function useGatewayPayment() {
     return request<PosGatewayPaymentLink>('vunapos.api.gateway.cancel_gateway_payment_link', { gateway_payment_link: gatewayPaymentLink });
   }
 
-  return { cancel, clearError, error, getStatus, initiate, isWorking };
+  function searchC2B(input: Omit<InitiateGatewayPaymentInput, 'amount' | 'idempotencyKey' | 'phoneNumber'> & { query: string }) {
+    return request<PosC2BGatewayPayment[]>('vunapos.api.gateway.search_c2b_gateway_payments', {
+      currency: input.currency, customer: input.customer, mode_of_payment: input.modeOfPayment,
+      pos_profile: input.posProfile, query: input.query,
+    }, true);
+  }
+
+  function attachC2B(input: Omit<InitiateGatewayPaymentInput, 'phoneNumber'> & { transactionReference: string }) {
+    return request<PosGatewayPaymentLink>('vunapos.api.gateway.attach_c2b_gateway_payment', {
+      amount: input.amount, currency: input.currency, customer: input.customer,
+      idempotency_key: input.idempotencyKey, mode_of_payment: input.modeOfPayment,
+      pos_profile: input.posProfile, transaction_reference: input.transactionReference,
+    });
+  }
+
+  return { attachC2B, cancel, clearError, error, getStatus, initiate, isWorking, searchC2B };
 }

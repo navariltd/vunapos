@@ -57,12 +57,14 @@ describe('PosCheckoutScreen', () => {
     });
     mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, submit });
     mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
       cancel: jest.fn(),
       clearError: jest.fn(),
       error: null,
       getStatus: jest.fn(),
       initiate: jest.fn(),
       isWorking: false,
+      searchC2B: jest.fn(),
     });
   });
 
@@ -369,7 +371,7 @@ describe('PosCheckoutScreen', () => {
   it('blocks gateway checkout until the server confirms the gateway payment', async () => {
     const initiate = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Pending' });
     const getStatus = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Paid' });
-    mockUseGatewayPayment.mockReturnValue({ cancel: jest.fn(), clearError: jest.fn(), error: null, getStatus, initiate, isWorking: false });
+    mockUseGatewayPayment.mockReturnValue({ attachC2B: jest.fn(), cancel: jest.fn(), clearError: jest.fn(), error: null, getStatus, initiate, isWorking: false, searchC2B: jest.fn() });
     mockUsePosBootstrap.mockReturnValue({
       data: {
         payment_modes: [
@@ -411,6 +413,63 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(getStatus).toHaveBeenCalledWith('GPL-001'));
     await waitFor(() => expect(screen.getByText('Payment verified.')).toBeTruthy());
     expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(false);
+  });
+
+  it('searches for and attaches an exact matching C2B payment before enabling checkout', async () => {
+    const attachC2B = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-C2B-001', status: 'Paid' });
+    const searchC2B = jest.fn().mockResolvedValue([{
+      amount: 116,
+      currency: 'KES',
+      name: 'C2B-001',
+      party_name: 'ABC Corps',
+      transaction_id: 'TXN-001',
+    }]);
+    mockUseGatewayPayment.mockReturnValue({ attachC2B, cancel: jest.fn(), clearError: jest.fn(), error: null, getStatus: jest.fn(), initiate: jest.fn(), isWorking: false, searchC2B });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'M-Pesa STK', payment_gateway: 'M-Pesa', type: 'Phone' },
+        ],
+        pos_profile: { name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Pay with M-Pesa STK'));
+    await fireEvent.press(screen.getByLabelText('Find C2B payment'));
+    await fireEvent.changeText(screen.getByLabelText('Search C2B payments'), 'TXN-001');
+    await fireEvent.press(screen.getByLabelText('Search incoming C2B payments'));
+
+    await waitFor(() => expect(searchC2B).toHaveBeenCalledWith({
+      currency: 'KES',
+      customer: 'CUST-001',
+      modeOfPayment: 'M-Pesa STK',
+      posProfile: 'POS-001',
+      query: 'TXN-001',
+    }));
+    await fireEvent.press(screen.getByLabelText('Attach C2B payment TXN-001'));
+    await waitFor(() => expect(attachC2B).toHaveBeenCalledWith(expect.objectContaining({
+      amount: 116,
+      customer: 'CUST-001',
+      modeOfPayment: 'M-Pesa STK',
+      posProfile: 'POS-001',
+      transactionReference: 'TXN-001',
+    })));
+    await waitFor(() => expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(false));
   });
 
   it('disables completion when an electronic payment exceeds the invoice total', async () => {

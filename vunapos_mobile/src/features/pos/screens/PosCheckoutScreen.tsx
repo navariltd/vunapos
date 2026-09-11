@@ -20,7 +20,7 @@ import {
   parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
-import { PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
+import { PosC2BGatewayPayment, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCheckoutScreenProps = {
@@ -92,6 +92,11 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [gatewayLinks, setGatewayLinks] = useState<Record<string, PosGatewayPaymentLink | undefined>>({});
   const [activeGatewayMode, setActiveGatewayMode] = useState<PosPaymentMode | null>(null);
   const [gatewayPhone, setGatewayPhone] = useState('');
+  const [gatewayMethod, setGatewayMethod] = useState<'STK' | 'C2B'>('STK');
+  const [c2bQuery, setC2bQuery] = useState('');
+  const [c2bResults, setC2bResults] = useState<PosC2BGatewayPayment[]>([]);
+  const [isC2bSearching, setIsC2bSearching] = useState(false);
+  const [hasC2bSearched, setHasC2bSearched] = useState(false);
   const [isCreditSale, setIsCreditSale] = useState(false);
   const appliedSaleTypeDefault = useRef(false);
   const initializedPaymentKey = useRef<string | null>(null);
@@ -235,6 +240,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     gatewayPayment.clearError();
     setPaymentAmounts(allocateAllToMode(paymentModes, mode.mode_of_payment, totalMinor, precision));
     setGatewayPhone(saleCustomer?.mobile || '');
+    setGatewayMethod('STK');
+    setC2bQuery('');
+    setC2bResults([]);
+    setHasC2bSearched(false);
     setActiveGatewayMode(mode);
   }
 
@@ -277,6 +286,43 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     const link = gatewayLinks[activeGatewayMode.mode_of_payment];
     if (link) await gatewayPayment.cancel(link.name);
     clearGatewayPayment(activeGatewayMode.mode_of_payment);
+  }
+
+  async function searchC2BGatewayPayments() {
+    if (!activeGatewayMode || !profile || c2bQuery.trim().length < 3) return;
+    setIsC2bSearching(true);
+    setHasC2bSearched(true);
+    const payments = await gatewayPayment.searchC2B({
+      currency,
+      customer: saleCustomer?.customer,
+      modeOfPayment: activeGatewayMode.mode_of_payment,
+      posProfile: profile.name,
+      query: c2bQuery.trim(),
+    });
+    setC2bResults(payments || []);
+    setIsC2bSearching(false);
+  }
+
+  async function attachC2BGatewayPayment(payment: PosC2BGatewayPayment) {
+    if (!activeGatewayMode || !profile) return;
+    const modeOfPayment = activeGatewayMode.mode_of_payment;
+    const amountMinor = parsePaymentAmount(paymentAmounts[modeOfPayment] || '', precision) || 0;
+    if (!amountMinor || totalToMinorUnits(payment.amount, precision) !== amountMinor) return;
+    const idempotencyKey = gatewayIdempotencyKeys.current[modeOfPayment]
+      || (gatewayIdempotencyKeys.current[modeOfPayment] = createGatewayIdempotencyKey(modeOfPayment));
+    const link = await gatewayPayment.attachC2B({
+      amount: amountMinor / currencyScale(precision),
+      currency,
+      customer: saleCustomer?.customer,
+      idempotencyKey,
+      modeOfPayment,
+      posProfile: profile.name,
+      transactionReference: payment.transaction_id,
+    });
+    if (link) {
+      setGatewayLinks((current) => ({ ...current, [modeOfPayment]: link }));
+      setActiveGatewayMode(null);
+    }
   }
 
   function setPaymentReferenceNo(mode: string, referenceNo: string) {
@@ -618,19 +664,53 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
               <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={22} />
             </Pressable>
           </View>
+          <View style={styles.gatewayMethodButtons}>
+            <Pressable accessibilityLabel="Use STK Push" onPress={() => { gatewayPayment.clearError(); setGatewayMethod('STK'); }} style={[styles.gatewayMethodButton, gatewayMethod === 'STK' && styles.gatewayMethodButtonActive]}>
+              <Text style={[styles.gatewayMethodLabel, gatewayMethod === 'STK' && styles.gatewayMethodLabelActive]}>STK Push</Text>
+            </Pressable>
+            <Pressable accessibilityLabel="Find C2B payment" onPress={() => { gatewayPayment.clearError(); setGatewayMethod('C2B'); }} style={[styles.gatewayMethodButton, gatewayMethod === 'C2B' && styles.gatewayMethodButtonActive]}>
+              <Text style={[styles.gatewayMethodLabel, gatewayMethod === 'C2B' && styles.gatewayMethodLabelActive]}>Find C2B payment</Text>
+            </Pressable>
+          </View>
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>STK Push</Text>
-            <Text style={styles.cardHint}>Send a payment prompt to the customer, then wait for gateway confirmation.</Text>
-            <Text style={styles.fieldLabel}>Customer phone number</Text>
-            <TextInput accessibilityLabel="Gateway customer phone number" inputMode="tel" keyboardType="phone-pad" onChangeText={setGatewayPhone} placeholder="Phone number" placeholderTextColor="#8f8f8f" style={styles.input} value={gatewayPhone} />
+            <Text style={styles.cardTitle}>{gatewayMethod === 'STK' ? 'STK Push' : 'Incoming C2B payment'}</Text>
+            <Text style={styles.cardHint}>{gatewayMethod === 'STK'
+              ? 'Send a payment prompt to the customer, then wait for gateway confirmation.'
+              : 'Find a verified incoming payment and attach the exact amount to this sale.'}</Text>
+            {gatewayMethod === 'STK' ? <>
+              <Text style={styles.fieldLabel}>Customer phone number</Text>
+              <TextInput accessibilityLabel="Gateway customer phone number" inputMode="tel" keyboardType="phone-pad" onChangeText={setGatewayPhone} placeholder="Phone number" placeholderTextColor="#8f8f8f" style={styles.input} value={gatewayPhone} />
+            </> : <>
+              <Text style={styles.fieldLabel}>Transaction reference or payer</Text>
+              <View style={styles.c2bSearchRow}>
+                <TextInput accessibilityLabel="Search C2B payments" autoCapitalize="characters" onChangeText={(query) => { setC2bQuery(query); setHasC2bSearched(false); }} placeholder="Search incoming payment" placeholderTextColor="#8f8f8f" style={[styles.input, styles.c2bSearchInput]} value={c2bQuery} />
+                <Pressable accessibilityLabel="Search incoming C2B payments" disabled={isC2bSearching || c2bQuery.trim().length < 3} onPress={() => void searchC2BGatewayPayments()} style={[styles.secondaryButton, (isC2bSearching || c2bQuery.trim().length < 3) && styles.secondaryButtonDisabled]}>
+                  {isC2bSearching ? <ActivityIndicator color={posDarkColors.onSurface} size="small" /> : <Text style={styles.secondaryButtonLabel}>Search</Text>}
+                </Pressable>
+              </View>
+              {c2bResults.length ? <View style={styles.c2bResults}>{c2bResults.map((payment) => {
+                const amountMatches = totalToMinorUnits(payment.amount, precision) === (parsePaymentAmount(paymentAmounts[activeGatewayMode.mode_of_payment] || '', precision) || 0);
+                return <Pressable accessibilityLabel={`Attach C2B payment ${payment.transaction_id}`} disabled={!amountMatches || gatewayPayment.isWorking} key={payment.name} onPress={() => void attachC2BGatewayPayment(payment)} style={[styles.c2bPayment, !amountMatches && styles.c2bPaymentDisabled]}>
+                  <View style={styles.gatewayModeText}>
+                    <Text style={styles.paymentModeLabel}>{payment.party_name || payment.party_phone || 'Incoming payment'}</Text>
+                    <Text style={styles.cardHint}>{payment.transaction_id}</Text>
+                  </View>
+                  <View style={styles.c2bAmount}>
+                    <Text style={styles.paymentModeLabel}>{formatCurrency(payment.amount, payment.currency || currency, precision)}</Text>
+                    {!amountMatches ? <Text style={styles.errorText}>Amount does not match</Text> : null}
+                  </View>
+                </Pressable>;
+              })}</View> : null}
+              {hasC2bSearched && !isC2bSearching && !c2bResults.length ? <Text style={styles.cardHint}>No verified incoming payments found.</Text> : null}
+            </>}
             {gatewayPayment.error ? <Text style={styles.errorText}>{gatewayPayment.error}</Text> : null}
-            {gatewayLinks[activeGatewayMode.mode_of_payment] ? <Text style={isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment]) ? styles.gatewayVerifiedText : styles.cardHint}>
+            {gatewayMethod === 'STK' && gatewayLinks[activeGatewayMode.mode_of_payment] ? <Text style={isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment]) ? styles.gatewayVerifiedText : styles.cardHint}>
               {isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment]) ? `Payment verified${gatewayLinks[activeGatewayMode.mode_of_payment]?.status === 'Authorized' ? ' (authorized)' : ''}.` : `Payment status: ${gatewayLinks[activeGatewayMode.mode_of_payment]?.status}. Checking automatically…`}
             </Text> : null}
-            <Pressable accessibilityLabel="Send STK payment request" disabled={gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])} onPress={() => void initiateGatewayPayment()} style={[styles.submitButton, (gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])) && styles.submitButtonDisabled]}>
+            {gatewayMethod === 'STK' ? <Pressable accessibilityLabel="Send STK payment request" disabled={gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])} onPress={() => void initiateGatewayPayment()} style={[styles.submitButton, (gatewayPayment.isWorking || !gatewayPhone.trim() || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])) && styles.submitButtonDisabled]}>
               {gatewayPayment.isWorking ? <ActivityIndicator color={posDarkColors.onPrimary} size="small" /> : <Text style={styles.submitButtonLabel}>{gatewayLinks[activeGatewayMode.mode_of_payment] ? 'Retry STK request' : 'Send STK request'}</Text>}
-            </Pressable>
-            {gatewayLinks[activeGatewayMode.mode_of_payment] ? <View style={styles.gatewayActions}>
+            </Pressable> : null}
+            {gatewayMethod === 'STK' && gatewayLinks[activeGatewayMode.mode_of_payment] ? <View style={styles.gatewayActions}>
               <Pressable accessibilityLabel="Check gateway payment status" disabled={gatewayPayment.isWorking} onPress={() => void refreshGatewayPayment()} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Check status</Text></Pressable>
               <Pressable accessibilityLabel="Cancel gateway payment" disabled={gatewayPayment.isWorking || isSuccessfulGatewayPayment(gatewayLinks[activeGatewayMode.mode_of_payment])} onPress={() => void cancelGatewayPayment()} style={styles.secondaryButton}><Text style={styles.secondaryButtonLabel}>Cancel payment</Text></Pressable>
             </View> : null}
@@ -699,6 +779,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, gap: spacing.sm, padding: spacing.md },
   cardHint: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, lineHeight: typography.lineHeight.body },
   cardTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  c2bAmount: { alignItems: 'flex-end', gap: 2 },
+  c2bPayment: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between', padding: spacing.sm },
+  c2bPaymentDisabled: { opacity: 0.55 },
+  c2bResults: { gap: spacing.xs },
+  c2bSearchInput: { flex: 1 },
+  c2bSearchRow: { alignItems: 'stretch', flexDirection: 'row', gap: spacing.sm },
   cancelConfirmationButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
   cancelConfirmationLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   confirmConfirmationButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
@@ -717,6 +803,11 @@ const styles = StyleSheet.create({
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
   fieldLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
   gatewayActions: { flexDirection: 'row', gap: spacing.sm },
+  gatewayMethodButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 42, paddingHorizontal: spacing.sm },
+  gatewayMethodButtonActive: { backgroundColor: posDarkColors.primary, borderColor: posDarkColors.primary },
+  gatewayMethodButtons: { flexDirection: 'row', gap: spacing.sm },
+  gatewayMethodLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, textAlign: 'center' },
+  gatewayMethodLabelActive: { color: posDarkColors.onPrimary },
   gatewayModeButton: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between', minHeight: 56, padding: spacing.sm },
   gatewayModeButtonVerified: { borderColor: '#39b976' },
   gatewayModeText: { flex: 1, gap: 2 },
@@ -743,6 +834,7 @@ const styles = StyleSheet.create({
   paymentSummaryValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   scrollView: { flex: 1 },
   secondaryButton: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.sm },
+  secondaryButtonDisabled: { opacity: 0.5 },
   secondaryButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   state: { alignItems: 'center', flex: 1, gap: spacing.md, justifyContent: 'center', padding: spacing.xl },
   stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, textAlign: 'center' },
