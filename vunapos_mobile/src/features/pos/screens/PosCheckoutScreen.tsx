@@ -1,11 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { DateTimePicker } from '@expo/ui/community/datetime-picker';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Switch, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
+import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import {
@@ -108,6 +109,15 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const [referenceDateMode, setReferenceDateMode] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] = useState(false);
+
+  const updateGatewayPaymentFromRealtime = useCallback((payment: PosGatewayPaymentLink) => {
+    setGatewayLinks((current) => {
+      const currentLink = current[payment.mode_of_payment];
+      if (!currentLink || currentLink.name !== payment.name) return current;
+      return { ...current, [payment.mode_of_payment]: { ...currentLink, ...payment } };
+    });
+  }, []);
+  useGatewayPaymentRealtime(updateGatewayPaymentFromRealtime);
 
   const profile = bootstrap.data?.pos_profile;
   const profilePaymentModes = profile?.modes_of_payment ?? [];

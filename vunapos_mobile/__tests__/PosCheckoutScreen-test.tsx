@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react-native';
 
 jest.mock('react-native-paper', () => ({
   Text: require('react-native').Text,
@@ -25,8 +25,13 @@ jest.mock('@/features/pos/hooks/useGatewayPayment', () => ({
   useGatewayPayment: jest.fn(),
 }));
 
+jest.mock('@/features/pos/hooks/useGatewayPaymentRealtime', () => ({
+  useGatewayPaymentRealtime: jest.fn(),
+}));
+
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
+import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
 
@@ -34,6 +39,7 @@ const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
 const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
+const mockUseGatewayPaymentRealtime = jest.mocked(useGatewayPaymentRealtime);
 const clearError = jest.fn();
 const submit = jest.fn();
 const onComplete = jest.fn();
@@ -66,6 +72,7 @@ describe('PosCheckoutScreen', () => {
       isWorking: false,
       searchC2B: jest.fn(),
     });
+    mockUseGatewayPaymentRealtime.mockImplementation(() => undefined);
   });
 
   afterEach(async () => {
@@ -411,6 +418,47 @@ describe('PosCheckoutScreen', () => {
 
     await fireEvent.press(screen.getByLabelText('Check gateway payment status'));
     await waitFor(() => expect(getStatus).toHaveBeenCalledWith('GPL-001'));
+    await waitFor(() => expect(screen.getByText('Payment verified.')).toBeTruthy());
+    expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(false);
+  });
+
+  it('unlocks checkout immediately when the matching gateway link is confirmed in realtime', async () => {
+    const initiate = jest.fn().mockResolvedValue({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Pending' });
+    let onGatewayChange: ((payment: { amount: number; mode_of_payment: string; name: string; status: string }) => void) | undefined;
+    mockUseGatewayPayment.mockReturnValue({ attachC2B: jest.fn(), cancel: jest.fn(), clearError: jest.fn(), error: null, getStatus: jest.fn(), initiate, isWorking: false, searchC2B: jest.fn() });
+    mockUseGatewayPaymentRealtime.mockImplementation((onChange) => { onGatewayChange = onChange; });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: 'Cash', type: 'Cash' },
+          { mode_of_payment: 'M-Pesa STK', payment_gateway: 'M-Pesa', type: 'Phone' },
+        ],
+        pos_profile: { name: 'POS-001' },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps', mobile: '0712345678' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Pay with M-Pesa STK'));
+    await fireEvent.press(screen.getByLabelText('Send STK payment request'));
+    await waitFor(() => expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(true));
+
+    await act(async () => {
+      onGatewayChange?.({ amount: 116, mode_of_payment: 'M-Pesa STK', name: 'GPL-001', status: 'Paid' });
+    });
+
     await waitFor(() => expect(screen.getByText('Payment verified.')).toBeTruthy());
     expect(screen.getByLabelText('Complete sale').props.accessibilityState.disabled).toBe(false);
   });
