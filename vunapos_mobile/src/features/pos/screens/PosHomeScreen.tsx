@@ -19,7 +19,7 @@ type PosHomeScreenProps = {
   cartItemCount: number;
   onAddToCart: (item: PosCatalogueItem, currency: string) => void;
   onOpenCart: () => void;
-  onPosProfileLoaded: (profile: PosBootstrapData['pos_profile']) => void;
+  onPosProfileLoaded: (bootstrap: PosBootstrapData) => void;
   refreshKey?: number;
 };
 
@@ -35,9 +35,8 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
   const reloadBootstrap = bootstrap.reload;
 
   useEffect(() => {
-    const profile = bootstrap.data?.pos_profile;
-    if (profile) onPosProfileLoaded(profile);
-  }, [bootstrap.data?.pos_profile, onPosProfileLoaded]);
+    if (bootstrap.data) onPosProfileLoaded(bootstrap.data);
+  }, [bootstrap.data, onPosProfileLoaded]);
 
   useEffect(() => {
     if (handledRefreshKey.current === refreshKey) return;

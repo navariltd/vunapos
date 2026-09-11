@@ -85,6 +85,9 @@ export type PosBootstrapData = {
   default_customer?: {
     customer: string;
     customer_name: string;
+    is_walkin?: boolean | number;
+    mobile_no?: string | null;
+    tax_id?: string | null;
   } | null;
   items?: PosCatalogueItem[];
   payment_modes: PosPaymentMode[];

@@ -30,14 +30,23 @@ export function PosWorkspaceScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{ currency: string; paymentEntry: PosInvoicePaymentEntry } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
+  const [defaultSaleCustomer, setDefaultSaleCustomer] = useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
   const [posProfileConfig, setPosProfileConfig] = useState<PosBootstrapData['pos_profile']>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const cart = usePosCart({ customer: saleCustomer, posProfile });
   const salespersonPin = useSalespersonPin();
-  const receivePosProfile = useCallback((profile: PosBootstrapData['pos_profile']) => {
-    setPosProfile(profile.name);
-    setPosProfileConfig(profile);
+  const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
+    const defaultCustomer = bootstrap.default_customer;
+    setPosProfile(bootstrap.pos_profile.name);
+    setPosProfileConfig(bootstrap.pos_profile);
+    setDefaultSaleCustomer(defaultCustomer ? {
+      customer: defaultCustomer.customer,
+      customerName: defaultCustomer.customer_name,
+      isWalkin: Boolean(defaultCustomer.is_walkin),
+      mobile: defaultCustomer.mobile_no || undefined,
+      taxId: defaultCustomer.tax_id || undefined,
+    } : null);
   }, []);
   const salespersonLocked = Boolean(posProfileConfig?.enable_salesperson_pin && !salespersonPin.session);
 
@@ -105,13 +114,14 @@ export function PosWorkspaceScreen() {
               if (!cart.requiresCustomer && !cart.isUpdating && !cart.error) setCheckoutVisible(true);
             }}
             onClear={cart.clear}
-            onClearSaleCustomer={() => setSaleCustomer(null)}
+            onClearSaleCustomer={() => setSaleCustomer(defaultSaleCustomer)}
             onRemove={cart.remove}
             onSelectSaleCustomer={setSaleCustomer}
             onUpdateQuantity={cart.updateQuantity}
             orderType={orderType}
             requiresCustomer={cart.requiresCustomer}
             saleCustomer={saleCustomer}
+            defaultSaleCustomer={defaultSaleCustomer}
             subtotal={cart.subtotal}
             taxes={cart.taxes}
             totals={cart.totals}

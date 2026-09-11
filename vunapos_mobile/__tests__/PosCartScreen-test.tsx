@@ -42,6 +42,7 @@ describe('PosCartScreen', () => {
         onUpdateQuantity={onUpdateQuantity}
         orderType="Invoice"
         requiresCustomer={false}
+        defaultSaleCustomer={{ customer: 'WALK-IN', customerName: 'Walk-in customer', isWalkin: true }}
         saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }}
         subtotal={250}
         taxes={[{ description: 'VAT', tax_amount: 40 }]}
@@ -66,7 +67,7 @@ describe('PosCartScreen', () => {
     expect(onCheckout).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('Proceed to checkout')).toHaveStyle({ backgroundColor: posDarkColors.primary });
 
-    await fireEvent.press(screen.getByLabelText('Clear sale customer'));
+    await fireEvent.press(screen.getByLabelText('Use default sale customer'));
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
   });
 
@@ -87,6 +88,7 @@ describe('PosCartScreen', () => {
         onUpdateQuantity={onUpdateQuantity}
         orderType="Invoice"
         requiresCustomer
+        defaultSaleCustomer={null}
         saleCustomer={null}
         subtotal={125}
         taxes={[]}
@@ -98,5 +100,34 @@ describe('PosCartScreen', () => {
     const checkoutButton = screen.getByLabelText('Proceed to checkout');
     expect(checkoutButton.props.accessibilityState.disabled).toBe(true);
     expect(checkoutButton).toHaveStyle({ backgroundColor: posDarkColors.disabled, opacity: 0.5 });
+  });
+
+  it('does not offer a reset when the profile default customer is already active', async () => {
+    const defaultSaleCustomer = { customer: 'WALK-IN', customerName: 'Walk-in customer', isWalkin: true };
+    const screen = await render(
+      <PosCartScreen
+        currency="KES"
+        defaultSaleCustomer={defaultSaleCustomer}
+        error={null}
+        isUpdating={false}
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 125, uom: 'Nos' }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={defaultSaleCustomer}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Use default sale customer')).toBeNull();
   });
 });

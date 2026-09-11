@@ -23,6 +23,7 @@ type PosCartScreenProps = {
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
   orderType: PosOrderType;
   requiresCustomer: boolean;
+  defaultSaleCustomer: PosSaleCustomer | null;
   saleCustomer: PosSaleCustomer | null;
   subtotal: number;
   taxes: PosCartTax[];
@@ -92,8 +93,13 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
   );
 }
 
-export function PosCartScreen({ currency, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
+export function PosCartScreen({ currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+  const isUsingDefaultCustomer = Boolean(
+    saleCustomer?.customer
+    && defaultSaleCustomer?.customer
+    && saleCustomer.customer === defaultSaleCustomer.customer,
+  );
 
   return (
     <KeyboardAwareFormScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.scrollView}>
@@ -117,7 +123,7 @@ export function PosCartScreen({ currency, error, isUpdating, items, onBack, onCh
             </View>
             <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} />
           </Pressable>
-          {saleCustomer ? <Pressable accessibilityLabel="Clear sale customer" disabled={isUpdating} onPress={onClearSaleCustomer} style={[styles.clearCustomerButton, isUpdating && styles.controlDisabled]}><Text style={styles.clearCustomerButtonLabel}>Clear customer</Text></Pressable> : null}
+          {saleCustomer && !isUsingDefaultCustomer ? <Pressable accessibilityLabel="Use default sale customer" disabled={isUpdating} onPress={onClearSaleCustomer} style={[styles.clearCustomerButton, isUpdating && styles.controlDisabled]}><Text style={styles.clearCustomerButtonLabel}>Use default customer</Text></Pressable> : null}
           <View style={styles.itemList}>
             {items.map((item) => <CartLine currency={currency} disabled={isUpdating} item={item} key={item.item_code} onRemove={() => onRemove(item.item_code)} onUpdateQuantity={(quantity) => onUpdateQuantity(item.item_code, quantity)} />)}
           </View>

@@ -81,6 +81,24 @@ describe('usePosCart', () => {
     expect(hook.result.current.items).toEqual([]);
   });
 
+  it('recalculates an existing cart when a selected customer is reset to the profile default', async () => {
+    const hook = await renderHook<ReturnType<typeof usePosCart>, { customer: PosSaleCustomer | null }>(
+      ({ customer }) => usePosCart({ customer, posProfile: 'POS-001' }),
+      { initialProps: { customer: { customer: 'CUST-001', customerName: 'Example customer' } } },
+    );
+
+    await act(async () => hook.result.current.add(item));
+    await hook.rerender({ customer: { customer: 'WALK-IN', customerName: 'Walk-in customer', isWalkin: true } });
+
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      'https://vuna.example.com',
+      'sid-1',
+      'vunapos.api.sales.preview_invoice',
+      expect.objectContaining({ customer: 'WALK-IN' }),
+    ));
+    expect(hook.result.current.requiresCustomer).toBe(false);
+  });
+
   it('keeps the last successful cart visible when Frappe cannot update it', async () => {
     const hook = await renderHook(() => usePosCart({ customer: { customer: 'CUST-001', customerName: 'Example customer' }, posProfile: 'POS-001' }));
     await act(async () => hook.result.current.add(item));
