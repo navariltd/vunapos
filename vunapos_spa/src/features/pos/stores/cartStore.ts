@@ -800,7 +800,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: getActiveCustomer(get())?.customer,
-				limit: 100000,
+				limit: 500,
 			});
 			await itemRepository.replaceAll(pricedItems);
 			useRuntimeCacheStore.getState().touch();
@@ -1275,7 +1275,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
-				limit: 100000,
+				limit: 500,
 			}));
 			// Ignore a response that completed after the cashier selected another customer.
 			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
@@ -1291,7 +1291,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
 				price_list: priceList,
-				limit: 100000,
+				limit: 500,
 			}));
 			set({ selectedPriceList: priceList });
 			await itemRepository.replaceAll(pricedItems);
