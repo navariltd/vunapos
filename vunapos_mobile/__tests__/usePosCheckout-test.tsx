@@ -42,6 +42,19 @@ describe('POS checkout hooks', () => {
     }, expect.any(AbortSignal));
   });
 
+  it('re-previews the cart with requested loyalty points so the server validates the redemption', async () => {
+    mockGetVunaMethod.mockResolvedValue({ loyalty_amount: 20, loyalty_points: 10, totals: { grand_total: 290, net_total: 250 } });
+    const hook = await renderHook(() => usePosCheckoutPreview({ customer: 'CUST-001', items: [item], loyaltyPoints: 10, posProfile: 'POS-001' }));
+
+    await waitFor(() => expect(hook.result.current.data?.loyalty_amount).toBe(20));
+    expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.preview_invoice', {
+      customer: 'CUST-001',
+      items: '[{"item_code":"ITEM-001","qty":2,"uom":"Nos"}]',
+      loyalty_points: 10,
+      pos_profile: 'POS-001',
+    }, expect.any(AbortSignal));
+  });
+
   it('submits a checkout with serialized cart, payment allocation, and a retry-safe key', async () => {
     mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0001' });
     const hook = await renderHook(() => useSubmitPosCheckout());
@@ -88,6 +101,25 @@ describe('POS checkout hooks', () => {
       due_date: '2026-09-30',
       is_credit_sale: true,
     }));
+  });
+
+  it('submits only server-validated loyalty points with an Invoice', async () => {
+    mockPostVunaMethod.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-0004' });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: 'CUST-001',
+        isCreditSale: false,
+        items: [item],
+        loyaltyPoints: 10,
+        orderType: 'Invoice',
+        payments: [{ amount: 270, mode_of_payment: 'Cash' }],
+        posProfile: 'POS-001',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.sales.create_and_submit_invoice', expect.objectContaining({ loyalty_points: 10 }));
   });
 
   it('serializes manual payment transaction references for invoice checkout', async () => {

@@ -21,6 +21,10 @@ jest.mock('@/features/pos/hooks/usePosCheckout', () => ({
   useSubmitPosCheckout: jest.fn(),
 }));
 
+jest.mock('@/features/pos/hooks/usePosCustomerLoyalty', () => ({
+  usePosCustomerLoyalty: jest.fn(),
+}));
+
 jest.mock('@/features/pos/hooks/useGatewayPayment', () => ({
   useGatewayPayment: jest.fn(),
 }));
@@ -30,12 +34,14 @@ jest.mock('@/features/pos/hooks/useGatewayPaymentRealtime', () => ({
 }));
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
 import { usePosCheckoutPreview, useSubmitPosCheckout } from '@/features/pos/hooks/usePosCheckout';
 import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
+const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
 const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
 const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
@@ -60,7 +66,9 @@ describe('PosCheckoutScreen', () => {
       data: { items: [], totals: { grand_total: 116, net_total: 100 } },
       error: null,
       isLoading: false,
+      previewLoyalty: jest.fn(),
     });
+    mockUsePosCustomerLoyalty.mockReturnValue({ data: null, error: null, isLoading: false });
     mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, submit });
     mockUseGatewayPayment.mockReturnValue({
       attachC2B: jest.fn(),
@@ -107,6 +115,64 @@ describe('PosCheckoutScreen', () => {
       posProfile: 'POS-001',
     })));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith({ doctype: 'Sales Invoice', name: 'SINV-0001' }));
+  });
+
+  it('validates a loyalty redemption through the cart preview and recalculates the payment', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-LOYALTY-001' });
+    const previewLoyalty = jest.fn().mockImplementation((points: number) => Promise.resolve({
+      items: [],
+      loyalty_amount: points ? 20 : 0,
+      loyalty_points: points,
+      totals: { grand_total: 116, net_total: 100 },
+    }));
+    mockUsePosCustomerLoyalty.mockReturnValue({
+      data: { conversion_factor: 2, currency: 'KES', enrolled: true, points: 60, redemption_value: 120 },
+      error: null,
+      isLoading: false,
+    });
+    mockUsePosCheckoutPreview.mockImplementation((input) => ({
+      data: {
+        items: [],
+        loyalty_amount: input?.loyaltyPoints ? 20 : 0,
+        loyalty_points: input?.loyaltyPoints || 0,
+        totals: { grand_total: 116, net_total: 100 },
+      },
+      error: null,
+      isLoading: false,
+      previewLoyalty,
+    }));
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByText('60 points available · KES 120.00')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Loyalty points to redeem'), '10');
+    await fireEvent.press(screen.getByLabelText('Apply loyalty points'));
+
+    await waitFor(() => expect(previewLoyalty).toHaveBeenCalledWith(10));
+    await waitFor(() => expect(screen.getByText('Applied: 10 points · KES 20.00')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Cash amount').props.value).toBe('96.00'));
+    expect(screen.getByText('Amount payable')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      loyaltyPoints: 10,
+      payments: [{ amount: 96, mode_of_payment: 'Cash' }],
+    })));
+
+    await fireEvent.press(screen.getByLabelText('Remove loyalty redemption'));
+    await waitFor(() => expect(previewLoyalty).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(screen.queryByLabelText('Remove loyalty redemption')).toBeNull());
+    await waitFor(() => expect(screen.getByLabelText('Cash amount').props.value).toBe('116.00'));
   });
 
   it('keeps the confirmation dialog visible with a submitting state during submission', async () => {
@@ -219,6 +285,7 @@ describe('PosCheckoutScreen', () => {
       data: { items: [], posting_date: '2026-09-10', totals: { grand_total: 116, net_total: 100 } },
       error: null,
       isLoading: false,
+      previewLoyalty: jest.fn(),
     });
     const screen = await render(
       <PosCheckoutScreen
@@ -251,6 +318,7 @@ describe('PosCheckoutScreen', () => {
       },
       error: null,
       isLoading: false,
+      previewLoyalty: jest.fn(),
     });
     const screen = await render(
       <PosCheckoutScreen

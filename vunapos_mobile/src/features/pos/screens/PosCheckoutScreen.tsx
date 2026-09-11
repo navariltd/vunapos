@@ -5,6 +5,7 @@ import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Switch, Text
 import { Text } from 'react-native-paper';
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
+import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { useGatewayPayment } from '@/features/pos/hooks/useGatewayPayment';
 import { useGatewayPaymentRealtime } from '@/features/pos/hooks/useGatewayPaymentRealtime';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
@@ -83,8 +84,12 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
 export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderType, saleCustomer, subtotal }: PosCheckoutScreenProps) {
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === 'Invoice';
+  const [loyaltyPoints, setLoyaltyPoints] = useState(0);
+  const [loyaltyInput, setLoyaltyInput] = useState('');
+  const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
+  const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const preview = usePosCheckoutPreview(isInvoice && bootstrap.data
-    ? { customer: saleCustomer?.customer, items, posProfile: bootstrap.data.pos_profile.name }
+    ? { customer: saleCustomer?.customer, items, loyaltyPoints, posProfile: bootstrap.data.pos_profile.name }
     : null);
   const checkout = useSubmitPosCheckout();
   const gatewayPayment = useGatewayPayment();
@@ -120,6 +125,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   useGatewayPaymentRealtime(updateGatewayPaymentFromRealtime);
 
   const profile = bootstrap.data?.pos_profile;
+  const customerLoyalty = usePosCustomerLoyalty(isInvoice ? saleCustomer?.customer : undefined, profile?.name);
   const profilePaymentModes = profile?.modes_of_payment ?? [];
   const manualModes = (bootstrap.data?.payment_modes ?? [])
     .filter((mode) => !mode.payment_gateway)
@@ -130,16 +136,27 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     }));
   const gatewayModes = (bootstrap.data?.payment_modes ?? []).filter((mode) => Boolean(mode.payment_gateway));
   const paymentModes = [...manualModes, ...gatewayModes];
-  const total = isInvoice
+  const invoiceTotal = isInvoice
     ? (preview.data?.totals.rounded_total ?? preview.data?.totals.grand_total ?? 0)
     : subtotal;
-  const netTotal = preview.data?.totals.net_total ?? total;
-  const grandTotal = preview.data?.totals.grand_total ?? total;
+  const loyaltyAmount = isInvoice ? (preview.data?.loyalty_amount ?? 0) : 0;
+  const total = Math.max(invoiceTotal - loyaltyAmount, 0);
+  const netTotal = preview.data?.totals.net_total ?? invoiceTotal;
+  const grandTotal = preview.data?.totals.grand_total ?? invoiceTotal;
   const roundedTotal = preview.data?.totals.rounded_total;
   const taxTotal = preview.data?.totals.total_taxes_and_charges ?? Math.max(grandTotal - netTotal, 0);
   const postingDate = preview.data?.posting_date ?? today();
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
+  const availableLoyaltyPoints = Math.max(Math.floor(customerLoyalty.data?.points ?? 0), 0);
+  const loyaltyConversionFactor = Math.max(customerLoyalty.data?.conversion_factor ?? 0, 0);
+  const maximumLoyaltyPoints = loyaltyConversionFactor > 0
+    ? Math.min(availableLoyaltyPoints, Math.floor(invoiceTotal / loyaltyConversionFactor))
+    : 0;
+  const loyaltyInputPoints = /^\d+$/.test(loyaltyInput) ? Number(loyaltyInput) : null;
+  const loyaltyInputError = Boolean(loyaltyInput && (!loyaltyInputPoints || loyaltyInputPoints > maximumLoyaltyPoints));
+  const appliedLoyaltyPoints = Math.floor(preview.data?.loyalty_points ?? 0);
+  const isLoyaltySelectionValid = appliedLoyaltyPoints <= maximumLoyaltyPoints;
   const allocation = calculatePaymentAllocation(paymentModes, paymentAmounts, totalMinor, precision);
   const allocationInputs = buildPaymentInputs(paymentModes, paymentAmounts, precision, paymentReferences);
   const paymentInputs = allocationInputs.map((payment) => {
@@ -162,7 +179,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
   const canUseCredit = Boolean(isInvoice && profile?.allow_credit_sales);
   const canSubmitPayment = Boolean(
     isInvoice
-      ? paymentModes.length && (isCreditSale
+      ? (totalMinor === 0 || paymentModes.length) && (isCreditSale
         ? !allocation.hasInvalidAmount && !hasNonCashOverpayment
         : canCompletePaymentAllocation(allocation, totalMinor, Boolean(profile?.allow_partial_payment))) && !hasMissingPaymentReference && !hasUnverifiedGatewayPayment
       : !allowsSalesOrderAdvancePayments || (!allocation.hasInvalidAmount && !hasSalesOrderAdvanceOverpayment && !hasMissingPaymentReference && !hasUnverifiedGatewayPayment),
@@ -199,7 +216,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
                 ? 'Partial payment'
                 : 'Payment incomplete';
   const isReadyToSubmit = Boolean(
-    items.length && !checkout.isSubmitting && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : deliveryDate >= today() && canSubmitPayment),
+    items.length && !checkout.isSubmitting && !isApplyingLoyalty && isLoyaltySelectionValid && (isInvoice ? (isCreditSale ? dueDate >= postingDate && canSubmitPayment : canSubmitPayment) : deliveryDate >= today() && canSubmitPayment),
   );
   const paidAmount = allocation.allocatedMinor / currencyScale(precision);
   const checkoutBalanceAmount = Math.abs(allocation.remainingMinor / currencyScale(precision));
@@ -361,6 +378,33 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
     checkout.clearError();
   }
 
+  async function applyLoyaltyPoints(points: number) {
+    if (points < 0 || points > maximumLoyaltyPoints) {
+      setLoyaltyError(`Enter between 1 and ${maximumLoyaltyPoints.toLocaleString()} points.`);
+      return;
+    }
+    setLoyaltyError(null);
+    setIsApplyingLoyalty(true);
+    try {
+      const loyaltyPreview = await preview.previewLoyalty(Math.floor(points));
+      const validatedPoints = Math.floor(loyaltyPreview.loyalty_points ?? 0);
+      const validatedInvoiceTotal = loyaltyPreview.totals.rounded_total ?? loyaltyPreview.totals.grand_total ?? 0;
+      const validatedPayableMinor = totalToMinorUnits(Math.max(validatedInvoiceTotal - (loyaltyPreview.loyalty_amount ?? 0), 0), precision);
+      setLoyaltyPoints(validatedPoints);
+      setLoyaltyInput(validatedPoints ? String(validatedPoints) : '');
+      setPaymentAmounts(isCreditSale
+        ? Object.fromEntries(paymentModes.map((mode) => [mode.mode_of_payment, '']))
+        : createInitialPaymentAmounts(manualModes, validatedPayableMinor, precision));
+      setGatewayLinks({});
+      setActiveGatewayMode(null);
+      initializedPaymentKey.current = isCreditSale ? null : `${paymentModeKey}:${validatedPayableMinor}`;
+    } catch (error) {
+      setLoyaltyError(error instanceof Error ? error.message : 'Unable to validate loyalty redemption.');
+    } finally {
+      setIsApplyingLoyalty(false);
+    }
+  }
+
   function requestSubmit() {
     setValidationError(null);
     checkout.clearError();
@@ -401,7 +445,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       return;
     }
     if (isInvoice) {
-      if (!manualModes.length) {
+      if (totalMinor > 0 && !manualModes.length) {
         setValidationError('No manual payment mode is configured for this POS profile.');
         return;
       }
@@ -419,6 +463,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           : `Payment must cover ${formatCurrency(total, currency, precision)}.`);
         return;
       }
+      if (!isLoyaltySelectionValid) {
+        setValidationError('The available loyalty balance changed. Apply a valid number of points again.');
+        return;
+      }
     }
 
     setIsSubmitConfirmationVisible(true);
@@ -432,6 +480,7 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
       dueDate: isCreditSale ? dueDate : undefined,
       isCreditSale,
       items,
+      loyaltyPoints: appliedLoyaltyPoints || undefined,
       orderType,
       payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
@@ -482,6 +531,10 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
           <SummaryRow label="Total taxes and charges" value={formatCurrency(taxTotal, currency, precision)} />
           <View style={styles.totalRow}><Text style={styles.totalLabel}>Grand total</Text><Text style={styles.totalValue}>{formatCurrency(grandTotal, currency, precision)}</Text></View>
           {roundedTotal !== undefined && roundedTotal !== grandTotal ? <SummaryRow label="Rounded total" value={formatCurrency(roundedTotal, currency, precision)} /> : null}
+          {loyaltyAmount ? <>
+            <SummaryRow label="Loyalty redemption" value={`−${formatCurrency(loyaltyAmount, currency, precision)}`} />
+            <SummaryRow label="Amount payable" value={formatCurrency(total, currency, precision)} />
+          </> : null}
           <View style={styles.summaryDivider} />
           <SummaryRow label="Paid amount" value={formatCurrency(paidAmount, currency, precision)} />
           <SummaryRow label={checkoutBalanceLabel} value={formatCurrency(checkoutBalanceAmount, currency, precision)} />
@@ -559,6 +612,42 @@ export function PosCheckoutScreen({ currency, items, onBack, onComplete, orderTy
         ) : null}
 
       </>}
+
+      {isInvoice && customerLoyalty.data?.enrolled ? <View style={styles.card}>
+        <View style={styles.loyaltyHeading}>
+          <MaterialCommunityIcons color={posDarkColors.primary} name="star-circle-outline" size={22} />
+          <View style={styles.heading}>
+            <Text style={styles.cardTitle}>Loyalty redemption</Text>
+            <Text style={styles.cardHint}>{availableLoyaltyPoints.toLocaleString()} points available · {formatCurrency(customerLoyalty.data.redemption_value ?? 0, customerLoyalty.data.currency || currency, precision)}</Text>
+          </View>
+        </View>
+        <Text style={styles.fieldLabel}>Points to redeem</Text>
+        <View style={styles.loyaltyInputRow}>
+          <TextInput
+            accessibilityLabel="Loyalty points to redeem"
+            inputMode="numeric"
+            keyboardType="number-pad"
+            onChangeText={setLoyaltyInput}
+            placeholder="Enter points"
+            placeholderTextColor="#8f8f8f"
+            style={[styles.input, styles.loyaltyInput]}
+            value={loyaltyInput}
+          />
+          <Pressable accessibilityLabel="Redeem maximum loyalty points" disabled={!maximumLoyaltyPoints || isApplyingLoyalty} onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)} style={[styles.secondaryButton, (!maximumLoyaltyPoints || isApplyingLoyalty) && styles.secondaryButtonDisabled]}>
+            <Text style={styles.secondaryButtonLabel}>Maximum</Text>
+          </Pressable>
+          <Pressable accessibilityLabel="Apply loyalty points" disabled={Boolean(loyaltyInputError) || !loyaltyInputPoints || isApplyingLoyalty} onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)} style={[styles.secondaryButton, (Boolean(loyaltyInputError) || !loyaltyInputPoints || isApplyingLoyalty) && styles.secondaryButtonDisabled]}>
+            {isApplyingLoyalty ? <ActivityIndicator color={posDarkColors.onSurface} size="small" /> : <Text style={styles.secondaryButtonLabel}>Apply</Text>}
+          </Pressable>
+        </View>
+        {loyaltyInputError ? <Text style={styles.errorText}>Enter between 1 and {maximumLoyaltyPoints.toLocaleString()} points.</Text> : null}
+        {loyaltyError ? <Text style={styles.errorText}>{loyaltyError}</Text> : null}
+        {!isLoyaltySelectionValid ? <Text style={styles.errorText}>The available balance changed. Apply a valid number of points again.</Text> : null}
+        {appliedLoyaltyPoints ? <View style={styles.loyaltyAppliedRow}>
+          <Text style={styles.cardHint}>Applied: {appliedLoyaltyPoints.toLocaleString()} points · {formatCurrency(loyaltyAmount, currency, precision)}</Text>
+          <Pressable accessibilityLabel="Remove loyalty redemption" disabled={isApplyingLoyalty} onPress={() => void applyLoyaltyPoints(0)}><Text style={styles.loyaltyRemoveLabel}>Remove</Text></Pressable>
+        </View> : null}
+      </View> : null}
 
       {(isInvoice || allowsSalesOrderAdvancePayments) ? <View style={styles.card}>
           <Text style={styles.cardTitle}>{isInvoice ? 'Payment methods' : 'Sales Order advance payment'}</Text>
@@ -827,6 +916,11 @@ const styles = StyleSheet.create({
   header: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   input: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  loyaltyAppliedRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  loyaltyHeading: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
+  loyaltyInput: { flex: 1 },
+  loyaltyInputRow: { alignItems: 'stretch', flexDirection: 'row', gap: spacing.xs },
+  loyaltyRemoveLabel: { color: posDarkColors.error, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   currencyPrefix: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
   paymentAmountInput: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.xs, paddingVertical: spacing.sm, textAlign: 'right' },
   paymentAmountWrap: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, flexDirection: 'row', minHeight: 46, paddingLeft: spacing.sm },

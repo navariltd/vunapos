@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { PaymentInput } from '@/features/pos/paymentAllocation';
@@ -8,6 +8,7 @@ import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/fra
 type PreviewInput = {
   customer?: string;
   items: PosCartItem[];
+  loyaltyPoints?: number;
   posProfile?: string;
 };
 
@@ -15,6 +16,7 @@ type SubmitInput = PreviewInput & {
   deliveryDate?: string;
   dueDate?: string;
   isCreditSale: boolean;
+  loyaltyPoints?: number;
   orderType: PosOrderType;
   payments: PaymentInput[];
 };
@@ -32,12 +34,30 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const hasInput = Boolean(input);
   const customer = input?.customer;
+  const loyaltyPoints = input?.loyaltyPoints;
   const posProfile = input?.posProfile;
   const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : '';
   const requestKey = hasInput && companyUrl && sessionId && posProfile && input?.items.length
-    ? JSON.stringify({ companyUrl, customer, items: itemsPayload, posProfile, sessionId })
+    ? JSON.stringify({ companyUrl, customer, items: itemsPayload, loyaltyPoints, posProfile, sessionId })
     : null;
   const [state, setState] = useState<{ data: PosCheckoutPreview | null; error: string | null; key: string | null }>({ data: null, error: null, key: null });
+
+  const previewLoyalty = useCallback(async (points: number): Promise<PosCheckoutPreview> => {
+    if (!companyUrl || !sessionId || !posProfile || !itemsPayload) {
+      throw new Error('Your session is no longer available. Sign in again to continue.');
+    }
+    try {
+      return await getVunaMethod<PosCheckoutPreview>(companyUrl, sessionId, 'vunapos.api.sales.preview_invoice', {
+        customer,
+        items: itemsPayload,
+        loyalty_points: points || undefined,
+        pos_profile: posProfile,
+      });
+    } catch (requestError) {
+      if (requestError instanceof FrappeClientError && requestError.code === 'session') void invalidateSession();
+      throw requestError;
+    }
+  }, [companyUrl, customer, invalidateSession, itemsPayload, posProfile, sessionId]);
 
   useEffect(() => {
     if (!hasInput || !companyUrl || !sessionId || !posProfile || !itemsPayload || !requestKey) return;
@@ -46,6 +66,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
     void getVunaMethod<PosCheckoutPreview>(companyUrl, sessionId, 'vunapos.api.sales.preview_invoice', {
       customer,
       items: itemsPayload,
+      loyalty_points: loyaltyPoints || undefined,
       pos_profile: posProfile,
     }, controller.signal)
       .then((data) => setState({ data, error: null, key: requestKey }))
@@ -58,12 +79,13 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
         setState({ data: null, error: requestError instanceof Error ? requestError.message : 'Could not calculate this sale.', key: requestKey });
       });
     return () => controller.abort();
-  }, [companyUrl, customer, hasInput, invalidateSession, itemsPayload, posProfile, requestKey, sessionId]);
+  }, [companyUrl, customer, hasInput, invalidateSession, itemsPayload, loyaltyPoints, posProfile, requestKey, sessionId]);
 
   return {
     data: state.key === requestKey ? state.data : null,
     error: state.key === requestKey ? state.error : null,
     isLoading: Boolean(requestKey && state.key !== requestKey),
+    previewLoyalty,
   };
 }
 
@@ -99,6 +121,9 @@ export function useSubmitPosCheckout() {
           pos_profile: input.posProfile,
           ...(input.orderType === 'Invoice' && input.isCreditSale
             ? { due_date: input.dueDate, is_credit_sale: true }
+            : {}),
+          ...(input.orderType === 'Invoice' && input.loyaltyPoints
+            ? { loyalty_points: input.loyaltyPoints }
             : {}),
           ...(input.orderType === 'Order' ? { delivery_date: input.deliveryDate } : {}),
         },

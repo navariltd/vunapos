@@ -127,6 +127,7 @@ export type PosCheckoutPreview = {
   currency?: string;
   items: PosInvoiceDetailItem[];
   loyalty_amount?: number;
+  loyalty_points?: number;
   posting_date?: string;
   taxes?: PosCheckoutTax[];
   totals: {
@@ -315,8 +316,12 @@ export type PosCustomerContact = {
 };
 
 export type PosCustomerLoyalty = {
+  conversion_factor?: number;
+  currency?: string | null;
+  enrolled?: boolean;
   points: number;
   program?: string | null;
+  redemption_value?: number;
   tier?: string | null;
 };
 
