@@ -1,6 +1,8 @@
 import { useCallback, useState } from 'react';
 
 import { AppShell } from '@/features/shell/components/AppShell';
+import { SalespersonPinLock } from '@/features/pos/components/SalespersonPinLock';
+import { useSalespersonPin } from '@/features/pos/hooks/useSalespersonPin';
 import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
 import { PosCartScreen } from '@/features/pos/screens/PosCartScreen';
 import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
@@ -8,7 +10,7 @@ import { PosCustomerDetailsScreen } from '@/features/pos/screens/PosCustomerDeta
 import { PosInvoiceDetailsScreen } from '@/features/pos/screens/PosInvoiceDetailsScreen';
 import { PosInvoicesScreen } from '@/features/pos/screens/PosInvoicesScreen';
 import { PosPaymentEntryDetailsScreen } from '@/features/pos/screens/PosPaymentEntryDetailsScreen';
-import { PosInvoicePaymentEntry, PosNavigationTab, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
+import { PosBootstrapData, PosInvoicePaymentEntry, PosNavigationTab, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { usePosCart } from '@/features/pos/hooks/usePosCart';
 
 type SelectedInvoice = {
@@ -29,8 +31,14 @@ export function PosWorkspaceScreen() {
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{ currency: string; paymentEntry: PosInvoicePaymentEntry } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
+  const [posProfileConfig, setPosProfileConfig] = useState<PosBootstrapData['pos_profile']>();
   const cart = usePosCart({ customer: saleCustomer, posProfile });
-  const receivePosProfile = useCallback((profileName: string) => setPosProfile(profileName), []);
+  const salespersonPin = useSalespersonPin();
+  const receivePosProfile = useCallback((profile: PosBootstrapData['pos_profile']) => {
+    setPosProfile(profile.name);
+    setPosProfileConfig(profile);
+  }, []);
+  const salespersonLocked = Boolean(posProfileConfig?.enable_salesperson_pin && !salespersonPin.session);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -75,12 +83,14 @@ export function PosWorkspaceScreen() {
             onBack={() => setCheckoutVisible(false)}
             onComplete={(result) => {
               cart.clear();
+              if (posProfileConfig?.require_pin_before_every_sale) salespersonPin.lock();
               setCheckoutVisible(false);
               setCartVisible(false);
               setSelectedInvoice({ doctype: result.doctype, name: result.name });
             }}
             orderType={orderType}
             saleCustomer={saleCustomer}
+            salesperson={salespersonPin.session}
             subtotal={cart.subtotal}
           />
         : cartVisible
@@ -114,6 +124,14 @@ export function PosWorkspaceScreen() {
             onPosProfileLoaded={receivePosProfile}
           />
         : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}
+      <SalespersonPinLock
+        error={salespersonPin.error}
+        isVerifying={salespersonPin.isVerifying}
+        onVerify={(salesperson, pin) => salespersonPin.verify(posProfileConfig?.name || '', salesperson, pin)}
+        pinUsers={posProfileConfig?.pin_users}
+        posProfile={posProfileConfig?.name}
+        visible={salespersonLocked}
+      />
     </AppShell>
   );
 }

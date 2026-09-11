@@ -7,7 +7,7 @@ import { PosItemCard } from '@/features/pos/components/PosItemCard';
 import { PosItemSearch } from '@/features/pos/components/PosItemSearch';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosItemSearch } from '@/features/pos/hooks/usePosItemSearch';
-import { PosCatalogueItem } from '@/features/pos/types';
+import { PosBootstrapData, PosCatalogueItem } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 function matchesSearch(item: PosCatalogueItem, searchTerm: string) {
@@ -19,7 +19,7 @@ type PosHomeScreenProps = {
   cartItemCount: number;
   onAddToCart: (item: PosCatalogueItem, currency: string) => void;
   onOpenCart: () => void;
-  onPosProfileLoaded: (profileName: string) => void;
+  onPosProfileLoaded: (profile: PosBootstrapData['pos_profile']) => void;
 };
 
 export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded }: PosHomeScreenProps) {
@@ -32,9 +32,9 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
   const currency = bootstrap.data?.pos_profile.currency || 'KES';
 
   useEffect(() => {
-    const profileName = bootstrap.data?.pos_profile.name;
-    if (profileName) onPosProfileLoaded(profileName);
-  }, [bootstrap.data?.pos_profile.name, onPosProfileLoaded]);
+    const profile = bootstrap.data?.pos_profile;
+    if (profile) onPosProfileLoaded(profile);
+  }, [bootstrap.data?.pos_profile, onPosProfileLoaded]);
 
   function addItem(item: PosCatalogueItem) {
     const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;

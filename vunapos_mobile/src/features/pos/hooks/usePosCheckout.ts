@@ -19,6 +19,8 @@ type SubmitInput = PreviewInput & {
   loyaltyPoints?: number;
   orderType: PosOrderType;
   payments: PaymentInput[];
+  salesperson?: string;
+  salespersonToken?: string;
   shippingAddressName?: string;
   taxId?: string;
 };
@@ -137,6 +139,9 @@ export function useSubmitPosCheckout() {
             : {}),
           ...(input.shippingAddressName?.trim()
             ? { shipping_address_name: input.shippingAddressName.trim() }
+            : {}),
+          ...(input.salesperson?.trim() && input.salespersonToken?.trim()
+            ? { salesperson: input.salesperson.trim(), salesperson_token: input.salespersonToken.trim() }
             : {}),
           ...(input.orderType === 'Order' ? { delivery_date: input.deliveryDate } : {}),
         },

@@ -23,7 +23,7 @@ import {
   parsePaymentAmount,
   totalToMinorUnits,
 } from '@/features/pos/paymentAllocation';
-import { PosC2BGatewayPayment, PosCartData, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer } from '@/features/pos/types';
+import { PosC2BGatewayPayment, PosCartData, PosCartItem, PosCheckoutResult, PosGatewayPaymentLink, PosOrderType, PosPaymentMode, PosSaleCustomer, PosSalespersonSession } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCheckoutScreenProps = {
@@ -34,6 +34,7 @@ type PosCheckoutScreenProps = {
   onComplete: (result: PosCheckoutResult) => void;
   orderType: PosOrderType;
   saleCustomer: PosSaleCustomer | null;
+  salesperson?: PosSalespersonSession | null;
   subtotal: number;
 };
 
@@ -83,7 +84,7 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
  */
-export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, saleCustomer, subtotal }: PosCheckoutScreenProps) {
+export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBack, onComplete, orderType, saleCustomer, salesperson, subtotal }: PosCheckoutScreenProps) {
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === 'Invoice';
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -538,6 +539,8 @@ export function PosCheckoutScreen({ currency, items, onApplyDeliveryCharge, onBa
       orderType,
       payments: isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
       posProfile: profile.name,
+      salesperson: salesperson?.name,
+      salespersonToken: salesperson?.token,
       shippingAddressName: selectedShippingAddress?.name,
       taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
     });

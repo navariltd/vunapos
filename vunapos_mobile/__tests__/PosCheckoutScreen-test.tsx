@@ -235,6 +235,30 @@ describe('PosCheckoutScreen', () => {
     await waitFor(() => expect(applyDeliveryCharge).toHaveBeenCalledWith('DELIVERY', 25));
   });
 
+  it('passes the active salesperson token into the final checkout request', async () => {
+    submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-PIN-001' });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+        salesperson={{ displayName: 'Alex Cashier', expiresAt: Date.now() + 60_000, name: 'SP-001', token: 'server-issued-token' }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Complete sale'));
+    await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
+
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      salesperson: 'SP-001',
+      salespersonToken: 'server-issued-token',
+    })));
+  });
+
   it('selects a permitted shipping address and submits its Frappe address name', async () => {
     submit.mockResolvedValue({ doctype: 'Sales Invoice', name: 'SINV-SHIP-001' });
     mockUsePosCustomerShippingAddresses.mockReturnValue({

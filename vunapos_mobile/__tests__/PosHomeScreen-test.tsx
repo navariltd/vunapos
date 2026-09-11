@@ -75,7 +75,7 @@ describe('PosHomeScreen', () => {
     const screen = await render(<PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} onPosProfileLoaded={onPosProfileLoaded} />);
 
     expect(screen.getByText('Live catalogue item')).toBeTruthy();
-    expect(onPosProfileLoaded).toHaveBeenCalledWith('POS-001');
+    expect(onPosProfileLoaded).toHaveBeenCalledWith(expect.objectContaining({ name: 'POS-001' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Live catalogue item' }));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, 'KES');
   });

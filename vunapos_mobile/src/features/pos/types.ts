@@ -102,7 +102,24 @@ export type PosBootstrapData = {
     default_sale_type?: 'Cash Sale' | 'Credit Sale';
     modes_of_payment?: PosPaymentMode[];
     name: string;
+    enable_salesperson_pin?: boolean;
+    pin_users?: PosPinUser[];
+    require_pin_before_every_sale?: boolean;
+    salesperson_pin_session_minutes?: number;
   };
+};
+
+export type PosPinUser = {
+  display_name?: string | null;
+  role: 'Manager' | 'Salesperson';
+  sales_person: string;
+};
+
+export type PosSalespersonSession = {
+  displayName: string;
+  expiresAt: number;
+  name: string;
+  token: string;
 };
 
 export type PosPaymentMode = {

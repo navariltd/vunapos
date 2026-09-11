@@ -19,6 +19,14 @@ jest.mock('@/features/pos/hooks/usePosCart', () => ({
   usePosCart: () => ({ add: jest.fn(), clear: jest.fn(), error: null, isUpdating: false, itemCount: 0, items: [], refresh: jest.fn(), remove: jest.fn(), retry: jest.fn(), subtotal: 0, taxes: [], totals: {}, updateQuantity: jest.fn() }),
 }));
 
+jest.mock('@/features/pos/hooks/useSalespersonPin', () => ({
+  useSalespersonPin: () => ({ error: null, isVerifying: false, lock: jest.fn(), session: null, verify: jest.fn() }),
+}));
+
+jest.mock('@/features/pos/components/SalespersonPinLock', () => ({
+  SalespersonPinLock: () => null,
+}));
+
 jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
   PosHomeScreen: ({ onOpenCart }: { onOpenCart: () => void }) => {
     const { Pressable, Text } = require('react-native');
