@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { PosCartData, PosCartItem, PosCatalogueItem, PosSaleCustomer } from '@/features/pos/types';
-import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import {
+  PosCartData,
+  PosCartItem,
+  PosCatalogueItem,
+  PosSaleCustomer,
+} from "@/features/pos/types";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
 function toCartItem(item: PosCatalogueItem): PosCartItem {
   return {
@@ -23,8 +28,10 @@ type UsePosCartArgs = {
   priceList?: string;
 };
 
-type CartResponse = Omit<PosCartData, 'items'> & {
-  items: (Omit<PosCartItem, 'available_qty'> & { actual_qty?: number | null })[];
+type CartResponse = Omit<PosCartData, "items"> & {
+  items: (Omit<PosCartItem, "available_qty"> & {
+    actual_qty?: number | null;
+  })[];
 };
 
 function toCartPayload(items: PosCartItem[]) {
@@ -37,12 +44,24 @@ function toCartPayload(items: PosCartItem[]) {
 }
 
 function localCart(items: PosCartItem[]): PosCartData {
-  const netTotal = items.reduce((total, item) => total + (item.qty * item.rate), 0);
-  return { items, taxes: [], totals: { grand_total: netTotal, net_total: netTotal } };
+  const netTotal = items.reduce(
+    (total, item) => total + item.qty * item.rate,
+    0,
+  );
+  return {
+    items,
+    taxes: [],
+    totals: { grand_total: netTotal, net_total: netTotal },
+  };
 }
 
-function cartFromResponse(data: CartResponse, previousItems: PosCartItem[]): PosCartData {
-  const previousByCode = new Map(previousItems.map((item) => [item.item_code, item]));
+function cartFromResponse(
+  data: CartResponse,
+  previousItems: PosCartItem[],
+): PosCartData {
+  const previousByCode = new Map(
+    previousItems.map((item) => [item.item_code, item]),
+  );
   return {
     ...data,
     items: data.items.map((item) => {
@@ -60,9 +79,17 @@ function cartFromResponse(data: CartResponse, previousItems: PosCartItem[]): Pos
 }
 
 /** Session-only cart state calculated by Frappe after each cart change. */
-export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) {
+export function usePosCart({
+  customer,
+  posProfile,
+  priceList,
+}: UsePosCartArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const [data, setData] = useState<PosCartData>({ items: [], taxes: [], totals: {} });
+  const [data, setData] = useState<PosCartData>({
+    items: [],
+    taxes: [],
+    totals: {},
+  });
   const [error, setError] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const requestNumber = useRef(0);
@@ -71,9 +98,9 @@ export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) 
   const dataRef = useRef(data);
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
-  const customerKey = customer?.customer || '';
+  const customerKey = customer?.customer || "";
   const priceListRef = useRef(priceList);
-  const priceListKey = priceList || '';
+  const priceListKey = priceList || "";
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -88,72 +115,103 @@ export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) 
     priceListRef.current = priceList;
   }, [priceList]);
 
-  const refresh = useCallback(async (nextItems = itemsRef.current, cartCustomer = customerRef.current, cartPriceList = priceListRef.current): Promise<PosCartData | null> => {
-    if (!nextItems.length) {
-      const emptyCart = localCart([]);
-      itemsRef.current = emptyCart.items;
-      dataRef.current = emptyCart;
-      setData(emptyCart);
-      setError(null);
-      return { items: [], taxes: [], totals: {} };
-    }
-    if (!cartCustomer) {
-      const nextData = localCart(nextItems);
-      itemsRef.current = nextData.items;
-      dataRef.current = nextData;
-      setData(nextData);
-      setError(null);
-      setIsUpdating(false);
-      return nextData;
-    }
-    if (!companyUrl || !sessionId || !posProfile) {
-      setError('Your POS session is not ready. Try again once the workspace has loaded.');
-      return null;
-    }
-
-    const request = ++requestNumber.current;
-    attemptedItemsRef.current = nextItems;
-    attemptedCustomerRef.current = cartCustomer;
-    itemsRef.current = nextItems;
-    setError(null);
-    setIsUpdating(true);
-    try {
-      const response = await getVunaMethod<CartResponse>(companyUrl, sessionId, 'vunapos.api.sales.preview_invoice', {
-        customer: cartCustomer?.customer || undefined,
-        items: JSON.stringify(toCartPayload(nextItems)),
-        pos_profile: posProfile,
-        price_list: cartPriceList,
-      });
-      const nextData = cartFromResponse(response, nextItems);
-      if (request === requestNumber.current) {
+  const refresh = useCallback(
+    async (
+      nextItems = itemsRef.current,
+      cartCustomer = customerRef.current,
+      cartPriceList = priceListRef.current,
+    ): Promise<PosCartData | null> => {
+      if (!nextItems.length) {
+        const emptyCart = localCart([]);
+        itemsRef.current = emptyCart.items;
+        dataRef.current = emptyCart;
+        setData(emptyCart);
+        setError(null);
+        return { items: [], taxes: [], totals: {} };
+      }
+      if (!cartCustomer) {
+        const nextData = localCart(nextItems);
         itemsRef.current = nextData.items;
         dataRef.current = nextData;
         setData(nextData);
+        setError(null);
+        setIsUpdating(false);
+        return nextData;
       }
-      return nextData;
-    } catch (requestError) {
-      if (requestError instanceof FrappeClientError && requestError.code === 'session') {
-        void invalidateSession();
+      if (!companyUrl || !sessionId || !posProfile) {
+        setError(
+          "Your POS session is not ready. Try again once the workspace has loaded.",
+        );
+        return null;
       }
-      if (request === requestNumber.current) {
-        itemsRef.current = dataRef.current.items;
-        setError(requestError instanceof Error ? requestError.message : 'Could not update the cart.');
+
+      const request = ++requestNumber.current;
+      attemptedItemsRef.current = nextItems;
+      attemptedCustomerRef.current = cartCustomer;
+      itemsRef.current = nextItems;
+      setError(null);
+      setIsUpdating(true);
+      try {
+        const response = await getVunaMethod<CartResponse>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.sales.preview_invoice",
+          {
+            customer: cartCustomer?.customer || undefined,
+            items: JSON.stringify(toCartPayload(nextItems)),
+            pos_profile: posProfile,
+            price_list: cartPriceList,
+          },
+        );
+        const nextData = cartFromResponse(response, nextItems);
+        if (request === requestNumber.current) {
+          itemsRef.current = nextData.items;
+          dataRef.current = nextData;
+          setData(nextData);
+        }
+        return nextData;
+      } catch (requestError) {
+        if (
+          requestError instanceof FrappeClientError &&
+          requestError.code === "session"
+        ) {
+          void invalidateSession();
+        }
+        if (request === requestNumber.current) {
+          itemsRef.current = dataRef.current.items;
+          setError(
+            requestError instanceof Error
+              ? requestError.message
+              : "Could not update the cart.",
+          );
+        }
+        return null;
+      } finally {
+        if (request === requestNumber.current) setIsUpdating(false);
       }
-      return null;
-    } finally {
-      if (request === requestNumber.current) setIsUpdating(false);
-    }
-  }, [companyUrl, invalidateSession, posProfile, sessionId]);
+    },
+    [companyUrl, invalidateSession, posProfile, sessionId],
+  );
 
   useEffect(() => {
-    if (itemsRef.current.length) void refresh(itemsRef.current, customerRef.current, priceListRef.current);
+    if (itemsRef.current.length)
+      void refresh(itemsRef.current, customerRef.current, priceListRef.current);
   }, [customerKey, priceListKey, refresh]);
 
-  async function add(item: PosCatalogueItem, cartCustomer = customerRef.current) {
+  async function add(
+    item: PosCatalogueItem,
+    cartCustomer = customerRef.current,
+  ) {
     const current = itemsRef.current;
-    const existing = current.find((cartItem) => cartItem.item_code === item.item_code);
+    const existing = current.find(
+      (cartItem) => cartItem.item_code === item.item_code,
+    );
     const nextItems = existing
-      ? current.map((cartItem) => cartItem.item_code === item.item_code ? { ...cartItem, qty: cartItem.qty + 1 } : cartItem)
+      ? current.map((cartItem) =>
+          cartItem.item_code === item.item_code
+            ? { ...cartItem, qty: cartItem.qty + 1 }
+            : cartItem,
+        )
       : [...current, toCartItem(item)];
     await refresh(nextItems, cartCustomer);
   }
@@ -170,7 +228,9 @@ export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) 
   }
 
   async function remove(itemCode: string) {
-    await refresh(itemsRef.current.filter((item) => item.item_code !== itemCode));
+    await refresh(
+      itemsRef.current.filter((item) => item.item_code !== itemCode),
+    );
   }
 
   async function updateQuantity(itemCode: string, quantity: number) {
@@ -182,41 +242,87 @@ export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) 
     await refresh(nextItems);
   }
 
+  /** Changes to an Item-configured UOM only; Frappe recalculates its rate, tax, and stock quantities. */
+  async function updateUom(itemCode: string, uom: string) {
+    if (!uom) return;
+    await refresh(
+      itemsRef.current.map((item) =>
+        item.item_code === itemCode
+          ? { ...item, pricing_override: undefined, uom }
+          : item,
+      ),
+    );
+  }
+
   /** Adds, updates, or removes the profile-configured delivery line through Frappe. */
-  async function applyDeliveryCharge(itemCode: string, amount?: number): Promise<PosCartData | null> {
+  async function applyDeliveryCharge(
+    itemCode: string,
+    amount?: number,
+  ): Promise<PosCartData | null> {
     if (amount === undefined || amount <= 0) {
-      return refresh(itemsRef.current.filter((item) => item.item_code !== itemCode));
+      return refresh(
+        itemsRef.current.filter((item) => item.item_code !== itemCode),
+      );
     }
     if (!Number.isFinite(amount)) return null;
 
-    const existing = itemsRef.current.find((item) => item.item_code === itemCode);
+    const existing = itemsRef.current.find(
+      (item) => item.item_code === itemCode,
+    );
     if (existing) {
-      return refresh(itemsRef.current.map((item) => item.item_code === itemCode
-        ? { ...item, pricing_override: { type: 'rate', value: amount }, qty: 1, rate: amount }
-        : item));
+      return refresh(
+        itemsRef.current.map((item) =>
+          item.item_code === itemCode
+            ? {
+                ...item,
+                pricing_override: { type: "rate", value: amount },
+                qty: 1,
+                rate: amount,
+              }
+            : item,
+        ),
+      );
     }
     if (!companyUrl || !sessionId || !posProfile) {
-      setError('Your POS session is not ready. Try again once the workspace has loaded.');
+      setError(
+        "Your POS session is not ready. Try again once the workspace has loaded.",
+      );
       return null;
     }
 
     setError(null);
     setIsUpdating(true);
     try {
-      const deliveryItem = await getVunaMethod<PosCatalogueItem>(companyUrl, sessionId, 'vunapos.api.item.get_item_details', {
-        customer: customerRef.current?.customer,
-        item_code: itemCode,
-        pos_profile: posProfile,
-      });
+      const deliveryItem = await getVunaMethod<PosCatalogueItem>(
+        companyUrl,
+        sessionId,
+        "vunapos.api.item.get_item_details",
+        {
+          customer: customerRef.current?.customer,
+          item_code: itemCode,
+          pos_profile: posProfile,
+        },
+      );
       return refresh([
         ...itemsRef.current,
-        { ...toCartItem(deliveryItem), pricing_override: { type: 'rate', value: amount }, rate: amount },
+        {
+          ...toCartItem(deliveryItem),
+          pricing_override: { type: "rate", value: amount },
+          rate: amount,
+        },
       ]);
     } catch (requestError) {
-      if (requestError instanceof FrappeClientError && requestError.code === 'session') {
+      if (
+        requestError instanceof FrappeClientError &&
+        requestError.code === "session"
+      ) {
         void invalidateSession();
       }
-      setError(requestError instanceof Error ? requestError.message : 'Could not update the delivery charge.');
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not update the delivery charge.",
+      );
       setIsUpdating(false);
       return null;
     }
@@ -226,9 +332,31 @@ export function usePosCart({ customer, posProfile, priceList }: UsePosCartArgs) 
     await refresh(attemptedItemsRef.current, attemptedCustomerRef.current);
   }
 
-  const itemCount = useMemo(() => data.items.reduce((total, item) => total + item.qty, 0), [data.items]);
-  const subtotal = data.totals.net_total ?? data.items.reduce((total, item) => total + (item.qty * item.rate), 0);
+  const itemCount = useMemo(
+    () => data.items.reduce((total, item) => total + item.qty, 0),
+    [data.items],
+  );
+  const subtotal =
+    data.totals.net_total ??
+    data.items.reduce((total, item) => total + item.qty * item.rate, 0);
   const requiresCustomer = Boolean(data.items.length && !customer);
 
-  return { add, applyDeliveryCharge, clear, error, itemCount, isUpdating, items: data.items, refresh, remove, requiresCustomer, retry, subtotal, taxes: data.taxes, totals: data.totals, updateQuantity };
+  return {
+    add,
+    applyDeliveryCharge,
+    clear,
+    error,
+    itemCount,
+    isUpdating,
+    items: data.items,
+    refresh,
+    remove,
+    requiresCustomer,
+    retry,
+    subtotal,
+    taxes: data.taxes,
+    totals: data.totals,
+    updateQuantity,
+    updateUom,
+  };
 }

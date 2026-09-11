@@ -1,7 +1,7 @@
-export type PosOrderType = 'Invoice' | 'Order';
+export type PosOrderType = "Invoice" | "Order";
 
 /** Tabs enabled in the native increment. The remaining shell tabs are visual only. */
-export type PosNavigationTab = 'Home' | 'Invoices';
+export type PosNavigationTab = "Home" | "Invoices";
 
 export type PosCatalogueItem = {
   actual_qty?: number | null;
@@ -37,13 +37,21 @@ export type PosCartItem = {
   item_tax_template?: string | null;
   price_list_rate?: number;
   pricing_override?: {
-    type: 'rate';
+    type: "rate";
     value: number;
   };
   pricing_rules?: string | string[] | null;
   qty: number;
   rate: number;
   uom?: string | null;
+  uoms?: PosItemUom[];
+};
+
+/** A unit permitted by the Item record. Frappe remains authoritative for its rate and stock conversion. */
+export type PosItemUom = {
+  conversion_factor: number;
+  rate?: number | null;
+  uom: string;
 };
 
 export type PosCartBundleItem = {
@@ -74,7 +82,8 @@ export type PosCartData = {
   totals: PosCartTotals;
 };
 
-export type PosInvoiceStatus = 'Cancelled' | 'Credit Note' | 'Overdue' | 'Paid' | 'Partly Paid' | 'Unpaid';
+export type PosInvoiceStatus =
+  "Cancelled" | "Credit Note" | "Overdue" | "Paid" | "Partly Paid" | "Unpaid";
 
 export type PosInvoiceListRow = {
   cashier?: string;
@@ -119,7 +128,7 @@ export type PosBootstrapData = {
     currency?: string;
     currency_precision?: number;
     delivery_charge_item?: string | null;
-    default_sale_type?: 'Cash Sale' | 'Credit Sale';
+    default_sale_type?: "Cash Sale" | "Credit Sale";
     modes_of_payment?: PosPaymentMode[];
     name: string;
     price_list?: string | null;
@@ -135,7 +144,7 @@ export type PosPriceList = { currency?: string | null; name: string };
 
 export type PosPinUser = {
   display_name?: string | null;
-  role: 'Manager' | 'Salesperson';
+  role: "Manager" | "Salesperson";
   sales_person: string;
 };
 
@@ -147,11 +156,11 @@ export type PosSalespersonSession = {
 };
 
 export type PosPaymentMode = {
-    default?: boolean;
-    mode_of_payment: string;
-    payment_gateway?: string | null;
-    requires_reference?: boolean;
-    type?: string | null;
+  default?: boolean;
+  mode_of_payment: string;
+  payment_gateway?: string | null;
+  requires_reference?: boolean;
+  type?: string | null;
 };
 
 export type PosGatewayPaymentLink = {
@@ -159,7 +168,15 @@ export type PosGatewayPaymentLink = {
   currency?: string;
   mode_of_payment: string;
   name: string;
-  status: 'Authorized' | 'Cancelled' | 'Draft' | 'Expired' | 'Failed' | 'Paid' | 'Pending' | string;
+  status:
+    | "Authorized"
+    | "Cancelled"
+    | "Draft"
+    | "Expired"
+    | "Failed"
+    | "Paid"
+    | "Pending"
+    | string;
 };
 
 export type PosC2BGatewayPayment = {
@@ -207,12 +224,12 @@ export type PosCheckoutResult = {
 export type PosInvoiceHistoryFilters = {
   currentShift: boolean;
   customer: string;
-  documentType: 'Invoice' | 'Order';
+  documentType: "Invoice" | "Order";
   fromDate: string;
   invoice: string;
   paymentMode: string;
-  saleType: '' | 'Cash Sale' | 'Credit Sale';
-  status: '' | PosInvoiceStatus;
+  saleType: "" | "Cash Sale" | "Credit Sale";
+  status: "" | PosInvoiceStatus;
   toDate: string;
 };
 

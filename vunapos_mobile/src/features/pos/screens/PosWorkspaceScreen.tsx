@@ -1,17 +1,23 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState } from "react";
 
-import { AppShell } from '@/features/shell/components/AppShell';
-import { SalespersonPinLock } from '@/features/pos/components/SalespersonPinLock';
-import { useSalespersonPin } from '@/features/pos/hooks/useSalespersonPin';
-import { PosHomeScreen } from '@/features/pos/screens/PosHomeScreen';
-import { PosCartScreen } from '@/features/pos/screens/PosCartScreen';
-import { PosCheckoutScreen } from '@/features/pos/screens/PosCheckoutScreen';
-import { PosCustomerDetailsScreen } from '@/features/pos/screens/PosCustomerDetailsScreen';
-import { PosInvoiceDetailsScreen } from '@/features/pos/screens/PosInvoiceDetailsScreen';
-import { PosInvoicesScreen } from '@/features/pos/screens/PosInvoicesScreen';
-import { PosPaymentEntryDetailsScreen } from '@/features/pos/screens/PosPaymentEntryDetailsScreen';
-import { PosBootstrapData, PosInvoicePaymentEntry, PosNavigationTab, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
-import { usePosCart } from '@/features/pos/hooks/usePosCart';
+import { AppShell } from "@/features/shell/components/AppShell";
+import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
+import { useSalespersonPin } from "@/features/pos/hooks/useSalespersonPin";
+import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
+import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
+import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
+import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
+import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
+import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
+import {
+  PosBootstrapData,
+  PosInvoicePaymentEntry,
+  PosNavigationTab,
+  PosOrderType,
+  PosSaleCustomer,
+} from "@/features/pos/types";
+import { usePosCart } from "@/features/pos/hooks/usePosCart";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -21,36 +27,54 @@ type SelectedInvoice = {
 
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
-  const [activeTab, setActiveTab] = useState<PosNavigationTab>('Home');
+  const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
-  const [cartCurrency, setCartCurrency] = useState('KES');
-  const [orderType, setOrderType] = useState<PosOrderType>('Invoice');
-  const [selectedInvoice, setSelectedInvoice] = useState<SelectedInvoice | null>(null);
+  const [cartCurrency, setCartCurrency] = useState("KES");
+  const [orderType, setOrderType] = useState<PosOrderType>("Invoice");
+  const [selectedInvoice, setSelectedInvoice] =
+    useState<SelectedInvoice | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
-  const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{ currency: string; paymentEntry: PosInvoicePaymentEntry } | null>(null);
-  const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(null);
+  const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{
+    currency: string;
+    paymentEntry: PosInvoicePaymentEntry;
+  } | null>(null);
+  const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(
+    null,
+  );
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
-  const [defaultSaleCustomer, setDefaultSaleCustomer] = useState<PosSaleCustomer | null>(null);
+  const [defaultSaleCustomer, setDefaultSaleCustomer] =
+    useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
-  const [posProfileConfig, setPosProfileConfig] = useState<PosBootstrapData['pos_profile']>();
+  const [posProfileConfig, setPosProfileConfig] =
+    useState<PosBootstrapData["pos_profile"]>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
-  const cart = usePosCart({ customer: saleCustomer, posProfile, priceList: selectedPriceList });
+  const cart = usePosCart({
+    customer: saleCustomer,
+    posProfile,
+    priceList: selectedPriceList,
+  });
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
     const defaultCustomer = bootstrap.default_customer;
     setPosProfile(bootstrap.pos_profile.name);
     setPosProfileConfig(bootstrap.pos_profile);
-    setDefaultSaleCustomer(defaultCustomer ? {
-      customer: defaultCustomer.customer,
-      customerName: defaultCustomer.customer_name,
-      defaultPriceList: defaultCustomer.default_price_list,
-      isWalkin: Boolean(defaultCustomer.is_walkin),
-      mobile: defaultCustomer.mobile_no || undefined,
-      taxId: defaultCustomer.tax_id || undefined,
-    } : null);
+    setDefaultSaleCustomer(
+      defaultCustomer
+        ? {
+            customer: defaultCustomer.customer,
+            customerName: defaultCustomer.customer_name,
+            defaultPriceList: defaultCustomer.default_price_list,
+            isWalkin: Boolean(defaultCustomer.is_walkin),
+            mobile: defaultCustomer.mobile_no || undefined,
+            taxId: defaultCustomer.tax_id || undefined,
+          }
+        : null,
+    );
   }, []);
-  const salespersonLocked = Boolean(posProfileConfig?.enable_salesperson_pin && !salespersonPin.session);
+  const salespersonLocked = Boolean(
+    posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
+  );
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -69,96 +93,139 @@ export function PosWorkspaceScreen() {
     setSelectedInvoice(null);
     setSelectedPaymentEntry(null);
     setCheckoutVisible(false);
-    setActiveTab('Home');
+    setActiveTab("Home");
   }
 
   return (
-    <AppShell activeTab={activeTab} onOrderTypeChange={setOrderType} onTabChange={changeTab} orderType={orderType}>
-      {selectedPaymentEntry
-        ? <PosPaymentEntryDetailsScreen currency={selectedPaymentEntry.currency} onBack={() => setSelectedPaymentEntry(null)} paymentEntry={selectedPaymentEntry.paymentEntry} />
-        : selectedCustomer
-        ? <PosCustomerDetailsScreen customer={selectedCustomer} onBack={() => setSelectedCustomer(null)} onStartSale={startSale} />
-        : selectedInvoice
-        ? <PosInvoiceDetailsScreen
-            invoiceDoctype={selectedInvoice.doctype}
-            invoiceName={selectedInvoice.name}
-            onBack={() => setSelectedInvoice(selectedInvoice.returnTo ?? null)}
-            onOpenCustomer={setSelectedCustomer}
-            onOpenPaymentEntry={(paymentEntry, currency) => setSelectedPaymentEntry({ currency, paymentEntry })}
-            onOpenReturn={(invoiceReturn) => setSelectedInvoice({ doctype: selectedInvoice.doctype, name: invoiceReturn.name, returnTo: selectedInvoice })}
-            onStartSale={startSale}
-          />
-        : checkoutVisible
-        ? <PosCheckoutScreen
-            currency={cartCurrency}
-            items={cart.items}
-            onApplyDeliveryCharge={cart.applyDeliveryCharge}
-            onBack={() => setCheckoutVisible(false)}
-            onComplete={(result) => {
-              cart.clear();
-              setSaleCustomer(null);
-              setPostSaleRefreshKey((current) => current + 1);
-              if (posProfileConfig?.require_pin_before_every_sale) salespersonPin.lock();
-              setCheckoutVisible(false);
-              setCartVisible(false);
-              setSelectedInvoice({ doctype: result.doctype, name: result.name });
-            }}
-            orderType={orderType}
-            priceList={selectedPriceList}
-            saleCustomer={saleCustomer}
-            salesperson={salespersonPin.session}
-            subtotal={cart.subtotal}
-          />
-        : cartVisible
-        ? <PosCartScreen
-            allowCustomerCreation={Boolean(posProfileConfig?.allow_customer_creation)}
-            currency={cartCurrency}
-            items={cart.items}
-            onBack={() => setCartVisible(false)}
-            onCheckout={() => {
-              if (!cart.requiresCustomer && !cart.isUpdating && !cart.error) setCheckoutVisible(true);
-            }}
-            onClear={cart.clear}
-            onClearSaleCustomer={() => {
-              setSelectedPriceList(undefined);
-              setSaleCustomer(defaultSaleCustomer);
-            }}
-            onRemove={cart.remove}
-            onSelectSaleCustomer={(customer) => {
-              setSelectedPriceList(undefined);
-              setSaleCustomer(customer);
-            }}
-            onSelectPriceList={setSelectedPriceList}
-            onUpdateQuantity={cart.updateQuantity}
-            orderType={orderType}
-            posProfile={posProfile}
-            priceList={selectedPriceList}
-            priceListOptions={posProfileConfig?.allowed_price_lists}
-            allowPriceListSwitching={Boolean(posProfileConfig?.allow_price_list_switching)}
-            requiresCustomer={cart.requiresCustomer}
-            saleCustomer={saleCustomer}
-            defaultSaleCustomer={defaultSaleCustomer}
-            subtotal={cart.subtotal}
-            taxes={cart.taxes}
-            totals={cart.totals}
-            isUpdating={cart.isUpdating}
-            error={cart.error}
-            onRetry={() => { void cart.retry(); }}
-          />
-        : activeTab === 'Home'
-        ? <PosHomeScreen
-            cartItemCount={cart.itemCount}
-            onAddToCart={(item, currency) => { setCartCurrency(currency); void cart.add(item); }}
-            onOpenCart={() => setCartVisible(true)}
-            onPosProfileLoaded={receivePosProfile}
-            pricingContext={{ customer: saleCustomer?.customer, priceList: selectedPriceList }}
-            refreshKey={postSaleRefreshKey}
-          />
-        : <PosInvoicesScreen onBackToPos={() => changeTab('Home')} onOpenInvoice={setSelectedInvoice} />}
+    <AppShell
+      activeTab={activeTab}
+      onOrderTypeChange={setOrderType}
+      onTabChange={changeTab}
+      orderType={orderType}
+    >
+      {selectedPaymentEntry ? (
+        <PosPaymentEntryDetailsScreen
+          currency={selectedPaymentEntry.currency}
+          onBack={() => setSelectedPaymentEntry(null)}
+          paymentEntry={selectedPaymentEntry.paymentEntry}
+        />
+      ) : selectedCustomer ? (
+        <PosCustomerDetailsScreen
+          customer={selectedCustomer}
+          onBack={() => setSelectedCustomer(null)}
+          onStartSale={startSale}
+        />
+      ) : selectedInvoice ? (
+        <PosInvoiceDetailsScreen
+          invoiceDoctype={selectedInvoice.doctype}
+          invoiceName={selectedInvoice.name}
+          onBack={() => setSelectedInvoice(selectedInvoice.returnTo ?? null)}
+          onOpenCustomer={setSelectedCustomer}
+          onOpenPaymentEntry={(paymentEntry, currency) =>
+            setSelectedPaymentEntry({ currency, paymentEntry })
+          }
+          onOpenReturn={(invoiceReturn) =>
+            setSelectedInvoice({
+              doctype: selectedInvoice.doctype,
+              name: invoiceReturn.name,
+              returnTo: selectedInvoice,
+            })
+          }
+          onStartSale={startSale}
+        />
+      ) : checkoutVisible ? (
+        <PosCheckoutScreen
+          currency={cartCurrency}
+          items={cart.items}
+          onApplyDeliveryCharge={cart.applyDeliveryCharge}
+          onBack={() => setCheckoutVisible(false)}
+          onComplete={(result) => {
+            cart.clear();
+            setSaleCustomer(null);
+            setPostSaleRefreshKey((current) => current + 1);
+            if (posProfileConfig?.require_pin_before_every_sale)
+              salespersonPin.lock();
+            setCheckoutVisible(false);
+            setCartVisible(false);
+            setSelectedInvoice({ doctype: result.doctype, name: result.name });
+          }}
+          orderType={orderType}
+          priceList={selectedPriceList}
+          saleCustomer={saleCustomer}
+          salesperson={salespersonPin.session}
+          subtotal={cart.subtotal}
+        />
+      ) : cartVisible ? (
+        <PosCartScreen
+          allowCustomerCreation={Boolean(
+            posProfileConfig?.allow_customer_creation,
+          )}
+          currency={cartCurrency}
+          items={cart.items}
+          onBack={() => setCartVisible(false)}
+          onCheckout={() => {
+            if (!cart.requiresCustomer && !cart.isUpdating && !cart.error)
+              setCheckoutVisible(true);
+          }}
+          onClear={cart.clear}
+          onClearSaleCustomer={() => {
+            setSelectedPriceList(undefined);
+            setSaleCustomer(defaultSaleCustomer);
+          }}
+          onRemove={cart.remove}
+          onSelectSaleCustomer={(customer) => {
+            setSelectedPriceList(undefined);
+            setSaleCustomer(customer);
+          }}
+          onSelectPriceList={setSelectedPriceList}
+          onUpdateQuantity={cart.updateQuantity}
+          onUpdateUom={cart.updateUom}
+          orderType={orderType}
+          posProfile={posProfile}
+          priceList={selectedPriceList}
+          priceListOptions={posProfileConfig?.allowed_price_lists}
+          allowPriceListSwitching={Boolean(
+            posProfileConfig?.allow_price_list_switching,
+          )}
+          requiresCustomer={cart.requiresCustomer}
+          saleCustomer={saleCustomer}
+          defaultSaleCustomer={defaultSaleCustomer}
+          subtotal={cart.subtotal}
+          taxes={cart.taxes}
+          totals={cart.totals}
+          isUpdating={cart.isUpdating}
+          error={cart.error}
+          onRetry={() => {
+            void cart.retry();
+          }}
+        />
+      ) : activeTab === "Home" ? (
+        <PosHomeScreen
+          cartItemCount={cart.itemCount}
+          onAddToCart={(item, currency) => {
+            setCartCurrency(currency);
+            void cart.add(item);
+          }}
+          onOpenCart={() => setCartVisible(true)}
+          onPosProfileLoaded={receivePosProfile}
+          pricingContext={{
+            customer: saleCustomer?.customer,
+            priceList: selectedPriceList,
+          }}
+          refreshKey={postSaleRefreshKey}
+        />
+      ) : (
+        <PosInvoicesScreen
+          onBackToPos={() => changeTab("Home")}
+          onOpenInvoice={setSelectedInvoice}
+        />
+      )}
       <SalespersonPinLock
         error={salespersonPin.error}
         isVerifying={salespersonPin.isVerifying}
-        onVerify={(salesperson, pin) => salespersonPin.verify(posProfileConfig?.name || '', salesperson, pin)}
+        onVerify={(salesperson, pin) =>
+          salespersonPin.verify(posProfileConfig?.name || "", salesperson, pin)
+        }
         pinUsers={posProfileConfig?.pin_users}
         posProfile={posProfileConfig?.name}
         visible={salespersonLocked}
