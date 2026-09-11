@@ -8,7 +8,12 @@ jest.mock('@/features/pos/components/PosCustomerPickerSheet', () => ({
   PosCustomerPickerSheet: () => null,
 }));
 
+jest.mock('@/features/pos/hooks/usePosCustomerLoyalty', () => ({
+  usePosCustomerLoyalty: jest.fn(),
+}));
+
 import { PosCartScreen } from '@/features/pos/screens/PosCartScreen';
+import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { posDarkColors } from '@/theme/tokens';
 
 const onBack = jest.fn();
@@ -19,8 +24,14 @@ const onClear = jest.fn();
 const onRemove = jest.fn();
 const onRetry = jest.fn();
 const onUpdateQuantity = jest.fn();
+const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
 
 describe('PosCartScreen', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockUsePosCustomerLoyalty.mockReturnValue({ data: null, error: null, isLoading: false });
+  });
+
   afterEach(async () => {
     await cleanup();
   });
@@ -132,5 +143,43 @@ describe('PosCartScreen', () => {
     );
 
     expect(screen.queryByLabelText('Use default sale customer')).toBeNull();
+  });
+
+  it('shows the selected customer’s live loyalty state without making it a checkout requirement', async () => {
+    mockUsePosCustomerLoyalty.mockReturnValue({
+      data: { currency: 'KES', enrolled: true, points: 60, program: 'Vuna Rewards', redemption_value: 120, tier: 'Gold' },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 125, uom: 'Nos' }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        posProfile="POS-001"
+        requiresCustomer={false}
+        saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    expect(mockUsePosCustomerLoyalty).toHaveBeenCalledWith('CUST-001', 'POS-001');
+    expect(screen.getByLabelText('Customer loyalty status')).toBeTruthy();
+    expect(screen.getByText('Vuna Rewards · Gold')).toBeTruthy();
+    expect(screen.getByText('60 points available · KES 120.00')).toBeTruthy();
   });
 });

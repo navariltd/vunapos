@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { Text } from 'react-native-paper';
 
 import { PosCustomerPickerSheet } from '@/features/pos/components/PosCustomerPickerSheet';
+import { usePosCustomerLoyalty } from '@/features/pos/hooks/usePosCustomerLoyalty';
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { PosCartItem, PosCartTax, PosCartTotals, PosCustomerSearchResult, PosOrderType, PosSaleCustomer } from '@/features/pos/types';
 import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
@@ -97,6 +98,7 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
 
 export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCustomer, error, isUpdating, items, onBack, onCheckout, onClear, onClearSaleCustomer, onRemove, onRetry, onSelectSaleCustomer, onUpdateQuantity, orderType, posProfile, requiresCustomer, saleCustomer, subtotal, taxes, totals }: PosCartScreenProps) {
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+  const customerLoyalty = usePosCustomerLoyalty(saleCustomer?.customer, posProfile);
   const isUsingDefaultCustomer = Boolean(
     saleCustomer?.customer
     && defaultSaleCustomer?.customer
@@ -126,6 +128,16 @@ export function PosCartScreen({ allowCustomerCreation, currency, defaultSaleCust
             <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} />
           </Pressable>
           {saleCustomer && !isUsingDefaultCustomer ? <Pressable accessibilityLabel="Use default sale customer" disabled={isUpdating} onPress={onClearSaleCustomer} style={[styles.clearCustomerButton, isUpdating && styles.controlDisabled]}><Text style={styles.clearCustomerButtonLabel}>Use default customer</Text></Pressable> : null}
+          {saleCustomer && customerLoyalty.isLoading ? <Text style={styles.loyaltyLoading}>Checking loyalty balance…</Text> : null}
+          {saleCustomer && customerLoyalty.data?.enrolled ? (
+            <View accessibilityLabel="Customer loyalty status" style={styles.loyaltyCard}>
+              <MaterialCommunityIcons color={posDarkColors.primary} name="star-circle-outline" size={21} />
+              <View style={styles.loyaltyContent}>
+                <Text style={styles.loyaltyTitle}>{customerLoyalty.data.program || 'Loyalty'}{customerLoyalty.data.tier ? ` · ${customerLoyalty.data.tier}` : ''}</Text>
+                <Text style={styles.loyaltyMeta}>{Math.max(Math.floor(customerLoyalty.data.points || 0), 0).toLocaleString()} points available{customerLoyalty.data.redemption_value ? ` · ${formatCurrency(customerLoyalty.data.redemption_value, customerLoyalty.data.currency || currency)}` : ''}</Text>
+              </View>
+            </View>
+          ) : null}
           <View style={styles.itemList}>
             {items.map((item) => <CartLine currency={currency} disabled={isUpdating} item={item} key={item.item_code} onRemove={() => onRemove(item.item_code)} onUpdateQuantity={(quantity) => onUpdateQuantity(item.item_code, quantity)} />)}
           </View>
@@ -198,6 +210,11 @@ const styles = StyleSheet.create({
   itemHeader: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   itemList: { gap: spacing.sm },
   itemMain: { flex: 1, gap: 2 },
+  loyaltyCard: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, padding: spacing.sm },
+  loyaltyContent: { flex: 1, gap: 2 },
+  loyaltyLoading: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, textAlign: 'center' },
+  loyaltyMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  loyaltyTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   itemName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   itemRate: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   lineTotal: { alignItems: 'flex-end', gap: 2 },
