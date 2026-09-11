@@ -3,8 +3,10 @@ import { FlatList, ListRenderItem, Pressable, StyleSheet, View } from 'react-nat
 import { Text } from 'react-native-paper';
 
 import { PosCartButton } from '@/features/pos/components/PosCartButton';
+import { PosBarcodeScannerModal } from '@/features/pos/components/PosBarcodeScannerModal';
 import { PosItemCard } from '@/features/pos/components/PosItemCard';
 import { PosItemSearch } from '@/features/pos/components/PosItemSearch';
+import { usePosBarcodeScan } from '@/features/pos/hooks/usePosBarcodeScan';
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
 import { usePosItemSearch } from '@/features/pos/hooks/usePosItemSearch';
 import { PosBootstrapData, PosCatalogueItem } from '@/features/pos/types';
@@ -26,6 +28,7 @@ type PosHomeScreenProps = {
 
 export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosProfileLoaded, pricingContext, refreshKey = 0 }: PosHomeScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
@@ -38,6 +41,11 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
   const localMatches = bootstrapItems.filter((item) => matchesSearch(item, searchQuery));
   const items = searchQuery.trim() || itemSearch.hasLoaded ? itemSearch.items : localMatches;
   const currency = bootstrap.data?.pos_profile.currency || 'KES';
+  const barcodeScan = usePosBarcodeScan({
+    customer: pricingContext?.customer,
+    posProfile: bootstrap.data?.pos_profile.name,
+    priceList: pricingContext?.priceList,
+  });
   const handledRefreshKey = useRef(refreshKey);
   const reloadBootstrap = bootstrap.reload;
 
@@ -55,6 +63,17 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
     const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
     if (outOfStock) return;
     onAddToCart(item, currency);
+  }
+
+  async function scanBarcode(barcode: string) {
+    const result = await barcodeScan.resolve(barcode);
+    if (!result.ok) return result.message;
+    const item = result.item;
+    const outOfStock = Boolean(item.is_stock_item) && !item.allow_negative_stock && Number(item.actual_qty || 0) <= 0;
+    if (outOfStock) return `${item.item_name || item.item_code} is out of stock.`;
+    setSearchQuery('');
+    onAddToCart(item, currency);
+    return null;
   }
 
   const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => <PosItemCard currency={currency} item={item} onAdd={addItem} />;
@@ -79,7 +98,7 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
         ListEmptyComponent={<Text style={styles.emptyState}>{itemSearch.isLoading ? 'Searching the catalogue…' : itemSearch.error || 'No items found. Try another item name, code, or barcode.'}</Text>}
         ListHeaderComponent={(
           <View>
-            <PosItemSearch onChangeText={setSearchQuery} value={searchQuery} />
+            <PosItemSearch onChangeText={setSearchQuery} onScanBarcode={() => setBarcodeScannerVisible(true)} value={searchQuery} />
           </View>
         )}
         numColumns={2}
@@ -87,6 +106,12 @@ export function PosHomeScreen({ cartItemCount, onAddToCart, onOpenCart, onPosPro
         showsVerticalScrollIndicator={false}
       />
       <PosCartButton itemCount={cartItemCount} onPress={onOpenCart} />
+      <PosBarcodeScannerModal
+        isResolving={barcodeScan.isResolving}
+        onClose={() => setBarcodeScannerVisible(false)}
+        onScan={scanBarcode}
+        visible={barcodeScannerVisible}
+      />
     </View>
   );
 }

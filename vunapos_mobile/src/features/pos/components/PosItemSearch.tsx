@@ -5,10 +5,11 @@ import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type PosItemSearchProps = {
   onChangeText: (value: string) => void;
+  onScanBarcode: () => void;
   value: string;
 };
 
-export function PosItemSearch({ onChangeText, value }: PosItemSearchProps) {
+export function PosItemSearch({ onChangeText, onScanBarcode, value }: PosItemSearchProps) {
   return (
     <View style={styles.container}>
       <View style={styles.inputContainer}>
@@ -24,7 +25,7 @@ export function PosItemSearch({ onChangeText, value }: PosItemSearchProps) {
           value={value}
         />
       </View>
-      <Pressable accessibilityLabel="Scan barcode with camera" style={styles.cameraButton}>
+      <Pressable accessibilityLabel="Scan barcode with camera" onPress={onScanBarcode} style={styles.cameraButton}>
         <MaterialCommunityIcons color={posDarkColors.onSurface} name="camera-outline" size={20} />
       </Pressable>
     </View>

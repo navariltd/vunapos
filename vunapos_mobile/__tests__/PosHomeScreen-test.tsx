@@ -22,6 +22,10 @@ jest.mock('@/features/pos/components/PosItemSearch', () => ({
   },
 }));
 
+jest.mock('@/features/pos/components/PosBarcodeScannerModal', () => ({
+  PosBarcodeScannerModal: () => null,
+}));
+
 jest.mock('@/features/pos/components/PosCustomerPickerSheet', () => ({
   PosCustomerPickerSheet: () => null,
 }));
@@ -32,6 +36,10 @@ jest.mock('@/features/pos/hooks/usePosBootstrap', () => ({
 
 jest.mock('@/features/pos/hooks/usePosItemSearch', () => ({
   usePosItemSearch: jest.fn(),
+}));
+
+jest.mock('@/features/pos/hooks/usePosBarcodeScan', () => ({
+  usePosBarcodeScan: () => ({ isResolving: false, resolve: jest.fn() }),
 }));
 
 import { usePosBootstrap } from '@/features/pos/hooks/usePosBootstrap';
