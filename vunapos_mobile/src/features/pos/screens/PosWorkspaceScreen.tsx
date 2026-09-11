@@ -180,6 +180,7 @@ export function PosWorkspaceScreen() {
             setSaleCustomer(customer);
           }}
           onSelectPriceList={setSelectedPriceList}
+          onUpdateBatchAllocations={cart.updateBatchAllocations}
           onUpdateItemNote={cart.updateItemNote}
           onUpdatePricing={cart.updatePricing}
           onUpdateQuantity={cart.updateQuantity}

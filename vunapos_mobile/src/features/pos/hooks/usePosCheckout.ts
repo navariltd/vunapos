@@ -37,6 +37,10 @@ type SubmitInput = PreviewInput & {
 
 function cartPayload(items: PosCartItem[]) {
   return items.map((item) => ({
+    batch_allocations: item.batch_allocations?.map((allocation) => ({
+      batch_no: allocation.batch_no,
+      qty: allocation.qty,
+    })),
     item_code: item.item_code,
     item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
+  PosBatchAllocation,
   PosCartData,
   PosCartItem,
   PosCatalogueItem,
@@ -37,6 +38,10 @@ type CartResponse = Omit<PosCartData, "items"> & {
 
 function toCartPayload(items: PosCartItem[]) {
   return items.map((item) => ({
+    batch_allocations: item.batch_allocations?.map((allocation) => ({
+      batch_no: allocation.batch_no,
+      qty: allocation.qty,
+    })),
     item_code: item.item_code,
     item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
@@ -260,6 +265,20 @@ export function usePosCart({
     );
   }
 
+  /** Sends a manual batch split to Frappe, which verifies it against live stock. */
+  async function updateBatchAllocations(
+    itemCode: string,
+    allocations: PosBatchAllocation[],
+  ) {
+    return refresh(
+      itemsRef.current.map((item) =>
+        item.item_code === itemCode
+          ? { ...item, batch_allocations: allocations }
+          : item,
+      ),
+    );
+  }
+
   /** Applies a permitted manual rate or discount before Frappe validates and audits it. */
   async function updatePricing(
     itemCode: string,
@@ -431,6 +450,7 @@ export function usePosCart({
     subtotal,
     taxes: data.taxes,
     totals: data.totals,
+    updateBatchAllocations,
     updateItemNote,
     updatePricing,
     updateQuantity,

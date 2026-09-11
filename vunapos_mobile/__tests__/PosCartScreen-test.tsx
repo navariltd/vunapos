@@ -20,8 +20,13 @@ jest.mock("@/features/pos/hooks/usePosCustomerLoyalty", () => ({
   usePosCustomerLoyalty: jest.fn(),
 }));
 
+jest.mock("@/features/pos/hooks/usePosItemBatches", () => ({
+  usePosItemBatches: jest.fn(),
+}));
+
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
+import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { posDarkColors } from "@/theme/tokens";
 
 const onBack = jest.fn();
@@ -31,10 +36,12 @@ const onSelectSaleCustomer = jest.fn();
 const onClear = jest.fn();
 const onRemove = jest.fn();
 const onRetry = jest.fn();
+const onUpdateBatchAllocations = jest.fn();
 const onUpdateItemNote = jest.fn();
 const onUpdatePricing = jest.fn();
 const onUpdateQuantity = jest.fn();
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
+const mockUsePosItemBatches = jest.mocked(usePosItemBatches);
 
 describe("PosCartScreen", () => {
   beforeEach(() => {
@@ -43,6 +50,23 @@ describe("PosCartScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+    });
+    mockUsePosItemBatches.mockReturnValue({
+      data: {
+        batches: [
+          {
+            available_qty: 4,
+            batch_no: "BATCH-001",
+            expiry_date: "2027-01-01",
+            qty: 0,
+          },
+        ],
+        item_code: "ITEM-001",
+        requires_batch: true,
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
     });
   });
 
@@ -632,5 +656,70 @@ describe("PosCartScreen", () => {
       screen.getByLabelText("Reset manual price for Stock item"),
     );
     expect(onUpdatePricing).toHaveBeenCalledWith("ITEM-001", undefined);
+  });
+
+  it("edits and saves quantities from the live batch list for a batch-tracked item", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            has_batch_no: true,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateBatchAllocations={onUpdateBatchAllocations}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        posProfile="POS-001"
+        requiresCustomer={false}
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("View details for Stock item"));
+    await fireEvent.press(
+      screen.getByLabelText("Edit batch allocation for Stock item"),
+    );
+    expect(screen.getByText("Available 4 · Expires 2027-01-01")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Allocation for batch BATCH-001"),
+      "1",
+    );
+    await fireEvent.press(
+      screen.getByLabelText("Save batch allocation for Stock item"),
+    );
+    expect(onUpdateBatchAllocations).toHaveBeenCalledWith("ITEM-001", [
+      {
+        available_qty: 4,
+        batch_no: "BATCH-001",
+        expiry_date: "2027-01-01",
+        qty: 1,
+      },
+    ]);
   });
 });

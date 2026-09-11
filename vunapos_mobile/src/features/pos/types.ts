@@ -24,11 +24,14 @@ export type PosCartItem = {
   amount?: number;
   allow_negative_stock: boolean;
   available_qty: number | null;
+  batch_allocations?: PosBatchAllocation[];
   bundle_items?: PosCartBundleItem[];
   conversion_factor?: number;
   description?: string | null;
   discount_amount?: number;
   discount_percentage?: number;
+  has_batch_no?: boolean;
+  has_serial_no?: boolean;
   is_free_item?: boolean;
   is_product_bundle?: boolean;
   is_stock_item: boolean;
@@ -45,6 +48,7 @@ export type PosCartItem = {
   rate: number;
   uom?: string | null;
   uoms?: PosItemUom[];
+  warehouse?: string | null;
 };
 
 export type PosPricingOverride = {
@@ -57,6 +61,21 @@ export type PosItemUom = {
   conversion_factor: number;
   rate?: number | null;
   uom: string;
+};
+
+export type PosBatchAllocation = {
+  available_qty?: number | null;
+  batch_no: string;
+  expiry_date?: string | null;
+  qty: number;
+};
+
+export type PosItemBatches = {
+  batches: PosBatchAllocation[];
+  item_code: string;
+  requires_batch?: boolean;
+  requires_serial?: boolean;
+  warehouse?: string | null;
 };
 
 export type PosCartBundleItem = {

@@ -438,6 +438,70 @@ describe("usePosCart", () => {
     expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
   });
 
+  it("persists a manual batch allocation through Frappe before checkout", async () => {
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const cartItem = JSON.parse(String(params?.items ?? "[]"))[0];
+        return {
+          items: [
+            {
+              actual_qty: 4,
+              allow_negative_stock: false,
+              amount: 125,
+              batch_allocations: cartItem.batch_allocations || [],
+              has_batch_no: true,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: 125,
+              uom: "Nos",
+            },
+          ],
+          taxes: [],
+          totals: { grand_total: 125, net_total: 125 },
+        };
+      },
+    );
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.updateBatchAllocations("ITEM-001", [
+        {
+          available_qty: 4,
+          batch_no: "BATCH-001",
+          expiry_date: "2027-01-01",
+          qty: 1,
+        },
+      ]);
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items:
+          '[{"batch_allocations":[{"batch_no":"BATCH-001","qty":1}],"item_code":"ITEM-001","qty":1,"uom":"Nos"}]',
+      }),
+    );
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({
+        batch_allocations: [
+          expect.objectContaining({ batch_no: "BATCH-001", qty: 1 }),
+        ],
+      }),
+    ]);
+  });
+
   it("adds the configured delivery item with its server-approved rate override", async () => {
     mockGetVunaMethod.mockImplementation(
       async (_companyUrl, _sessionId, method, params) => {

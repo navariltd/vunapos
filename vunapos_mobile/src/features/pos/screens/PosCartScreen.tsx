@@ -6,9 +6,11 @@ import { Text } from "react-native-paper";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
 import { PosUomPickerSheet } from "@/features/pos/components/PosUomPickerSheet";
+import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import {
+  PosBatchAllocation,
   PosCartItem,
   PosCartTax,
   PosCartTotals,
@@ -37,6 +39,10 @@ type PosCartScreenProps = {
   onClear: () => void;
   onRemove: (itemCode: string) => void;
   onRetry: () => void;
+  onUpdateBatchAllocations?: (
+    itemCode: string,
+    allocations: PosBatchAllocation[],
+  ) => void;
   onUpdateItemNote?: (itemCode: string, note: string) => void;
   onUpdatePricing?: (itemCode: string, override?: PosPricingOverride) => void;
   onUpdateQuantity: (itemCode: string, quantity: number) => void;
@@ -248,6 +254,208 @@ function PricingEditor({
   );
 }
 
+function BatchAllocationEditor({
+  disabled,
+  item,
+  onSave,
+  posProfile,
+}: {
+  disabled: boolean;
+  item: PosCartItem;
+  onSave: (allocations: PosBatchAllocation[]) => void;
+  posProfile?: string;
+}) {
+  const batches = usePosItemBatches({
+    enabled: true,
+    itemCode: item.item_code,
+    posProfile,
+  });
+  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (item.batch_allocations || []).map((allocation) => [
+        allocation.batch_no,
+        String(allocation.qty),
+      ]),
+    ),
+  );
+  const requiredQty = item.qty * Number(item.conversion_factor || 1);
+  const rows = (batches.data?.batches || []).map((batch) => ({
+    ...batch,
+    qty: Number(amounts[batch.batch_no] || 0),
+  }));
+  const allocatedQty = rows.reduce(
+    (total, row) => total + (Number.isFinite(row.qty) ? row.qty : 0),
+    0,
+  );
+  const remainingQty = requiredQty - allocatedQty;
+  const hasInvalidQuantity = rows.some(
+    (row) =>
+      !Number.isFinite(row.qty) ||
+      row.qty < 0 ||
+      row.qty > Number(row.available_qty || 0),
+  );
+  const isComplete =
+    !hasInvalidQuantity &&
+    Math.abs(remainingQty) < 0.000001 &&
+    allocatedQty > 0;
+
+  function autoAllocate() {
+    let remaining = requiredQty;
+    const next: Record<string, string> = {};
+    for (const batch of batches.data?.batches || []) {
+      const quantity = Math.min(remaining, Number(batch.available_qty || 0));
+      if (quantity > 0) next[batch.batch_no] = String(quantity);
+      remaining -= quantity;
+    }
+    setAmounts(next);
+  }
+
+  function save() {
+    onSave(
+      rows
+        .filter((row) => row.qty > 0)
+        .map(({ available_qty, batch_no, expiry_date, qty }) => ({
+          available_qty,
+          batch_no,
+          expiry_date,
+          qty,
+        })),
+    );
+  }
+
+  return (
+    <View style={styles.batchEditor}>
+      <View style={styles.batchEditorHeader}>
+        <View style={styles.batchHeading}>
+          <Text style={styles.batchEditorTitle}>Batch allocation</Text>
+          <Text style={styles.batchEditorMeta}>
+            Select quantities from the currently available batches.
+          </Text>
+        </View>
+        <Pressable
+          accessibilityLabel={`Refresh batches for ${item.item_name}`}
+          disabled={disabled}
+          onPress={batches.reload}
+          style={[
+            styles.batchRefreshButton,
+            disabled && styles.controlDisabled,
+          ]}
+        >
+          <MaterialCommunityIcons
+            color={posDarkColors.onSurface}
+            name="refresh"
+            size={18}
+          />
+        </Pressable>
+      </View>
+      {batches.isLoading ? (
+        <Text style={styles.batchLoading}>Loading batch availability…</Text>
+      ) : null}
+      {batches.error ? (
+        <Text style={styles.batchError}>{batches.error}</Text>
+      ) : null}
+      {batches.data ? (
+        <>
+          <View style={styles.batchSummary}>
+            <View>
+              <Text style={styles.batchSummaryLabel}>Required</Text>
+              <Text style={styles.batchSummaryValue}>{requiredQty}</Text>
+            </View>
+            <View>
+              <Text style={styles.batchSummaryLabel}>Allocated</Text>
+              <Text style={styles.batchSummaryValue}>{allocatedQty}</Text>
+            </View>
+            <View>
+              <Text style={styles.batchSummaryLabel}>Remaining</Text>
+              <Text
+                style={[
+                  styles.batchSummaryValue,
+                  remainingQty < 0 && styles.batchError,
+                ]}
+              >
+                {remainingQty}
+              </Text>
+            </View>
+          </View>
+          {batches.data.batches.map((batch) => (
+            <View key={batch.batch_no} style={styles.batchRow}>
+              <View style={styles.batchRowContent}>
+                <Text style={styles.batchName}>{batch.batch_no}</Text>
+                <Text style={styles.batchMeta}>
+                  Available {batch.available_qty || 0}
+                  {batch.expiry_date
+                    ? ` · Expires ${batch.expiry_date}`
+                    : " · No expiry"}
+                </Text>
+              </View>
+              <TextInput
+                accessibilityLabel={`Allocation for batch ${batch.batch_no}`}
+                editable={!disabled}
+                inputMode="decimal"
+                keyboardType="decimal-pad"
+                onChangeText={(value) =>
+                  setAmounts((current) => ({
+                    ...current,
+                    [batch.batch_no]: value,
+                  }))
+                }
+                style={styles.batchInput}
+                value={amounts[batch.batch_no] || ""}
+              />
+            </View>
+          ))}
+          {!batches.data.batches.length ? (
+            <Text style={styles.batchLoading}>
+              No valid batches currently have stock.
+            </Text>
+          ) : null}
+          {hasInvalidQuantity ? (
+            <Text style={styles.batchError}>
+              An allocation cannot exceed the batch availability.
+            </Text>
+          ) : null}
+          <View style={styles.batchActions}>
+            <Pressable
+              accessibilityLabel={`Auto allocate batches for ${item.item_name}`}
+              disabled={disabled || !batches.data.batches.length}
+              onPress={autoAllocate}
+              style={[
+                styles.batchSecondaryButton,
+                (disabled || !batches.data.batches.length) &&
+                  styles.controlDisabled,
+              ]}
+            >
+              <Text style={styles.batchSecondaryLabel}>Auto allocate</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Use automatic batch allocation for ${item.item_name}`}
+              disabled={disabled}
+              onPress={() => onSave([])}
+              style={[
+                styles.batchSecondaryButton,
+                disabled && styles.controlDisabled,
+              ]}
+            >
+              <Text style={styles.batchSecondaryLabel}>Use automatic</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Save batch allocation for ${item.item_name}`}
+              disabled={disabled || !isComplete}
+              onPress={save}
+              style={[
+                styles.batchSaveButton,
+                (disabled || !isComplete) && styles.controlDisabled,
+              ]}
+            >
+              <Text style={styles.batchSaveLabel}>Save allocation</Text>
+            </Pressable>
+          </View>
+        </>
+      ) : null}
+    </View>
+  );
+}
+
 function CartLine({
   allowDiscountChange,
   allowRateChange,
@@ -256,9 +464,11 @@ function CartLine({
   item,
   onOpenUomPicker,
   onRemove,
+  onUpdateBatchAllocations,
   onUpdateNote,
   onUpdatePricing,
   onUpdateQuantity,
+  posProfile,
 }: {
   allowDiscountChange: boolean;
   allowRateChange: boolean;
@@ -267,13 +477,16 @@ function CartLine({
   item: PosCartItem;
   onOpenUomPicker: () => void;
   onRemove: () => void;
+  onUpdateBatchAllocations: (allocations: PosBatchAllocation[]) => void;
   onUpdateNote: (note: string) => void;
   onUpdatePricing: (override?: PosPricingOverride) => void;
   onUpdateQuantity: (quantity: number) => void;
+  posProfile?: string;
 }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
   const [draftNote, setDraftNote] = useState(item.item_note || "");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [batchExpanded, setBatchExpanded] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
   const maximum =
     item.is_stock_item &&
@@ -293,6 +506,7 @@ function CartLine({
       options.findIndex((candidate) => candidate.uom === option.uom) === index,
   );
   const canChangeUom = !item.is_free_item && uomOptions.length > 1;
+  const isBatchTracked = Boolean(item.has_batch_no && !item.has_serial_no);
   const canExpandDetails = !item.is_free_item;
 
   function changeQuantity(value: string) {
@@ -392,6 +606,39 @@ function CartLine({
               {pricingOverrideLabel(item.pricing_override, currency)} ·{" "}
               {item.pricing_override_by || "current cashier"}
             </Text>
+          ) : null}
+          {isBatchTracked ? (
+            <View style={styles.batchSection}>
+              <Pressable
+                accessibilityLabel={`${batchExpanded ? "Hide" : "Edit"} batch allocation for ${item.item_name}`}
+                disabled={itemDisabled}
+                onPress={() => setBatchExpanded((current) => !current)}
+                style={styles.batchSectionHeader}
+              >
+                <View style={styles.batchHeading}>
+                  <Text style={styles.batchSectionTitle}>Batch allocation</Text>
+                  <Text style={styles.batchSectionMeta}>
+                    {item.batch_allocations?.length
+                      ? `${item.batch_allocations.length} batch${item.batch_allocations.length === 1 ? "" : "es"} selected`
+                      : "Automatic allocation"}
+                  </Text>
+                </View>
+                <MaterialCommunityIcons
+                  color={posDarkColors.onSurfaceMuted}
+                  name={batchExpanded ? "chevron-up" : "chevron-down"}
+                  size={20}
+                />
+              </Pressable>
+              {batchExpanded ? (
+                <BatchAllocationEditor
+                  disabled={itemDisabled}
+                  item={item}
+                  key={`${item.qty}-${item.conversion_factor || 1}-${JSON.stringify(item.batch_allocations || [])}`}
+                  onSave={onUpdateBatchAllocations}
+                  posProfile={posProfile}
+                />
+              ) : null}
+            </View>
           ) : null}
           {canChangeUom ? (
             <Pressable
@@ -565,6 +812,7 @@ export function PosCartScreen({
   onRetry,
   onSelectPriceList,
   onSelectSaleCustomer,
+  onUpdateBatchAllocations,
   onUpdateItemNote,
   onUpdatePricing,
   onUpdateQuantity,
@@ -736,6 +984,9 @@ export function PosCartScreen({
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
                 onRemove={() => onRemove(item.item_code)}
+                onUpdateBatchAllocations={(allocations) =>
+                  onUpdateBatchAllocations?.(item.item_code, allocations)
+                }
                 onUpdateNote={(note) =>
                   onUpdateItemNote?.(item.item_code, note)
                 }
@@ -745,6 +996,7 @@ export function PosCartScreen({
                 onUpdateQuantity={(quantity) =>
                   onUpdateQuantity(item.item_code, quantity)
                 }
+                posProfile={posProfile}
               />
             ))}
           </View>
@@ -900,6 +1152,156 @@ export function PosCartScreen({
 }
 
 const styles = StyleSheet.create({
+  batchActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  batchEditor: {
+    borderTopColor: posDarkColors.border,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  batchEditorHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  batchEditorMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+    lineHeight: typography.lineHeight.body,
+  },
+  batchEditorTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  batchError: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  batchHeading: { flex: 1, gap: 2 },
+  batchInput: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    height: 36,
+    includeFontPadding: false,
+    minWidth: 68,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 0,
+    textAlign: "center",
+    textAlignVertical: "center",
+  },
+  batchLoading: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  batchMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  batchName: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  batchRefreshButton: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    height: 34,
+    justifyContent: "center",
+    width: 34,
+  },
+  batchRow: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    padding: spacing.sm,
+  },
+  batchRowContent: { flex: 1, gap: 2 },
+  batchSaveButton: {
+    alignItems: "center",
+    backgroundColor: posDarkColors.primary,
+    borderRadius: radii.sm,
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  batchSaveLabel: {
+    color: posDarkColors.onPrimary,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  batchSecondaryButton: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  batchSecondaryLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  batchSection: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  batchSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
+  batchSectionMeta: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  batchSectionTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+    textTransform: "uppercase",
+  },
+  batchSummary: {
+    backgroundColor: posDarkColors.surfaceContainer,
+    borderRadius: radii.sm,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    padding: spacing.sm,
+  },
+  batchSummaryLabel: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  batchSummaryValue: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+    marginTop: 2,
+  },
   backButton: {
     alignItems: "center",
     borderColor: posDarkColors.border,
