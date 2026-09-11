@@ -208,4 +208,20 @@ describe('PosCartScreen', () => {
     expect(screen.getByText('Includes 1 bundle component.')).toBeTruthy();
     expect(screen.getByLabelText('Remove Promotional bundle from cart').props.accessibilityState.disabled).toBe(true);
   });
+
+  it('expands a cart item to show its server-provided description and bundle quantities', async () => {
+    const screen = await render(
+      <PosCartScreen allowCustomerCreation={false} currency="KES" defaultSaleCustomer={null} error={null} isUpdating={false} items={[{ allow_negative_stock: false, available_qty: null, bundle_items: [{ item_code: 'COMP-001', item_name: 'Coffee beans', qty: 2, uom: 'Bag' }], description: 'Gift hamper with two bags of coffee.', is_product_bundle: true, is_stock_item: false, item_code: 'BUNDLE-001', item_name: 'Coffee hamper', qty: 1, rate: 500, uom: 'Nos' }]} onBack={onBack} onCheckout={onCheckout} onClear={onClear} onClearSaleCustomer={onClearSaleCustomer} onRemove={onRemove} onRetry={onRetry} onSelectSaleCustomer={onSelectSaleCustomer} onUpdateQuantity={onUpdateQuantity} orderType="Invoice" requiresCustomer={false} saleCustomer={{ customer: 'CUST-001', customerName: 'Example customer' }} subtotal={500} taxes={[]} totals={{ grand_total: 500, net_total: 500 }} />,
+    );
+
+    expect(screen.queryByLabelText('Details for Coffee hamper')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('View details for Coffee hamper'));
+    expect(screen.getByLabelText('Details for Coffee hamper')).toBeTruthy();
+    expect(screen.getByText('Gift hamper with two bags of coffee.')).toBeTruthy();
+    expect(screen.getByText('Bundle components')).toBeTruthy();
+    expect(screen.getByText('Coffee beans')).toBeTruthy();
+    expect(screen.getByText('×2 Bag')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Hide details for Coffee hamper'));
+    expect(screen.queryByLabelText('Details for Coffee hamper')).toBeNull();
+  });
 });

@@ -49,10 +49,12 @@ function pricingRuleLabel(pricingRules: PosCartItem['pricing_rules']) {
 
 function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { currency: string; disabled: boolean; item: PosCartItem; onRemove: () => void; onUpdateQuantity: (quantity: number) => void }) {
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const maximum = item.is_stock_item && !item.allow_negative_stock && item.available_qty !== null ? item.available_qty : null;
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
   const hasRuleDiscount = Boolean(item.price_list_rate && item.price_list_rate > item.rate && (pricingRule || item.discount_amount || item.discount_percentage));
+  const canExpandDetails = !item.is_free_item && Boolean(item.description?.trim() || item.bundle_items?.length);
 
   function changeQuantity(value: string) {
     if (/^\d*\.?\d*$/.test(value)) setDraftQuantity(value);
@@ -70,16 +72,21 @@ function CartLine({ currency, disabled, item, onRemove, onUpdateQuantity }: { cu
   return (
     <View style={styles.item}>
       <View style={styles.itemHeader}>
-        <View style={styles.itemMain}>
+        <Pressable accessibilityLabel={`${detailsExpanded ? 'Hide' : 'View'} details for ${item.item_name}`} accessibilityRole={canExpandDetails ? 'button' : undefined} disabled={!canExpandDetails} onPress={() => setDetailsExpanded((current) => !current)} style={styles.itemMain}>
           <View style={styles.itemNameRow}><Text numberOfLines={2} style={styles.itemName}>{item.item_name}</Text>{item.is_free_item ? <Text style={styles.freeBadge}>Free item</Text> : null}{item.is_product_bundle ? <Text style={styles.bundleBadge}>Bundle</Text> : null}</View>
           <Text style={styles.itemCode}>{item.item_code}</Text>
           {hasRuleDiscount ? <Text style={styles.originalRate}>{formatCurrency(item.price_list_rate || 0, currency)}</Text> : null}
           <Text style={styles.itemRate}>{formatCurrency(item.rate, currency)} · {item.uom || 'Unit'}</Text>
-        </View>
+          {canExpandDetails ? <View style={styles.detailsHint}><Text style={styles.detailsHintLabel}>{detailsExpanded ? 'Hide details' : 'View details'}</Text><MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name={detailsExpanded ? 'chevron-up' : 'chevron-down'} size={18} /></View> : null}
+        </Pressable>
         <Pressable accessibilityLabel={`Remove ${item.item_name} from cart`} disabled={itemDisabled} onPress={onRemove} style={[styles.removeButton, itemDisabled && styles.controlDisabled]}>
           <MaterialCommunityIcons color={posDarkColors.error} name="trash-can-outline" size={19} />
         </Pressable>
       </View>
+      {detailsExpanded ? <View accessibilityLabel={`Details for ${item.item_name}`} style={styles.detailsPanel}>
+        {item.description?.trim() ? <Text style={styles.description}>{item.description.trim()}</Text> : null}
+        {item.bundle_items?.length ? <View style={styles.bundleComponents}><Text style={styles.bundleComponentsTitle}>Bundle components</Text>{item.bundle_items.map((component, index) => <View key={`${component.item_code}-${index}`} style={styles.bundleComponentRow}><Text style={styles.bundleComponentName}>{component.item_name || component.item_code}</Text><Text style={styles.bundleComponentQuantity}>×{component.qty ?? 0} {component.uom || ''}</Text></View>)}</View> : null}
+      </View> : null}
       <View style={styles.itemFooter}>
         <View style={styles.quantityControl}>
           <Pressable accessibilityLabel={`Decrease quantity for ${item.item_name}`} disabled={itemDisabled} onPress={() => onUpdateQuantity(item.qty - 1)} style={[styles.quantityButton, itemDisabled && styles.controlDisabled]}>
@@ -205,6 +212,11 @@ const styles = StyleSheet.create({
   browseButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.md, paddingVertical: spacing.sm },
   browseButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   bundleBadge: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 10, overflow: 'hidden', paddingHorizontal: spacing.xs, paddingVertical: 2, textTransform: 'uppercase' },
+  bundleComponents: { gap: spacing.xs },
+  bundleComponentsTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny, textTransform: 'uppercase' },
+  bundleComponentName: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  bundleComponentQuantity: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
+  bundleComponentRow: { flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
   checkoutButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 48 },
   checkoutButtonDisabled: { backgroundColor: posDarkColors.disabled, opacity: 0.5 },
   checkoutButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
@@ -220,6 +232,10 @@ const styles = StyleSheet.create({
   customerSelectorMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
   customerSelectorValue: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   customerRequired: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny, lineHeight: typography.lineHeight.body, textAlign: 'center' },
+  description: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
+  detailsHint: { alignItems: 'center', flexDirection: 'row', marginTop: spacing.xs },
+  detailsHintLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
+  detailsPanel: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.sm, borderWidth: 1, gap: spacing.sm, padding: spacing.sm },
   emptyState: { alignItems: 'center', gap: spacing.sm, paddingTop: spacing.xxl },
   errorState: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.error, borderRadius: radii.md, borderWidth: 1, gap: spacing.sm, padding: spacing.sm },
   errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, textAlign: 'center' },
