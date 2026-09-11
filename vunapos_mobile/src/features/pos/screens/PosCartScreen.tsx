@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
+import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
 import { PosUomPickerSheet } from "@/features/pos/components/PosUomPickerSheet";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
@@ -56,6 +57,7 @@ type PosCartScreenProps = {
   posProfile?: string;
   priceList?: string;
   priceListOptions?: PosPriceList[];
+  requireManagerPinForItemRemoval?: boolean;
   requiresCustomer: boolean;
   defaultSaleCustomer: PosSaleCustomer | null;
   saleCustomer: PosSaleCustomer | null;
@@ -1028,6 +1030,7 @@ export function PosCartScreen({
   posProfile,
   priceList,
   priceListOptions = [],
+  requireManagerPinForItemRemoval = false,
   requiresCustomer,
   saleCustomer,
   subtotal,
@@ -1037,6 +1040,9 @@ export function PosCartScreen({
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
+  const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
+    null,
+  );
   const customerLoyalty = usePosCustomerLoyalty(
     saleCustomer?.customer,
     posProfile,
@@ -1190,7 +1196,11 @@ export function PosCartScreen({
                 item={item}
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
-                onRemove={() => onRemove(item.item_code)}
+                onRemove={() =>
+                  requireManagerPinForItemRemoval
+                    ? setManagerPinItem(item)
+                    : onRemove(item.item_code)
+                }
                 onUpdateBatchAllocations={(allocations) =>
                   onUpdateBatchAllocations?.(item.item_code, allocations)
                 }
@@ -1356,6 +1366,15 @@ export function PosCartScreen({
         )}
         selectedUom={uomPickerItem?.uom}
         visible={Boolean(uomPickerItem)}
+      />
+      <ManagerPinApprovalDialog
+        onApproved={() => {
+          if (managerPinItem) onRemove(managerPinItem.item_code);
+          setManagerPinItem(null);
+        }}
+        onDismiss={() => setManagerPinItem(null)}
+        posProfile={posProfile}
+        visible={Boolean(managerPinItem)}
       />
     </KeyboardAwareFormScroll>
   );

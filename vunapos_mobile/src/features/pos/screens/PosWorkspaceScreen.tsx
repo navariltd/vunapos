@@ -190,6 +190,9 @@ export function PosWorkspaceScreen() {
           posProfile={posProfile}
           priceList={selectedPriceList}
           priceListOptions={posProfileConfig?.allowed_price_lists}
+          requireManagerPinForItemRemoval={Boolean(
+            posProfileConfig?.require_manager_pin_item_removal,
+          )}
           allowPriceListSwitching={Boolean(
             posProfileConfig?.allow_price_list_switching,
           )}

@@ -169,6 +169,7 @@ export type PosBootstrapData = {
     enable_salesperson_pin?: boolean;
     pin_users?: PosPinUser[];
     require_pin_before_every_sale?: boolean;
+    require_manager_pin_item_removal?: boolean;
     salesperson_pin_session_minutes?: number;
   };
 };

@@ -16,6 +16,22 @@ jest.mock("@/features/pos/components/PosUomPickerSheet", () => ({
   PosUomPickerSheet: () => null,
 }));
 
+jest.mock("@/features/pos/components/ManagerPinApprovalDialog", () => ({
+  ManagerPinApprovalDialog: ({
+    onApproved,
+    visible,
+  }: {
+    onApproved: (token: string) => void;
+    visible: boolean;
+  }) =>
+    visible
+      ? require("react").createElement(require("react-native").Pressable, {
+          accessibilityLabel: "Approve protected removal",
+          onPress: () => onApproved("manager-token"),
+        })
+      : null,
+}));
+
 jest.mock("@/features/pos/hooks/usePosCustomerLoyalty", () => ({
   usePosCustomerLoyalty: jest.fn(),
 }));
@@ -783,5 +799,53 @@ describe("PosCartScreen", () => {
       { serial_no: "SERIAL-001" },
       { batch_no: "BATCH-001", serial_no: "SERIAL-002" },
     ]);
+  });
+
+  it("requires manager approval before removing an item when the profile enables it", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        posProfile="POS-001"
+        requireManagerPinForItemRemoval
+        requiresCustomer={false}
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Remove Stock item from cart"));
+    expect(onRemove).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Approve protected removal"));
+    expect(onRemove).toHaveBeenCalledWith("ITEM-001");
   });
 });
