@@ -489,7 +489,15 @@ def _get_catalogue_pricing_rule_map(
 			}
 		)
 	transaction_doc.total_net_weight = sum(flt(row.get("total_weight")) for row in pricing_items)
-	transaction_doc.items = pricing_items
+	# Use real child Documents so ERPNext's condition evaluator can serialize the
+	# transaction document. Raw dictionaries make doc.as_dict() fail, causing
+	# dynamic conditions to be silently discarded.
+	transaction_doc.set("items", [])
+	for row in pricing_items:
+		transaction_doc.append("items", row)
+	# The ERPNext API expects mapping rows in args, while its condition
+	# evaluator reads the real child Documents from doc.items.
+	pricing_context["items"] = pricing_items
 	results = apply_pricing_rule(
 		pricing_context,
 		doc=transaction_doc,
