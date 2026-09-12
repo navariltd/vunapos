@@ -48,7 +48,10 @@ export function PosHomeScreen({
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
-    loadAll: Boolean(pricingContext?.customer || pricingContext?.priceList),
+    // Bootstrap intentionally returns only the first catalogue page. Keep it
+    // visible for first paint, then replace it with the complete live
+    // profile/customer/price-list catalogue when this request resolves.
+    loadAll: true,
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
     query: searchQuery,

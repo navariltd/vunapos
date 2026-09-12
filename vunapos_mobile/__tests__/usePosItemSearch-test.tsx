@@ -58,9 +58,27 @@ describe('usePosItemSearch', () => {
     await waitFor(() => expect(hook.result.current.items[0]?.rate).toBe(90));
     expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.item.search_items', expect.objectContaining({
       customer: 'CUST-001',
+      limit: 0,
       pos_profile: 'POS-001',
       price_list: 'Wholesale',
       query: '',
     }), expect.any(AbortSignal));
+  });
+
+  it('uses an unlimited empty-query request when loading the full catalogue', async () => {
+    mockGetVunaMethod.mockResolvedValue([]);
+
+    const hook = await renderHook(() =>
+      usePosItemSearch({ loadAll: true, posProfile: 'POS-001', query: '' }),
+    );
+
+    await waitFor(() => expect(hook.result.current.hasLoaded).toBe(true));
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      'https://vuna.example.com',
+      'sid-1',
+      'vunapos.api.item.search_items',
+      expect.objectContaining({ limit: 0, pos_profile: 'POS-001', query: '' }),
+      expect.any(AbortSignal),
+    );
   });
 });

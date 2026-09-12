@@ -18,7 +18,13 @@ type ItemSearchState = {
   requestKey: string | null;
 };
 
-/** Searches the live, profile-scoped catalogue after a short typing pause. */
+/**
+ * Searches the live, profile-scoped catalogue after a short typing pause.
+ *
+ * An empty `loadAll` request deliberately asks Frappe for the full catalogue.
+ * Bootstrap is capped for a fast first paint, whereas this request becomes the
+ * authoritative catalogue once it arrives and must not silently truncate it.
+ */
 export function usePosItemSearch({ customer, loadAll = false, posProfile, priceList, query }: UsePosItemSearchArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
@@ -38,7 +44,7 @@ export function usePosItemSearch({ customer, loadAll = false, posProfile, priceL
     const controller = new AbortController();
 
     void getVunaMethod<PosCatalogueItem[]>(companyUrl, sessionId, 'vunapos.api.item.search_items', {
-      limit: 60,
+      limit: loadAll && !debouncedQuery ? 0 : 60,
       customer,
       pos_profile: posProfile,
       price_list: priceList,
@@ -55,7 +61,7 @@ export function usePosItemSearch({ customer, loadAll = false, posProfile, priceL
       });
 
     return () => controller.abort();
-  }, [companyUrl, customer, debouncedQuery, invalidateSession, posProfile, priceList, requestKey, sessionId]);
+  }, [companyUrl, customer, debouncedQuery, invalidateSession, loadAll, posProfile, priceList, requestKey, sessionId]);
 
   return {
     error: state.requestKey === requestKey ? state.error : null,

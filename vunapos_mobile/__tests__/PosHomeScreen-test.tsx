@@ -87,6 +87,9 @@ describe('PosHomeScreen', () => {
       default_customer: null,
       pos_profile: expect.objectContaining({ name: 'POS-001' }),
     }));
+    expect(mockUsePosItemSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ loadAll: true, posProfile: 'POS-001' }),
+    );
     await fireEvent.press(screen.getByRole('button', { name: 'Live catalogue item' }));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, 'KES');
   });
