@@ -8,6 +8,7 @@ import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPic
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
 import { PosUomPickerSheet } from "@/features/pos/components/PosUomPickerSheet";
+import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
@@ -31,6 +32,7 @@ type PosCartScreenProps = {
   allowPriceListSwitching?: boolean;
   allowRateChange?: boolean;
   currency: string;
+  currencyPrecision?: number;
   error: string | null;
   hasPendingHold?: boolean;
   holdError?: string | null;
@@ -72,14 +74,8 @@ type PosCartScreenProps = {
   totals: PosCartTotals;
 };
 
-function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat(undefined, {
-    currency,
-    currencyDisplay: "code",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    style: "currency",
-  }).format(amount);
+function formatCurrency(amount: number, currency: string, precision = 2) {
+  return formatPosCurrency(amount, currency, precision);
 }
 
 function pricingRuleLabel(pricingRules: PosCartItem["pricing_rules"]) {
@@ -88,18 +84,23 @@ function pricingRuleLabel(pricingRules: PosCartItem["pricing_rules"]) {
   return pricingRules?.trim() || "";
 }
 
-function pricingOverrideLabel(override: PosPricingOverride, currency: string) {
+function pricingOverrideLabel(
+  override: PosPricingOverride,
+  currency: string,
+  precision: number,
+) {
   if (override.type === "rate")
-    return `rate set to ${formatCurrency(override.value, currency)}`;
+    return `rate set to ${formatCurrency(override.value, currency, precision)}`;
   if (override.type === "discount_percentage")
     return `${override.value}% discount`;
-  return `${formatCurrency(override.value, currency)} discount`;
+  return `${formatCurrency(override.value, currency, precision)} discount`;
 }
 
 function PricingEditor({
   allowDiscountChange,
   allowRateChange,
   currency,
+  currencyPrecision,
   disabled,
   item,
   onUpdate,
@@ -107,6 +108,7 @@ function PricingEditor({
   allowDiscountChange: boolean;
   allowRateChange: boolean;
   currency: string;
+  currencyPrecision: number;
   disabled: boolean;
   item: PosCartItem;
   onUpdate: (override?: PosPricingOverride) => void;
@@ -166,7 +168,11 @@ function PricingEditor({
       <Text style={styles.pricingEditorTitle}>Manual pricing</Text>
       <Text style={styles.pricingEditorMeta}>
         Price-list rate:{" "}
-        {formatCurrency(item.price_list_rate ?? item.rate, currency)}
+        {formatCurrency(
+          item.price_list_rate ?? item.rate,
+          currency,
+          currencyPrecision,
+        )}
       </Text>
       {allowRateChange ? (
         <View style={styles.pricingField}>
@@ -638,6 +644,7 @@ function CartLine({
   allowDiscountChange,
   allowRateChange,
   currency,
+  currencyPrecision,
   disabled,
   item,
   onOpenUomPicker,
@@ -652,6 +659,7 @@ function CartLine({
   allowDiscountChange: boolean;
   allowRateChange: boolean;
   currency: string;
+  currencyPrecision: number;
   disabled: boolean;
   item: PosCartItem;
   onOpenUomPicker: () => void;
@@ -733,11 +741,16 @@ function CartLine({
           <Text style={styles.itemCode}>{item.item_code}</Text>
           {hasRuleDiscount ? (
             <Text style={styles.originalRate}>
-              {formatCurrency(item.price_list_rate || 0, currency)}
+              {formatCurrency(
+                item.price_list_rate || 0,
+                currency,
+                currencyPrecision,
+              )}
             </Text>
           ) : null}
           <Text style={styles.itemRate}>
-            {formatCurrency(item.rate, currency)} · {item.uom || "Unit"}
+            {formatCurrency(item.rate, currency, currencyPrecision)} ·{" "}
+            {item.uom || "Unit"}
           </Text>
           {canExpandDetails ? (
             <View style={styles.detailsHint}>
@@ -777,6 +790,7 @@ function CartLine({
             allowDiscountChange={allowDiscountChange}
             allowRateChange={allowRateChange}
             currency={currency}
+            currencyPrecision={currencyPrecision}
             disabled={itemDisabled}
             item={item}
             key={`${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
@@ -785,8 +799,12 @@ function CartLine({
           {item.pricing_override ? (
             <Text style={styles.pricingAudit}>
               Manual price override:{" "}
-              {pricingOverrideLabel(item.pricing_override, currency)} ·{" "}
-              {item.pricing_override_by || "current cashier"}
+              {pricingOverrideLabel(
+                item.pricing_override,
+                currency,
+                currencyPrecision,
+              )}{" "}
+              · {item.pricing_override_by || "current cashier"}
             </Text>
           ) : null}
           {isBatchTracked ? (
@@ -978,7 +996,11 @@ function CartLine({
         <View style={styles.lineTotal}>
           <Text style={styles.lineTotalLabel}>Line total</Text>
           <Text style={styles.lineTotalAmount}>
-            {formatCurrency(item.amount ?? item.qty * item.rate, currency)}
+            {formatCurrency(
+              item.amount ?? item.qty * item.rate,
+              currency,
+              currencyPrecision,
+            )}
           </Text>
         </View>
       </View>
@@ -1014,6 +1036,7 @@ export function PosCartScreen({
   allowPriceListSwitching = false,
   allowRateChange = false,
   currency,
+  currencyPrecision = 2,
   defaultSaleCustomer,
   error,
   hasPendingHold = false,
@@ -1048,6 +1071,8 @@ export function PosCartScreen({
   taxes,
   totals,
 }: PosCartScreenProps) {
+  const displayCurrency = (amount: number, amountCurrency = currency) =>
+    formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
   const [holdFeedback, setHoldFeedback] = useState<string | null>(null);
@@ -1181,7 +1206,7 @@ export function PosCartScreen({
                   ).toLocaleString()}{" "}
                   points available
                   {customerLoyalty.data.redemption_value
-                    ? ` · ${formatCurrency(customerLoyalty.data.redemption_value, customerLoyalty.data.currency || currency)}`
+                    ? ` · ${displayCurrency(customerLoyalty.data.redemption_value, customerLoyalty.data.currency || currency)}`
                     : ""}
                 </Text>
               </View>
@@ -1216,6 +1241,7 @@ export function PosCartScreen({
                 allowDiscountChange={allowDiscountChange}
                 allowRateChange={allowRateChange}
                 currency={currency}
+                currencyPrecision={currencyPrecision}
                 disabled={isCartBusy}
                 item={item}
                 key={item.item_code}
@@ -1284,7 +1310,7 @@ export function PosCartScreen({
           <View style={styles.summary}>
             <Text style={styles.summaryLabel}>Net total</Text>
             <Text style={styles.summaryAmount}>
-              {formatCurrency(subtotal, currency)}
+              {displayCurrency(subtotal)}
             </Text>
           </View>
           {taxes.map((tax, index) => (
@@ -1296,7 +1322,7 @@ export function PosCartScreen({
                 style={styles.summaryRowLabel}
               >{`${tax.description || tax.account_head || "Tax"}${tax.rate !== undefined ? ` (${tax.rate}%)` : ""}${tax.included_in_print_rate ? " · included" : ""}`}</Text>
               <Text style={styles.summaryRowAmount}>
-                {formatCurrency(tax.tax_amount || 0, currency)}
+                {displayCurrency(tax.tax_amount || 0)}
               </Text>
             </View>
           ))}
@@ -1306,14 +1332,14 @@ export function PosCartScreen({
                 Total taxes and charges
               </Text>
               <Text style={styles.summaryRowAmount}>
-                {formatCurrency(totals.total_taxes_and_charges, currency)}
+                {displayCurrency(totals.total_taxes_and_charges)}
               </Text>
             </View>
           ) : null}
           <View style={styles.grandTotal}>
             <Text style={styles.grandTotalLabel}>Grand total</Text>
             <Text style={styles.grandTotalAmount}>
-              {formatCurrency(totals.grand_total ?? subtotal, currency)}
+              {displayCurrency(totals.grand_total ?? subtotal)}
             </Text>
           </View>
           {totals.rounded_total !== undefined &&
@@ -1321,7 +1347,7 @@ export function PosCartScreen({
             <View style={styles.summaryRow}>
               <Text style={styles.summaryRowLabel}>Rounded total</Text>
               <Text style={styles.summaryRowAmount}>
-                {formatCurrency(totals.rounded_total, currency)}
+                {displayCurrency(totals.rounded_total)}
               </Text>
             </View>
           ) : null}

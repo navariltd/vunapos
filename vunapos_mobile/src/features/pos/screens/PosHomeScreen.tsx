@@ -62,6 +62,7 @@ export function PosHomeScreen({
       ? itemSearch.items
       : localMatches;
   const currency = bootstrap.data?.pos_profile.currency || "KES";
+  const currencyPrecision = bootstrap.data?.pos_profile.currency_precision ?? 2;
   const barcodeScan = usePosBarcodeScan({
     customer: pricingContext?.customer,
     posProfile: bootstrap.data?.pos_profile.name,
@@ -105,7 +106,12 @@ export function PosHomeScreen({
   }
 
   const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => (
-    <PosItemCard currency={currency} item={item} onAdd={addItem} />
+    <PosItemCard
+      currency={currency}
+      currencyPrecision={currencyPrecision}
+      item={item}
+      onAdd={addItem}
+    />
   );
 
   if (bootstrap.isLoading)

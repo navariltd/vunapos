@@ -1,34 +1,32 @@
-import { Pressable, StyleSheet, View } from 'react-native';
-import { Text } from 'react-native-paper';
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text } from "react-native-paper";
 
-import { PosInvoiceListRow, PosInvoiceStatus } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { formatPosCurrency } from "@/features/pos/currency";
+import { PosInvoiceListRow, PosInvoiceStatus } from "@/features/pos/types";
+import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type PosInvoiceListItemProps = {
+  currencyPrecision?: number;
   invoice: PosInvoiceListRow;
   onPress: () => void;
 };
 
-const statusStyles: Record<PosInvoiceStatus, { backgroundColor: string; color: string }> = {
-  'Credit Note': { backgroundColor: '#4a3010', color: '#f3c579' },
-  Cancelled: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
-  Overdue: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
-  Paid: { backgroundColor: '#16452e', color: '#86efac' },
-  'Partly Paid': { backgroundColor: '#4a3010', color: '#f3c579' },
-  Unpaid: { backgroundColor: '#3d1f1f', color: posDarkColors.error },
+const statusStyles: Record<
+  PosInvoiceStatus,
+  { backgroundColor: string; color: string }
+> = {
+  "Credit Note": { backgroundColor: "#4a3010", color: "#f3c579" },
+  Cancelled: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
+  Overdue: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
+  Paid: { backgroundColor: "#16452e", color: "#86efac" },
+  "Partly Paid": { backgroundColor: "#4a3010", color: "#f3c579" },
+  Unpaid: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
 };
 
-function formatCurrency(amount: number, currency = 'KES') {
-  return new Intl.NumberFormat(undefined, {
-    currency,
-    currencyDisplay: 'code',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: 'currency',
-  }).format(amount);
-}
-
-function paymentReference(transactionReference?: string, paymentRequest?: string) {
+function paymentReference(
+  transactionReference?: string,
+  paymentRequest?: string,
+) {
   return transactionReference || paymentRequest || null;
 }
 
@@ -37,58 +35,116 @@ function formatDueDate(value?: string) {
   const date = new Date(`${value}T12:00:00`);
   if (Number.isNaN(date.getTime())) return value;
 
-  return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
 }
 
-export function PosInvoiceListItem({ invoice, onPress }: PosInvoiceListItemProps) {
+export function PosInvoiceListItem({
+  currencyPrecision = 2,
+  invoice,
+  onPress,
+}: PosInvoiceListItemProps) {
   const statusStyle = statusStyles[invoice.status];
+  const formatCurrency = (amount: number, currency = invoice.currency) =>
+    formatPosCurrency(amount, currency, currencyPrecision);
 
   return (
-    <Pressable accessibilityLabel={`Open ${invoice.invoiceNumber}`} onPress={onPress} style={styles.card}>
+    <Pressable
+      accessibilityLabel={`Open ${invoice.invoiceNumber}`}
+      onPress={onPress}
+      style={styles.card}
+    >
       <View style={styles.titleRow}>
         <View style={styles.titleGroup}>
-          <Text numberOfLines={1} style={styles.invoiceNumber}>{invoice.invoiceNumber}</Text>
-          <Text numberOfLines={1} style={styles.customer}>{invoice.customerName}</Text>
-          {invoice.customerId ? <Text numberOfLines={1} style={styles.customerId}>{invoice.customerId}</Text> : null}
+          <Text numberOfLines={1} style={styles.invoiceNumber}>
+            {invoice.invoiceNumber}
+          </Text>
+          <Text numberOfLines={1} style={styles.customer}>
+            {invoice.customerName}
+          </Text>
+          {invoice.customerId ? (
+            <Text numberOfLines={1} style={styles.customerId}>
+              {invoice.customerId}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.badges}>
-          {invoice.creditSale ? <View style={styles.creditSaleBadge}><Text style={styles.creditSaleLabel}>Credit sale</Text></View> : null}
+          {invoice.creditSale ? (
+            <View style={styles.creditSaleBadge}>
+              <Text style={styles.creditSaleLabel}>Credit sale</Text>
+            </View>
+          ) : null}
           <View style={[styles.status, statusStyle]}>
-            <Text style={[styles.statusLabel, { color: statusStyle.color }]}>{invoice.status}</Text>
+            <Text style={[styles.statusLabel, { color: statusStyle.color }]}>
+              {invoice.status}
+            </Text>
           </View>
         </View>
       </View>
 
       <View style={styles.metadataRow}>
         <Text style={styles.metadata}>{invoice.postedAt}</Text>
-        <Text style={styles.metadata}>{invoice.itemCount} {invoice.itemCount === 1 ? 'item' : 'items'}</Text>
+        <Text style={styles.metadata}>
+          {invoice.itemCount} {invoice.itemCount === 1 ? "item" : "items"}
+        </Text>
       </View>
 
-      {invoice.creditSale && invoice.dueDate ? <Text style={styles.dueDate}>Due {formatDueDate(invoice.dueDate)}</Text> : null}
+      {invoice.creditSale && invoice.dueDate ? (
+        <Text style={styles.dueDate}>Due {formatDueDate(invoice.dueDate)}</Text>
+      ) : null}
 
       <View style={styles.auditRow}>
-        <Text numberOfLines={1} style={styles.auditValue}>Cashier: {invoice.cashier || 'Not recorded'}</Text>
-        <Text numberOfLines={1} style={styles.auditValue}>Shift: {invoice.openingEntry || 'No shift'}</Text>
+        <Text numberOfLines={1} style={styles.auditValue}>
+          Cashier: {invoice.cashier || "Not recorded"}
+        </Text>
+        <Text numberOfLines={1} style={styles.auditValue}>
+          Shift: {invoice.openingEntry || "No shift"}
+        </Text>
       </View>
 
       <View style={styles.paymentLines}>
-        {invoice.payments.length ? invoice.payments.map((payment, index) => {
-          const reference = paymentReference(payment.transaction_reference, payment.ke_payment_request);
-          return (
-            <View key={`${payment.mode_of_payment}-${reference || index}`} style={styles.paymentLine}>
-              <Text numberOfLines={1} style={styles.paymentMode}>{payment.mode_of_payment}{reference ? ` · ${reference}` : ''}</Text>
-              <Text style={styles.paymentAmount}>{formatCurrency(payment.amount, invoice.currency)}</Text>
-            </View>
-          );
-        }) : <Text style={styles.paymentMode}>{invoice.paymentMode}</Text>}
+        {invoice.payments.length ? (
+          invoice.payments.map((payment, index) => {
+            const reference = paymentReference(
+              payment.transaction_reference,
+              payment.ke_payment_request,
+            );
+            return (
+              <View
+                key={`${payment.mode_of_payment}-${reference || index}`}
+                style={styles.paymentLine}
+              >
+                <Text numberOfLines={1} style={styles.paymentMode}>
+                  {payment.mode_of_payment}
+                  {reference ? ` · ${reference}` : ""}
+                </Text>
+                <Text style={styles.paymentAmount}>
+                  {formatCurrency(payment.amount, invoice.currency)}
+                </Text>
+              </View>
+            );
+          })
+        ) : (
+          <Text style={styles.paymentMode}>{invoice.paymentMode}</Text>
+        )}
       </View>
 
       <View style={styles.totalRow}>
         <View>
           <Text style={styles.totalLabel}>Total</Text>
-          {invoice.outstandingAmount > 0 ? <Text style={styles.outstanding}>Outstanding {formatCurrency(invoice.outstandingAmount, invoice.currency)}</Text> : null}
+          {invoice.outstandingAmount > 0 ? (
+            <Text style={styles.outstanding}>
+              Outstanding{" "}
+              {formatCurrency(invoice.outstandingAmount, invoice.currency)}
+            </Text>
+          ) : null}
         </View>
-        <Text style={styles.total}>{formatCurrency(invoice.total, invoice.currency)}</Text>
+        <Text style={styles.total}>
+          {formatCurrency(invoice.total, invoice.currency)}
+        </Text>
       </View>
     </Pressable>
   );
@@ -104,12 +160,12 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   auditRow: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: spacing.sm,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   badges: {
-    alignItems: 'flex-end',
+    alignItems: "flex-end",
     gap: 4,
   },
   auditValue: {
@@ -129,18 +185,18 @@ const styles = StyleSheet.create({
     fontSize: typography.size.tiny,
   },
   creditSaleBadge: {
-    backgroundColor: '#4a3010',
+    backgroundColor: "#4a3010",
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
   },
   creditSaleLabel: {
-    color: '#f3c579',
+    color: "#f3c579",
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   dueDate: {
-    color: '#f3c579',
+    color: "#f3c579",
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
@@ -155,8 +211,8 @@ const styles = StyleSheet.create({
     fontSize: typography.size.tiny,
   },
   metadataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   paymentMode: {
     color: posDarkColors.onSurfaceMuted,
@@ -169,16 +225,16 @@ const styles = StyleSheet.create({
     fontSize: typography.size.small,
   },
   paymentLine: {
-    alignItems: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    flexDirection: "row",
     gap: spacing.sm,
-    justifyContent: 'space-between',
+    justifyContent: "space-between",
   },
   paymentLines: {
     gap: 4,
   },
   outstanding: {
-    color: '#f3c579',
+    color: "#f3c579",
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
     marginTop: 2,
@@ -197,8 +253,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   titleRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
+    alignItems: "flex-start",
+    flexDirection: "row",
     gap: spacing.sm,
   },
   total: {
@@ -212,11 +268,11 @@ const styles = StyleSheet.create({
     fontSize: typography.size.tiny,
   },
   totalRow: {
-    alignItems: 'center',
+    alignItems: "center",
     borderTopColor: posDarkColors.border,
     borderTopWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     paddingTop: spacing.sm,
   },
 });

@@ -1,34 +1,34 @@
-import { useState } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text } from 'react-native-paper';
+import { useState } from "react";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Text } from "react-native-paper";
 
-import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
-import { useReceiveInvoicePayment } from '@/features/pos/hooks/useReceiveInvoicePayment';
-import { PosBootstrapData } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { formatPosCurrency } from "@/features/pos/currency";
+import { useReceiveInvoicePayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
+import { PosBootstrapData } from "@/features/pos/types";
+import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type PosInvoicePaymentSheetProps = {
   currency: string;
+  currencyPrecision?: number;
   customer: string;
   invoice: string;
   onComplete: () => void;
   onDismiss: () => void;
   outstandingAmount: number;
-  paymentModes: PosBootstrapData['payment_modes'];
+  paymentModes: PosBootstrapData["payment_modes"];
   posProfile: string;
   visible: boolean;
 };
-
-function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat(undefined, {
-    currency,
-    currencyDisplay: 'code',
-    maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: 'currency',
-  }).format(amount);
-}
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -36,6 +36,7 @@ function today() {
 
 export function PosInvoicePaymentSheet({
   currency,
+  currencyPrecision = 2,
   customer,
   invoice,
   onComplete,
@@ -45,36 +46,49 @@ export function PosInvoicePaymentSheet({
   posProfile,
   visible,
 }: PosInvoicePaymentSheetProps) {
+  const formatCurrency = (amount: number) =>
+    formatPosCurrency(amount, currency, currencyPrecision);
   const insets = useSafeAreaInsets();
   const availableModes = paymentModes.filter((mode) => !mode.payment_gateway);
-  const defaultMode = availableModes.find((mode) => mode.default)?.mode_of_payment || availableModes[0]?.mode_of_payment || '';
+  const defaultMode =
+    availableModes.find((mode) => mode.default)?.mode_of_payment ||
+    availableModes[0]?.mode_of_payment ||
+    "";
   const [amount, setAmount] = useState(String(outstandingAmount));
   const [mode, setMode] = useState(defaultMode);
   const [referenceDate, setReferenceDate] = useState(today());
-  const [referenceNo, setReferenceNo] = useState('');
+  const [referenceNo, setReferenceNo] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [paymentName, setPaymentName] = useState<string | null>(null);
   const { error, isSubmitting, receive } = useReceiveInvoicePayment();
-  const selectedMode = availableModes.find((paymentMode) => paymentMode.mode_of_payment === mode);
-  const requiresReference = selectedMode?.type === 'Bank';
+  const selectedMode = availableModes.find(
+    (paymentMode) => paymentMode.mode_of_payment === mode,
+  );
+  const requiresReference = selectedMode?.type === "Bank";
 
   async function submitPayment() {
     const paymentAmount = Number(amount);
     setValidationError(null);
     if (!mode) {
-      setValidationError('No manual payment mode is available for this POS profile.');
+      setValidationError(
+        "No manual payment mode is available for this POS profile.",
+      );
       return;
     }
     if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
-      setValidationError('Enter a payment amount greater than zero.');
+      setValidationError("Enter a payment amount greater than zero.");
       return;
     }
     if (paymentAmount > outstandingAmount) {
-      setValidationError('The payment cannot exceed the invoice outstanding balance.');
+      setValidationError(
+        "The payment cannot exceed the invoice outstanding balance.",
+      );
       return;
     }
     if (requiresReference && (!referenceNo.trim() || !referenceDate)) {
-      setValidationError('Reference number and date are required for bank payments.');
+      setValidationError(
+        "Reference number and date are required for bank payments.",
+      );
       return;
     }
 
@@ -93,18 +107,46 @@ export function PosInvoicePaymentSheet({
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onDismiss} presentationStyle="overFullScreen" statusBarTranslucent transparent visible={visible}>
+    <Modal
+      animationType="slide"
+      onRequestClose={onDismiss}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible={visible}
+    >
       <View style={styles.modalRoot}>
-        <Pressable accessibilityLabel="Dismiss receive payment" disabled={isSubmitting} onPress={onDismiss} style={styles.backdrop} />
-        <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
-          <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+        <Pressable
+          accessibilityLabel="Dismiss receive payment"
+          disabled={isSubmitting}
+          onPress={onDismiss}
+          style={styles.backdrop}
+        />
+        <KeyboardAvoidingView
+          behavior={Platform.select({ ios: "padding", default: undefined })}
+          style={styles.keyboardView}
+        >
+          <View
+            accessibilityViewIsModal
+            style={[
+              styles.sheet,
+              { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+            ]}
+          >
             <View style={styles.handle} />
             <View style={styles.header}>
               <View style={styles.heading}>
                 <Text style={styles.title}>Receive payment</Text>
-                <Text style={styles.subtitle}>{invoice} · Outstanding {formatCurrency(outstandingAmount, currency)}</Text>
+                <Text style={styles.subtitle}>
+                  {invoice} · Outstanding {formatCurrency(outstandingAmount)}
+                </Text>
               </View>
-              <Pressable accessibilityLabel="Close receive payment" disabled={isSubmitting} onPress={onDismiss} style={styles.closeButton}>
+              <Pressable
+                accessibilityLabel="Close receive payment"
+                disabled={isSubmitting}
+                onPress={onDismiss}
+                style={styles.closeButton}
+              >
                 <Text style={styles.closeButtonLabel}>Close</Text>
               </Pressable>
             </View>
@@ -112,13 +154,26 @@ export function PosInvoicePaymentSheet({
             {paymentName ? (
               <View style={styles.successState}>
                 <Text style={styles.successTitle}>Payment received</Text>
-                <Text style={styles.successText}>Payment Entry {paymentName} was submitted successfully.</Text>
-                <Pressable accessibilityLabel="Finish receiving payment" onPress={onComplete} style={styles.submitButton}>
+                <Text style={styles.successText}>
+                  Payment Entry {paymentName} was submitted successfully.
+                </Text>
+                <Pressable
+                  accessibilityLabel="Finish receiving payment"
+                  onPress={onComplete}
+                  style={styles.submitButton}
+                >
                   <Text style={styles.submitButtonLabel}>Done</Text>
                 </Pressable>
               </View>
             ) : (
-              <KeyboardAwareFormScroll contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} showsVerticalScrollIndicator={false} style={styles.formScroll}>
+              <KeyboardAwareFormScroll
+                contentContainerStyle={[
+                  styles.content,
+                  { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+                ]}
+                showsVerticalScrollIndicator={false}
+                style={styles.formScroll}
+              >
                 <Text style={styles.label}>Amount</Text>
                 <TextInput
                   accessibilityLabel="Payment amount"
@@ -139,26 +194,72 @@ export function PosInvoicePaymentSheet({
                         key={paymentMode.mode_of_payment}
                         accessibilityLabel={`Payment mode ${paymentMode.mode_of_payment}`}
                         onPress={() => setMode(paymentMode.mode_of_payment)}
-                        style={[styles.modeOption, mode === paymentMode.mode_of_payment && styles.modeOptionActive]}
+                        style={[
+                          styles.modeOption,
+                          mode === paymentMode.mode_of_payment &&
+                            styles.modeOptionActive,
+                        ]}
                       >
-                        <Text style={[styles.modeOptionLabel, mode === paymentMode.mode_of_payment && styles.modeOptionLabelActive]}>{paymentMode.mode_of_payment}</Text>
+                        <Text
+                          style={[
+                            styles.modeOptionLabel,
+                            mode === paymentMode.mode_of_payment &&
+                              styles.modeOptionLabelActive,
+                          ]}
+                        >
+                          {paymentMode.mode_of_payment}
+                        </Text>
                       </Pressable>
                     ))}
                   </View>
-                ) : <Text style={styles.errorText}>No manual payment mode is configured for this POS profile.</Text>}
+                ) : (
+                  <Text style={styles.errorText}>
+                    No manual payment mode is configured for this POS profile.
+                  </Text>
+                )}
 
                 {requiresReference ? (
                   <>
                     <Text style={styles.label}>Reference number</Text>
-                    <TextInput accessibilityLabel="Payment reference number" onChangeText={setReferenceNo} placeholder="Reference number" placeholderTextColor="#8f8f8f" style={styles.input} value={referenceNo} />
+                    <TextInput
+                      accessibilityLabel="Payment reference number"
+                      onChangeText={setReferenceNo}
+                      placeholder="Reference number"
+                      placeholderTextColor="#8f8f8f"
+                      style={styles.input}
+                      value={referenceNo}
+                    />
                     <Text style={styles.label}>Reference date</Text>
-                    <TextInput accessibilityLabel="Payment reference date" autoCapitalize="none" onChangeText={setReferenceDate} placeholder="YYYY-MM-DD" placeholderTextColor="#8f8f8f" style={styles.input} value={referenceDate} />
+                    <TextInput
+                      accessibilityLabel="Payment reference date"
+                      autoCapitalize="none"
+                      onChangeText={setReferenceDate}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#8f8f8f"
+                      style={styles.input}
+                      value={referenceDate}
+                    />
                   </>
                 ) : null}
 
-                {validationError || error ? <Text style={styles.errorText}>{validationError || error}</Text> : null}
-                <Pressable accessibilityLabel="Submit invoice payment" disabled={isSubmitting || !availableModes.length} onPress={() => void submitPayment()} style={[styles.submitButton, (isSubmitting || !availableModes.length) && styles.submitButtonDisabled]}>
-                  <Text style={styles.submitButtonLabel}>{isSubmitting ? 'Receiving payment…' : 'Receive payment'}</Text>
+                {validationError || error ? (
+                  <Text style={styles.errorText}>
+                    {validationError || error}
+                  </Text>
+                ) : null}
+                <Pressable
+                  accessibilityLabel="Submit invoice payment"
+                  disabled={isSubmitting || !availableModes.length}
+                  onPress={() => void submitPayment()}
+                  style={[
+                    styles.submitButton,
+                    (isSubmitting || !availableModes.length) &&
+                      styles.submitButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.submitButtonLabel}>
+                    {isSubmitting ? "Receiving payment…" : "Receive payment"}
+                  </Text>
                 </Pressable>
               </KeyboardAwareFormScroll>
             )}
@@ -170,31 +271,125 @@ export function PosInvoicePaymentSheet({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.6)', ...StyleSheet.absoluteFill },
-  closeButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
-  closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+  backdrop: {
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    ...StyleSheet.absoluteFill,
+  },
+  closeButton: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  closeButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
   content: { gap: spacing.sm, paddingTop: spacing.md },
-  errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
+  errorText: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.body,
+  },
   formScroll: { flex: 1 },
-  handle: { alignSelf: 'center', backgroundColor: '#555', borderRadius: radii.pill, height: 4, marginTop: spacing.xs, width: 40 },
-  header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
+  handle: {
+    alignSelf: "center",
+    backgroundColor: "#555",
+    borderRadius: radii.pill,
+    height: 4,
+    marginTop: spacing.xs,
+    width: 40,
+  },
+  header: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingTop: spacing.md,
+  },
   heading: { flex: 1, gap: 4 },
-  input: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  keyboardView: { justifyContent: 'flex-end', maxHeight: '100%' },
-  label: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small, marginTop: spacing.xs },
-  modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  modeOption: { borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
-  modeOptionActive: { backgroundColor: posDarkColors.primary, borderColor: posDarkColors.primary },
-  modeOptionLabel: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.medium, fontSize: typography.size.tiny },
+  input: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  keyboardView: { justifyContent: "flex-end", maxHeight: "100%" },
+  label: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+    marginTop: spacing.xs,
+  },
+  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  modeOption: {
+    borderColor: posDarkColors.border,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 7,
+  },
+  modeOptionActive: {
+    backgroundColor: posDarkColors.primary,
+    borderColor: posDarkColors.primary,
+  },
+  modeOptionLabel: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+  },
   modeOptionLabelActive: { color: posDarkColors.onPrimary },
-  modeOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, flexShrink: 1, maxHeight: '88%', paddingHorizontal: spacing.md },
-  submitButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', marginTop: spacing.md, minHeight: 48, paddingHorizontal: spacing.md },
+  modeOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
+  sheet: {
+    backgroundColor: posDarkColors.surface,
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    flexShrink: 1,
+    maxHeight: "88%",
+    paddingHorizontal: spacing.md,
+  },
+  submitButton: {
+    alignItems: "center",
+    backgroundColor: posDarkColors.primary,
+    borderRadius: radii.md,
+    justifyContent: "center",
+    marginTop: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
   submitButtonDisabled: { opacity: 0.45 },
-  submitButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
-  subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
+  submitButtonLabel: {
+    color: posDarkColors.onPrimary,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  subtitle: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.body,
+  },
   successState: { gap: spacing.md, paddingVertical: spacing.xl },
-  successText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, lineHeight: typography.lineHeight.body },
-  successTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
-  title: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
+  successText: {
+    color: posDarkColors.onSurfaceMuted,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    lineHeight: typography.lineHeight.body,
+  },
+  successTitle: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 20,
+  },
+  title: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 20,
+  },
 });

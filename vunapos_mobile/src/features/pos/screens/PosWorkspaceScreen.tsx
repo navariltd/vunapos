@@ -37,6 +37,7 @@ export function PosWorkspaceScreen() {
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{
     currency: string;
+    currencyPrecision: number;
     paymentEntry: PosInvoicePaymentEntry;
   } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(
@@ -107,6 +108,7 @@ export function PosWorkspaceScreen() {
       {selectedPaymentEntry ? (
         <PosPaymentEntryDetailsScreen
           currency={selectedPaymentEntry.currency}
+          currencyPrecision={selectedPaymentEntry.currencyPrecision}
           onBack={() => setSelectedPaymentEntry(null)}
           paymentEntry={selectedPaymentEntry.paymentEntry}
         />
@@ -123,7 +125,11 @@ export function PosWorkspaceScreen() {
           onBack={() => setSelectedInvoice(selectedInvoice.returnTo ?? null)}
           onOpenCustomer={setSelectedCustomer}
           onOpenPaymentEntry={(paymentEntry, currency) =>
-            setSelectedPaymentEntry({ currency, paymentEntry })
+            setSelectedPaymentEntry({
+              currency,
+              currencyPrecision: posProfileConfig?.currency_precision ?? 2,
+              paymentEntry,
+            })
           }
           onOpenReturn={(invoiceReturn) =>
             setSelectedInvoice({
@@ -166,6 +172,7 @@ export function PosWorkspaceScreen() {
           allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
+          currencyPrecision={posProfileConfig?.currency_precision}
           hasPendingHold={cart.hasPendingHold}
           holdError={cart.holdError}
           items={cart.items}

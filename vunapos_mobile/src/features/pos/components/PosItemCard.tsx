@@ -2,25 +2,17 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
+import { formatPosCurrency } from "@/features/pos/currency";
 import { PosCatalogueItem } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
 type PosItemCardProps = {
   currency: string;
+  currencyPrecision?: number;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
-
-function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat(undefined, {
-    currency,
-    currencyDisplay: "code",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    style: "currency",
-  }).format(amount);
-}
 
 function taxLabel(item: PosCatalogueItem) {
   const rate = item.item_tax?.inclusive
@@ -36,7 +28,12 @@ function quantityLabel(item: PosCatalogueItem) {
   return `Qty ${Number(item.actual_qty || 0)}`;
 }
 
-export function PosItemCard({ currency, item, onAdd }: PosItemCardProps) {
+export function PosItemCard({
+  currency,
+  currencyPrecision = 2,
+  item,
+  onAdd,
+}: PosItemCardProps) {
   const { palette } = useAppearance();
   const outOfStock =
     Boolean(item.is_stock_item) &&
@@ -91,7 +88,11 @@ export function PosItemCard({ currency, item, onAdd }: PosItemCardProps) {
               {taxLabel(item)}
             </Text>
             <Text style={[styles.price, { color: palette.onSurface }]}>
-              {formatCurrency(Number(item.rate || 0), currency)}
+              {formatPosCurrency(
+                Number(item.rate || 0),
+                currency,
+                currencyPrecision,
+              )}
             </Text>
             <Text
               style={[
