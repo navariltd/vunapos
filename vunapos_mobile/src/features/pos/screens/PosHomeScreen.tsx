@@ -13,11 +13,17 @@ import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScan
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
 import { PosItemSearch } from "@/features/pos/components/PosItemSearch";
+import { PosVariantPickerSheet } from "@/features/pos/components/PosVariantPickerSheet";
 import { usePosBarcodeScan } from "@/features/pos/hooks/usePosBarcodeScan";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
+import { usePosTemplateVariants } from "@/features/pos/hooks/usePosTemplateVariants";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { PosBootstrapData, PosCatalogueItem } from "@/features/pos/types";
+import {
+  PosBootstrapData,
+  PosCatalogueItem,
+  PosTemplateVariant,
+} from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
@@ -68,6 +74,11 @@ export function PosHomeScreen({
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [variantTemplate, setVariantTemplate] =
+    useState<PosCatalogueItem | null>(null);
+  const [variantActionError, setVariantActionError] = useState<string | null>(
+    null,
+  );
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
@@ -95,6 +106,13 @@ export function PosHomeScreen({
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
   });
+  const templateVariants = usePosTemplateVariants({
+    customer: pricingContext?.customer,
+    enabled: Boolean(variantTemplate),
+    posProfile: bootstrap.data?.pos_profile.name,
+    priceList: pricingContext?.priceList,
+    templateItemCode: variantTemplate?.item_code,
+  });
   const handledRefreshKey = useRef(refreshKey);
   const reloadBootstrap = bootstrap.reload;
 
@@ -120,6 +138,11 @@ export function PosHomeScreen({
 
   async function addItem(item: PosCatalogueItem): Promise<boolean> {
     if (pendingItemCode) return false;
+    if (item.has_variants) {
+      setVariantActionError(null);
+      setVariantTemplate(item);
+      return true;
+    }
     const outOfStock = isOutOfStock(item);
     if (outOfStock) return false;
 
@@ -138,6 +161,16 @@ export function PosHomeScreen({
     } finally {
       setPendingItemCode(null);
     }
+  }
+
+  async function selectVariant(variant: PosTemplateVariant) {
+    setVariantActionError(null);
+    const added = await addItem(variant);
+    if (added) setVariantTemplate(null);
+    else
+      setVariantActionError(
+        `Could not add ${variant.item_name || variant.item_code}. Please try again.`,
+      );
   }
 
   async function scanBarcode(barcode: string) {
@@ -249,6 +282,21 @@ export function PosHomeScreen({
         onClose={() => setBarcodeScannerVisible(false)}
         onScan={scanBarcode}
         visible={barcodeScannerVisible}
+      />
+      <PosVariantPickerSheet
+        currency={currency}
+        currencyPrecision={currencyPrecision}
+        error={variantActionError || templateVariants.error}
+        isLoading={templateVariants.isLoading}
+        isSelecting={Boolean(pendingItemCode)}
+        onDismiss={() => {
+          if (!pendingItemCode) setVariantTemplate(null);
+        }}
+        onRetry={templateVariants.reload}
+        onSelect={(variant) => void selectVariant(variant)}
+        templateName={variantTemplate?.item_name}
+        variants={templateVariants.data?.variants ?? []}
+        visible={Boolean(variantTemplate)}
       />
     </View>
   );

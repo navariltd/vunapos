@@ -22,6 +22,19 @@ export type PosCatalogueItem = {
   stock_uom?: string | null;
 };
 
+export type PosTemplateVariant = PosCatalogueItem & {
+  attributes?: { attribute: string; value: string }[];
+};
+
+export type PosTemplateVariants = {
+  template: {
+    description?: string | null;
+    item_code: string;
+    item_name: string;
+  };
+  variants: PosTemplateVariant[];
+};
+
 export type PosCartItem = {
   amount?: number;
   allow_negative_stock: boolean;
