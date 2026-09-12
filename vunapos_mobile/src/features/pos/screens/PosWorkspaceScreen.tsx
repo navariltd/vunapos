@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/features/shell/components/AppShell";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
@@ -44,6 +44,9 @@ export function PosWorkspaceScreen() {
     null,
   );
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
+  const [priceListFallbackNotice, setPriceListFallbackNotice] = useState<
+    string | null
+  >(null);
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
@@ -77,6 +80,20 @@ export function PosWorkspaceScreen() {
   const salespersonLocked = Boolean(
     posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
   );
+
+  useEffect(() => {
+    if (!selectedPriceList || !posProfileConfig) return;
+    const permitted =
+      posProfileConfig.allowed_price_lists?.map(({ name }) => name) || [];
+    if (permitted.includes(selectedPriceList)) return;
+    const fallback = setTimeout(() => {
+      setSelectedPriceList(undefined);
+      setPriceListFallbackNotice(
+        "The selected price list is no longer available. Prices were reset to the POS default.",
+      );
+    }, 0);
+    return () => clearTimeout(fallback);
+  }, [posProfileConfig, selectedPriceList]);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -202,7 +219,10 @@ export function PosWorkspaceScreen() {
             setSelectedPriceList(undefined);
             setSaleCustomer(customer);
           }}
-          onSelectPriceList={setSelectedPriceList}
+          onSelectPriceList={(priceList) => {
+            setPriceListFallbackNotice(null);
+            setSelectedPriceList(priceList);
+          }}
           onUpdateBatchAllocations={cart.updateBatchAllocations}
           onUpdateItemNote={cart.updateItemNote}
           onUpdatePricing={cart.updatePricing}
@@ -212,6 +232,7 @@ export function PosWorkspaceScreen() {
           orderType={orderType}
           posProfile={posProfile}
           priceList={selectedPriceList}
+          priceListFallbackNotice={priceListFallbackNotice}
           priceListOptions={posProfileConfig?.allowed_price_lists}
           requireManagerPinForItemRemoval={Boolean(
             posProfileConfig?.require_manager_pin_item_removal,

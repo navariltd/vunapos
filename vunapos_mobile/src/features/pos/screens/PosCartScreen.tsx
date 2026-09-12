@@ -63,6 +63,7 @@ type PosCartScreenProps = {
   orderType: PosOrderType;
   posProfile?: string;
   priceList?: string;
+  priceListFallbackNotice?: string | null;
   priceListOptions?: PosPriceList[];
   requireManagerPinForItemRemoval?: boolean;
   requiresCustomer: boolean;
@@ -1062,6 +1063,7 @@ export function PosCartScreen({
   orderType,
   posProfile,
   priceList,
+  priceListFallbackNotice,
   priceListOptions = [],
   requireManagerPinForItemRemoval = false,
   requiresCustomer,
@@ -1240,6 +1242,9 @@ export function PosCartScreen({
                 size={20}
               />
             </Pressable>
+          ) : null}
+          {priceListFallbackNotice ? (
+            <Text style={styles.loyaltyLoading}>{priceListFallbackNotice}</Text>
           ) : null}
           <View style={styles.itemList}>
             {items.map((item) => (
