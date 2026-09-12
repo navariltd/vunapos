@@ -1,6 +1,14 @@
-import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from "react-native";
 import { Text } from "react-native-paper";
 
+import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -27,6 +35,9 @@ export function PosCloseShiftScreen({
   const { palette } = useAppearance();
   const { connectionStatus } = useNetworkStatus();
   const preview = usePosClosingPreview(posProfile);
+  const [countedAmounts, setCountedAmounts] = useState<Record<string, string>>(
+    {},
+  );
 
   if (!posProfile) {
     return (
@@ -42,8 +53,16 @@ export function PosCloseShiftScreen({
     );
   }
 
+  function countedAmount(modeOfPayment: string, expectedAmount: number) {
+    return countedAmounts[modeOfPayment] ?? formatAmountInput(expectedAmount);
+  }
+
   return (
-    <View style={[styles.content, { backgroundColor: palette.background }]}>
+    <KeyboardAwareFormScroll
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      style={{ backgroundColor: palette.background }}
+    >
       <View style={styles.header}>
         <View style={styles.heading}>
           <Text style={[styles.title, { color: palette.onSurface }]}>
@@ -121,6 +140,108 @@ export function PosCloseShiftScreen({
               )}
             />
           </View>
+          <View
+            style={[
+              styles.reconciliationCard,
+              { backgroundColor: palette.surface, borderColor: palette.border },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+              Payment reconciliation
+            </Text>
+            {preview.data.payments.length ? (
+              preview.data.payments.map((payment) => {
+                const rawAmount = countedAmount(
+                  payment.mode_of_payment,
+                  payment.expected_amount,
+                );
+                const counted = parseAmountInput(rawAmount);
+                const difference =
+                  rawAmount.trim() && counted !== null
+                    ? counted - payment.expected_amount
+                    : null;
+                return (
+                  <View
+                    key={payment.mode_of_payment}
+                    style={[
+                      styles.paymentRow,
+                      {
+                        backgroundColor: palette.surfaceContainer,
+                        borderColor: palette.borderSubtle,
+                      },
+                    ]}
+                  >
+                    <View style={styles.paymentHeading}>
+                      <Text
+                        style={[
+                          styles.paymentMode,
+                          { color: palette.onSurface },
+                        ]}
+                      >
+                        {payment.mode_of_payment}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.paymentMeta,
+                          { color: palette.onSurfaceMuted },
+                        ]}
+                      >
+                        Expected{" "}
+                        {formatPosCurrency(
+                          payment.expected_amount,
+                          currency,
+                          currencyPrecision,
+                        )}
+                      </Text>
+                    </View>
+                    <TextInput
+                      accessibilityLabel={`Counted amount ${payment.mode_of_payment}`}
+                      inputMode="decimal"
+                      keyboardType="decimal-pad"
+                      onChangeText={(value) =>
+                        setCountedAmounts((current) => ({
+                          ...current,
+                          [payment.mode_of_payment]: formatAmountInput(value),
+                        }))
+                      }
+                      placeholder="Counted amount"
+                      placeholderTextColor={palette.onSurfaceMuted}
+                      style={[
+                        styles.countedInput,
+                        {
+                          backgroundColor: palette.surface,
+                          borderColor: palette.border,
+                          color: palette.onSurface,
+                        },
+                      ]}
+                      value={rawAmount}
+                    />
+                    <Text
+                      style={[
+                        styles.paymentMeta,
+                        { color: palette.onSurfaceMuted },
+                      ]}
+                    >
+                      Difference:{" "}
+                      {difference === null
+                        ? "-"
+                        : formatPosCurrency(
+                            difference,
+                            currency,
+                            currencyPrecision,
+                          )}
+                    </Text>
+                  </View>
+                );
+              })
+            ) : (
+              <Text
+                style={[styles.paymentMeta, { color: palette.onSurfaceMuted }]}
+              >
+                No payment modes need closing reconciliation.
+              </Text>
+            )}
+          </View>
           <Pressable
             accessibilityLabel="Refresh shift totals"
             accessibilityRole="button"
@@ -141,7 +262,7 @@ export function PosCloseShiftScreen({
           tone="error"
         />
       )}
-    </View>
+    </KeyboardAwareFormScroll>
   );
 }
 
@@ -208,7 +329,15 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
-  content: { flex: 1, gap: spacing.lg, padding: spacing.md },
+  content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
+  countedInput: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
   description: {
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
@@ -221,6 +350,27 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
     justifyContent: "center",
+  },
+  paymentHeading: { gap: 2 },
+  paymentMeta: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+  },
+  paymentMode: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  paymentRow: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  reconciliationCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
   },
   refreshButton: {
     alignItems: "center",
@@ -274,8 +424,36 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
+  sectionTitle: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
   title: {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.heading,
   },
 });
+
+function parseAmountInput(value: string) {
+  const normalized = value.replace(/,/g, "").trim();
+  if (!/^\d+(?:\.\d*)?$/.test(normalized)) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function formatAmountInput(value: string | number) {
+  const normalized = String(value)
+    .replace(/,/g, "")
+    .replace(/[^\d.]/g, "");
+  if (!normalized) return "";
+
+  const [integer, ...decimalParts] = normalized.split(".");
+  const decimal = decimalParts.join("");
+  const formattedInteger = integer
+    ? Number(integer).toLocaleString(undefined, { maximumFractionDigits: 0 })
+    : "0";
+
+  return decimalParts.length
+    ? `${formattedInteger}.${decimal}`
+    : formattedInteger;
+}

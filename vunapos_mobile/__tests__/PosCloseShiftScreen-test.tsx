@@ -110,6 +110,73 @@ describe("PosCloseShiftScreen", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it("pre-fills each payment count and calculates its live difference", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 580,
+        invoice_count: 2,
+        net_total: 500,
+        opening_entry: "POS-OPEN-001",
+        payments: [
+          {
+            closing_amount: 100,
+            difference: 0,
+            expected_amount: 100,
+            mode_of_payment: "Cash",
+            opening_amount: 0,
+          },
+          {
+            closing_amount: 0,
+            difference: 0,
+            expected_amount: 0,
+            mode_of_payment: "Card",
+            opening_amount: 0,
+          },
+        ],
+        period_end_date: "2026-09-13 10:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        currency="KES"
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("Payment reconciliation")).toBeTruthy();
+    expect(screen.getByLabelText("Counted amount Cash").props.value).toBe(
+      "100",
+    );
+    expect(screen.getByLabelText("Counted amount Card").props.value).toBe("0");
+    expect(screen.getAllByText("Difference: KES 0.00")).toHaveLength(2);
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Counted amount Cash"),
+      "80.5",
+    );
+
+    expect(screen.getByLabelText("Counted amount Cash").props.value).toBe(
+      "80.5",
+    );
+    expect(screen.getByText("Difference: -KES 19.50")).toBeTruthy();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Counted amount Cash"),
+      "1200.50",
+    );
+    expect(screen.getByLabelText("Counted amount Cash").props.value).toBe(
+      "1,200.50",
+    );
+    expect(screen.getByText("Difference: KES 1,100.50")).toBeTruthy();
+  });
+
   it("blocks the workflow while offline and explains the connection requirement", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
