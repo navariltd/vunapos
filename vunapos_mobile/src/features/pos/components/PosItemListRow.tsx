@@ -33,6 +33,8 @@ export function PosItemListRow({
   const { palette } = useAppearance();
   const outOfStock =
     Boolean(item.is_stock_item) &&
+    !item.has_variants &&
+    !item.is_product_bundle &&
     !item.allow_negative_stock &&
     Number(item.actual_qty || 0) <= 0;
 
@@ -60,6 +62,19 @@ export function PosItemListRow({
         >
           {item.item_name}
         </Text>
+        {item.is_product_bundle ? (
+          <Text
+            style={[
+              styles.bundleBadge,
+              {
+                backgroundColor: palette.surfaceContainerHigh,
+                color: palette.onSurface,
+              },
+            ]}
+          >
+            Bundle
+          </Text>
+        ) : null}
         <Text
           numberOfLines={1}
           style={[styles.meta, { color: palette.onSurfaceMuted }]}
@@ -115,6 +130,17 @@ const styles = StyleSheet.create({
     height: 38,
     justifyContent: "center",
     width: 38,
+  },
+  bundleBadge: {
+    alignSelf: "flex-start",
+    borderRadius: radii.pill,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    marginTop: 2,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    textTransform: "uppercase",
   },
   details: { flex: 1, gap: 2, minWidth: 0 },
   meta: {

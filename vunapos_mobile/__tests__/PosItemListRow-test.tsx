@@ -46,4 +46,22 @@ describe("PosItemListRow", () => {
     fireEvent.press(screen.getByLabelText("Add Compact item"));
     expect(onAdd).not.toHaveBeenCalled();
   });
+
+  it("marks bundles and keeps them available for authoritative bundle validation", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemListRow
+        currency="KES"
+        item={{ ...item, actual_qty: 0, is_product_bundle: true }}
+        onAdd={onAdd}
+      />,
+    );
+
+    expect(screen.getByText("Bundle")).toBeTruthy();
+    expect(screen.queryByText("Out of stock")).toBeNull();
+    fireEvent.press(screen.getByLabelText("Add Compact item"));
+    expect(onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ is_product_bundle: true }),
+    );
+  });
 });

@@ -48,4 +48,22 @@ describe("PosItemCard", () => {
     fireEvent.press(screen.getByLabelText("Add Item with image"));
     expect(onAdd).toHaveBeenCalledWith(item);
   });
+
+  it("marks bundles and leaves their availability to the authoritative cart", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemCard
+        currency="KES"
+        item={{ ...item, actual_qty: 0, is_product_bundle: true }}
+        onAdd={onAdd}
+      />,
+    );
+
+    expect(screen.getByText("Bundle")).toBeTruthy();
+    expect(screen.queryByText("Out of stock")).toBeNull();
+    fireEvent.press(screen.getByLabelText("Add Item with image"));
+    expect(onAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ is_product_bundle: true }),
+    );
+  });
 });

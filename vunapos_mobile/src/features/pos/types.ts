@@ -8,6 +8,8 @@ export type PosCatalogueItem = {
   allow_negative_stock?: boolean | number | null;
   barcode?: string | null;
   image?: string | null;
+  has_variants?: boolean | number | null;
+  is_product_bundle?: boolean | number | null;
   is_stock_item?: boolean | number | null;
   item_code: string;
   item_name: string;

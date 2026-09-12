@@ -39,6 +39,8 @@ export function PosItemCard({
   const { palette } = useAppearance();
   const outOfStock =
     Boolean(item.is_stock_item) &&
+    !item.has_variants &&
+    !item.is_product_bundle &&
     !item.allow_negative_stock &&
     Number(item.actual_qty || 0) <= 0;
 
@@ -80,6 +82,19 @@ export function PosItemCard({
           </Text>
         )}
       </Pressable>
+      {item.is_product_bundle ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.bundleBadge,
+            { backgroundColor: palette.surfaceContainerHigh },
+          ]}
+        >
+          <Text style={[styles.bundleBadgeText, { color: palette.onSurface }]}>
+            Bundle
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.details}>
         <Text
@@ -152,6 +167,20 @@ const styles = StyleSheet.create({
     height: 38,
     justifyContent: "center",
     width: 38,
+  },
+  bundleBadge: {
+    borderBottomRightRadius: radii.md,
+    left: 0,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    position: "absolute",
+    top: 0,
+  },
+  bundleBadgeText: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 10,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
   },
   card: {
     borderRadius: radii.md,
