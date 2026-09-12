@@ -9,6 +9,7 @@ import {
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
+const mockUseErpNextRecord = jest.fn();
 const mockUsePosPaymentHistory = jest.fn();
 const mockUsePosPaymentReconciliationAllocation = jest.fn();
 const mockUsePosPaymentReconciliationCandidates = jest.fn();
@@ -35,6 +36,10 @@ jest.mock("@/features/pos/hooks/usePosCustomerDetails", () => ({
 
 jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
   usePosCustomerSearch: () => mockUsePosCustomerSearch(),
+}));
+
+jest.mock("@/features/pos/hooks/useErpNextRecord", () => ({
+  useErpNextRecord: () => mockUseErpNextRecord(),
 }));
 
 jest.mock("@/features/pos/hooks/usePosPaymentHistory", () => ({
@@ -88,6 +93,11 @@ describe("PosPaymentsScreen", () => {
       error: null,
       isLoading: false,
       rows: [],
+    });
+    mockUseErpNextRecord.mockReturnValue({
+      error: null,
+      isOpening: false,
+      openRecord: jest.fn(),
     });
     mockUsePosPaymentHistory.mockReturnValue({
       data: null,
@@ -162,6 +172,12 @@ describe("PosPaymentsScreen", () => {
   });
 
   it("shows active-POS payment history with its core payment details", async () => {
+    const openRecord = jest.fn();
+    mockUseErpNextRecord.mockReturnValue({
+      error: null,
+      isOpening: false,
+      openRecord,
+    });
     mockUsePosPaymentHistory.mockReturnValue({
       data: {
         payments: [
@@ -227,6 +243,33 @@ describe("PosPaymentsScreen", () => {
     expect(screen.getByText("Gateway payments")).toBeTruthy();
     expect(screen.getByText("TXN-001")).toBeTruthy();
     expect(screen.getByText("Sales Invoice · Paid")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Open Payment Entry ACC-PAY-0001 in ERPNext",
+      }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Open Sales Invoice SINV-0001 in ERPNext",
+      }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Open VunaPOS Gateway Payment Link GPL-001 in ERPNext",
+      }),
+    );
+    expect(openRecord).toHaveBeenNthCalledWith(1, {
+      doctype: "Payment Entry",
+      name: "ACC-PAY-0001",
+    });
+    expect(openRecord).toHaveBeenNthCalledWith(2, {
+      doctype: "Sales Invoice",
+      name: "SINV-0001",
+    });
+    expect(openRecord).toHaveBeenNthCalledWith(3, {
+      doctype: "VunaPOS Gateway Payment Link",
+      name: "GPL-001",
+    });
 
     await fireEvent.changeText(
       screen.getByLabelText("Filter payment history by customer ID"),

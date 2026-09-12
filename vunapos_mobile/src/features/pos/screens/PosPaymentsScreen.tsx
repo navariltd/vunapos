@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
+import { useErpNextRecord } from "@/features/pos/hooks/useErpNextRecord";
 import { usePosPaymentHistory } from "@/features/pos/hooks/usePosPaymentHistory";
 import { usePosPaymentReconciliationAllocation } from "@/features/pos/hooks/usePosPaymentReconciliationAllocation";
 import { usePosPaymentReconciliationCandidates } from "@/features/pos/hooks/usePosPaymentReconciliationCandidates";
@@ -701,9 +702,7 @@ function PaymentHistoryRowCard({
     >
       <View style={styles.historyHeader}>
         <View style={styles.reconciliationRowDetails}>
-          <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>
-            {payment.name}
-          </Text>
+          <HistoryRecordLink doctype="Payment Entry" name={payment.name} />
           <Text
             style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
           >
@@ -786,6 +785,7 @@ function PaymentHistoryRowCard({
           currencyPrecision={currencyPrecision}
           rows={payment.references.map((reference) => ({
             amount: reference.allocated_amount,
+            doctype: reference.reference_doctype,
             label: reference.reference_name,
             meta: reference.reference_doctype,
           }))}
@@ -798,8 +798,10 @@ function PaymentHistoryRowCard({
           currencyPrecision={currencyPrecision}
           rows={payment.gateway_links.map((gatewayLink) => ({
             amount: undefined,
+            doctype: "VunaPOS Gateway Payment Link",
             label: gatewayLink.transaction_reference || gatewayLink.source_name,
             meta: `${gatewayLink.source_doctype} · ${gatewayLink.status}`,
+            recordName: gatewayLink.name,
           }))}
           title="Gateway payments"
         />
@@ -816,7 +818,13 @@ function HistoryAssociatedRows({
 }: {
   currency: string;
   currencyPrecision: number;
-  rows: { amount?: number; label: string; meta: string }[];
+  rows: {
+    amount?: number;
+    doctype: string;
+    label: string;
+    meta: string;
+    recordName?: string;
+  }[];
   title: string;
 }) {
   const { palette } = useAppearance();
@@ -839,9 +847,11 @@ function HistoryAssociatedRows({
           style={styles.historyAssociatedRow}
         >
           <View style={styles.reconciliationRowDetails}>
-            <Text style={[styles.customerMeta, { color: palette.onSurface }]}>
-              {row.label}
-            </Text>
+            <HistoryRecordLink
+              doctype={row.doctype}
+              label={row.label}
+              name={row.recordName || row.label}
+            />
             <Text
               style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
             >
@@ -855,6 +865,53 @@ function HistoryAssociatedRows({
           ) : null}
         </View>
       ))}
+    </View>
+  );
+}
+
+function HistoryRecordLink({
+  doctype,
+  name,
+  label = name,
+}: {
+  doctype: string;
+  label?: string;
+  name: string;
+}) {
+  const { error, isOpening, openRecord } = useErpNextRecord();
+  const { palette } = useAppearance();
+
+  return (
+    <View style={styles.historyRecordLink}>
+      <Pressable
+        accessibilityLabel={`Open ${doctype} ${name} in ERPNext`}
+        accessibilityRole="button"
+        disabled={isOpening}
+        onPress={() => void openRecord({ doctype, name })}
+        style={styles.historyRecordLinkButton}
+      >
+        <Text
+          style={[
+            styles.historyRecordLinkLabel,
+            { color: palette.primary, opacity: isOpening ? 0.5 : 1 },
+          ]}
+        >
+          {isOpening ? "Opening ERPNext…" : label}
+        </Text>
+        <MaterialCommunityIcons
+          color={palette.primary}
+          name="open-in-new"
+          size={15}
+        />
+      </Pressable>
+      {error ? (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.errorText, { color: palette.error }]}
+        >
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -2708,6 +2765,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
+  },
+  historyRecordLink: { gap: 2 },
+  historyRecordLinkButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: 4,
+  },
+  historyRecordLinkLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
   },
   historyHeader: {
     alignItems: "flex-start",
