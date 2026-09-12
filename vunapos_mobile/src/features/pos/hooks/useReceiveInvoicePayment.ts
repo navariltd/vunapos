@@ -8,6 +8,7 @@ import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
 export type ReceiveCustomerPaymentInput = {
   amount: number;
   customer: string;
+  gatewayPaymentLink?: string;
   invoice?: string;
   modeOfPayment: string;
   posProfile: string;
@@ -52,6 +53,9 @@ export function useReceiveCustomerPayment() {
         {
           amount: input.amount,
           customer: input.customer,
+          ...(input.gatewayPaymentLink
+            ? { gateway_payment_link: input.gatewayPaymentLink }
+            : {}),
           idempotency_key: idempotencyKey.current,
           mode_of_payment: input.modeOfPayment,
           pos_profile: input.posProfile,

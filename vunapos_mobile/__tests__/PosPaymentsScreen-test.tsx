@@ -1,9 +1,17 @@
-import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react-native";
 
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
 const mockUseReceiveCustomerPayment = jest.fn();
+const mockUseGatewayPayment = jest.fn();
+const mockUseGatewayPaymentRealtime = jest.fn();
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -25,6 +33,15 @@ jest.mock("@/features/pos/hooks/useReceiveInvoicePayment", () => ({
   useReceiveCustomerPayment: () => mockUseReceiveCustomerPayment(),
 }));
 
+jest.mock("@/features/pos/hooks/useGatewayPayment", () => ({
+  useGatewayPayment: () => mockUseGatewayPayment(),
+}));
+
+jest.mock("@/features/pos/hooks/useGatewayPaymentRealtime", () => ({
+  useGatewayPaymentRealtime: (onChange: unknown) =>
+    mockUseGatewayPaymentRealtime(onChange),
+}));
+
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
 
 describe("PosPaymentsScreen", () => {
@@ -32,6 +49,7 @@ describe("PosPaymentsScreen", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseGatewayPaymentRealtime.mockImplementation(() => undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUsePosCustomerDetails.mockReturnValue({
       data: null,
@@ -48,6 +66,16 @@ describe("PosPaymentsScreen", () => {
       error: null,
       isSubmitting: false,
       receive: jest.fn(),
+    });
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate: jest.fn(),
+      isWorking: false,
+      searchC2B: jest.fn(),
     });
   });
 
@@ -305,5 +333,232 @@ describe("PosPaymentsScreen", () => {
     expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
       "",
     );
+  });
+
+  it("requires a verified gateway link before submitting a gateway payment", async () => {
+    const initiate = jest.fn().mockResolvedValue({
+      amount: 58,
+      mode_of_payment: "M-Pesa",
+      name: "GPL-001",
+      status: "Pending",
+    });
+    const receive = jest.fn().mockResolvedValue({ name: "ACC-PAY-0002" });
+    let gatewayRealtimeHandler:
+      ((payment: { name: string; status: string }) => void) | undefined;
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate,
+      isWorking: false,
+      searchC2B: jest.fn(),
+    });
+    mockUseReceiveCustomerPayment.mockReturnValue({
+      error: null,
+      isSubmitting: false,
+      receive,
+    });
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [
+        {
+          customer: "CUST-001",
+          customerName: "Example customer",
+          mobile: "0712345678",
+        },
+      ],
+    });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            currency: "KES",
+            is_return: false,
+            name: "SINV-0001",
+            outstanding_amount: 58,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    mockUseGatewayPaymentRealtime.mockImplementation((handler) => {
+      gatewayRealtimeHandler = handler as (payment: {
+        name: string;
+        status: string;
+      }) => void;
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={false}
+        allowReceive
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[
+          { mode_of_payment: "M-Pesa", payment_gateway: "M-Pesa" },
+        ]}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select payment customer Example customer",
+      }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Apply payment to SINV-0001" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Send STK payment request" }),
+    );
+
+    await waitFor(() =>
+      expect(initiate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          amount: 58,
+          customer: "CUST-001",
+          modeOfPayment: "M-Pesa",
+          phoneNumber: "0712345678",
+        }),
+      ),
+    );
+    expect(
+      screen.getByLabelText("Submit customer payment").props.accessibilityState,
+    ).toEqual({ disabled: true });
+
+    await act(async () => {
+      gatewayRealtimeHandler?.({ name: "GPL-001", status: "Paid" });
+    });
+    await waitFor(() => expect(screen.getByText("Paid")).toBeTruthy());
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Submit customer payment" }),
+    );
+
+    expect(receive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 58,
+        gatewayPaymentLink: "GPL-001",
+        invoice: "SINV-0001",
+        modeOfPayment: "M-Pesa",
+      }),
+    );
+  });
+
+  it("finds and attaches only an exact-amount C2B payment", async () => {
+    const attachC2B = jest.fn().mockResolvedValue({
+      amount: 58,
+      mode_of_payment: "M-Pesa",
+      name: "GPL-002",
+      status: "Paid",
+    });
+    const searchC2B = jest.fn().mockResolvedValue([
+      {
+        amount: 58,
+        currency: "KES",
+        name: "C2B-001",
+        party_name: "Example payer",
+        transaction_id: "TXN-001",
+      },
+    ]);
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B,
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate: jest.fn(),
+      isWorking: false,
+      searchC2B,
+    });
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [
+        {
+          customer: "CUST-001",
+          customerName: "Example customer",
+        },
+      ],
+    });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            currency: "KES",
+            is_return: false,
+            name: "SINV-0001",
+            outstanding_amount: 58,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={false}
+        allowReceive
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[
+          { mode_of_payment: "M-Pesa", payment_gateway: "M-Pesa" },
+        ]}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select payment customer Example customer",
+      }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Apply payment to SINV-0001" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("radio", { name: "Find C2B payment" }),
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Search C2B payments"),
+      "TXN-001",
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Search incoming C2B payments" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Attach C2B payment TXN-001" }),
+      ).toBeTruthy(),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Attach C2B payment TXN-001" }),
+    );
+
+    expect(searchC2B).toHaveBeenCalledWith({
+      currency: "KES",
+      customer: "CUST-001",
+      modeOfPayment: "M-Pesa",
+      posProfile: "POS-001",
+      query: "TXN-001",
+    });
+    expect(attachC2B).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 58,
+        customer: "CUST-001",
+        modeOfPayment: "M-Pesa",
+        transactionReference: "TXN-001",
+      }),
+    );
+    await waitFor(() => expect(screen.getByText("Paid")).toBeTruthy());
   });
 });
