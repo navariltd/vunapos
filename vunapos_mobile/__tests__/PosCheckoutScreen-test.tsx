@@ -83,7 +83,7 @@ describe('PosCheckoutScreen', () => {
     });
     mockUsePosCustomerLoyalty.mockReturnValue({ data: null, error: null, isLoading: false });
     mockUsePosCustomerShippingAddresses.mockReturnValue({ data: null, error: null, isLoading: false });
-    mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, submit });
+    mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: false, salespersonTokenExpired: false, submit });
     mockUseInvoiceReceipt.mockReturnValue({ error: null, isWorking: false, printReceipt, shareReceipt: jest.fn() });
     mockUseGatewayPayment.mockReturnValue({
       attachC2B: jest.fn(),
@@ -341,7 +341,7 @@ describe('PosCheckoutScreen', () => {
     await fireEvent.press(screen.getByLabelText('Complete sale'));
     await fireEvent.press(screen.getByLabelText('Confirm sales invoice submission'));
 
-    mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: true, submit });
+    mockUseSubmitPosCheckout.mockReturnValue({ clearError, error: null, isSubmitting: true, salespersonTokenExpired: false, submit });
     await screen.rerender(<PosCheckoutScreen {...props} />);
 
     expect(screen.getByText('Submitting sales invoice…')).toBeTruthy();

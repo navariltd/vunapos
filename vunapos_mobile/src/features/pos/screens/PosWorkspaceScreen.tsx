@@ -175,6 +175,7 @@ export function PosWorkspaceScreen() {
             setCartVisible(false);
             setSelectedInvoice({ doctype: result.doctype, name: result.name });
           }}
+          onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}
           priceList={selectedPriceList}
           saleCustomer={saleCustomer}

@@ -194,10 +194,12 @@ export function useSubmitPosCheckout() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [salespersonTokenExpired, setSalespersonTokenExpired] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
   function clearError() {
     setError(null);
+    setSalespersonTokenExpired(false);
   }
 
   function cashierError(requestError: unknown) {
@@ -302,6 +304,13 @@ export function useSubmitPosCheckout() {
       idempotencyKey.current = createIdempotencyKey();
       return result;
     } catch (requestError) {
+      const errorText =
+        requestError instanceof Error ? requestError.message.toLowerCase() : "";
+      if (
+        errorText.includes("salesperson token") &&
+        (errorText.includes("expired") || errorText.includes("invalid"))
+      )
+        setSalespersonTokenExpired(true);
       if (
         requestError instanceof FrappeClientError &&
         requestError.code === "session"
@@ -315,5 +324,5 @@ export function useSubmitPosCheckout() {
     }
   }
 
-  return { clearError, error, isSubmitting, submit };
+  return { clearError, error, isSubmitting, salespersonTokenExpired, submit };
 }
