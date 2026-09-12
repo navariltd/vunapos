@@ -105,6 +105,9 @@ export function PosHomeScreen({
   const currency = bootstrap.data?.pos_profile.currency || "KES";
   const currencyPrecision = bootstrap.data?.pos_profile.currency_precision ?? 2;
   const hideImages = Boolean(bootstrap.data?.pos_profile.hide_images);
+  const hideUnavailableItems = Boolean(
+    bootstrap.data?.pos_profile.hide_unavailable_items,
+  );
   const barcodeScan = usePosBarcodeScan({
     customer: pricingContext?.customer,
     posProfile: bootstrap.data?.pos_profile.name,
@@ -148,6 +151,10 @@ export function PosHomeScreen({
     [],
   );
 
+  const visibleItems = hideUnavailableItems
+    ? items.filter((item) => !isOutOfStock(item))
+    : items;
+
   const addItem = useCallback(
     async (item: PosCatalogueItem): Promise<boolean> => {
       if (pendingItemCode) return false;
@@ -184,7 +191,7 @@ export function PosHomeScreen({
 
   useEffect(() => {
     const searchTerm = searchQuery.trim();
-    const candidate = items.length === 1 ? items[0] : null;
+    const candidate = visibleItems.length === 1 ? visibleItems[0] : null;
     const searchKey = candidate
       ? `${searchTerm}:${candidate.item_code}:${pricingContext?.customer || ""}:${pricingContext?.priceList || ""}`
       : null;
@@ -205,7 +212,7 @@ export function PosHomeScreen({
     addItem,
     bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart,
     itemSearch.isLoading,
-    items,
+    visibleItems,
     pendingItemCode,
     pricingContext?.customer,
     pricingContext?.priceList,
@@ -306,7 +313,7 @@ export function PosHomeScreen({
       <FlatList
         columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
-        data={items}
+        data={visibleItems}
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
         ListEmptyComponent={

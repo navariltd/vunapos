@@ -214,6 +214,7 @@ export type PosBootstrapData = {
     allowed_price_lists?: PosPriceList[];
     enable_salesperson_pin?: boolean;
     hide_images?: boolean;
+    hide_unavailable_items?: boolean;
     pin_users?: PosPinUser[];
     require_pin_before_every_sale?: boolean;
     require_manager_pin_item_removal?: boolean;
