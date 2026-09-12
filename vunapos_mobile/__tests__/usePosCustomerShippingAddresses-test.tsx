@@ -3,6 +3,8 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react-native';
 jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({ useNetworkStatus: () => mockUseNetworkStatus() }));
 
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
@@ -19,6 +21,7 @@ const mockUseAppSession = jest.mocked(useAppSession);
 describe('POS customer shipping-address hook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
 
@@ -36,5 +39,13 @@ describe('POS customer shipping-address hook', () => {
       limit: 100,
       pos_profile: 'POS-001',
     }, expect.any(AbortSignal));
+  });
+
+  it('does not request customer addresses while offline', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    const hook = await renderHook(() => usePosCustomerShippingAddresses('CUST-001', 'POS-001'));
+
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(hook.result.current.isLoading).toBe(false);
   });
 });

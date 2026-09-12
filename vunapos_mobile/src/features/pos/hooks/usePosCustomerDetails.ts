@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerDetails } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -22,13 +23,15 @@ type UsePosCustomerDetailsArgs = {
 /** Fetches only the permission-filtered customer profile exposed by VunaPOS. */
 export function usePosCustomerDetails({ customer, posProfile }: UsePosCustomerDetailsArgs): PosCustomerDetailsState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const requestKey = companyUrl && sessionId && posProfile && customer
+  const { connectionStatus } = useNetworkStatus();
+  const activeKey = companyUrl && sessionId && posProfile && customer
     ? JSON.stringify({ companyUrl, customer, posProfile, sessionId })
     : null;
+  const requestKey = connectionStatus === 'offline' ? null : activeKey;
   const [state, setState] = useState<PosCustomerDetailsRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
-    if (!companyUrl || !sessionId || !posProfile || !customer) {
+    if (!companyUrl || !sessionId || !posProfile || !customer || !requestKey) {
       return;
     }
 
@@ -51,9 +54,14 @@ export function usePosCustomerDetails({ customer, posProfile }: UsePosCustomerDe
     return () => controller.abort();
   }, [companyUrl, customer, invalidateSession, posProfile, requestKey, sessionId]);
 
-  if (!requestKey) {
+  if (!activeKey) {
     return { data: null, error: null, isLoading: false };
   }
 
-  return { ...state, error: state.requestKey === requestKey ? state.error : null, isLoading: state.requestKey !== requestKey };
+  return {
+    ...state,
+    data: state.requestKey === activeKey ? state.data : null,
+    error: state.requestKey === activeKey ? state.error : null,
+    isLoading: Boolean(requestKey) && state.requestKey !== activeKey,
+  };
 }

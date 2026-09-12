@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosReceivedPayment } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
 
@@ -21,11 +22,16 @@ function createIdempotencyKey() {
 /** Submits one invoice allocation at a time with a stable retry-safe key. */
 export function useReceiveInvoicePayment() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
   async function receive(input: ReceiveInvoicePaymentInput): Promise<PosReceivedPayment | null> {
+    if (connectionStatus === 'offline') {
+      setError('Connection unavailable. Reconnect before receiving a payment.');
+      return null;
+    }
     if (!companyUrl || !sessionId) {
       setError('Your session is no longer available. Sign in again to continue.');
       return null;

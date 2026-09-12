@@ -9,6 +9,7 @@ import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoi
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { usePosInvoiceDetails } from "@/features/pos/hooks/usePosInvoiceDetails";
 import {
   PosInvoiceDetail,
@@ -127,6 +128,8 @@ export function PosInvoiceDetailsScreen({
   onOpenReturn,
   onStartSale,
 }: PosInvoiceDetailsScreenProps) {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
   const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
@@ -291,6 +294,7 @@ export function PosInvoiceDetailsScreen({
           <View style={styles.customerActions}>
             <Pressable
               accessibilityLabel="View customer"
+              disabled={isOffline}
               onPress={() => onOpenCustomer(invoiceCustomer)}
               style={styles.customerButton}
             >
@@ -299,6 +303,7 @@ export function PosInvoiceDetailsScreen({
             {canReceivePayment ? (
               <Pressable
                 accessibilityLabel="Receive payment"
+                disabled={isOffline}
                 onPress={() => setPaymentSheetVisible(true)}
                 style={styles.customerButton}
               >
@@ -307,6 +312,7 @@ export function PosInvoiceDetailsScreen({
             ) : null}
             <Pressable
               accessibilityLabel="Start new sale"
+              disabled={isOffline}
               onPress={() =>
                 onStartSale({
                   customer: invoiceCustomer,

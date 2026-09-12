@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerLoyalty } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -17,7 +18,9 @@ type PosCustomerLoyaltyRequestState = Omit<PosCustomerLoyaltyState, 'isLoading'>
 /** Fetches the customer's live loyalty balance and redemption conversion from ERPNext. */
 export function usePosCustomerLoyalty(customer: string | undefined, posProfile: string | undefined, enabled = true): PosCustomerLoyaltyState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const requestKey = enabled && companyUrl && sessionId && customer && posProfile ? `${companyUrl}:${sessionId}:${posProfile}:${customer}` : null;
+  const { connectionStatus } = useNetworkStatus();
+  const activeKey = companyUrl && sessionId && customer && posProfile ? `${companyUrl}:${sessionId}:${posProfile}:${customer}` : null;
+  const requestKey = enabled && connectionStatus !== 'offline' ? activeKey : null;
   const [state, setState] = useState<PosCustomerLoyaltyRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
@@ -39,6 +42,11 @@ export function usePosCustomerLoyalty(customer: string | undefined, posProfile: 
     return () => controller.abort();
   }, [companyUrl, customer, enabled, invalidateSession, posProfile, requestKey, sessionId]);
 
-  if (!requestKey) return { data: null, error: null, isLoading: false };
-  return { ...state, error: state.requestKey === requestKey ? state.error : null, isLoading: state.requestKey !== requestKey };
+  if (!activeKey) return { data: null, error: null, isLoading: false };
+  return {
+    ...state,
+    data: state.requestKey === activeKey ? state.data : null,
+    error: state.requestKey === activeKey ? state.error : null,
+    isLoading: Boolean(requestKey) && state.requestKey !== activeKey,
+  };
 }

@@ -3,6 +3,8 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react-native
 jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({ useNetworkStatus: () => mockUseNetworkStatus() }));
 
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
@@ -20,6 +22,7 @@ const invalidateSession = jest.fn();
 describe('useReceiveInvoicePayment', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     mockUseAppSession.mockReturnValue({
       companyUrl: 'https://vuna.example.com',
       invalidateSession,
@@ -59,6 +62,18 @@ describe('useReceiveInvoicePayment', () => {
       sales_invoice: 'SINV-0001',
     });
     expect(hook.result.current).toMatchObject({ error: null, isSubmitting: false });
+  });
+
+  it('does not submit a customer payment while offline', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    const hook = await renderHook(() => useReceiveInvoicePayment());
+
+    await act(async () => {
+      await hook.result.current.receive({ amount: 150, customer: 'CUST-001', invoice: 'SINV-0001', modeOfPayment: 'Cash', posProfile: 'POS-001' });
+    });
+
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(hook.result.current.error).toBe('Connection unavailable. Reconnect before receiving a payment.');
   });
 
   it('shows request errors instead of claiming a payment was received', async () => {

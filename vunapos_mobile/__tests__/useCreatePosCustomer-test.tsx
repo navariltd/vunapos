@@ -1,6 +1,8 @@
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react-native';
 
 jest.mock('@/features/auth/AppSessionProvider', () => ({ useAppSession: jest.fn() }));
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({ useNetworkStatus: () => mockUseNetworkStatus() }));
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   postVunaMethod: jest.fn(),
@@ -16,6 +18,7 @@ const mockUseAppSession = jest.mocked(useAppSession);
 describe('useCreatePosCustomer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
 
@@ -42,5 +45,15 @@ describe('useCreatePosCustomer', () => {
 
     expect(mockPostVunaMethod).not.toHaveBeenCalled();
     await waitFor(() => expect(hook.result.current.error).toBe('Enter a customer name.'));
+  });
+
+  it('does not create a customer while offline', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    const hook = await renderHook(() => useCreatePosCustomer());
+
+    await act(async () => { await hook.result.current.create('Acme Stores', 'POS-001'); });
+
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(hook.result.current.error).toBe('Connection unavailable. Reconnect before creating a customer.');
   });
 });

@@ -16,6 +16,7 @@ import { Text } from "react-native-paper";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
@@ -146,6 +147,8 @@ export function PosCheckoutScreen({
   sourceInvoice,
   subtotal,
 }: PosCheckoutScreenProps) {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -702,6 +705,12 @@ export function PosCheckoutScreen({
   }
 
   async function applyLoyaltyPoints(points: number) {
+    if (isOffline) {
+      setLoyaltyError(
+        "Connection unavailable. Reconnect before redeeming loyalty points.",
+      );
+      return;
+    }
     if (points < 0 || points > maximumLoyaltyPoints) {
       setLoyaltyError(
         `Enter between 1 and ${maximumLoyaltyPoints.toLocaleString()} points.`,
@@ -1172,6 +1181,7 @@ export function PosCheckoutScreen({
           <View style={styles.loyaltyInputRow}>
             <TextInput
               accessibilityLabel="Loyalty points to redeem"
+              editable={!isOffline}
               inputMode="numeric"
               keyboardType="number-pad"
               onChangeText={setLoyaltyInput}
@@ -1182,11 +1192,11 @@ export function PosCheckoutScreen({
             />
             <Pressable
               accessibilityLabel="Redeem maximum loyalty points"
-              disabled={!maximumLoyaltyPoints || isApplyingLoyalty}
+              disabled={isOffline || !maximumLoyaltyPoints || isApplyingLoyalty}
               onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
               style={[
                 styles.secondaryButton,
-                (!maximumLoyaltyPoints || isApplyingLoyalty) &&
+                (isOffline || !maximumLoyaltyPoints || isApplyingLoyalty) &&
                   styles.secondaryButtonDisabled,
               ]}
             >
@@ -1197,14 +1207,16 @@ export function PosCheckoutScreen({
               disabled={
                 Boolean(loyaltyInputError) ||
                 !loyaltyInputPoints ||
-                isApplyingLoyalty
+                isApplyingLoyalty ||
+                isOffline
               }
               onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
               style={[
                 styles.secondaryButton,
                 (Boolean(loyaltyInputError) ||
                   !loyaltyInputPoints ||
-                  isApplyingLoyalty) &&
+                  isApplyingLoyalty ||
+                  isOffline) &&
                   styles.secondaryButtonDisabled,
               ]}
             >
@@ -1241,7 +1253,7 @@ export function PosCheckoutScreen({
               </Text>
               <Pressable
                 accessibilityLabel="Remove loyalty redemption"
-                disabled={isApplyingLoyalty}
+                disabled={isOffline || isApplyingLoyalty}
                 onPress={() => void applyLoyaltyPoints(0)}
               >
                 <Text style={styles.loyaltyRemoveLabel}>Remove</Text>
@@ -1330,11 +1342,11 @@ export function PosCheckoutScreen({
           <Text style={styles.cardTitle}>Shipping address</Text>
           <Pressable
             accessibilityLabel="Choose shipping address"
-            disabled={customerShippingAddresses.isLoading}
+            disabled={isOffline || customerShippingAddresses.isLoading}
             onPress={() => setIsShippingAddressPickerVisible(true)}
             style={[
               styles.shippingAddressSelector,
-              customerShippingAddresses.isLoading &&
+              (isOffline || customerShippingAddresses.isLoading) &&
                 styles.secondaryButtonDisabled,
             ]}
           >
@@ -1952,6 +1964,7 @@ export function PosCheckoutScreen({
               return (
                 <Pressable
                   accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                  disabled={isOffline}
                   accessibilityState={{ selected }}
                   key={address.name}
                   onPress={() => {

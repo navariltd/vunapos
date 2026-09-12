@@ -3,6 +3,8 @@ import { cleanup, renderHook, waitFor } from '@testing-library/react-native';
 jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({ useNetworkStatus: () => mockUseNetworkStatus() }));
 
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
@@ -20,6 +22,7 @@ const invalidateSession = jest.fn();
 describe('usePosCustomerDetails', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     mockUseAppSession.mockReturnValue({
       companyUrl: 'https://vuna.example.com',
       invalidateSession,
@@ -60,5 +63,37 @@ describe('usePosCustomerDetails', () => {
 
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(hook.result.current).toEqual({ data: null, error: null, isLoading: false });
+  });
+
+  it('does not request customer details while offline', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    const hook = await renderHook(() => usePosCustomerDetails({ customer: 'CUST-001', posProfile: 'POS-001' }));
+
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it('keeps previously loaded customer details readable when connectivity is lost', async () => {
+    const details = {
+      as_of: '2026-09-07 10:00:00',
+      balance: 0,
+      customer: { customer: 'CUST-001', customer_name: 'Example customer' },
+      loyalty: null,
+    };
+    mockGetVunaMethod.mockResolvedValue(details);
+    const hook = await renderHook<
+      ReturnType<typeof usePosCustomerDetails>,
+      { customer: string; posProfile: string }
+    >(
+      (props) => usePosCustomerDetails(props),
+      { initialProps: { customer: 'CUST-001', posProfile: 'POS-001' } },
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(details));
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    await hook.rerender({ customer: 'CUST-001', posProfile: 'POS-001' });
+
+    expect(hook.result.current.data).toEqual(details);
+    expect(hook.result.current.isLoading).toBe(false);
   });
 });

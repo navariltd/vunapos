@@ -6,6 +6,7 @@ import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { PosCustomerAddress, PosSaleCustomer } from "@/features/pos/types";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCustomerDetailsScreenProps = {
@@ -75,6 +76,8 @@ export function PosCustomerDetailsScreen({
   onBack,
   onStartSale,
 }: PosCustomerDetailsScreenProps) {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const bootstrap = usePosBootstrap();
   const details = usePosCustomerDetails({
     customer,
@@ -180,6 +183,7 @@ export function PosCustomerDetailsScreen({
 
       <Pressable
         accessibilityLabel="Start new sale"
+        disabled={isOffline}
         onPress={() =>
           onStartSale({
             customer: profile.customer,
@@ -189,7 +193,7 @@ export function PosCustomerDetailsScreen({
             taxId: profile.tax_id,
           })
         }
-        style={styles.startSaleButton}
+        style={[styles.startSaleButton, isOffline && styles.actionDisabled]}
       >
         <Text style={styles.startSaleButtonLabel}>Start new sale</Text>
       </Pressable>
@@ -198,6 +202,7 @@ export function PosCustomerDetailsScreen({
 }
 
 const styles = StyleSheet.create({
+  actionDisabled: { opacity: 0.5 },
   backButton: {
     borderColor: posDarkColors.border,
     borderRadius: radii.md,

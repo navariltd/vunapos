@@ -109,6 +109,7 @@ export function PosWorkspaceScreen() {
   }
 
   function startSale(customer: PosSaleCustomer) {
+    if (isOffline) return;
     cart.clear();
     setSelectedPriceList(undefined);
     setSaleCustomer(customer);
