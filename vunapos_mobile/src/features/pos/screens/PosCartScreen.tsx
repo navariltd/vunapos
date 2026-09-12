@@ -1291,6 +1291,10 @@ export function PosCartScreen({
           ) : null}
           {error ? (
             <View style={styles.errorState}>
+              <Text style={styles.errorText}>
+                Could not refresh current pricing, tax, and stock. Your existing
+                cart has been kept.
+              </Text>
               <Text style={styles.errorText}>{error}</Text>
               <Pressable
                 accessibilityLabel="Retry updating cart"
