@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { PaymentInput } from "@/features/pos/paymentAllocation";
 import {
   PosCartItem,
@@ -59,13 +60,14 @@ function createIdempotencyKey() {
 /** Fetches server-calculated invoice totals before a cashier allocates payment. */
 export function usePosCheckoutPreview(input: PreviewInput | null) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const hasInput = Boolean(input);
   const customer = input?.customer;
   const loyaltyPoints = input?.loyaltyPoints;
   const posProfile = input?.posProfile;
   const priceList = input?.priceList;
   const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : "";
-  const requestKey =
+  const activeKey =
     hasInput && companyUrl && sessionId && posProfile && input?.items.length
       ? JSON.stringify({
           companyUrl,
@@ -77,6 +79,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
           sessionId,
         })
       : null;
+  const requestKey = connectionStatus === "offline" ? null : activeKey;
   const [state, setState] = useState<{
     data: PosCheckoutPreview | null;
     error: string | null;
@@ -85,6 +88,10 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
 
   const previewLoyalty = useCallback(
     async (points: number): Promise<PosCheckoutPreview> => {
+      if (connectionStatus === "offline")
+        throw new Error(
+          "Connection unavailable. Reconnect before updating loyalty points.",
+        );
       if (!companyUrl || !sessionId || !posProfile || !itemsPayload) {
         throw new Error(
           "Your session is no longer available. Sign in again to continue.",
@@ -114,6 +121,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
     },
     [
       companyUrl,
+      connectionStatus,
       customer,
       invalidateSession,
       itemsPayload,
@@ -182,9 +190,9 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   ]);
 
   return {
-    data: state.key === requestKey ? state.data : null,
-    error: state.key === requestKey ? state.error : null,
-    isLoading: Boolean(requestKey && state.key !== requestKey),
+    data: state.key === activeKey ? state.data : null,
+    error: state.key === activeKey ? state.error : null,
+    isLoading: Boolean(requestKey && state.key !== activeKey),
     previewLoyalty,
   };
 }
@@ -192,6 +200,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
 /** Submits an online-only sale with one stable idempotency key per checkout attempt. */
 export function useSubmitPosCheckout() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [salespersonTokenExpired, setSalespersonTokenExpired] = useState(false);
@@ -226,6 +235,10 @@ export function useSubmitPosCheckout() {
   }
 
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
+    if (connectionStatus === "offline") {
+      setError("Connection unavailable. Reconnect before submitting this sale.");
+      return null;
+    }
     if (!companyUrl || !sessionId || !input.posProfile) {
       setError(
         "Your session is no longer available. Sign in again to continue.",

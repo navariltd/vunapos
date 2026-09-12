@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { io } from 'socket.io-client';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosGatewayPaymentLink } from '@/features/pos/types';
 
 export const GATEWAY_PAYMENT_EVENT = 'vunapos_gateway_payment_changed';
@@ -20,9 +21,10 @@ export function getGatewayRealtimeConnection(companyUrl: string) {
 /** Listens only for gateway-link changes delivered to the signed-in cashier. */
 export function useGatewayPaymentRealtime(onChange: (payment: PosGatewayPaymentLink) => void) {
   const { companyUrl, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
 
   useEffect(() => {
-    if (!companyUrl || !sessionId) return;
+    if (connectionStatus === 'offline' || !companyUrl || !sessionId) return;
     const connection = getGatewayRealtimeConnection(companyUrl);
     const socket = io(connection.url, {
       extraHeaders: {
@@ -39,5 +41,5 @@ export function useGatewayPaymentRealtime(onChange: (payment: PosGatewayPaymentL
       socket.off(GATEWAY_PAYMENT_EVENT, onChange);
       socket.disconnect();
     };
-  }, [companyUrl, onChange, sessionId]);
+  }, [companyUrl, connectionStatus, onChange, sessionId]);
 }
