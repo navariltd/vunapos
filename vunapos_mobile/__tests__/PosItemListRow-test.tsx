@@ -64,4 +64,15 @@ describe("PosItemListRow", () => {
       expect.objectContaining({ is_product_bundle: true }),
     );
   });
+
+  it("shows an adding state that prevents duplicate add actions", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemListRow currency="KES" isAdding item={item} onAdd={onAdd} />,
+    );
+
+    expect(screen.getByLabelText("Adding Compact item")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Adding Compact item"));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
 });

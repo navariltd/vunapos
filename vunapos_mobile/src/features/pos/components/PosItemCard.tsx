@@ -1,5 +1,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, View } from "react-native";
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -11,6 +17,7 @@ type PosItemCardProps = {
   currency: string;
   currencyPrecision?: number;
   imageUrl?: string | null;
+  isAdding?: boolean;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
@@ -33,6 +40,7 @@ export function PosItemCard({
   currency,
   currencyPrecision = 2,
   imageUrl,
+  isAdding = false,
   item,
   onAdd,
 }: PosItemCardProps) {
@@ -58,7 +66,7 @@ export function PosItemCard({
             : "Adds this item to the cart"
         }
         accessibilityLabel={item.item_name}
-        disabled={outOfStock}
+        disabled={outOfStock || isAdding}
         onPress={() => onAdd(item)}
         style={[
           styles.previewArea,
@@ -134,25 +142,32 @@ export function PosItemCard({
             accessibilityHint={
               outOfStock
                 ? "This item is out of stock"
-                : "Adds this item to the cart"
+                : isAdding
+                  ? "This item is being added to the cart"
+                  : "Adds this item to the cart"
             }
-            accessibilityLabel={`Add ${item.item_name}`}
-            disabled={outOfStock}
+            accessibilityLabel={
+              isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
+            }
+            disabled={outOfStock || isAdding}
             onPress={() => onAdd(item)}
             style={[
               styles.addButton,
               {
-                backgroundColor: outOfStock
-                  ? palette.disabled
-                  : palette.primary,
+                backgroundColor:
+                  outOfStock || isAdding ? palette.disabled : palette.primary,
               },
             ]}
           >
-            <MaterialCommunityIcons
-              color={palette.onPrimary}
-              name="plus"
-              size={18}
-            />
+            {isAdding ? (
+              <ActivityIndicator color={palette.onPrimary} size="small" />
+            ) : (
+              <MaterialCommunityIcons
+                color={palette.onPrimary}
+                name="plus"
+                size={18}
+              />
+            )}
           </Pressable>
         </View>
       </View>

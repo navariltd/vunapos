@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -11,17 +17,25 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
+    isAdding,
     item,
     onAdd,
   }: {
     imageUrl?: string | null;
+    isAdding?: boolean;
     item: { item_name: string };
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
-      <Pressable accessibilityRole="button" onPress={() => onAdd(item)}>
-        <Text>{`Card: ${item.item_name}`}</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={isAdding}
+        onPress={() => onAdd(item)}
+      >
+        <Text>
+          {isAdding ? `Adding: ${item.item_name}` : `Card: ${item.item_name}`}
+        </Text>
         <Text>{`Image: ${imageUrl ?? "none"}`}</Text>
       </Pressable>
     );
@@ -31,15 +45,23 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
 jest.mock("@/features/pos/components/PosItemListRow", () => ({
   PosItemListRow: ({
     item,
+    isAdding,
     onAdd,
   }: {
     item: { item_name: string };
+    isAdding?: boolean;
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
-      <Pressable accessibilityRole="button" onPress={() => onAdd(item)}>
-        <Text>{`List: ${item.item_name}`}</Text>
+      <Pressable
+        accessibilityRole="button"
+        disabled={isAdding}
+        onPress={() => onAdd(item)}
+      >
+        <Text>
+          {isAdding ? `Adding: ${item.item_name}` : `List: ${item.item_name}`}
+        </Text>
       </Pressable>
     );
   },
@@ -188,6 +210,47 @@ describe("PosHomeScreen", () => {
     expect(screen.queryByText("Card: List catalogue item")).toBeNull();
     await fireEvent.press(screen.getByText("List: List catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(item, "KES");
+  });
+
+  it("keeps the catalogue visible and explains when adding an item fails", async () => {
+    const item = {
+      actual_qty: 3,
+      item_code: "FAILED-001",
+      item_name: "Failed catalogue item",
+      rate: 150,
+    };
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [item],
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={async () => false}
+        onOpenCart={jest.fn()}
+        onPosProfileLoaded={onPosProfileLoaded}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.press(screen.getByText("Card: Failed catalogue item"));
+      await Promise.resolve();
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Could not add Failed catalogue item. Please try again.",
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByText("Card: Failed catalogue item")).toBeTruthy();
   });
 
   it("resolves relative Frappe item images against the saved company URL", async () => {

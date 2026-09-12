@@ -199,11 +199,15 @@ describe("usePosCart", () => {
     await act(async () => hook.result.current.add(item));
     mockGetVunaMethod.mockRejectedValueOnce(new Error("Network error"));
 
-    await act(async () => hook.result.current.updateQuantity("ITEM-001", 2));
+    let added = true;
+    await act(async () => {
+      added = await hook.result.current.add(item);
+    });
 
     await waitFor(() =>
       expect(hook.result.current.error).toBe("Network error"),
     );
+    expect(added).toBe(false);
     expect(hook.result.current.items).toEqual([
       expect.objectContaining({ qty: 1 }),
     ]);

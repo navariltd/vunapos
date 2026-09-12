@@ -235,7 +235,7 @@ export function usePosCart({
   async function add(
     item: PosCatalogueItem,
     cartCustomer = customerRef.current,
-  ) {
+  ): Promise<boolean> {
     const current = itemsRef.current;
     const existing = current.find(
       (cartItem) => cartItem.item_code === item.item_code,
@@ -247,7 +247,7 @@ export function usePosCart({
             : cartItem,
         )
       : [...current, toCartItem(item)];
-    await refresh(nextItems, cartCustomer);
+    return (await refresh(nextItems, cartCustomer)) !== null;
   }
 
   function clear() {

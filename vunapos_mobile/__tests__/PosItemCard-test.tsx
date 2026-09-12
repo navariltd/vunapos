@@ -66,4 +66,15 @@ describe("PosItemCard", () => {
       expect.objectContaining({ is_product_bundle: true }),
     );
   });
+
+  it("shows an adding state that prevents duplicate add actions", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemCard currency="KES" isAdding item={item} onAdd={onAdd} />,
+    );
+
+    expect(screen.getByLabelText("Adding Item with image")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Adding Item with image"));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
 });

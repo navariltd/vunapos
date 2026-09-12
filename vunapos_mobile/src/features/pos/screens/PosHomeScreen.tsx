@@ -44,7 +44,10 @@ function itemImageUrl(
 
 type PosHomeScreenProps = {
   cartItemCount: number;
-  onAddToCart: (item: PosCatalogueItem, currency: string) => void;
+  onAddToCart: (
+    item: PosCatalogueItem,
+    currency: string,
+  ) => Promise<boolean | void> | boolean | void;
   onOpenCart: () => void;
   onPosProfileLoaded: (bootstrap: PosBootstrapData) => void;
   pricingContext?: { customer?: string; priceList?: string };
@@ -63,6 +66,8 @@ export function PosHomeScreen({
   const { companyUrl } = useAppSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
+  const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
@@ -103,28 +108,49 @@ export function PosHomeScreen({
     reloadBootstrap();
   }, [refreshKey, reloadBootstrap]);
 
-  function addItem(item: PosCatalogueItem) {
-    const outOfStock =
+  function isOutOfStock(item: PosCatalogueItem) {
+    return (
       Boolean(item.is_stock_item) &&
+      !item.has_variants &&
+      !item.is_product_bundle &&
       !item.allow_negative_stock &&
-      Number(item.actual_qty || 0) <= 0;
-    if (outOfStock) return;
-    onAddToCart(item, currency);
+      Number(item.actual_qty || 0) <= 0
+    );
+  }
+
+  async function addItem(item: PosCatalogueItem): Promise<boolean> {
+    if (pendingItemCode) return false;
+    const outOfStock = isOutOfStock(item);
+    if (outOfStock) return false;
+
+    setAddError(null);
+    setPendingItemCode(item.item_code);
+    try {
+      const added = await onAddToCart(item, currency);
+      if (added === false) {
+        setAddError(`Could not add ${item.item_name}. Please try again.`);
+        return false;
+      }
+      return true;
+    } catch {
+      setAddError(`Could not add ${item.item_name}. Please try again.`);
+      return false;
+    } finally {
+      setPendingItemCode(null);
+    }
   }
 
   async function scanBarcode(barcode: string) {
     const result = await barcodeScan.resolve(barcode);
     if (!result.ok) return result.message;
     const item = result.item;
-    const outOfStock =
-      Boolean(item.is_stock_item) &&
-      !item.allow_negative_stock &&
-      Number(item.actual_qty || 0) <= 0;
+    const outOfStock = isOutOfStock(item);
     if (outOfStock)
       return `${item.item_name || item.item_code} is out of stock.`;
     setSearchQuery("");
-    onAddToCart(item, currency);
-    return null;
+    return (await addItem(item))
+      ? null
+      : `Could not add ${item.item_name || item.item_code}. Please try again.`;
   }
 
   const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) =>
@@ -132,6 +158,7 @@ export function PosHomeScreen({
       <PosItemListRow
         currency={currency}
         currencyPrecision={currencyPrecision}
+        isAdding={pendingItemCode === item.item_code}
         item={item}
         onAdd={addItem}
       />
@@ -140,6 +167,7 @@ export function PosHomeScreen({
         currency={currency}
         currencyPrecision={currencyPrecision}
         imageUrl={itemImageUrl(item.image, companyUrl)}
+        isAdding={pendingItemCode === item.item_code}
         item={item}
         onAdd={addItem}
       />
@@ -204,6 +232,11 @@ export function PosHomeScreen({
               onScanBarcode={() => setBarcodeScannerVisible(true)}
               value={searchQuery}
             />
+            {addError ? (
+              <Text style={[styles.addError, { color: palette.error }]}>
+                {addError}
+              </Text>
+            ) : null}
           </View>
         }
         numColumns={hideImages ? 1 : 2}
@@ -222,6 +255,12 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
+  addError: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
   content: {
     flex: 1,
     position: "relative",

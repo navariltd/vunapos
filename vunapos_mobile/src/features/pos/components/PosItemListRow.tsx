@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -10,6 +10,7 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosItemListRowProps = {
   currency: string;
   currencyPrecision?: number;
+  isAdding?: boolean;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
@@ -27,6 +28,7 @@ function taxLabel(item: PosCatalogueItem) {
 export function PosItemListRow({
   currency,
   currencyPrecision = 2,
+  isAdding = false,
   item,
   onAdd,
 }: PosItemListRowProps) {
@@ -41,17 +43,23 @@ export function PosItemListRow({
   return (
     <Pressable
       accessibilityHint={
-        outOfStock ? "This item is out of stock" : "Adds this item to the cart"
+        outOfStock
+          ? "This item is out of stock"
+          : isAdding
+            ? "This item is being added to the cart"
+            : "Adds this item to the cart"
       }
-      accessibilityLabel={`Add ${item.item_name}`}
-      disabled={outOfStock}
+      accessibilityLabel={
+        isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
+      }
+      disabled={outOfStock || isAdding}
       onPress={() => onAdd(item)}
       style={[
         styles.row,
         {
           backgroundColor: palette.surface,
           borderColor: palette.borderSubtle,
-          opacity: outOfStock ? 0.72 : 1,
+          opacity: outOfStock || isAdding ? 0.72 : 1,
         },
       ]}
     >
@@ -110,14 +118,21 @@ export function PosItemListRow({
       <View
         style={[
           styles.addButton,
-          { backgroundColor: outOfStock ? palette.disabled : palette.primary },
+          {
+            backgroundColor:
+              outOfStock || isAdding ? palette.disabled : palette.primary,
+          },
         ]}
       >
-        <MaterialCommunityIcons
-          color={palette.onPrimary}
-          name="plus"
-          size={19}
-        />
+        {isAdding ? (
+          <ActivityIndicator color={palette.onPrimary} size="small" />
+        ) : (
+          <MaterialCommunityIcons
+            color={palette.onPrimary}
+            name="plus"
+            size={19}
+          />
+        )}
       </View>
     </Pressable>
   );

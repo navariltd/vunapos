@@ -236,9 +236,9 @@ export function PosWorkspaceScreen() {
       ) : activeTab === "Home" ? (
         <PosHomeScreen
           cartItemCount={cart.itemCount}
-          onAddToCart={(item, currency) => {
+          onAddToCart={async (item, currency) => {
             setCartCurrency(currency);
-            void cart.add(item);
+            return cart.add(item);
           }}
           onOpenCart={() => setCartVisible(true)}
           onPosProfileLoaded={receivePosProfile}
