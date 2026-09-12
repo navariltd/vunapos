@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
   ListRenderItem,
@@ -125,6 +125,7 @@ export function PosHomeScreen({
     priceList: pricingContext?.priceList,
   });
   const handledRefreshKey = useRef(refreshKey);
+  const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
 
   useEffect(() => {
@@ -137,46 +138,79 @@ export function PosHomeScreen({
     reloadBootstrap();
   }, [refreshKey, reloadBootstrap]);
 
-  function isOutOfStock(item: PosCatalogueItem) {
-    return (
+  const isOutOfStock = useCallback(
+    (item: PosCatalogueItem) =>
       Boolean(item.is_stock_item) &&
       !item.has_variants &&
       !item.is_product_bundle &&
       !item.allow_negative_stock &&
-      Number(item.actual_qty || 0) <= 0
-    );
-  }
+      Number(item.actual_qty || 0) <= 0,
+    [],
+  );
 
-  async function addItem(item: PosCatalogueItem): Promise<boolean> {
-    if (pendingItemCode) return false;
-    if (item.has_variants) {
-      setVariantActionError(null);
-      setVariantTemplate(item);
-      return true;
-    }
-    if (item.is_product_bundle) {
-      setBundleItem(item);
-      return true;
-    }
-    const outOfStock = isOutOfStock(item);
-    if (outOfStock) return false;
+  const addItem = useCallback(
+    async (item: PosCatalogueItem): Promise<boolean> => {
+      if (pendingItemCode) return false;
+      if (item.has_variants) {
+        setVariantActionError(null);
+        setVariantTemplate(item);
+        return true;
+      }
+      if (item.is_product_bundle) {
+        setBundleItem(item);
+        return true;
+      }
+      const outOfStock = isOutOfStock(item);
+      if (outOfStock) return false;
 
-    setAddError(null);
-    setPendingItemCode(item.item_code);
-    try {
-      const added = await onAddToCart(item, currency);
-      if (added === false) {
+      setAddError(null);
+      setPendingItemCode(item.item_code);
+      try {
+        const added = await onAddToCart(item, currency);
+        if (added === false) {
+          setAddError(`Could not add ${item.item_name}. Please try again.`);
+          return false;
+        }
+        return true;
+      } catch {
         setAddError(`Could not add ${item.item_name}. Please try again.`);
         return false;
+      } finally {
+        setPendingItemCode(null);
       }
-      return true;
-    } catch {
-      setAddError(`Could not add ${item.item_name}. Please try again.`);
-      return false;
-    } finally {
-      setPendingItemCode(null);
+    },
+    [currency, isOutOfStock, onAddToCart, pendingItemCode],
+  );
+
+  useEffect(() => {
+    const searchTerm = searchQuery.trim();
+    const candidate = items.length === 1 ? items[0] : null;
+    const searchKey = candidate
+      ? `${searchTerm}:${candidate.item_code}:${pricingContext?.customer || ""}:${pricingContext?.priceList || ""}`
+      : null;
+    if (
+      !bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart ||
+      !searchTerm ||
+      !candidate ||
+      itemSearch.isLoading ||
+      pendingItemCode ||
+      autoAddedSearchKey.current === searchKey
+    ) {
+      if (!searchTerm || !candidate) autoAddedSearchKey.current = null;
+      return;
     }
-  }
+    autoAddedSearchKey.current = searchKey;
+    void addItem(candidate);
+  }, [
+    addItem,
+    bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart,
+    itemSearch.isLoading,
+    items,
+    pendingItemCode,
+    pricingContext?.customer,
+    pricingContext?.priceList,
+    searchQuery,
+  ]);
 
   async function selectVariant(variant: PosTemplateVariant) {
     setVariantActionError(null);

@@ -68,9 +68,20 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
 }));
 
 jest.mock("@/features/pos/components/PosItemSearch", () => ({
-  PosItemSearch: () => {
-    const { Text } = require("react-native");
-    return <Text>Search items</Text>;
+  PosItemSearch: ({
+    onChangeText,
+  }: {
+    onChangeText: (value: string) => void;
+  }) => {
+    const { Pressable, Text } = require("react-native");
+    return (
+      <Pressable
+        accessibilityLabel="Search for one item"
+        onPress={() => onChangeText("one")}
+      >
+        <Text>Search items</Text>
+      </Pressable>
+    );
   },
 }));
 
@@ -313,6 +324,50 @@ describe("PosHomeScreen", () => {
       ).toBeTruthy(),
     );
     expect(screen.getByText("Card: Failed catalogue item")).toBeTruthy();
+  });
+
+  it("automatically adds the sole filtered item only when the POS profile enables it", async () => {
+    const item = {
+      actual_qty: 3,
+      item_code: "AUTO-001",
+      item_name: "Only result",
+      rate: 150,
+    };
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [],
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: {
+          automatically_add_filtered_item_to_cart: true,
+          currency: "KES",
+          name: "POS-001",
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    mockUsePosItemSearch.mockReturnValue({
+      error: null,
+      hasLoaded: true,
+      isLoading: false,
+      items: [item],
+    });
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onPosProfileLoaded={onPosProfileLoaded}
+      />,
+    );
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Search for one item"));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(onAddToCart).toHaveBeenCalledWith(item, "KES"));
+    expect(onAddToCart).toHaveBeenCalledTimes(1);
   });
 
   it("fetches and adds a concrete variant instead of adding its template", async () => {

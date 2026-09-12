@@ -203,6 +203,7 @@ export type PosBootstrapData = {
     allow_rate_change?: boolean;
     allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
+    automatically_add_filtered_item_to_cart?: boolean;
     currency?: string;
     currency_precision?: number;
     delivery_charge_item?: string | null;
