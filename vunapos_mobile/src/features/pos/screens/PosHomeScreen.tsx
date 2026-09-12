@@ -132,6 +132,7 @@ export function PosHomeScreen({
   const handledRefreshKey = useRef(refreshKey);
   const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
+  const reloadCatalogue = itemSearch.reload;
 
   useEffect(() => {
     if (bootstrap.data) onPosProfileLoaded(bootstrap.data);
@@ -141,7 +142,8 @@ export function PosHomeScreen({
     if (handledRefreshKey.current === refreshKey) return;
     handledRefreshKey.current = refreshKey;
     reloadBootstrap();
-  }, [refreshKey, reloadBootstrap]);
+    reloadCatalogue();
+  }, [refreshKey, reloadBootstrap, reloadCatalogue]);
 
   const isOutOfStock = useCallback(
     (item: PosCatalogueItem) =>
