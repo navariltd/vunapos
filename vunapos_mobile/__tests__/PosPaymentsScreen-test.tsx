@@ -34,7 +34,8 @@ jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
 }));
 
 jest.mock("@/features/pos/hooks/usePosPaymentHistory", () => ({
-  usePosPaymentHistory: () => mockUsePosPaymentHistory(),
+  usePosPaymentHistory: (...args: unknown[]) =>
+    mockUsePosPaymentHistory(...args),
 }));
 
 jest.mock("@/features/pos/hooks/usePosPaymentReconciliationCandidates", () => ({
@@ -200,6 +201,16 @@ describe("PosPaymentsScreen", () => {
     expect(screen.getByText("KES 58.00")).toBeTruthy();
     expect(screen.getByText("KES 40.00")).toBeTruthy();
     expect(screen.getByText("KES 18.00")).toBeTruthy();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Filter payment history by customer ID"),
+      "CUST-001",
+    );
+    expect(mockUsePosPaymentHistory).toHaveBeenLastCalledWith(
+      "POS-001",
+      { customer: "CUST-001", fromDate: "", toDate: "" },
+      true,
+    );
   });
 
   it("explains when all payment operations are disabled", async () => {

@@ -11,17 +11,27 @@ type PaymentHistoryState = {
   isLoading: boolean;
 };
 
+export type PosPaymentHistoryFilters = {
+  customer?: string;
+  fromDate?: string;
+  toDate?: string;
+};
+
 type RequestState = Omit<PaymentHistoryState, "isLoading"> & {
   requestKey: string | null;
 };
 
 /** Loads submitted and cancelled VunaPOS Payment Entries for one POS Profile. */
-export function usePosPaymentHistory(posProfile?: string): PaymentHistoryState {
+export function usePosPaymentHistory(
+  posProfile?: string,
+  filters: PosPaymentHistoryFilters = {},
+  enabled = true,
+): PaymentHistoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const activeKey =
-    companyUrl && sessionId && posProfile
-      ? `${companyUrl}:${sessionId}:${posProfile}`
+    enabled && companyUrl && sessionId && posProfile
+      ? JSON.stringify({ companyUrl, filters, posProfile, sessionId })
       : null;
   const requestKey = connectionStatus === "offline" ? null : activeKey;
   const [state, setState] = useState<RequestState>({
@@ -38,7 +48,12 @@ export function usePosPaymentHistory(posProfile?: string): PaymentHistoryState {
       companyUrl,
       sessionId,
       "vunapos.api.payment.get_payment_history",
-      { pos_profile: posProfile },
+      {
+        ...(filters.customer ? { customer: filters.customer } : {}),
+        ...(filters.fromDate ? { from_date: filters.fromDate } : {}),
+        ...(filters.toDate ? { to_date: filters.toDate } : {}),
+        pos_profile: posProfile,
+      },
       controller.signal,
     )
       .then((data) => setState({ data, error: null, requestKey }))
@@ -61,7 +76,16 @@ export function usePosPaymentHistory(posProfile?: string): PaymentHistoryState {
         });
       });
     return () => controller.abort();
-  }, [companyUrl, invalidateSession, posProfile, requestKey, sessionId]);
+  }, [
+    companyUrl,
+    filters.customer,
+    filters.fromDate,
+    filters.toDate,
+    invalidateSession,
+    posProfile,
+    requestKey,
+    sessionId,
+  ]);
 
   if (!activeKey) return { data: null, error: null, isLoading: false };
   return {

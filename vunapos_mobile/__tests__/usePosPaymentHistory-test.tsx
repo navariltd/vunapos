@@ -65,4 +65,30 @@ describe("usePosPaymentHistory", () => {
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(hook.result.current.isLoading).toBe(false);
   });
+
+  it("sends customer and inclusive date-range filters to the history endpoint", async () => {
+    mockGetVunaMethod.mockResolvedValue({ payments: [] });
+    const hook = await renderHook(() =>
+      usePosPaymentHistory("POS-001", {
+        customer: "CUST-001",
+        fromDate: "2026-09-01",
+        toDate: "2026-09-12",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockGetVunaMethod).toHaveBeenCalledWith(
+        "https://vuna.example.com",
+        "sid-1",
+        "vunapos.api.payment.get_payment_history",
+        {
+          customer: "CUST-001",
+          from_date: "2026-09-01",
+          pos_profile: "POS-001",
+          to_date: "2026-09-12",
+        },
+        expect.any(AbortSignal),
+      ),
+    );
+  });
 });

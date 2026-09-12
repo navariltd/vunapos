@@ -244,9 +244,26 @@ function PaymentHistoryContext({
   posProfile?: string;
 }) {
   const { connectionStatus } = useNetworkStatus();
-  const { palette } = useAppearance();
-  const history = usePosPaymentHistory(posProfile);
+  const { appearance, palette } = useAppearance();
+  const [customer, setCustomer] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [activeDatePicker, setActiveDatePicker] = useState<
+    "from" | "to" | null
+  >(null);
+  const hasInvalidDateRange = Boolean(fromDate && toDate && fromDate > toDate);
+  const history = usePosPaymentHistory(
+    posProfile,
+    { customer, fromDate, toDate },
+    !hasInvalidDateRange,
+  );
   const isOffline = connectionStatus === "offline";
+
+  function selectDate(date: Date) {
+    if (activeDatePicker === "from") setFromDate(dateInputValue(date));
+    if (activeDatePicker === "to") setToDate(dateInputValue(date));
+    setActiveDatePicker(null);
+  }
 
   return (
     <View
@@ -261,6 +278,125 @@ function PaymentHistoryContext({
       <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
         Payments received through this POS Profile.
       </Text>
+      <View
+        style={[
+          styles.historyFilters,
+          {
+            backgroundColor: palette.surfaceContainer,
+            borderColor: palette.border,
+          },
+        ]}
+      >
+        <TextInput
+          accessibilityLabel="Filter payment history by customer ID"
+          editable={!isOffline}
+          onChangeText={setCustomer}
+          placeholder="Customer ID"
+          placeholderTextColor={palette.onSurfaceMuted}
+          style={[
+            styles.input,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              color: palette.onSurface,
+            },
+          ]}
+          value={customer}
+        />
+        <View style={styles.historyDateFilters}>
+          <Pressable
+            accessibilityLabel="Choose payment history from date"
+            accessibilityRole="button"
+            disabled={isOffline}
+            onPress={() => setActiveDatePicker("from")}
+            style={[
+              styles.historyDateButton,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              color={palette.onSurfaceMuted}
+              name="calendar-month-outline"
+              size={18}
+            />
+            <Text
+              style={[
+                styles.historyDateButtonLabel,
+                { color: palette.onSurface },
+              ]}
+            >
+              {fromDate ? formatDate(fromDate) : "From date"}
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Choose payment history to date"
+            accessibilityRole="button"
+            disabled={isOffline}
+            onPress={() => setActiveDatePicker("to")}
+            style={[
+              styles.historyDateButton,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <MaterialCommunityIcons
+              color={palette.onSurfaceMuted}
+              name="calendar-month-outline"
+              size={18}
+            />
+            <Text
+              style={[
+                styles.historyDateButtonLabel,
+                { color: palette.onSurface },
+              ]}
+            >
+              {toDate ? formatDate(toDate) : "To date"}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+      {activeDatePicker ? (
+        <DateTimePicker
+          accentColor={palette.primary}
+          maximumDate={
+            activeDatePicker === "from" && toDate
+              ? dateFromInput(toDate)
+              : undefined
+          }
+          minimumDate={
+            activeDatePicker === "to" && fromDate
+              ? dateFromInput(fromDate)
+              : undefined
+          }
+          mode="date"
+          negativeButton={{ label: "Cancel" }}
+          onDismiss={() => setActiveDatePicker(null)}
+          onValueChange={(_event, selectedDate) => selectDate(selectedDate)}
+          positiveButton={{ label: "Select" }}
+          presentation={Platform.OS === "android" ? "dialog" : "inline"}
+          themeVariant={appearance}
+          value={
+            activeDatePicker === "from" && fromDate
+              ? dateFromInput(fromDate)
+              : activeDatePicker === "to" && toDate
+                ? dateFromInput(toDate)
+                : new Date()
+          }
+        />
+      ) : null}
+      {hasInvalidDateRange ? (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.errorText, { color: palette.error }]}
+        >
+          The end date cannot be before the start date.
+        </Text>
+      ) : null}
       {isOffline ? (
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
           Reconnect to load payment history.
@@ -2194,6 +2330,28 @@ const styles = StyleSheet.create({
     fontSize: typography.size.small,
   },
   historyDetails: { flexDirection: "row", gap: spacing.sm },
+  historyDateButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  historyDateButtonLabel: {
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+  },
+  historyDateFilters: { flexDirection: "row", gap: spacing.sm },
+  historyFilters: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
   historyHeader: {
     alignItems: "flex-start",
     flexDirection: "row",
