@@ -6,6 +6,7 @@ import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
 type UsePosItemSearchArgs = {
   customer?: string;
+  enabled?: boolean;
   loadAll?: boolean;
   posProfile: string | undefined;
   priceList?: string;
@@ -13,6 +14,8 @@ type UsePosItemSearchArgs = {
 };
 
 type ItemSearchState = {
+  cachedItems: PosCatalogueItem[];
+  catalogueKey: string | null;
   error: string | null;
   items: PosCatalogueItem[];
   requestKey: string | null;
@@ -27,6 +30,7 @@ type ItemSearchState = {
  */
 export function usePosItemSearch({
   customer,
+  enabled = true,
   loadAll = false,
   posProfile,
   priceList,
@@ -36,13 +40,19 @@ export function usePosItemSearch({
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<ItemSearchState>({
+    cachedItems: [],
+    catalogueKey: null,
     error: null,
     items: [],
     requestKey: null,
   });
   const normalizedQuery = query.trim();
+  const catalogueKey =
+    companyUrl && sessionId && posProfile
+      ? JSON.stringify({ companyUrl, customer, posProfile, priceList, sessionId })
+      : null;
   const requestKey =
-    companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
+    enabled && companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
       ? JSON.stringify({
           companyUrl,
           customer,
@@ -76,7 +86,17 @@ export function usePosItemSearch({
       },
       controller.signal,
     )
-      .then((items) => setState({ error: null, items, requestKey }))
+      .then((items) =>
+        setState((current) => ({
+          cachedItems:
+            !debouncedQuery && loadAll ? items : current.cachedItems,
+          catalogueKey:
+            !debouncedQuery && loadAll ? catalogueKey : current.catalogueKey,
+          error: null,
+          items,
+          requestKey,
+        })),
+      )
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof FrappeClientError && error.code === "session") {
@@ -84,6 +104,8 @@ export function usePosItemSearch({
           return;
         }
         setState((current) => ({
+          cachedItems: current.cachedItems,
+          catalogueKey: current.catalogueKey,
           error:
             error instanceof Error
               ? error.message
@@ -95,9 +117,11 @@ export function usePosItemSearch({
 
     return () => controller.abort();
   }, [
+    catalogueKey,
     companyUrl,
     customer,
     debouncedQuery,
+    enabled,
     invalidateSession,
     loadAll,
     posProfile,
@@ -110,6 +134,8 @@ export function usePosItemSearch({
   const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
   return {
+    cachedItems:
+      state.catalogueKey === catalogueKey ? state.cachedItems : [],
     error: state.requestKey === requestKey ? state.error : null,
     hasLoaded: state.requestKey === requestKey,
     isLoading:

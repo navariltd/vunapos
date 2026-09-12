@@ -20,6 +20,7 @@ type Props = {
   currency: string;
   currencyPrecision?: number;
   error: string | null;
+  isOffline?: boolean;
   isLoading: boolean;
   isSelecting?: boolean;
   onDismiss: () => void;
@@ -43,6 +44,7 @@ export function PosVariantPickerSheet({
   currency,
   currencyPrecision = 2,
   error,
+  isOffline = false,
   isLoading,
   isSelecting = false,
   onDismiss,
@@ -141,7 +143,8 @@ export function PosVariantPickerSheet({
               </Text>
               <Pressable
                 accessibilityLabel="Retry loading variants"
-                onPress={onRetry}
+                disabled={isOffline}
+                onPress={isOffline ? undefined : onRetry}
                 style={[styles.retryButton, { borderColor: palette.border }]}
               >
                 <Text style={[styles.retryLabel, { color: palette.onSurface }]}>
@@ -244,13 +247,13 @@ export function PosVariantPickerSheet({
                       </Text>
                       <Pressable
                         accessibilityLabel={`Add variant ${variant.item_name || variant.item_code}`}
-                        disabled={unavailable || isSelecting}
+                        disabled={unavailable || isSelecting || isOffline}
                         onPress={() => onSelect(variant)}
                         style={[
                           styles.addButton,
                           {
                             backgroundColor:
-                              unavailable || isSelecting
+                              unavailable || isSelecting || isOffline
                                 ? palette.disabled
                                 : palette.primary,
                           },

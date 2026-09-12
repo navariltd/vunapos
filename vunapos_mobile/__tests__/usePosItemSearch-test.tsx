@@ -51,6 +51,35 @@ describe('usePosItemSearch', () => {
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
   });
 
+  it('does not make a catalogue request while network actions are disabled', async () => {
+    const hook = await renderHook(() =>
+      usePosItemSearch({ enabled: false, loadAll: true, posProfile: 'POS-001', query: 'item' }),
+    );
+
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it('retains the last complete catalogue for local offline browsing', async () => {
+    const items = [{ actual_qty: 4, item_code: 'CACHE-001', item_name: 'Cached item', rate: 120 }];
+    mockGetVunaMethod.mockResolvedValue(items);
+    const hook = await renderHook<
+      ReturnType<typeof usePosItemSearch>,
+      { enabled: boolean }
+    >(
+      ({ enabled }) =>
+        usePosItemSearch({ enabled, loadAll: true, posProfile: 'POS-001', query: '' }),
+      { initialProps: { enabled: true } },
+    );
+
+    await waitFor(() => expect(hook.result.current.cachedItems).toEqual(items));
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+
+    await hook.rerender({ enabled: false });
+    expect(hook.result.current.cachedItems).toEqual(items);
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+  });
+
   it('loads the catalogue again with an explicitly selected permitted price list', async () => {
     mockGetVunaMethod.mockResolvedValue([{ actual_qty: 4, item_code: 'BAR-001', item_name: 'Wholesale item', rate: 90 }]);
     const hook = await renderHook(() => usePosItemSearch({ customer: 'CUST-001', loadAll: true, posProfile: 'POS-001', priceList: 'Wholesale', query: '' }));

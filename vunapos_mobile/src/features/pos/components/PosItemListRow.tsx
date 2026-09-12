@@ -11,6 +11,7 @@ type PosItemListRowProps = {
   currency: string;
   currencyPrecision?: number;
   isAdding?: boolean;
+  isOffline?: boolean;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
@@ -29,6 +30,7 @@ export function PosItemListRow({
   currency,
   currencyPrecision = 2,
   isAdding = false,
+  isOffline = false,
   item,
   onAdd,
 }: PosItemListRowProps) {
@@ -43,7 +45,9 @@ export function PosItemListRow({
   return (
     <Pressable
       accessibilityHint={
-        outOfStock
+        isOffline
+          ? "Reconnect to add items"
+          : outOfStock
           ? "This item is out of stock"
           : isAdding
             ? "This item is being added to the cart"
@@ -52,14 +56,14 @@ export function PosItemListRow({
       accessibilityLabel={
         isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
       }
-      disabled={outOfStock || isAdding}
+    disabled={outOfStock || isAdding || isOffline}
       onPress={() => onAdd(item)}
       style={[
         styles.row,
         {
           backgroundColor: palette.surface,
           borderColor: palette.borderSubtle,
-          opacity: outOfStock || isAdding ? 0.72 : 1,
+          opacity: outOfStock || isAdding || isOffline ? 0.72 : 1,
         },
       ]}
     >
@@ -120,7 +124,9 @@ export function PosItemListRow({
           styles.addButton,
           {
             backgroundColor:
-              outOfStock || isAdding ? palette.disabled : palette.primary,
+              outOfStock || isAdding || isOffline
+                ? palette.disabled
+                : palette.primary,
           },
         ]}
       >

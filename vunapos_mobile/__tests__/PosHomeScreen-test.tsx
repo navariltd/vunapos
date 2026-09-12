@@ -18,11 +18,13 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
     isAdding,
+    isOffline,
     item,
     onAdd,
   }: {
     imageUrl?: string | null;
     isAdding?: boolean;
+    isOffline?: boolean;
     item: { item_name: string };
     onAdd: (item: { item_name: string }) => void;
   }) => {
@@ -30,7 +32,7 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || isOffline}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -46,17 +48,19 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
   PosItemListRow: ({
     item,
     isAdding,
+    isOffline,
     onAdd,
   }: {
     item: { item_name: string };
     isAdding?: boolean;
+    isOffline?: boolean;
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || isOffline}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -70,17 +74,31 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
 jest.mock("@/features/pos/components/PosItemSearch", () => ({
   PosItemSearch: ({
     onChangeText,
+    onScanBarcode,
+    onSubmit,
   }: {
     onChangeText: (value: string) => void;
+    onScanBarcode: () => void;
+    onSubmit: () => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
-      <Pressable
-        accessibilityLabel="Search for one item"
-        onPress={() => onChangeText("one")}
-      >
-        <Text>Search items</Text>
-      </Pressable>
+      <>
+        <Pressable
+          accessibilityLabel="Search for one item"
+          onPress={() => onChangeText("one")}
+        >
+          <Text>Search items</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Submit barcode lookup"
+          onPress={onSubmit}
+        />
+        <Pressable
+          accessibilityLabel="Open barcode scanner"
+          onPress={onScanBarcode}
+        />
+      </>
     );
   },
 }));
@@ -148,12 +166,19 @@ jest.mock("@/features/pos/hooks/usePosProductBundle", () => ({
   usePosProductBundle: jest.fn(),
 }));
 
+const mockResolveBarcode = jest.fn();
+const mockUseNetworkStatus = jest.fn();
+
 jest.mock("@/features/pos/hooks/usePosBarcodeScan", () => ({
-  usePosBarcodeScan: () => ({ isResolving: false, resolve: jest.fn() }),
+  usePosBarcodeScan: () => ({ isResolving: false, resolve: mockResolveBarcode }),
 }));
 
 jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: () => ({ companyUrl: "https://vuna.example.com" }),
+}));
+
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
 }));
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
@@ -172,6 +197,11 @@ const onPosProfileLoaded = jest.fn();
 describe("PosHomeScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockResolveBarcode.mockResolvedValue({
+      message: "Barcode not found.",
+      ok: false,
+    });
     mockUsePosBootstrap.mockReturnValue({
       data: {
         default_customer: {
@@ -187,6 +217,7 @@ describe("PosHomeScreen", () => {
       reload: jest.fn(),
     });
     mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [],
       error: null,
       hasLoaded: false,
       isLoading: false,
@@ -250,6 +281,47 @@ describe("PosHomeScreen", () => {
     );
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
+  });
+
+  it("keeps cached catalogue browsing local and blocks server actions while offline", async () => {
+    const item = {
+      actual_qty: 3,
+      item_code: "OFFLINE-001",
+      item_name: "Cached catalogue item",
+      rate: 150,
+    };
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [item],
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onPosProfileLoaded={onPosProfileLoaded}
+      />,
+    );
+
+    expect(screen.getByText("Card: Cached catalogue item")).toBeTruthy();
+    expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+    await fireEvent.press(screen.getByText("Card: Cached catalogue item"));
+    await fireEvent.press(screen.getByLabelText("Search for one item"));
+    await fireEvent.press(screen.getByLabelText("Submit barcode lookup"));
+
+    expect(onAddToCart).not.toHaveBeenCalled();
+    expect(mockResolveBarcode).not.toHaveBeenCalled();
   });
 
   it("renders compact catalogue rows when the POS profile hides item images", async () => {
@@ -350,6 +422,7 @@ describe("PosHomeScreen", () => {
       reload: jest.fn(),
     });
     mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item],
       error: null,
       hasLoaded: true,
       isLoading: false,

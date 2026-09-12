@@ -18,6 +18,7 @@ type Props = {
   error: string | null;
   isAdding: boolean;
   isLoading: boolean;
+  isOffline?: boolean;
   itemName?: string;
   onConfirm: () => void;
   onDismiss: () => void;
@@ -30,6 +31,7 @@ export function PosProductBundleSheet({
   error,
   isAdding,
   isLoading,
+  isOffline = false,
   itemName,
   onConfirm,
   onDismiss,
@@ -139,13 +141,13 @@ export function PosProductBundleSheet({
           )}
           <Pressable
             accessibilityLabel="Confirm add bundle"
-            disabled={!bundle || isLoading || Boolean(error) || isAdding}
+            disabled={!bundle || isLoading || Boolean(error) || isAdding || isOffline}
             onPress={onConfirm}
             style={[
               styles.confirm,
               {
                 backgroundColor:
-                  !bundle || isLoading || Boolean(error) || isAdding
+                  !bundle || isLoading || Boolean(error) || isAdding || isOffline
                     ? palette.disabled
                     : palette.primary,
               },

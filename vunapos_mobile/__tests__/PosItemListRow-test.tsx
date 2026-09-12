@@ -75,4 +75,15 @@ describe("PosItemListRow", () => {
     fireEvent.press(screen.getByLabelText("Adding Compact item"));
     expect(onAdd).not.toHaveBeenCalled();
   });
+
+  it("keeps the cached row visible but disables adding while offline", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemListRow currency="KES" isOffline item={item} onAdd={onAdd} />,
+    );
+
+    expect(screen.getByText("Compact item")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Add Compact item"));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
 });

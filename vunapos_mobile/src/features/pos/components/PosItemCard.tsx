@@ -18,6 +18,7 @@ type PosItemCardProps = {
   currencyPrecision?: number;
   imageUrl?: string | null;
   isAdding?: boolean;
+  isOffline?: boolean;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
@@ -41,6 +42,7 @@ export function PosItemCard({
   currencyPrecision = 2,
   imageUrl,
   isAdding = false,
+  isOffline = false,
   item,
   onAdd,
 }: PosItemCardProps) {
@@ -61,12 +63,14 @@ export function PosItemCard({
     >
       <Pressable
         accessibilityHint={
-          outOfStock
+          isOffline
+            ? "Reconnect to add items"
+            : outOfStock
             ? "This item is out of stock"
             : "Adds this item to the cart"
         }
         accessibilityLabel={item.item_name}
-        disabled={outOfStock || isAdding}
+        disabled={outOfStock || isAdding || isOffline}
         onPress={() => onAdd(item)}
         style={[
           styles.previewArea,
@@ -140,7 +144,9 @@ export function PosItemCard({
           </View>
           <Pressable
             accessibilityHint={
-              outOfStock
+              isOffline
+                ? "Reconnect to add items"
+                : outOfStock
                 ? "This item is out of stock"
                 : isAdding
                   ? "This item is being added to the cart"
@@ -149,13 +155,15 @@ export function PosItemCard({
             accessibilityLabel={
               isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
             }
-            disabled={outOfStock || isAdding}
+            disabled={outOfStock || isAdding || isOffline}
             onPress={() => onAdd(item)}
             style={[
               styles.addButton,
               {
                 backgroundColor:
-                  outOfStock || isAdding ? palette.disabled : palette.primary,
+                  outOfStock || isAdding || isOffline
+                    ? palette.disabled
+                    : palette.primary,
               },
             ]}
           >

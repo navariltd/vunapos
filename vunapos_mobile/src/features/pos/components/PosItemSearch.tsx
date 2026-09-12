@@ -8,6 +8,7 @@ type PosItemSearchProps = {
   onChangeText: (value: string) => void;
   onScanBarcode: () => void;
   onSubmit: () => void;
+  scanDisabled?: boolean;
   value: string;
 };
 
@@ -15,6 +16,7 @@ export function PosItemSearch({
   onChangeText,
   onScanBarcode,
   onSubmit,
+  scanDisabled = false,
   value,
 }: PosItemSearchProps) {
   const { palette } = useAppearance();
@@ -54,11 +56,16 @@ export function PosItemSearch({
         />
       </View>
       <Pressable
+        accessibilityHint={
+          scanDisabled ? "Reconnect to scan a barcode" : undefined
+        }
         accessibilityLabel="Scan barcode with camera"
+        disabled={scanDisabled}
         onPress={onScanBarcode}
         style={[
           styles.cameraButton,
           { backgroundColor: palette.surface, borderColor: palette.border },
+          scanDisabled && styles.cameraButtonDisabled,
         ]}
       >
         <MaterialCommunityIcons
@@ -80,6 +87,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 44,
   },
+  cameraButtonDisabled: { opacity: 0.58 },
   container: {
     borderBottomWidth: 1,
     flexDirection: "row",

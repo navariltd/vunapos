@@ -21,6 +21,7 @@ import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
 import { usePosProductBundle } from "@/features/pos/hooks/usePosProductBundle";
 import { usePosTemplateVariants } from "@/features/pos/hooks/usePosTemplateVariants";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosBootstrapData,
   PosCatalogueItem,
@@ -74,6 +75,8 @@ export function PosHomeScreen({
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
   const { companyUrl } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
@@ -88,6 +91,7 @@ export function PosHomeScreen({
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
+    enabled: !isOffline,
     // Bootstrap intentionally returns only the first catalogue page. Keep it
     // visible for first paint, then replace it with the complete live
     // profile/customer/price-list catalogue when this request resolves.
@@ -97,13 +101,18 @@ export function PosHomeScreen({
     query: searchQuery,
   });
   const bootstrapItems = bootstrap.data?.items ?? [];
-  const localMatches = bootstrapItems.filter((item) =>
+  const cachedItems = itemSearch.cachedItems ?? [];
+  const localItems =
+    cachedItems.length > 0
+      ? cachedItems
+      : bootstrapItems;
+  const localMatches = localItems.filter((item) =>
     matchesSearch(item, searchQuery),
   );
   const items =
-    searchQuery.trim() || itemSearch.hasLoaded
-      ? itemSearch.items
-      : localMatches;
+    isOffline || (!searchQuery.trim() && !itemSearch.hasLoaded)
+      ? localMatches
+      : itemSearch.items;
   const currency = bootstrap.data?.pos_profile.currency || "KES";
   const currencyPrecision = bootstrap.data?.pos_profile.currency_precision ?? 2;
   const hideImages = Boolean(bootstrap.data?.pos_profile.hide_images);
@@ -117,14 +126,14 @@ export function PosHomeScreen({
   });
   const templateVariants = usePosTemplateVariants({
     customer: pricingContext?.customer,
-    enabled: Boolean(variantTemplate),
+    enabled: Boolean(variantTemplate) && !isOffline,
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
     templateItemCode: variantTemplate?.item_code,
   });
   const productBundle = usePosProductBundle({
     customer: pricingContext?.customer,
-    enabled: Boolean(bundleItem),
+    enabled: Boolean(bundleItem) && !isOffline,
     itemCode: bundleItem?.item_code,
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
@@ -141,9 +150,11 @@ export function PosHomeScreen({
   useEffect(() => {
     if (handledRefreshKey.current === refreshKey) return;
     handledRefreshKey.current = refreshKey;
-    reloadBootstrap();
-    reloadCatalogue();
-  }, [refreshKey, reloadBootstrap, reloadCatalogue]);
+    if (!isOffline) {
+      reloadBootstrap();
+      reloadCatalogue();
+    }
+  }, [isOffline, refreshKey, reloadBootstrap, reloadCatalogue]);
 
   const isOutOfStock = useCallback(
     (item: PosCatalogueItem) =>
@@ -161,6 +172,10 @@ export function PosHomeScreen({
 
   const addItem = useCallback(
     async (item: PosCatalogueItem): Promise<boolean> => {
+      if (isOffline) {
+        setAddError("Connection unavailable. Reconnect to add items.");
+        return false;
+      }
       if (pendingItemCode) return false;
       if (item.has_variants) {
         setVariantActionError(null);
@@ -190,7 +205,7 @@ export function PosHomeScreen({
         setPendingItemCode(null);
       }
     },
-    [currency, isOutOfStock, onAddToCart, pendingItemCode],
+    [currency, isOffline, isOutOfStock, onAddToCart, pendingItemCode],
   );
 
   useEffect(() => {
@@ -203,6 +218,7 @@ export function PosHomeScreen({
       !bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart ||
       !searchTerm ||
       !candidate ||
+      isOffline ||
       itemSearch.isLoading ||
       pendingItemCode ||
       autoAddedSearchKey.current === searchKey
@@ -216,6 +232,7 @@ export function PosHomeScreen({
     addItem,
     bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart,
     itemSearch.isLoading,
+    isOffline,
     visibleItems,
     pendingItemCode,
     pricingContext?.customer,
@@ -241,6 +258,8 @@ export function PosHomeScreen({
   }
 
   async function scanBarcode(barcode: string) {
+    if (isOffline)
+      return "Connection unavailable. Reconnect to scan a barcode.";
     const result = await barcodeScan.resolve(barcode);
     if (!result.ok) return result.message;
     const item = result.item;
@@ -271,6 +290,7 @@ export function PosHomeScreen({
         currency={currency}
         currencyPrecision={currencyPrecision}
         isAdding={pendingItemCode === item.item_code}
+        isOffline={isOffline}
         item={item}
         onAdd={addItem}
       />
@@ -280,6 +300,7 @@ export function PosHomeScreen({
         currencyPrecision={currencyPrecision}
         imageUrl={itemImageUrl(item.image, companyUrl)}
         isAdding={pendingItemCode === item.item_code}
+        isOffline={isOffline}
         item={item}
         onAdd={addItem}
       />
@@ -301,7 +322,8 @@ export function PosHomeScreen({
         </Text>
         <Pressable
           accessibilityLabel="Retry loading POS catalogue"
-          onPress={bootstrap.reload}
+          disabled={isOffline}
+          onPress={isOffline ? undefined : bootstrap.reload}
           style={[styles.retryButton, { borderColor: palette.border }]}
         >
           <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>
@@ -343,6 +365,7 @@ export function PosHomeScreen({
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
               onSubmit={() => void submitSearch()}
+              scanDisabled={isOffline}
               value={searchQuery}
             />
             {itemSearch.error ? (
@@ -360,7 +383,8 @@ export function PosHomeScreen({
                 </Text>
                 <Pressable
                   accessibilityLabel="Retry catalogue search"
-                  onPress={itemSearch.reload}
+                  disabled={isOffline}
+                  onPress={isOffline ? undefined : itemSearch.reload}
                   style={[styles.retryButton, { borderColor: palette.border }]}
                 >
                   <Text
@@ -403,12 +427,13 @@ export function PosHomeScreen({
         currency={currency}
         currencyPrecision={currencyPrecision}
         error={variantActionError || templateVariants.error}
+        isOffline={isOffline}
         isLoading={templateVariants.isLoading}
         isSelecting={Boolean(pendingItemCode)}
         onDismiss={() => {
           if (!pendingItemCode) setVariantTemplate(null);
         }}
-        onRetry={templateVariants.reload}
+        onRetry={isOffline ? () => undefined : templateVariants.reload}
         onSelect={(variant) => void selectVariant(variant)}
         templateName={variantTemplate?.item_name}
         variants={templateVariants.data?.variants ?? []}
@@ -418,6 +443,7 @@ export function PosHomeScreen({
         bundle={productBundle.data}
         error={productBundle.error}
         isAdding={pendingItemCode === bundleItem?.item_code}
+        isOffline={isOffline}
         isLoading={productBundle.isLoading}
         itemName={bundleItem?.item_name}
         onConfirm={() => void confirmBundle()}
