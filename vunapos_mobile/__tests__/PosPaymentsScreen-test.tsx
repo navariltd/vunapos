@@ -21,6 +21,10 @@ jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ bottom: 0 }),
+}));
+
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
 }));
@@ -187,7 +191,7 @@ describe("PosPaymentsScreen", () => {
         currency="KES"
         currencyPrecision={2}
         onBackToPos={onBackToPos}
-        paymentModes={[]}
+        paymentModes={[{ mode_of_payment: "Cash" }]}
         posProfile="POS-001"
       />,
     );
@@ -208,7 +212,61 @@ describe("PosPaymentsScreen", () => {
     );
     expect(mockUsePosPaymentHistory).toHaveBeenLastCalledWith(
       "POS-001",
-      { customer: "CUST-001", fromDate: "", toDate: "" },
+      {
+        cashier: "",
+        customer: "CUST-001",
+        fromDate: "",
+        modeOfPayment: "",
+        reference: "",
+        status: "",
+        toDate: "",
+      },
+      true,
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Filter payment history by external reference"),
+      "TXN-001",
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText("Filter payment history by cashier email"),
+      "cashier@example.com",
+    );
+    expect(mockUsePosPaymentHistory).toHaveBeenLastCalledWith(
+      "POS-001",
+      expect.objectContaining({
+        cashier: "cashier@example.com",
+        customer: "CUST-001",
+        reference: "TXN-001",
+      }),
+      true,
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Choose payment history mode" }),
+    );
+    await fireEvent.press(screen.getByRole("radio", { name: "Cash" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Choose payment history status" }),
+    );
+    await fireEvent.press(screen.getByRole("radio", { name: "Submitted" }));
+    expect(mockUsePosPaymentHistory).toHaveBeenLastCalledWith(
+      "POS-001",
+      expect.objectContaining({ modeOfPayment: "Cash", status: "Submitted" }),
+      true,
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Clear payment history filters" }),
+    );
+    expect(mockUsePosPaymentHistory).toHaveBeenLastCalledWith(
+      "POS-001",
+      {
+        cashier: "",
+        customer: "",
+        fromDate: "",
+        modeOfPayment: "",
+        reference: "",
+        status: "",
+        toDate: "",
+      },
       true,
     );
   });

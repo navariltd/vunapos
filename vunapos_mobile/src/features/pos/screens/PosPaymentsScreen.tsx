@@ -3,6 +3,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
@@ -227,6 +229,7 @@ export function PosPaymentsScreen({
         <PaymentHistoryContext
           currency={currency}
           currencyPrecision={currencyPrecision}
+          paymentModes={paymentModes}
           posProfile={posProfile}
         />
       )}
@@ -237,10 +240,12 @@ export function PosPaymentsScreen({
 function PaymentHistoryContext({
   currency,
   currencyPrecision,
+  paymentModes,
   posProfile,
 }: {
   currency: string;
   currencyPrecision: number;
+  paymentModes: PosPaymentMode[];
   posProfile?: string;
 }) {
   const { connectionStatus } = useNetworkStatus();
@@ -248,13 +253,20 @@ function PaymentHistoryContext({
   const [customer, setCustomer] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [modeOfPayment, setModeOfPayment] = useState("");
+  const [reference, setReference] = useState("");
+  const [status, setStatus] = useState<"Cancelled" | "Submitted" | "">("");
+  const [cashier, setCashier] = useState("");
   const [activeDatePicker, setActiveDatePicker] = useState<
     "from" | "to" | null
   >(null);
+  const [activePicker, setActivePicker] = useState<"mode" | "status" | null>(
+    null,
+  );
   const hasInvalidDateRange = Boolean(fromDate && toDate && fromDate > toDate);
   const history = usePosPaymentHistory(
     posProfile,
-    { customer, fromDate, toDate },
+    { cashier, customer, fromDate, modeOfPayment, reference, status, toDate },
     !hasInvalidDateRange,
   );
   const isOffline = connectionStatus === "offline";
@@ -263,6 +275,18 @@ function PaymentHistoryContext({
     if (activeDatePicker === "from") setFromDate(dateInputValue(date));
     if (activeDatePicker === "to") setToDate(dateInputValue(date));
     setActiveDatePicker(null);
+  }
+
+  function clearFilters() {
+    setActiveDatePicker(null);
+    setActivePicker(null);
+    setCashier("");
+    setCustomer("");
+    setFromDate("");
+    setModeOfPayment("");
+    setReference("");
+    setStatus("");
+    setToDate("");
   }
 
   return (
@@ -359,7 +383,136 @@ function PaymentHistoryContext({
             </Text>
           </Pressable>
         </View>
+        <View style={styles.historyDateFilters}>
+          <Pressable
+            accessibilityLabel="Choose payment history mode"
+            accessibilityRole="button"
+            disabled={isOffline}
+            onPress={() => setActivePicker("mode")}
+            style={[
+              styles.historyDateButton,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.historyDateButtonLabel,
+                { color: palette.onSurface },
+              ]}
+            >
+              {modeOfPayment || "All payment modes"}
+            </Text>
+            <MaterialCommunityIcons
+              color={palette.onSurfaceMuted}
+              name="chevron-down"
+              size={20}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Choose payment history status"
+            accessibilityRole="button"
+            disabled={isOffline}
+            onPress={() => setActivePicker("status")}
+            style={[
+              styles.historyDateButton,
+              {
+                backgroundColor: palette.surface,
+                borderColor: palette.border,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.historyDateButtonLabel,
+                { color: palette.onSurface },
+              ]}
+            >
+              {status || "All statuses"}
+            </Text>
+            <MaterialCommunityIcons
+              color={palette.onSurfaceMuted}
+              name="chevron-down"
+              size={20}
+            />
+          </Pressable>
+        </View>
+        <TextInput
+          accessibilityLabel="Filter payment history by external reference"
+          editable={!isOffline}
+          onChangeText={setReference}
+          placeholder="External reference"
+          placeholderTextColor={palette.onSurfaceMuted}
+          style={[
+            styles.input,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              color: palette.onSurface,
+            },
+          ]}
+          value={reference}
+        />
+        <TextInput
+          accessibilityLabel="Filter payment history by cashier email"
+          autoCapitalize="none"
+          editable={!isOffline}
+          inputMode="email"
+          onChangeText={setCashier}
+          placeholder="Cashier email"
+          placeholderTextColor={palette.onSurfaceMuted}
+          style={[
+            styles.input,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              color: palette.onSurface,
+            },
+          ]}
+          value={cashier}
+        />
+        <Pressable
+          accessibilityLabel="Clear payment history filters"
+          accessibilityRole="button"
+          disabled={isOffline}
+          onPress={clearFilters}
+          style={[styles.textButton, { borderColor: palette.border }]}
+        >
+          <Text style={[styles.textButtonLabel, { color: palette.onSurface }]}>
+            Clear filters
+          </Text>
+        </Pressable>
       </View>
+      <HistoryFilterPicker
+        onClose={() => setActivePicker(null)}
+        onSelect={(value) => {
+          if (activePicker === "mode") setModeOfPayment(value);
+          if (activePicker === "status") {
+            setStatus(value as "Cancelled" | "Submitted" | "");
+          }
+          setActivePicker(null);
+        }}
+        options={
+          activePicker === "mode"
+            ? [
+                { label: "All payment modes", value: "" },
+                ...paymentModes.map((mode) => ({
+                  label: mode.mode_of_payment,
+                  value: mode.mode_of_payment,
+                })),
+              ]
+            : [
+                { label: "All statuses", value: "" },
+                { label: "Submitted", value: "Submitted" },
+                { label: "Cancelled", value: "Cancelled" },
+              ]
+        }
+        selected={activePicker === "mode" ? modeOfPayment : status}
+        title={activePicker === "mode" ? "Payment mode" : "Payment status"}
+        visible={Boolean(activePicker)}
+      />
       {activeDatePicker ? (
         <DateTimePicker
           accentColor={palette.primary}
@@ -434,6 +587,93 @@ function PaymentHistoryContext({
         )
       ) : null}
     </View>
+  );
+}
+
+function HistoryFilterPicker({
+  onClose,
+  onSelect,
+  options,
+  selected,
+  title,
+  visible,
+}: {
+  onClose: () => void;
+  onSelect: (value: string) => void;
+  options: { label: string; value: string }[];
+  selected: string;
+  title: string;
+  visible: boolean;
+}) {
+  const { palette } = useAppearance();
+  const insets = useSafeAreaInsets();
+
+  if (!visible) return null;
+
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} transparent visible>
+      <View
+        style={[styles.historyPickerScrim, { backgroundColor: palette.scrim }]}
+      >
+        <Pressable
+          accessibilityLabel="Close payment history filter options"
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
+        <View
+          style={[
+            styles.historyPickerSheet,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+              paddingBottom: Math.max(insets.bottom, spacing.md),
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.historyPickerHandle,
+              { backgroundColor: palette.border },
+            ]}
+          />
+          <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+            {title}
+          </Text>
+          {options.map((option) => {
+            const isSelected = selected === option.value;
+            return (
+              <Pressable
+                accessibilityLabel={option.label}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                key={option.value || "all"}
+                onPress={() => onSelect(option.value)}
+                style={[
+                  styles.historyPickerOption,
+                  {
+                    backgroundColor: isSelected
+                      ? palette.surfaceContainerHigh
+                      : palette.surfaceContainer,
+                    borderColor: isSelected ? palette.primary : palette.border,
+                  },
+                ]}
+              >
+                <Text
+                  style={[styles.textButtonLabel, { color: palette.onSurface }]}
+                >
+                  {option.label}
+                </Text>
+                <MaterialCommunityIcons
+                  color={isSelected ? palette.primary : palette.onSurfaceMuted}
+                  name={isSelected ? "radiobox-marked" : "radiobox-blank"}
+                  size={22}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -2351,6 +2591,30 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.sm,
+  },
+  historyPickerHandle: {
+    alignSelf: "center",
+    borderRadius: radii.pill,
+    height: 4,
+    width: 42,
+  },
+  historyPickerOption: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 46,
+    paddingHorizontal: spacing.sm,
+  },
+  historyPickerScrim: { flex: 1, justifyContent: "flex-end" },
+  historyPickerSheet: {
+    borderTopLeftRadius: radii.lg,
+    borderTopRightRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   historyHeader: {
     alignItems: "flex-start",

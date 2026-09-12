@@ -12,8 +12,12 @@ type PaymentHistoryState = {
 };
 
 export type PosPaymentHistoryFilters = {
+  cashier?: string;
   customer?: string;
   fromDate?: string;
+  modeOfPayment?: string;
+  reference?: string;
+  status?: "Cancelled" | "Submitted" | "";
   toDate?: string;
 };
 
@@ -51,7 +55,13 @@ export function usePosPaymentHistory(
       {
         ...(filters.customer ? { customer: filters.customer } : {}),
         ...(filters.fromDate ? { from_date: filters.fromDate } : {}),
+        ...(filters.modeOfPayment
+          ? { mode_of_payment: filters.modeOfPayment }
+          : {}),
+        ...(filters.reference ? { reference: filters.reference } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
         ...(filters.toDate ? { to_date: filters.toDate } : {}),
+        ...(filters.cashier ? { cashier: filters.cashier } : {}),
         pos_profile: posProfile,
       },
       controller.signal,
@@ -80,7 +90,11 @@ export function usePosPaymentHistory(
     companyUrl,
     filters.customer,
     filters.fromDate,
+    filters.modeOfPayment,
+    filters.reference,
+    filters.status,
     filters.toDate,
+    filters.cashier,
     invalidateSession,
     posProfile,
     requestKey,

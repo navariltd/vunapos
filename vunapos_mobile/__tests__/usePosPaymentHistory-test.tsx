@@ -70,8 +70,12 @@ describe("usePosPaymentHistory", () => {
     mockGetVunaMethod.mockResolvedValue({ payments: [] });
     const hook = await renderHook(() =>
       usePosPaymentHistory("POS-001", {
+        cashier: "cashier@example.com",
         customer: "CUST-001",
         fromDate: "2026-09-01",
+        modeOfPayment: "Cash",
+        reference: "TXN-001",
+        status: "Submitted",
         toDate: "2026-09-12",
       }),
     );
@@ -82,9 +86,13 @@ describe("usePosPaymentHistory", () => {
         "sid-1",
         "vunapos.api.payment.get_payment_history",
         {
+          cashier: "cashier@example.com",
           customer: "CUST-001",
           from_date: "2026-09-01",
+          mode_of_payment: "Cash",
           pos_profile: "POS-001",
+          reference: "TXN-001",
+          status: "Submitted",
           to_date: "2026-09-12",
         },
         expect.any(AbortSignal),
