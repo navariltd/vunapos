@@ -799,7 +799,9 @@ def _get_row_batch_allocations(row):
 		return [
 			{
 				"batch_no": row.batch_no,
-				"qty": flt(row.qty),
+				# ERPNext stores row.qty in the selected sales UOM. Batch
+				# quantities are always stock-UOM quantities.
+				"qty": flt(row.qty) * flt(row.get("conversion_factor") or 1),
 				"expiry_date": frappe.db.get_value("Batch", row.batch_no, "expiry_date"),
 				"available_qty": None,
 			}
