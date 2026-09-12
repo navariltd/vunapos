@@ -16,6 +16,7 @@
     "expo-image": "~57.0.3",
     "expo-linking": "~57.0.8",
     "expo-navigation-bar": "~57.0.2",
+    "expo-network": "~57.0.2",
     "expo-print": "~57.0.1",
     "expo-router": "~57.0.17",
     "expo-secure-store": "~57.0.2",

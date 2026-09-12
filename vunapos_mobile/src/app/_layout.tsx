@@ -15,6 +15,7 @@ import {
   AppSessionProvider,
   useAppSession,
 } from "@/features/auth/AppSessionProvider";
+import { NetworkStatusProvider } from "@/services/NetworkStatusProvider";
 import { AppearanceProvider, useAppearance } from "@/theme/AppearanceProvider";
 
 SplashScreen.preventAutoHideAsync();
@@ -31,9 +32,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <KeyboardProvider>
         <AppearanceProvider>
-          <AppSessionProvider>
-            <RootNavigator fontsLoaded={fontsLoaded} />
-          </AppSessionProvider>
+          <NetworkStatusProvider>
+            <AppSessionProvider>
+              <RootNavigator fontsLoaded={fontsLoaded} />
+            </AppSessionProvider>
+          </NetworkStatusProvider>
         </AppearanceProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
