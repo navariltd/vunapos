@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react-native";
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
+const mockUseReceiveCustomerPayment = jest.fn();
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -20,6 +21,10 @@ jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
   usePosCustomerSearch: () => mockUsePosCustomerSearch(),
 }));
 
+jest.mock("@/features/pos/hooks/useReceiveInvoicePayment", () => ({
+  useReceiveCustomerPayment: () => mockUseReceiveCustomerPayment(),
+}));
+
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
 
 describe("PosPaymentsScreen", () => {
@@ -32,11 +37,17 @@ describe("PosPaymentsScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+      reload: jest.fn(),
     });
     mockUsePosCustomerSearch.mockReturnValue({
       error: null,
       isLoading: false,
       rows: [],
+    });
+    mockUseReceiveCustomerPayment.mockReturnValue({
+      error: null,
+      isSubmitting: false,
+      receive: jest.fn(),
     });
   });
 
@@ -214,6 +225,85 @@ describe("PosPaymentsScreen", () => {
     );
     expect(screen.getByLabelText("Payment remarks").props.value).toBe(
       "Cheque received at counter",
+    );
+  });
+
+  it("submits an invoice allocation and refreshes the customer balance after success", async () => {
+    const receive = jest.fn().mockResolvedValue({ name: "ACC-PAY-0001" });
+    const reload = jest.fn();
+    mockUseReceiveCustomerPayment.mockReturnValue({
+      error: null,
+      isSubmitting: false,
+      receive,
+    });
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [
+        {
+          customer: "CUST-001",
+          customerName: "Example customer",
+        },
+      ],
+    });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            currency: "KES",
+            is_return: false,
+            name: "SINV-0001",
+            outstanding_amount: 58,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      reload,
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={false}
+        allowReceive
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[{ default: true, mode_of_payment: "Cash" }]}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select payment customer Example customer",
+      }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Apply payment to SINV-0001" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Submit customer payment" }),
+    );
+
+    expect(receive).toHaveBeenCalledWith({
+      amount: 58,
+      customer: "CUST-001",
+      invoice: "SINV-0001",
+      modeOfPayment: "Cash",
+      posProfile: "POS-001",
+      referenceDate: undefined,
+      referenceNo: undefined,
+      remarks: undefined,
+    });
+    expect(
+      await screen.findByText(
+        "Payment Entry ACC-PAY-0001 was submitted successfully.",
+      ),
+    ).toBeTruthy();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
+      "",
     );
   });
 });

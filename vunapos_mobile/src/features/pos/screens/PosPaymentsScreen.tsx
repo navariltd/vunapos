@@ -14,6 +14,7 @@ import { Text } from "react-native-paper";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
+import { useReceiveCustomerPayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
 import { PosCustomerSearchResult, PosPaymentMode } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -244,6 +245,8 @@ function ReceivePaymentContext({
   const [referenceDate, setReferenceDate] = useState(today());
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [remarks, setRemarks] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const customerSearch = usePosCustomerSearch(query, !isOffline);
   const customerDetails = usePosCustomerDetails({
     customer: selectedCustomer?.customer || "",
@@ -265,6 +268,20 @@ function ReceivePaymentContext({
   const hasInvalidAmount =
     Boolean(amount.trim()) &&
     (!Number.isFinite(Number(amount)) || Number(amount) <= 0);
+  const receivePayment = useReceiveCustomerPayment();
+  const hasRequiredReference =
+    !requiresReference || Boolean(referenceNo.trim() && referenceDate);
+  const canSubmit = Boolean(
+    !isOffline &&
+    !receivePayment.isSubmitting &&
+    selectedCustomer &&
+    posProfile &&
+    mode &&
+    amount.trim() &&
+    !hasInvalidAmount &&
+    !isGatewayMode &&
+    hasRequiredReference,
+  );
 
   function selectCustomer(customer: PosCustomerSearchResult) {
     setSelectedCustomer(customer);
@@ -290,6 +307,59 @@ function ReceivePaymentContext({
     setMode(nextMode);
     setReferenceNo("");
     setReferenceDate(today());
+  }
+
+  async function submitPayment() {
+    setValidationError(null);
+    setSuccessMessage(null);
+    const paymentAmount = Number(amount);
+    if (!selectedCustomer || !posProfile) {
+      setValidationError("Select a customer before receiving a payment.");
+      return;
+    }
+    if (!mode) {
+      setValidationError("Select a payment mode before receiving a payment.");
+      return;
+    }
+    if (!Number.isFinite(paymentAmount) || paymentAmount <= 0) {
+      setValidationError("Enter an amount greater than zero.");
+      return;
+    }
+    if (isGatewayMode) {
+      setValidationError(
+        "Collect and verify this gateway payment before submitting it.",
+      );
+      return;
+    }
+    if (!hasRequiredReference) {
+      setValidationError(
+        "Reference number and date are required for this payment mode.",
+      );
+      return;
+    }
+
+    const payment = await receivePayment.receive({
+      amount: paymentAmount,
+      customer: selectedCustomer.customer,
+      invoice: selectedInvoice || undefined,
+      modeOfPayment: mode,
+      posProfile,
+      referenceDate:
+        requiresReference || referenceNo.trim() ? referenceDate : undefined,
+      referenceNo: referenceNo.trim() || undefined,
+      remarks: remarks.trim() || undefined,
+    });
+    if (!payment) return;
+
+    setSuccessMessage(
+      `Payment Entry ${payment.name} was submitted successfully.`,
+    );
+    setAmount("");
+    setSelectedInvoice(null);
+    setReferenceNo("");
+    setReferenceDate(today());
+    setRemarks("");
+    customerDetails.reload();
   }
 
   return (
@@ -718,6 +788,45 @@ function ReceivePaymentContext({
             ]}
             value={remarks}
           />
+          {validationError || receivePayment.error ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
+              {validationError || receivePayment.error}
+            </Text>
+          ) : null}
+          {successMessage ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.successText, { color: palette.success }]}
+            >
+              {successMessage}
+            </Text>
+          ) : null}
+          <Pressable
+            accessibilityLabel="Submit customer payment"
+            accessibilityRole="button"
+            disabled={!canSubmit}
+            onPress={() => void submitPayment()}
+            style={[
+              styles.submitButton,
+              {
+                backgroundColor: palette.primary,
+                opacity: canSubmit ? 1 : 0.5,
+              },
+            ]}
+          >
+            <Text
+              style={[styles.submitButtonLabel, { color: palette.onPrimary }]}
+            >
+              {receivePayment.isSubmitting
+                ? "Receiving payment…"
+                : selectedInvoice
+                  ? "Receive and allocate payment"
+                  : "Receive customer advance"}
+            </Text>
+          </Pressable>
         </>
       ) : null}
     </View>
@@ -883,6 +992,22 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.compact,
+  },
+  submitButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: spacing.md,
+  },
+  submitButtonLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  successText: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.body,
   },
   tab: {
     borderBottomWidth: 2,
