@@ -27,6 +27,11 @@ type SelectedInvoice = {
   returnTo?: { doctype?: string; name: string };
 };
 
+type ReceivePaymentContext = {
+  customer: PosSaleCustomer;
+  invoice?: string;
+};
+
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const { connectionStatus } = useNetworkStatus();
@@ -39,6 +44,8 @@ export function PosWorkspaceScreen() {
   const [selectedInvoice, setSelectedInvoice] =
     useState<SelectedInvoice | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [receivePaymentContext, setReceivePaymentContext] =
+    useState<ReceivePaymentContext | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{
     currency: string;
     currencyPrecision: number;
@@ -110,6 +117,7 @@ export function PosWorkspaceScreen() {
     setSelectedInvoice(null);
     setSelectedCustomer(null);
     setSelectedPaymentEntry(null);
+    setReceivePaymentContext(null);
     setCartVisible(false);
     setCheckoutVisible(false);
     setActiveTab(tab);
@@ -123,8 +131,20 @@ export function PosWorkspaceScreen() {
     setSelectedCustomer(null);
     setSelectedInvoice(null);
     setSelectedPaymentEntry(null);
+    setReceivePaymentContext(null);
     setCheckoutVisible(false);
     setActiveTab("Home");
+  }
+
+  function openReceivePayment(customer: PosSaleCustomer, invoice?: string) {
+    if (isOffline || !allowsCustomerPayments) return;
+    setSelectedInvoice(null);
+    setSelectedCustomer(null);
+    setSelectedPaymentEntry(null);
+    setCartVisible(false);
+    setCheckoutVisible(false);
+    setReceivePaymentContext({ customer, invoice });
+    setActiveTab("Payments");
   }
 
   return (
@@ -146,6 +166,7 @@ export function PosWorkspaceScreen() {
         <PosCustomerDetailsScreen
           customer={selectedCustomer}
           onBack={() => setSelectedCustomer(null)}
+          onReceivePayment={openReceivePayment}
           onStartSale={startSale}
         />
       ) : selectedInvoice ? (
@@ -168,6 +189,7 @@ export function PosWorkspaceScreen() {
               returnTo: selectedInvoice,
             })
           }
+          onReceivePayment={openReceivePayment}
           onStartSale={startSale}
         />
       ) : checkoutVisible ? (
@@ -301,6 +323,8 @@ export function PosWorkspaceScreen() {
           allowReceive={allowsCustomerPayments}
           currency={posProfileConfig?.currency ?? "KES"}
           currencyPrecision={posProfileConfig?.currency_precision ?? 2}
+          initialReceiveCustomer={receivePaymentContext?.customer}
+          initialReceiveInvoice={receivePaymentContext?.invoice}
           onBackToPos={() => changeTab("Home")}
           paymentModes={paymentModes}
           posProfile={posProfile}

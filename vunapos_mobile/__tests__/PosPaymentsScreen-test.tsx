@@ -705,6 +705,50 @@ describe("PosPaymentsScreen", () => {
     );
   });
 
+  it("opens Receive with a preselected customer and invoice context", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            currency: "KES",
+            is_return: false,
+            name: "SINV-0001",
+            outstanding_amount: 58,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={false}
+        allowReceive
+        currency="KES"
+        currencyPrecision={2}
+        initialReceiveCustomer={{
+          customer: "CUST-001",
+          customerName: "Example customer",
+        }}
+        initialReceiveInvoice="SINV-0001"
+        onBackToPos={onBackToPos}
+        paymentModes={[{ default: true, mode_of_payment: "Cash" }]}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("Example customer")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Apply payment to SINV-0001" }).props
+        .style,
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
+      "58",
+    );
+  });
+
   it("submits an invoice allocation and refreshes the customer balance after success", async () => {
     const receive = jest.fn().mockResolvedValue({ name: "ACC-PAY-0001" });
     const reload = jest.fn();

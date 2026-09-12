@@ -33,6 +33,7 @@ import {
   PosPaymentMode,
   PosPaymentReconciliationAllocation,
   PosPaymentReconciliationCandidate,
+  PosSaleCustomer,
 } from "@/features/pos/types";
 import {
   parsePaymentAmount,
@@ -50,6 +51,8 @@ type PosPaymentsScreenProps = {
   allowReceive: boolean;
   currency: string;
   currencyPrecision: number;
+  initialReceiveCustomer?: PosSaleCustomer;
+  initialReceiveInvoice?: string;
   onBackToPos: () => void;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
@@ -99,6 +102,8 @@ export function PosPaymentsScreen({
   allowReceive,
   currency,
   currencyPrecision,
+  initialReceiveCustomer,
+  initialReceiveInvoice,
   onBackToPos,
   paymentModes,
   posProfile,
@@ -217,6 +222,8 @@ export function PosPaymentsScreen({
         <ReceivePaymentContext
           currency={currency}
           currencyPrecision={currencyPrecision}
+          initialCustomer={initialReceiveCustomer}
+          initialInvoice={initialReceiveInvoice}
           paymentModes={paymentModes}
           posProfile={posProfile}
         />
@@ -946,11 +953,15 @@ function HistoryAmount({
 function ReceivePaymentContext({
   currency,
   currencyPrecision,
+  initialCustomer,
+  initialInvoice,
   paymentModes,
   posProfile,
 }: {
   currency: string;
   currencyPrecision: number;
+  initialCustomer?: PosSaleCustomer;
+  initialInvoice?: string;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
 }) {
@@ -959,9 +970,12 @@ function ReceivePaymentContext({
   const isOffline = connectionStatus === "offline";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
-    useState<PosCustomerSearchResult | null>(null);
-  const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
+    useState<PosCustomerSearchResult | null>(initialCustomer ?? null);
+  const [selectedInvoice, setSelectedInvoice] = useState<string | null>(
+    initialInvoice ?? null,
+  );
   const [amount, setAmount] = useState("");
+  const [hasEditedAmount, setHasEditedAmount] = useState(false);
   const defaultMode =
     paymentModes.find((mode) => mode.default)?.mode_of_payment ||
     paymentModes[0]?.mode_of_payment ||
@@ -991,6 +1005,14 @@ function ReceivePaymentContext({
   const outstandingInvoices = (customerDetails.data?.invoices || []).filter(
     (invoice) => !invoice.is_return && invoice.outstanding_amount > 0,
   );
+  const initialInvoiceAmount =
+    !hasEditedAmount && selectedInvoice === initialInvoice
+      ? outstandingInvoices.find((invoice) => invoice.name === initialInvoice)
+          ?.outstanding_amount
+      : undefined;
+  const paymentAmountInput =
+    amount ||
+    (initialInvoiceAmount === undefined ? "" : String(initialInvoiceAmount));
   const activeMode = paymentModes.some(
     (paymentMode) => paymentMode.mode_of_payment === mode,
   )
@@ -1002,8 +1024,9 @@ function ReceivePaymentContext({
   const requiresReference = Boolean(selectedMode?.requires_reference);
   const isGatewayMode = Boolean(selectedMode?.payment_gateway);
   const hasInvalidAmount =
-    Boolean(amount.trim()) &&
-    (!Number.isFinite(Number(amount)) || Number(amount) <= 0);
+    Boolean(paymentAmountInput.trim()) &&
+    (!Number.isFinite(Number(paymentAmountInput)) ||
+      Number(paymentAmountInput) <= 0);
   const receivePayment = useReceiveCustomerPayment();
   const gatewayPayment = useGatewayPayment();
   const hasRequiredReference =
@@ -1015,7 +1038,7 @@ function ReceivePaymentContext({
     selectedCustomer &&
     posProfile &&
     mode &&
-    amount.trim() &&
+    paymentAmountInput.trim() &&
     !hasInvalidAmount &&
     (!isGatewayMode || isGatewayVerified) &&
     hasRequiredReference,
@@ -1051,6 +1074,7 @@ function ReceivePaymentContext({
     setSelectedCustomer(customer);
     setSelectedInvoice(null);
     setAmount("");
+    setHasEditedAmount(false);
     setQuery("");
     setGatewayPhone(customer.mobile || "");
     clearGatewayState();
@@ -1062,12 +1086,14 @@ function ReceivePaymentContext({
   }) {
     setSelectedInvoice(invoice.name);
     setAmount(String(invoice.outstanding_amount));
+    setHasEditedAmount(true);
     clearGatewayState();
   }
 
   function selectAdvance() {
     setSelectedInvoice(null);
     setAmount("");
+    setHasEditedAmount(true);
     clearGatewayState();
   }
 
@@ -1080,6 +1106,7 @@ function ReceivePaymentContext({
 
   function changeAmount(nextAmount: string) {
     setAmount(nextAmount);
+    setHasEditedAmount(true);
     clearGatewayState();
   }
 
@@ -1102,7 +1129,7 @@ function ReceivePaymentContext({
   }
 
   async function initiateStkPayment() {
-    const paymentAmount = Number(amount);
+    const paymentAmount = Number(paymentAmountInput);
     const idempotencyKey = gatewayKey();
     if (
       !selectedCustomer ||
@@ -1160,7 +1187,7 @@ function ReceivePaymentContext({
   }
 
   async function attachC2BGatewayPayment(payment: PosC2BGatewayPayment) {
-    const paymentAmount = Number(amount);
+    const paymentAmount = Number(paymentAmountInput);
     const idempotencyKey = gatewayKey();
     if (
       !selectedCustomer ||
@@ -1186,7 +1213,7 @@ function ReceivePaymentContext({
   async function submitPayment() {
     setValidationError(null);
     setSuccessMessage(null);
-    const paymentAmount = Number(amount);
+    const paymentAmount = Number(paymentAmountInput);
     if (!selectedCustomer || !posProfile) {
       setValidationError("Select a customer before receiving a payment.");
       return;
@@ -1232,6 +1259,7 @@ function ReceivePaymentContext({
       `Payment Entry ${payment.name} was submitted successfully.`,
     );
     setAmount("");
+    setHasEditedAmount(true);
     setSelectedInvoice(null);
     setReferenceNo("");
     setReferenceDate(today());
@@ -1497,7 +1525,7 @@ function ReceivePaymentContext({
                 color: palette.onSurface,
               },
             ]}
-            value={amount}
+            value={paymentAmountInput}
           />
           {hasInvalidAmount ? (
             <Text
@@ -1755,7 +1783,7 @@ function ReceivePaymentContext({
                       gatewayPayment.isWorking ||
                       !gatewayPhone.trim() ||
                       hasInvalidAmount ||
-                      !amount.trim() ||
+                      !paymentAmountInput.trim() ||
                       isGatewayVerified
                     }
                     onPress={() => void initiateStkPayment()}
@@ -1767,7 +1795,7 @@ function ReceivePaymentContext({
                           gatewayPayment.isWorking ||
                           !gatewayPhone.trim() ||
                           hasInvalidAmount ||
-                          !amount.trim() ||
+                          !paymentAmountInput.trim() ||
                           isGatewayVerified
                             ? 0.5
                             : 1,
@@ -1853,7 +1881,10 @@ function ReceivePaymentContext({
                   </View>
                   {c2bResults.map((payment) => {
                     const amountMatches =
-                      parsePaymentAmount(amount, currencyPrecision) ===
+                      parsePaymentAmount(
+                        paymentAmountInput,
+                        currencyPrecision,
+                      ) ===
                       totalToMinorUnits(payment.amount, currencyPrecision);
                     return (
                       <Pressable

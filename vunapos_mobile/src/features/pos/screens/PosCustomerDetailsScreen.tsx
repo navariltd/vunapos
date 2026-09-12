@@ -12,6 +12,7 @@ import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 type PosCustomerDetailsScreenProps = {
   customer: string;
   onBack: () => void;
+  onReceivePayment?: (customer: PosSaleCustomer) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
 
@@ -74,6 +75,7 @@ function SummaryValue({
 export function PosCustomerDetailsScreen({
   customer,
   onBack,
+  onReceivePayment,
   onStartSale,
 }: PosCustomerDetailsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
@@ -114,6 +116,16 @@ export function PosCustomerDetailsScreen({
     details.data.contact?.phone;
   const email = profile.email_id || details.data.contact?.email_id;
   const address = formatAddress(details.data.address);
+  const saleCustomer = {
+    customer: profile.customer,
+    customerName: profile.customer_name,
+    isWalkin: profile.is_walkin,
+    mobile: phone,
+    taxId: profile.tax_id,
+  };
+  const canReceivePayment =
+    Boolean(onReceivePayment) &&
+    bootstrap.data?.pos_profile.allow_customer_payments !== false;
 
   return (
     <ScrollView
@@ -181,18 +193,24 @@ export function PosCustomerDetailsScreen({
         </Text>
       </DetailCard>
 
+      {canReceivePayment ? (
+        <Pressable
+          accessibilityLabel="Receive payment"
+          disabled={isOffline}
+          onPress={() => onReceivePayment?.(saleCustomer)}
+          style={[
+            styles.receivePaymentButton,
+            isOffline && styles.actionDisabled,
+          ]}
+        >
+          <Text style={styles.receivePaymentButtonLabel}>Receive payment</Text>
+        </Pressable>
+      ) : null}
+
       <Pressable
         accessibilityLabel="Start new sale"
         disabled={isOffline}
-        onPress={() =>
-          onStartSale({
-            customer: profile.customer,
-            customerName: profile.customer_name,
-            isWalkin: profile.is_walkin,
-            mobile: phone,
-            taxId: profile.tax_id,
-          })
-        }
+        onPress={() => onStartSale(saleCustomer)}
         style={[styles.startSaleButton, isOffline && styles.actionDisabled]}
       >
         <Text style={styles.startSaleButtonLabel}>Start new sale</Text>
@@ -249,6 +267,19 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
+  },
+  receivePaymentButton: {
+    alignItems: "center",
+    borderColor: posDarkColors.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    padding: spacing.md,
+  },
+  receivePaymentButtonLabel: {
+    color: posDarkColors.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
   },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 4 },

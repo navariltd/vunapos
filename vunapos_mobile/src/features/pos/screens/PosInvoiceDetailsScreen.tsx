@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
-import { PosInvoicePaymentSheet } from "@/features/pos/components/PosInvoicePaymentSheet";
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
 import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoiceReturnPreviewSheet";
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
@@ -31,6 +30,7 @@ type PosInvoiceDetailsScreenProps = {
     currency: string,
   ) => void;
   onOpenReturn: (invoiceReturn: PosInvoiceReturn) => void;
+  onReceivePayment?: (customer: PosSaleCustomer, invoice: string) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
 
@@ -126,19 +126,17 @@ export function PosInvoiceDetailsScreen({
   onOpenCustomer,
   onOpenPaymentEntry,
   onOpenReturn,
+  onReceivePayment,
   onStartSale,
 }: PosInvoiceDetailsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus === "offline";
-  const [paymentSheetVisible, setPaymentSheetVisible] = useState(false);
-  const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const bootstrap = usePosBootstrap();
   const details = usePosInvoiceDetails({
     invoiceDoctype,
     invoiceName,
     posProfile: bootstrap.data?.pos_profile.name,
-    refreshKey: paymentRefreshKey,
   });
   const error = bootstrap.error ?? details.error;
 
@@ -176,13 +174,11 @@ export function PosInvoiceDetailsScreen({
   const invoiceCustomer = invoice.customer;
   const outstandingAmount = invoice.totals.outstanding_amount || 0;
   const canReceivePayment = Boolean(
-    bootstrap.data?.pos_profile.allow_customer_payments &&
+    bootstrap.data?.pos_profile.allow_customer_payments !== false &&
     invoice.doctype !== "Sales Order" &&
     invoiceCustomer &&
     outstandingAmount > 0 &&
-    bootstrap.data.payment_modes.some(
-      (paymentMode) => !paymentMode.payment_gateway,
-    ),
+    onReceivePayment,
   );
   const canStartReturn = Boolean(
     invoice.docstatus === 1 &&
@@ -304,7 +300,15 @@ export function PosInvoiceDetailsScreen({
               <Pressable
                 accessibilityLabel="Receive payment"
                 disabled={isOffline}
-                onPress={() => setPaymentSheetVisible(true)}
+                onPress={() =>
+                  onReceivePayment?.(
+                    {
+                      customer: invoiceCustomer,
+                      customerName: invoice.customer_name || invoiceCustomer,
+                    },
+                    invoice.name,
+                  )
+                }
                 style={styles.customerButton}
               >
                 <Text style={styles.customerButtonLabel}>Receive payment</Text>
@@ -512,23 +516,6 @@ export function PosInvoiceDetailsScreen({
         </View>
       </DetailCard>
 
-      {invoiceCustomer && paymentSheetVisible ? (
-        <PosInvoicePaymentSheet
-          currencyPrecision={precision}
-          currency={currency}
-          customer={invoiceCustomer}
-          invoice={invoice.name}
-          onComplete={() => {
-            setPaymentSheetVisible(false);
-            setPaymentRefreshKey((current) => current + 1);
-          }}
-          onDismiss={() => setPaymentSheetVisible(false)}
-          outstandingAmount={outstandingAmount}
-          paymentModes={bootstrap.data?.payment_modes ?? []}
-          posProfile={bootstrap.data?.pos_profile.name || ""}
-          visible={paymentSheetVisible}
-        />
-      ) : null}
       {canStartReturn && returnPreviewVisible ? (
         <PosInvoiceReturnPreviewSheet
           currencyPrecision={precision}

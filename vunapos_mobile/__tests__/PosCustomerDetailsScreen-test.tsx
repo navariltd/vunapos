@@ -19,6 +19,7 @@ import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDeta
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
 const onBack = jest.fn();
+const onReceivePayment = jest.fn();
 const onStartSale = jest.fn();
 
 describe("PosCustomerDetailsScreen", () => {
@@ -110,5 +111,26 @@ describe("PosCustomerDetailsScreen", () => {
     await fireEvent.press(screen.getByLabelText("Back to invoice"));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens Receive with the current customer selected", async () => {
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onReceivePayment={onReceivePayment}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Receive payment"));
+
+    expect(onReceivePayment).toHaveBeenCalledWith({
+      customer: "CUST-001",
+      customerName: "Example customer",
+      isWalkin: true,
+      mobile: "+254 700 000 000",
+      taxId: "P012345678X",
+    });
   });
 });
