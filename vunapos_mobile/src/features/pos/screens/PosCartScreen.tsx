@@ -1182,6 +1182,12 @@ export function PosCartScreen({
           {saleCustomer && customerLoyalty.isLoading ? (
             <Text style={styles.loyaltyLoading}>Checking loyalty balance…</Text>
           ) : null}
+          {saleCustomer && customerLoyalty.error ? (
+            <Text style={styles.loyaltyError}>
+              Loyalty details are unavailable right now. You can continue the
+              sale and try again later.
+            </Text>
+          ) : null}
           {saleCustomer && customerLoyalty.data?.enrolled ? (
             <View
               accessibilityLabel="Customer loyalty status"
@@ -1890,6 +1896,12 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     textAlign: "center",
+  },
+  loyaltyError: {
+    color: posDarkColors.error,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+    marginTop: spacing.xs,
   },
   loyaltyMeta: {
     color: posDarkColors.onSurfaceMuted,
