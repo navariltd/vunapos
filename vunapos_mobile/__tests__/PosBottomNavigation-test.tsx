@@ -33,9 +33,9 @@ describe("PosBottomNavigation", () => {
       />,
     );
 
-    expect(
-      screen.getByLabelText("Payments").props.accessibilityState,
-    ).toEqual({ disabled: true });
+    expect(screen.getByLabelText("Payments").props.accessibilityState).toEqual({
+      disabled: true,
+    });
   });
 
   it("opens Payments when customer payments are enabled", async () => {
@@ -50,5 +50,19 @@ describe("PosBottomNavigation", () => {
     await fireEvent.press(screen.getByRole("tab", { name: "Payments" }));
 
     expect(onTabChange).toHaveBeenCalledWith("Payments");
+  });
+
+  it("opens Close Shift", async () => {
+    const screen = await render(
+      <PosBottomNavigation
+        activeTab="Home"
+        onTabChange={onTabChange}
+        paymentsEnabled={false}
+      />,
+    );
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Close Shift" }));
+
+    expect(onTabChange).toHaveBeenCalledWith("Close Shift");
   });
 });

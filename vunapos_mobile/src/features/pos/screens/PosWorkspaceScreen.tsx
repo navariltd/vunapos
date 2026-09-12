@@ -6,6 +6,7 @@ import { useSalespersonPin } from "@/features/pos/hooks/useSalespersonPin";
 import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+import { PosCloseShiftScreen } from "@/features/pos/screens/PosCloseShiftScreen";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
@@ -327,6 +328,11 @@ export function PosWorkspaceScreen() {
           initialReceiveInvoice={receivePaymentContext?.invoice}
           onBackToPos={() => changeTab("Home")}
           paymentModes={paymentModes}
+          posProfile={posProfile}
+        />
+      ) : activeTab === "Close Shift" ? (
+        <PosCloseShiftScreen
+          onBackToPos={() => changeTab("Home")}
           posProfile={posProfile}
         />
       ) : (

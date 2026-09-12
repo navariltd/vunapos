@@ -27,6 +27,7 @@ function isImplementedTab(
   return (
     label === "Home" ||
     label === "Invoices" ||
+    label === "Close Shift" ||
     (label === "Payments" && paymentsEnabled)
   );
 }

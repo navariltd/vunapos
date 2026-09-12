@@ -1,7 +1,7 @@
 export type PosOrderType = "Invoice" | "Order";
 
 /** Tabs enabled in the native increment. The remaining shell tabs are visual only. */
-export type PosNavigationTab = "Home" | "Invoices" | "Payments";
+export type PosNavigationTab = "Home" | "Invoices" | "Payments" | "Close Shift";
 
 export type PosCatalogueItem = {
   actual_qty?: number | null;
