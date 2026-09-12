@@ -200,6 +200,29 @@ export function useSubmitPosCheckout() {
     setError(null);
   }
 
+  function cashierError(requestError: unknown) {
+    const message = requestError instanceof Error ? requestError.message : "";
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes("insufficient stock") ||
+      normalized.includes("out of stock")
+    )
+      return "Stock changed before submission. Review the cart and try again.";
+    if (normalized.includes("price") || normalized.includes("pricing rule"))
+      return "Pricing changed before submission. Review the updated cart and try again.";
+    if (
+      normalized.includes("permission") ||
+      normalized.includes("not permitted")
+    )
+      return "You do not have permission to complete this sale. Ask a manager for help.";
+    if (normalized.includes("validation") || normalized.includes("mandatory"))
+      return "Some sale details need attention. Review the highlighted checkout information and try again.";
+    return (
+      message ||
+      "Could not complete this sale. Check your connection and try again."
+    );
+  }
+
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
     if (!companyUrl || !sessionId || !input.posProfile) {
       setError(
@@ -285,11 +308,7 @@ export function useSubmitPosCheckout() {
       ) {
         void invalidateSession();
       }
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not complete this sale.",
-      );
+      setError(cashierError(requestError));
       return null;
     } finally {
       setIsSubmitting(false);
