@@ -35,6 +35,12 @@ export type PosTemplateVariants = {
   variants: PosTemplateVariant[];
 };
 
+export type PosProductBundle = {
+  available_qty?: number | null;
+  item_code: string;
+  items: PosCartBundleItem[];
+};
+
 export type PosCartItem = {
   amount?: number;
   allow_negative_stock: boolean;
@@ -101,6 +107,7 @@ export type PosSerialAllocation = {
 };
 
 export type PosCartBundleItem = {
+  available_qty?: number | null;
   item_code: string;
   item_name?: string | null;
   qty?: number | null;

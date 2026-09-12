@@ -13,10 +13,12 @@ import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScan
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
 import { PosItemSearch } from "@/features/pos/components/PosItemSearch";
+import { PosProductBundleSheet } from "@/features/pos/components/PosProductBundleSheet";
 import { PosVariantPickerSheet } from "@/features/pos/components/PosVariantPickerSheet";
 import { usePosBarcodeScan } from "@/features/pos/hooks/usePosBarcodeScan";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
+import { usePosProductBundle } from "@/features/pos/hooks/usePosProductBundle";
 import { usePosTemplateVariants } from "@/features/pos/hooks/usePosTemplateVariants";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -79,6 +81,7 @@ export function PosHomeScreen({
   const [variantActionError, setVariantActionError] = useState<string | null>(
     null,
   );
+  const [bundleItem, setBundleItem] = useState<PosCatalogueItem | null>(null);
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: pricingContext?.customer,
@@ -113,6 +116,13 @@ export function PosHomeScreen({
     priceList: pricingContext?.priceList,
     templateItemCode: variantTemplate?.item_code,
   });
+  const productBundle = usePosProductBundle({
+    customer: pricingContext?.customer,
+    enabled: Boolean(bundleItem),
+    itemCode: bundleItem?.item_code,
+    posProfile: bootstrap.data?.pos_profile.name,
+    priceList: pricingContext?.priceList,
+  });
   const handledRefreshKey = useRef(refreshKey);
   const reloadBootstrap = bootstrap.reload;
 
@@ -143,6 +153,10 @@ export function PosHomeScreen({
       setVariantTemplate(item);
       return true;
     }
+    if (item.is_product_bundle) {
+      setBundleItem(item);
+      return true;
+    }
     const outOfStock = isOutOfStock(item);
     if (outOfStock) return false;
 
@@ -171,6 +185,13 @@ export function PosHomeScreen({
       setVariantActionError(
         `Could not add ${variant.item_name || variant.item_code}. Please try again.`,
       );
+  }
+
+  async function confirmBundle() {
+    if (!bundleItem) return;
+    const bundle = bundleItem;
+    setBundleItem(null);
+    await addItem({ ...bundle, is_product_bundle: false });
   }
 
   async function scanBarcode(barcode: string) {
@@ -297,6 +318,16 @@ export function PosHomeScreen({
         templateName={variantTemplate?.item_name}
         variants={templateVariants.data?.variants ?? []}
         visible={Boolean(variantTemplate)}
+      />
+      <PosProductBundleSheet
+        bundle={productBundle.data}
+        error={productBundle.error}
+        isAdding={pendingItemCode === bundleItem?.item_code}
+        isLoading={productBundle.isLoading}
+        itemName={bundleItem?.item_name}
+        onConfirm={() => void confirmBundle()}
+        onDismiss={() => !pendingItemCode && setBundleItem(null)}
+        visible={Boolean(bundleItem)}
       />
     </View>
   );

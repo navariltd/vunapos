@@ -101,6 +101,22 @@ jest.mock("@/features/pos/components/PosVariantPickerSheet", () => ({
   },
 }));
 
+jest.mock("@/features/pos/components/PosProductBundleSheet", () => ({
+  PosProductBundleSheet: ({
+    onConfirm,
+    visible,
+  }: {
+    onConfirm: () => void;
+    visible: boolean;
+  }) =>
+    visible
+      ? require("react").createElement(require("react-native").Pressable, {
+          accessibilityLabel: "Confirm bundle",
+          onPress: onConfirm,
+        })
+      : null,
+}));
+
 jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
   PosCustomerPickerSheet: () => null,
 }));
@@ -117,6 +133,10 @@ jest.mock("@/features/pos/hooks/usePosTemplateVariants", () => ({
   usePosTemplateVariants: jest.fn(),
 }));
 
+jest.mock("@/features/pos/hooks/usePosProductBundle", () => ({
+  usePosProductBundle: jest.fn(),
+}));
+
 jest.mock("@/features/pos/hooks/usePosBarcodeScan", () => ({
   usePosBarcodeScan: () => ({ isResolving: false, resolve: jest.fn() }),
 }));
@@ -128,11 +148,13 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
 import { usePosTemplateVariants } from "@/features/pos/hooks/usePosTemplateVariants";
+import { usePosProductBundle } from "@/features/pos/hooks/usePosProductBundle";
 import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosItemSearch = jest.mocked(usePosItemSearch);
 const mockUsePosTemplateVariants = jest.mocked(usePosTemplateVariants);
+const mockUsePosProductBundle = jest.mocked(usePosProductBundle);
 const onAddToCart = jest.fn();
 const onPosProfileLoaded = jest.fn();
 
@@ -164,6 +186,11 @@ describe("PosHomeScreen", () => {
       error: null,
       isLoading: false,
       reload: jest.fn(),
+    });
+    mockUsePosProductBundle.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
     });
   });
 
@@ -346,6 +373,44 @@ describe("PosHomeScreen", () => {
     await fireEvent.press(screen.getByLabelText("Select first variant"));
     expect(onAddToCart).toHaveBeenCalledWith(variant, "KES");
     expect(onAddToCart).not.toHaveBeenCalledWith(template, "KES");
+  });
+
+  it("requires bundle confirmation before adding the bundle", async () => {
+    const bundle = {
+      is_product_bundle: true,
+      item_code: "PACK-001",
+      item_name: "Starter pack",
+      rate: 500,
+    };
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [bundle],
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onPosProfileLoaded={onPosProfileLoaded}
+      />,
+    );
+    await fireEvent.press(screen.getByText("Card: Starter pack"));
+    expect(onAddToCart).not.toHaveBeenCalled();
+    expect(mockUsePosProductBundle).toHaveBeenLastCalledWith(
+      expect.objectContaining({ enabled: true, itemCode: "PACK-001" }),
+    );
+    await fireEvent.press(screen.getByLabelText("Confirm bundle"));
+    expect(onAddToCart).toHaveBeenCalledWith(
+      expect.objectContaining({ item_code: "PACK-001" }),
+      "KES",
+    );
   });
 
   it("resolves relative Frappe item images against the saved company URL", async () => {
