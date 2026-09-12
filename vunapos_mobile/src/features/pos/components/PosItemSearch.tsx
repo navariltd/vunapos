@@ -7,12 +7,14 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosItemSearchProps = {
   onChangeText: (value: string) => void;
   onScanBarcode: () => void;
+  onSubmit: () => void;
   value: string;
 };
 
 export function PosItemSearch({
   onChangeText,
   onScanBarcode,
+  onSubmit,
   value,
 }: PosItemSearchProps) {
   const { palette } = useAppearance();
@@ -43,8 +45,10 @@ export function PosItemSearch({
           autoCapitalize="none"
           autoCorrect={false}
           onChangeText={onChangeText}
+          onSubmitEditing={onSubmit}
           placeholder="Search by item name, code, or barcode"
           placeholderTextColor={palette.onSurfaceMuted}
+          returnKeyType="search"
           style={[styles.input, { color: palette.onSurface }]}
           value={value}
         />

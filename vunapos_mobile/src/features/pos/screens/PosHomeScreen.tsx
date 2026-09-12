@@ -247,6 +247,13 @@ export function PosHomeScreen({
     return `Could not add ${item.item_name || item.item_code}. Please try again.`;
   }
 
+  async function submitSearch() {
+    const submitted = searchQuery.trim();
+    if (!submitted || pendingItemCode) return;
+    const error = await scanBarcode(submitted);
+    if (error) setAddError(error);
+  }
+
   const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) =>
     hideImages ? (
       <PosItemListRow
@@ -324,6 +331,7 @@ export function PosHomeScreen({
             <PosItemSearch
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
+              onSubmit={() => void submitSearch()}
               value={searchQuery}
             />
             {itemSearch.error ? (
