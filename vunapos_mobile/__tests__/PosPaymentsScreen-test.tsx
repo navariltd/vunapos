@@ -168,13 +168,29 @@ describe("PosPaymentsScreen", () => {
           {
             allocated_amount: 40,
             cashier: "cashier@example.com",
+            closing_entry: "POS-CLOSE-0001",
             customer: "CUST-001",
             customer_name: "Example customer",
             mode_of_payment: "Cash",
             name: "ACC-PAY-0001",
             posting_date: "2026-09-12",
             received_amount: 58,
-            references: [],
+            gateway_links: [
+              {
+                name: "GPL-001",
+                source_doctype: "Sales Invoice",
+                source_name: "SINV-0001",
+                status: "Paid",
+                transaction_reference: "TXN-001",
+              },
+            ],
+            references: [
+              {
+                allocated_amount: 40,
+                reference_doctype: "Sales Invoice",
+                reference_name: "SINV-0001",
+              },
+            ],
             status: "Submitted",
             unallocated_amount: 18,
           },
@@ -203,8 +219,14 @@ describe("PosPaymentsScreen", () => {
     expect(screen.getByText("Sep 12, 2026 · Cash")).toBeTruthy();
     expect(screen.getByText("Submitted")).toBeTruthy();
     expect(screen.getByText("KES 58.00")).toBeTruthy();
-    expect(screen.getByText("KES 40.00")).toBeTruthy();
+    expect(screen.getAllByText("KES 40.00")).toHaveLength(2);
     expect(screen.getByText("KES 18.00")).toBeTruthy();
+    expect(screen.getByText("Shift closed")).toBeTruthy();
+    expect(screen.getByText("Invoice allocations")).toBeTruthy();
+    expect(screen.getByText("SINV-0001")).toBeTruthy();
+    expect(screen.getByText("Gateway payments")).toBeTruthy();
+    expect(screen.getByText("TXN-001")).toBeTruthy();
+    expect(screen.getByText("Sales Invoice · Paid")).toBeTruthy();
 
     await fireEvent.changeText(
       screen.getByLabelText("Filter payment history by customer ID"),

@@ -719,6 +719,13 @@ function PaymentHistoryRowCard({
           {payment.status}
         </Text>
       </View>
+      {payment.closing_entry ? (
+        <Text
+          style={[styles.historyShiftClosed, { color: palette.onSurfaceMuted }]}
+        >
+          Shift closed
+        </Text>
+      ) : null}
       <View style={styles.historyDetails}>
         <View style={styles.historyDetail}>
           <Text
@@ -773,6 +780,81 @@ function PaymentHistoryRowCard({
           label="Unallocated"
         />
       </View>
+      {payment.references.length ? (
+        <HistoryAssociatedRows
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          rows={payment.references.map((reference) => ({
+            amount: reference.allocated_amount,
+            label: reference.reference_name,
+            meta: reference.reference_doctype,
+          }))}
+          title="Invoice allocations"
+        />
+      ) : null}
+      {payment.gateway_links?.length ? (
+        <HistoryAssociatedRows
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          rows={payment.gateway_links.map((gatewayLink) => ({
+            amount: undefined,
+            label: gatewayLink.transaction_reference || gatewayLink.source_name,
+            meta: `${gatewayLink.source_doctype} · ${gatewayLink.status}`,
+          }))}
+          title="Gateway payments"
+        />
+      ) : null}
+    </View>
+  );
+}
+
+function HistoryAssociatedRows({
+  currency,
+  currencyPrecision,
+  rows,
+  title,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  rows: { amount?: number; label: string; meta: string }[];
+  title: string;
+}) {
+  const { palette } = useAppearance();
+
+  return (
+    <View
+      style={[
+        styles.historyAssociatedRows,
+        { borderColor: palette.borderSubtle },
+      ]}
+    >
+      <Text
+        style={[styles.historyDetailLabel, { color: palette.onSurfaceMuted }]}
+      >
+        {title}
+      </Text>
+      {rows.map((row, index) => (
+        <View
+          key={`${row.meta}-${row.label}-${index}`}
+          style={styles.historyAssociatedRow}
+        >
+          <View style={styles.reconciliationRowDetails}>
+            <Text style={[styles.customerMeta, { color: palette.onSurface }]}>
+              {row.label}
+            </Text>
+            <Text
+              style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
+            >
+              {row.meta}
+            </Text>
+          </View>
+          {row.amount !== undefined ? (
+            <Text style={[styles.invoiceAmount, { color: palette.onSurface }]}>
+              {formatPosCurrency(row.amount, currency, currencyPrecision)}
+            </Text>
+          ) : null}
+        </View>
+      ))}
     </View>
   );
 }
@@ -2563,6 +2645,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   historyAmount: { flex: 1, gap: 2 },
+  historyAssociatedRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  historyAssociatedRows: {
+    borderTopWidth: 1,
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+  },
   historyAmounts: { flexDirection: "row", gap: spacing.sm },
   historyDetail: { flex: 1, gap: 2 },
   historyDetailLabel: {
@@ -2624,6 +2717,10 @@ const styles = StyleSheet.create({
   },
   historyStatus: {
     fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  historyShiftClosed: {
+    fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   fieldLabel: {
