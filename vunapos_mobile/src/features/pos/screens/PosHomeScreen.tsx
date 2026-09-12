@@ -326,6 +326,35 @@ export function PosHomeScreen({
               onScanBarcode={() => setBarcodeScannerVisible(true)}
               value={searchQuery}
             />
+            {itemSearch.error ? (
+              <View
+                style={[
+                  styles.catalogueError,
+                  {
+                    backgroundColor: palette.errorSurface,
+                    borderColor: palette.errorSurface,
+                  },
+                ]}
+              >
+                <Text style={[styles.addError, { color: palette.error }]}>
+                  {itemSearch.error}
+                </Text>
+                <Pressable
+                  accessibilityLabel="Retry catalogue search"
+                  onPress={itemSearch.reload}
+                  style={[styles.retryButton, { borderColor: palette.border }]}
+                >
+                  <Text
+                    style={[
+                      styles.retryButtonLabel,
+                      { color: palette.onSurface },
+                    ]}
+                  >
+                    Try again
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
             {addError ? (
               <Text style={[styles.addError, { color: palette.error }]}>
                 {addError}
@@ -381,6 +410,14 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
+  catalogueError: {
+    alignItems: "center",
+    borderWidth: 1,
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
   catalogueNotice: {
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,

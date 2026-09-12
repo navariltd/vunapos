@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { PosCatalogueItem } from '@/features/pos/types';
-import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { PosCatalogueItem } from "@/features/pos/types";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
 type UsePosItemSearchArgs = {
   customer?: string;
@@ -25,14 +25,34 @@ type ItemSearchState = {
  * Bootstrap is capped for a fast first paint, whereas this request becomes the
  * authoritative catalogue once it arrives and must not silently truncate it.
  */
-export function usePosItemSearch({ customer, loadAll = false, posProfile, priceList, query }: UsePosItemSearchArgs) {
+export function usePosItemSearch({
+  customer,
+  loadAll = false,
+  posProfile,
+  priceList,
+  query,
+}: UsePosItemSearchArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
-  const [state, setState] = useState<ItemSearchState>({ error: null, items: [], requestKey: null });
+  const [reloadKey, setReloadKey] = useState(0);
+  const [state, setState] = useState<ItemSearchState>({
+    error: null,
+    items: [],
+    requestKey: null,
+  });
   const normalizedQuery = query.trim();
-  const requestKey = companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
-    ? JSON.stringify({ companyUrl, customer, debouncedQuery, posProfile, priceList, sessionId })
-    : null;
+  const requestKey =
+    companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
+      ? JSON.stringify({
+          companyUrl,
+          customer,
+          debouncedQuery,
+          posProfile,
+          priceList,
+          reloadKey,
+          sessionId,
+        })
+      : null;
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedQuery(normalizedQuery), 300);
@@ -43,30 +63,59 @@ export function usePosItemSearch({ customer, loadAll = false, posProfile, priceL
     if (!requestKey || !companyUrl || !sessionId || !posProfile) return;
     const controller = new AbortController();
 
-    void getVunaMethod<PosCatalogueItem[]>(companyUrl, sessionId, 'vunapos.api.item.search_items', {
-      limit: loadAll && !debouncedQuery ? 0 : 60,
-      customer,
-      pos_profile: posProfile,
-      price_list: priceList,
-      query: debouncedQuery,
-    }, controller.signal)
+    void getVunaMethod<PosCatalogueItem[]>(
+      companyUrl,
+      sessionId,
+      "vunapos.api.item.search_items",
+      {
+        limit: loadAll && !debouncedQuery ? 0 : 60,
+        customer,
+        pos_profile: posProfile,
+        price_list: priceList,
+        query: debouncedQuery,
+      },
+      controller.signal,
+    )
       .then((items) => setState({ error: null, items, requestKey }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        if (error instanceof FrappeClientError && error.code === 'session') {
+        if (error instanceof FrappeClientError && error.code === "session") {
           void invalidateSession();
           return;
         }
-        setState({ error: error instanceof Error ? error.message : 'Could not search the item catalogue.', items: [], requestKey });
+        setState((current) => ({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not search the item catalogue.",
+          items: current.items,
+          requestKey,
+        }));
       });
 
     return () => controller.abort();
-  }, [companyUrl, customer, debouncedQuery, invalidateSession, loadAll, posProfile, priceList, requestKey, sessionId]);
+  }, [
+    companyUrl,
+    customer,
+    debouncedQuery,
+    invalidateSession,
+    loadAll,
+    posProfile,
+    priceList,
+    reloadKey,
+    requestKey,
+    sessionId,
+  ]);
+
+  const reload = useCallback(() => setReloadKey((current) => current + 1), []);
 
   return {
     error: state.requestKey === requestKey ? state.error : null,
     hasLoaded: state.requestKey === requestKey,
-    isLoading: Boolean(requestKey) && (normalizedQuery !== debouncedQuery || state.requestKey !== requestKey),
+    isLoading:
+      Boolean(requestKey) &&
+      (normalizedQuery !== debouncedQuery || state.requestKey !== requestKey),
     items: state.requestKey === requestKey ? state.items : [],
+    reload,
   };
 }

@@ -191,6 +191,7 @@ describe("PosHomeScreen", () => {
       hasLoaded: false,
       isLoading: false,
       items: [],
+      reload: jest.fn(),
     });
     mockUsePosTemplateVariants.mockReturnValue({
       data: { template: { item_code: "", item_name: "" }, variants: [] },
@@ -353,6 +354,7 @@ describe("PosHomeScreen", () => {
       hasLoaded: true,
       isLoading: false,
       items: [item],
+      reload: jest.fn(),
     });
     const screen = await render(
       <PosHomeScreen
