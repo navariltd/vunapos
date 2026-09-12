@@ -10,6 +10,7 @@ import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDeta
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
 import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
+import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
 import {
   PosBootstrapData,
   PosInvoicePaymentEntry,
@@ -84,6 +85,8 @@ export function PosWorkspaceScreen() {
   const salespersonLocked = Boolean(
     posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
   );
+  const allowsCustomerPayments =
+    posProfileConfig?.allow_customer_payments !== false;
 
   useEffect(() => {
     if (!selectedPriceList || !posProfileConfig) return;
@@ -126,6 +129,7 @@ export function PosWorkspaceScreen() {
       onOrderTypeChange={setOrderType}
       onTabChange={changeTab}
       orderType={orderType}
+      paymentsEnabled={allowsCustomerPayments}
     >
       {selectedPaymentEntry ? (
         <PosPaymentEntryDetailsScreen
@@ -283,6 +287,15 @@ export function PosWorkspaceScreen() {
           }}
           refreshKey={postSaleRefreshKey}
           workspaceNotice={workspaceNotice}
+        />
+      ) : activeTab === "Payments" ? (
+        <PosPaymentsScreen
+          allowHistory={posProfileConfig?.allow_payment_history !== false}
+          allowReconciliation={
+            posProfileConfig?.allow_payment_reconciliation !== false
+          }
+          allowReceive={allowsCustomerPayments}
+          onBackToPos={() => changeTab("Home")}
         />
       ) : (
         <PosInvoicesScreen

@@ -13,6 +13,7 @@ type AppShellProps = PropsWithChildren<{
   onOrderTypeChange: (orderType: PosOrderType) => void;
   onTabChange: (tab: PosNavigationTab) => void;
   orderType: PosOrderType;
+  paymentsEnabled?: boolean;
 }>;
 
 export function AppShell({
@@ -21,6 +22,7 @@ export function AppShell({
   onOrderTypeChange,
   onTabChange,
   orderType,
+  paymentsEnabled,
 }: AppShellProps) {
   const { palette } = useAppearance();
   return (
@@ -28,7 +30,11 @@ export function AppShell({
       <PosTopBar onOrderTypeChange={onOrderTypeChange} orderType={orderType} />
       <NetworkStatusBanner />
       <View style={styles.content}>{children}</View>
-      <PosBottomNavigation activeTab={activeTab} onTabChange={onTabChange} />
+      <PosBottomNavigation
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        paymentsEnabled={paymentsEnabled}
+      />
     </Screen>
   );
 }

@@ -17,16 +17,25 @@ const navigationItems = [
 type PosBottomNavigationProps = {
   activeTab: PosNavigationTab;
   onTabChange: (tab: PosNavigationTab) => void;
+  paymentsEnabled?: boolean;
 };
 
-function isImplementedTab(label: string): label is PosNavigationTab {
-  return label === "Home" || label === "Invoices";
+function isImplementedTab(
+  label: string,
+  paymentsEnabled: boolean,
+): label is PosNavigationTab {
+  return (
+    label === "Home" ||
+    label === "Invoices" ||
+    (label === "Payments" && paymentsEnabled)
+  );
 }
 
-/** Only Home and Invoices are interactive in this increment. */
+/** Native tabs become interactive only when their required profile feature is available. */
 export function PosBottomNavigation({
   activeTab,
   onTabChange,
+  paymentsEnabled = false,
 }: PosBottomNavigationProps) {
   const { palette } = useAppearance();
 
@@ -48,9 +57,10 @@ export function PosBottomNavigation({
           </>
         );
 
-        if (isImplementedTab(label)) {
+        if (isImplementedTab(label, paymentsEnabled)) {
           return (
             <Pressable
+              accessibilityLabel={label}
               accessibilityRole="tab"
               accessibilityState={{ selected: isActive }}
               key={label}
@@ -67,6 +77,7 @@ export function PosBottomNavigation({
 
         return (
           <View
+            accessibilityLabel={label}
             accessibilityRole="tab"
             accessibilityState={{ disabled: true }}
             key={label}
