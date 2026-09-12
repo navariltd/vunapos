@@ -957,11 +957,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 		updateCartItemPricing: async (rowName, pricingOverride, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
+			const targetItem = invoice.items.find((item) => item.row_name === rowName);
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
 			);
 			const profile = await profileRepository.getActive();
-			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change) {
+			const isDeliveryCharge = Boolean(
+				targetItem?.item_code &&
+				profile?.allow_delivery_charge_change &&
+				profile.delivery_charge_item === targetItem.item_code,
+			);
+			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change && !isDeliveryCharge) {
 				throw new Error("Rate changes are not allowed for this POS Profile.");
 			}
 			if (pricingOverride?.type.startsWith("discount") && !profile?.allow_discount_change) {
