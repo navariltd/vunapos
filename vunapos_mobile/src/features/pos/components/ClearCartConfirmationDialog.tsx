@@ -4,6 +4,7 @@ import { Text } from "react-native-paper";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type ClearCartConfirmationDialogProps = {
+  isOffline?: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
   visible: boolean;
@@ -11,6 +12,7 @@ type ClearCartConfirmationDialogProps = {
 
 /** Confirms the cart-wide consequences before discarding a sale in progress. */
 export function ClearCartConfirmationDialog({
+  isOffline = false,
   onConfirm,
   onDismiss,
   visible,
@@ -46,6 +48,7 @@ export function ClearCartConfirmationDialog({
             </Pressable>
             <Pressable
               accessibilityLabel="Confirm clear cart"
+              disabled={isOffline}
               onPress={onConfirm}
               style={styles.clearButton}
             >

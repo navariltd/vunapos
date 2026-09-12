@@ -6,6 +6,7 @@ import { PosItemUom } from "@/features/pos/types";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type Props = {
+  isOffline?: boolean;
   itemName: string;
   onDismiss: () => void;
   onSelect: (uom: string) => void;
@@ -16,6 +17,7 @@ type Props = {
 
 /** Selects only UOMs configured on the Item; the subsequent cart preview validates the choice. */
 export function PosUomPickerSheet({
+  isOffline = false,
   itemName,
   onDismiss,
   onSelect,
@@ -67,6 +69,7 @@ export function PosUomPickerSheet({
             return (
               <Pressable
                 accessibilityLabel={`Use unit ${option.uom}`}
+                disabled={isOffline}
                 key={option.uom}
                 onPress={() => onSelect(option.uom)}
                 style={[styles.option, active && styles.optionActive]}

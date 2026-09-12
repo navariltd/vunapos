@@ -9,6 +9,12 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: jest.fn(),
 }));
 
+const mockUseNetworkStatus = jest.fn();
+
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
 jest.mock("@/services/frappeClient", () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),
@@ -36,6 +42,7 @@ const item = {
 describe("usePosCart", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -109,6 +116,38 @@ describe("usePosCart", () => {
     expect(hook.result.current.taxes).toEqual([
       { description: "VAT", tax_amount: 20 },
     ]);
+  });
+
+  it("keeps the current cart intact and makes no request when explicitly offline", async () => {
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    expect(hook.result.current.items).toHaveLength(1);
+    const requestCount = mockGetVunaMethod.mock.calls.length;
+
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    await hook.rerender(undefined);
+    await act(async () => {
+      await hook.result.current.updateQuantity("ITEM-001", 3);
+    });
+    let wasCleared: boolean | undefined;
+    await act(async () => {
+      wasCleared = hook.result.current.clear();
+    });
+    expect(wasCleared).toBe(false);
+    await act(async () => {
+      await hook.result.current.hold();
+    });
+
+    expect(hook.result.current.items).toHaveLength(1);
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(requestCount);
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
   });
 
   it("keeps a temporary cart until a customer is selected, then refreshes it with Frappe", async () => {

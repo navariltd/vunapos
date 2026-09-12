@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosBatchAllocation,
   PosCartData,
@@ -110,6 +111,8 @@ export function usePosCart({
   priceList,
 }: UsePosCartArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const [data, setData] = useState<PosCartData>({
     items: [],
     taxes: [],
@@ -154,6 +157,12 @@ export function usePosCart({
       cartCustomer = customerRef.current,
       cartPriceList = priceListRef.current,
     ): Promise<PosCartData | null> => {
+      if (isOffline) {
+        setError(
+          "Connection unavailable. Reconnect before changing this cart.",
+        );
+        return null;
+      }
       if (!nextItems.length) {
         const emptyCart = localCart([]);
         itemsRef.current = emptyCart.items;
@@ -224,7 +233,7 @@ export function usePosCart({
         if (request === requestNumber.current) setIsUpdating(false);
       }
     },
-    [companyUrl, invalidateSession, posProfile, sessionId],
+    [companyUrl, invalidateSession, isOffline, posProfile, sessionId],
   );
 
   useEffect(() => {
@@ -251,6 +260,10 @@ export function usePosCart({
   }
 
   function clear() {
+    if (isOffline) {
+      setError("Connection unavailable. Reconnect before clearing this cart.");
+      return false;
+    }
     requestNumber.current += 1;
     const emptyCart = { items: [], taxes: [], totals: {} };
     itemsRef.current = emptyCart.items;
@@ -265,6 +278,7 @@ export function usePosCart({
     setIsHolding(false);
     setIsUpdating(false);
     setSourceInvoice(null);
+    return true;
   }
 
   /** Restores a held Frappe draft into the editable cart without losing its server identity. */
@@ -324,6 +338,10 @@ export function usePosCart({
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
   async function hold(): Promise<PosCheckoutResult | null> {
+    if (isOffline) {
+      setHoldError("Connection unavailable. Reconnect before holding this cart.");
+      return null;
+    }
     const cartItems = itemsRef.current;
     if (!cartItems.length) {
       setHoldError("Add an item before holding this cart.");
@@ -532,6 +550,12 @@ export function usePosCart({
     itemCode: string,
     amount?: number,
   ): Promise<PosCartData | null> {
+    if (isOffline) {
+      setError(
+        "Connection unavailable. Reconnect before changing the delivery charge.",
+      );
+      return null;
+    }
     if (amount === undefined || amount <= 0) {
       return refresh(
         itemsRef.current.filter((item) => item.item_code !== itemCode),

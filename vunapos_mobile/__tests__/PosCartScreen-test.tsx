@@ -197,6 +197,56 @@ describe("PosCartScreen", () => {
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the cart readable but disables cart mutations and checkout offline", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isOffline
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 125,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={null}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    expect(screen.getByText("Stock item")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByLabelText("Increase quantity for Stock item"),
+    );
+    await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
+    await fireEvent.press(screen.getByLabelText("Clear cart"));
+
+    expect(onUpdateQuantity).not.toHaveBeenCalled();
+    expect(onCheckout).not.toHaveBeenCalled();
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
   it("requires confirmation before clearing the whole cart", async () => {
     const screen = await render(
       <PosCartScreen
@@ -484,6 +534,7 @@ describe("PosCartScreen", () => {
     expect(mockUsePosCustomerLoyalty).toHaveBeenCalledWith(
       "CUST-001",
       "POS-001",
+      true,
     );
     expect(screen.getByLabelText("Customer loyalty status")).toBeTruthy();
     expect(screen.getByText("Vuna Rewards · Gold")).toBeTruthy();

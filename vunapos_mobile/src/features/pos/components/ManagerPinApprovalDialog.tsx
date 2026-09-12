@@ -15,6 +15,7 @@ import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type Props = {
+  isOffline?: boolean;
   onApproved: (token: string) => void;
   onDismiss: () => void;
   posProfile?: string;
@@ -25,6 +26,7 @@ type Verification = { token: string };
 
 /** Requires a server-verified manager PIN before a profile-protected cart removal. */
 export function ManagerPinApprovalDialog({
+  isOffline = false,
   onApproved,
   onDismiss,
   posProfile,
@@ -95,7 +97,7 @@ export function ManagerPinApprovalDialog({
             <TextInput
               accessibilityLabel="Manager PIN"
               autoFocus
-              editable={!isVerifying}
+              editable={!isOffline && !isVerifying}
               inputMode="numeric"
               keyboardType="number-pad"
               maxLength={6}
@@ -119,11 +121,11 @@ export function ManagerPinApprovalDialog({
               </Pressable>
               <Pressable
                 accessibilityLabel="Approve item removal"
-                disabled={isVerifying || pin.length < 4}
+                disabled={isOffline || isVerifying || pin.length < 4}
                 onPress={() => void verify()}
                 style={[
                   styles.approveButton,
-                  (isVerifying || pin.length < 4) && styles.disabled,
+                  (isOffline || isVerifying || pin.length < 4) && styles.disabled,
                 ]}
               >
                 {isVerifying ? (

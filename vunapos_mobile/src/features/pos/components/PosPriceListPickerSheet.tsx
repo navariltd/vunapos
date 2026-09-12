@@ -7,6 +7,7 @@ import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
 
 type Props = {
   defaultPriceList?: string | null;
+  isOffline?: boolean;
   onDismiss: () => void;
   onSelect: (priceList?: string) => void;
   options: PosPriceList[];
@@ -15,7 +16,7 @@ type Props = {
 };
 
 /** Restricts choices to price lists supplied by the active POS profile. */
-export function PosPriceListPickerSheet({ defaultPriceList, onDismiss, onSelect, options, selectedPriceList, visible }: Props) {
+export function PosPriceListPickerSheet({ defaultPriceList, isOffline = false, onDismiss, onSelect, options, selectedPriceList, visible }: Props) {
   const insets = useSafeAreaInsets();
   const priceLists = [...(defaultPriceList ? [{ name: defaultPriceList }] : []), ...options.filter((option) => option.name !== defaultPriceList)];
   const activePriceList = selectedPriceList || defaultPriceList;
@@ -34,7 +35,7 @@ export function PosPriceListPickerSheet({ defaultPriceList, onDismiss, onSelect,
         <Text style={styles.subtitle}>Prices in the cart and catalogue will refresh from the server.</Text>
         {priceLists.map((priceList) => {
           const active = activePriceList === priceList.name;
-          return <Pressable accessibilityLabel={`Use price list ${priceList.name}`} key={priceList.name} onPress={() => select(priceList.name)} style={[styles.option, active && styles.optionActive]}><View style={styles.optionContent}><Text style={styles.optionName}>{priceList.name}{priceList.name === defaultPriceList ? ' (Default)' : ''}</Text>{priceList.currency ? <Text style={styles.optionMeta}>{priceList.currency}</Text> : null}</View><Text style={styles.optionCheck}>{active ? '✓' : ''}</Text></Pressable>;
+          return <Pressable accessibilityLabel={`Use price list ${priceList.name}`} disabled={isOffline} key={priceList.name} onPress={() => select(priceList.name)} style={[styles.option, active && styles.optionActive]}><View style={styles.optionContent}><Text style={styles.optionName}>{priceList.name}{priceList.name === defaultPriceList ? ' (Default)' : ''}</Text>{priceList.currency ? <Text style={styles.optionMeta}>{priceList.currency}</Text> : null}</View><Text style={styles.optionCheck}>{active ? '✓' : ''}</Text></Pressable>;
         })}
       </View>
     </View>

@@ -12,6 +12,7 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosBatchAllocation,
   PosCartItem,
@@ -37,6 +38,7 @@ type PosCartScreenProps = {
   hasPendingHold?: boolean;
   holdError?: string | null;
   isHolding?: boolean;
+  isOffline?: boolean;
   isUpdating: boolean;
   items: PosCartItem[];
   onBack: () => void;
@@ -286,7 +288,7 @@ function BatchAllocationEditor({
   posProfile?: string;
 }) {
   const batches = usePosItemBatches({
-    enabled: true,
+    enabled: !disabled,
     itemCode: item.item_code,
     posProfile,
   });
@@ -488,7 +490,7 @@ function SerialAllocationEditor({
   posProfile?: string;
 }) {
   const serialData = usePosItemBatches({
-    enabled: true,
+    enabled: !disabled,
     itemCode: item.item_code,
     posProfile,
   });
@@ -1050,6 +1052,7 @@ export function PosCartScreen({
   hasPendingHold = false,
   holdError,
   isHolding = false,
+  isOffline: isOfflineProp,
   isUpdating,
   items,
   onBack,
@@ -1080,6 +1083,8 @@ export function PosCartScreen({
   taxes,
   totals,
 }: PosCartScreenProps) {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = isOfflineProp ?? connectionStatus === "offline";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
@@ -1094,6 +1099,7 @@ export function PosCartScreen({
   const customerLoyalty = usePosCustomerLoyalty(
     saleCustomer?.customer,
     posProfile,
+    !isOffline,
   );
   const isUsingDefaultCustomer = Boolean(
     saleCustomer?.customer &&
@@ -1102,7 +1108,7 @@ export function PosCartScreen({
   );
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
   const activePriceList = priceList || defaultPriceList;
-  const isCartBusy = isUpdating || isHolding || hasPendingHold;
+  const isCartBusy = isUpdating || isHolding || hasPendingHold || isOffline;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 
   async function holdCart() {
@@ -1299,7 +1305,7 @@ export function PosCartScreen({
               <Text style={styles.errorText}>{holdError}</Text>
               <Pressable
                 accessibilityLabel="Retry holding cart"
-                disabled={isHolding}
+                disabled={isCartBusy}
                 onPress={() => void holdCart()}
                 style={styles.retryButton}
               >
@@ -1316,7 +1322,8 @@ export function PosCartScreen({
               <Text style={styles.errorText}>{error}</Text>
               <Pressable
                 accessibilityLabel="Retry updating cart"
-                onPress={onRetry}
+                disabled={isCartBusy}
+                onPress={isOffline ? undefined : onRetry}
                 style={styles.retryButton}
               >
                 <Text style={styles.retryButtonLabel}>Try again</Text>
@@ -1436,7 +1443,8 @@ export function PosCartScreen({
               <Text style={styles.errorText}>{error}</Text>
               <Pressable
                 accessibilityLabel="Retry adding item to cart"
-                onPress={onRetry}
+                disabled={isOffline}
+                onPress={isOffline ? undefined : onRetry}
                 style={styles.retryButton}
               >
                 <Text style={styles.retryButtonLabel}>Try again</Text>
@@ -1454,6 +1462,7 @@ export function PosCartScreen({
       )}
       <PosCustomerPickerSheet
         allowCustomerCreation={allowCustomerCreation}
+        isOffline={isOffline}
         onDismiss={() => setCustomerPickerVisible(false)}
         onSelect={(customer) => {
           onSelectSaleCustomer(customer);
@@ -1464,6 +1473,7 @@ export function PosCartScreen({
       />
       <PosPriceListPickerSheet
         defaultPriceList={defaultPriceList}
+        isOffline={isOffline}
         onDismiss={() => setPriceListPickerVisible(false)}
         onSelect={onSelectPriceList || (() => undefined)}
         options={priceListOptions}
@@ -1471,6 +1481,7 @@ export function PosCartScreen({
         visible={priceListPickerVisible}
       />
       <PosUomPickerSheet
+        isOffline={isOffline}
         itemName={uomPickerItem?.item_name || ""}
         onDismiss={() => setUomPickerItem(null)}
         onSelect={(uom) => {
@@ -1486,6 +1497,7 @@ export function PosCartScreen({
         visible={Boolean(uomPickerItem)}
       />
       <ManagerPinApprovalDialog
+        isOffline={isOffline}
         onApproved={() => {
           if (managerPinItem) onRemove(managerPinItem.item_code);
           setManagerPinItem(null);
@@ -1495,6 +1507,7 @@ export function PosCartScreen({
         visible={Boolean(managerPinItem)}
       />
       <ClearCartConfirmationDialog
+        isOffline={isOffline}
         onConfirm={() => {
           onClear();
           setClearConfirmationVisible(false);

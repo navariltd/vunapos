@@ -18,6 +18,7 @@ import {
   PosSaleCustomer,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -27,6 +28,8 @@ type SelectedInvoice = {
 
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
@@ -194,6 +197,7 @@ export function PosWorkspaceScreen() {
           currencyPrecision={posProfileConfig?.currency_precision}
           hasPendingHold={cart.hasPendingHold}
           holdError={cart.holdError}
+          isOffline={isOffline}
           items={cart.items}
           onBack={() => setCartVisible(false)}
           onCheckout={() => {
@@ -217,15 +221,18 @@ export function PosWorkspaceScreen() {
             return null;
           }}
           onClearSaleCustomer={() => {
+            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSaleCustomer(defaultSaleCustomer);
           }}
           onRemove={cart.remove}
           onSelectSaleCustomer={(customer) => {
+            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSaleCustomer(customer);
           }}
           onSelectPriceList={(priceList) => {
+            if (isOffline) return;
             setPriceListFallbackNotice(null);
             setSelectedPriceList(priceList);
           }}
