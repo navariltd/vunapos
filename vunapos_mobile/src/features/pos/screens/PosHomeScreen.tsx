@@ -76,6 +76,7 @@ export function PosHomeScreen({
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
+  const [catalogueNotice, setCatalogueNotice] = useState<string | null>(null);
   const [variantTemplate, setVariantTemplate] =
     useState<PosCatalogueItem | null>(null);
   const [variantActionError, setVariantActionError] = useState<string | null>(
@@ -202,9 +203,14 @@ export function PosHomeScreen({
     if (outOfStock)
       return `${item.item_name || item.item_code} is out of stock.`;
     setSearchQuery("");
-    return (await addItem(item))
-      ? null
-      : `Could not add ${item.item_name || item.item_code}. Please try again.`;
+    const added = await addItem(item);
+    if (added) {
+      setCatalogueNotice(
+        `${item.item_name || item.item_code} added to the cart.`,
+      );
+      return null;
+    }
+    return `Could not add ${item.item_name || item.item_code}. Please try again.`;
   }
 
   const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) =>
@@ -291,6 +297,13 @@ export function PosHomeScreen({
                 {addError}
               </Text>
             ) : null}
+            {catalogueNotice ? (
+              <Text
+                style={[styles.catalogueNotice, { color: palette.success }]}
+              >
+                {catalogueNotice}
+              </Text>
+            ) : null}
           </View>
         }
         numColumns={hideImages ? 1 : 2}
@@ -334,6 +347,12 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
+  catalogueNotice: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
   addError: {
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
