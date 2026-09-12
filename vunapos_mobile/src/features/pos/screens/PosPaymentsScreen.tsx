@@ -17,6 +17,7 @@ import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetail
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
 import { usePosPaymentReconciliationAllocation } from "@/features/pos/hooks/usePosPaymentReconciliationAllocation";
 import { usePosPaymentReconciliationCandidates } from "@/features/pos/hooks/usePosPaymentReconciliationCandidates";
+import { usePosPaymentReconciliation } from "@/features/pos/hooks/usePosPaymentReconciliation";
 import { useReceiveCustomerPayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
@@ -1375,8 +1376,10 @@ function ReconcilePaymentContext({
   const [allocationPreview, setAllocationPreview] = useState<
     PosPaymentReconciliationAllocation[]
   >([]);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const customerSearch = usePosCustomerSearch(query, !isOffline);
   const allocation = usePosPaymentReconciliationAllocation();
+  const reconciliation = usePosPaymentReconciliation();
   const candidates = usePosPaymentReconciliationCandidates(
     selectedCustomer?.customer || "",
     posProfile,
@@ -1386,7 +1389,9 @@ function ReconcilePaymentContext({
     setSelectedPayments([]);
     setSelectedInvoices([]);
     setAllocationPreview([]);
+    setSuccessMessage(null);
     allocation.clearError();
+    reconciliation.clearError();
   }
 
   function selectCustomer(customer: PosCustomerSearchResult) {
@@ -1402,7 +1407,9 @@ function ReconcilePaymentContext({
 
   function togglePayment(name: string) {
     setAllocationPreview([]);
+    setSuccessMessage(null);
     allocation.clearError();
+    reconciliation.clearError();
     setSelectedPayments((current) =>
       current.includes(name)
         ? current.filter((payment) => payment !== name)
@@ -1412,7 +1419,9 @@ function ReconcilePaymentContext({
 
   function toggleInvoice(name: string) {
     setAllocationPreview([]);
+    setSuccessMessage(null);
     allocation.clearError();
+    reconciliation.clearError();
     setSelectedInvoices((current) =>
       current.includes(name)
         ? current.filter((invoice) => invoice !== name)
@@ -1428,9 +1437,20 @@ function ReconcilePaymentContext({
     selectedPayments.length &&
     selectedInvoices.length,
   );
+  const canReconcile = Boolean(
+    !isOffline &&
+    !reconciliation.isReconciling &&
+    selectedCustomer &&
+    posProfile &&
+    selectedPayments.length &&
+    selectedInvoices.length &&
+    allocationPreview.length,
+  );
 
   async function requestAllocationPreview() {
     if (!selectedCustomer || !posProfile) return;
+    setSuccessMessage(null);
+    reconciliation.clearError();
     const preview = await allocation.allocate({
       customer: selectedCustomer.customer,
       invoices: selectedInvoices,
@@ -1438,6 +1458,30 @@ function ReconcilePaymentContext({
       posProfile,
     });
     if (preview) setAllocationPreview(preview);
+  }
+
+  async function submitReconciliation() {
+    if (!selectedCustomer || !posProfile || !allocationPreview.length) return;
+    const result = await reconciliation.reconcile({
+      customer: selectedCustomer.customer,
+      invoices: selectedInvoices,
+      paymentEntries: selectedPayments,
+      posProfile,
+    });
+    if (!result) return;
+
+    setSelectedPayments([]);
+    setSelectedInvoices([]);
+    setAllocationPreview([]);
+    allocation.clearError();
+    setSuccessMessage(
+      `Reconciled ${formatPosCurrency(
+        result.allocated_amount,
+        currency,
+        currencyPrecision,
+      )} successfully.`,
+    );
+    candidates.reload();
   }
 
   return (
@@ -1605,12 +1649,20 @@ function ReconcilePaymentContext({
           ) : null}
           {!candidates.isLoading && !candidates.error ? (
             <>
-              {allocation.error ? (
+              {allocation.error || reconciliation.error ? (
                 <Text
                   accessibilityRole="alert"
                   style={[styles.errorText, { color: palette.error }]}
                 >
-                  {allocation.error}
+                  {allocation.error || reconciliation.error}
+                </Text>
+              ) : null}
+              {successMessage ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={[styles.successText, { color: palette.success }]}
+                >
+                  {successMessage}
                 </Text>
               ) : null}
               <Pressable
@@ -1641,11 +1693,43 @@ function ReconcilePaymentContext({
                 )}
               </Pressable>
               {allocationPreview.length ? (
-                <AllocationPreview
-                  allocations={allocationPreview}
-                  currency={currency}
-                  currencyPrecision={currencyPrecision}
-                />
+                <>
+                  <AllocationPreview
+                    allocations={allocationPreview}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <Pressable
+                    accessibilityLabel="Reconcile selected payments"
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: !canReconcile }}
+                    disabled={!canReconcile}
+                    onPress={() => void submitReconciliation()}
+                    style={[
+                      styles.allocateButton,
+                      {
+                        backgroundColor: palette.primary,
+                        opacity: canReconcile ? 1 : 0.5,
+                      },
+                    ]}
+                  >
+                    {reconciliation.isReconciling ? (
+                      <ActivityIndicator
+                        color={palette.onPrimary}
+                        size="small"
+                      />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.submitButtonLabel,
+                          { color: palette.onPrimary },
+                        ]}
+                      >
+                        Reconcile
+                      </Text>
+                    )}
+                  </Pressable>
+                </>
               ) : null}
             </>
           ) : null}

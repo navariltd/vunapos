@@ -11,6 +11,7 @@ const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
 const mockUsePosPaymentReconciliationAllocation = jest.fn();
 const mockUsePosPaymentReconciliationCandidates = jest.fn();
+const mockUsePosPaymentReconciliation = jest.fn();
 const mockUseReceiveCustomerPayment = jest.fn();
 const mockUseGatewayPayment = jest.fn();
 const mockUseGatewayPaymentRealtime = jest.fn();
@@ -39,6 +40,10 @@ jest.mock("@/features/pos/hooks/usePosPaymentReconciliationCandidates", () => ({
 jest.mock("@/features/pos/hooks/usePosPaymentReconciliationAllocation", () => ({
   usePosPaymentReconciliationAllocation: () =>
     mockUsePosPaymentReconciliationAllocation(),
+}));
+
+jest.mock("@/features/pos/hooks/usePosPaymentReconciliation", () => ({
+  usePosPaymentReconciliation: () => mockUsePosPaymentReconciliation(),
 }));
 
 jest.mock("@/features/pos/hooks/useReceiveInvoicePayment", () => ({
@@ -78,12 +83,19 @@ describe("PosPaymentsScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+      reload: jest.fn(),
     });
     mockUsePosPaymentReconciliationAllocation.mockReturnValue({
       allocate: jest.fn(),
       clearError: jest.fn(),
       error: null,
       isAllocating: false,
+    });
+    mockUsePosPaymentReconciliation.mockReturnValue({
+      clearError: jest.fn(),
+      error: null,
+      isReconciling: false,
+      reconcile: jest.fn(),
     });
     mockUseReceiveCustomerPayment.mockReturnValue({
       error: null,
@@ -197,6 +209,7 @@ describe("PosPaymentsScreen", () => {
       },
       error: null,
       isLoading: false,
+      reload: jest.fn(),
     });
     const screen = await render(
       <PosPaymentsScreen
@@ -277,6 +290,11 @@ describe("PosPaymentsScreen", () => {
         payment_entry: "ACC-PAY-0001",
       },
     ]);
+    const reconcile = jest.fn().mockResolvedValue({
+      allocated_amount: 58,
+      allocations: [],
+    });
+    const reload = jest.fn();
     mockUsePosCustomerSearch.mockReturnValue({
       error: null,
       isLoading: false,
@@ -304,12 +322,19 @@ describe("PosPaymentsScreen", () => {
       },
       error: null,
       isLoading: false,
+      reload,
     });
     mockUsePosPaymentReconciliationAllocation.mockReturnValue({
       allocate,
       clearError: jest.fn(),
       error: null,
       isAllocating: false,
+    });
+    mockUsePosPaymentReconciliation.mockReturnValue({
+      clearError: jest.fn(),
+      error: null,
+      isReconciling: false,
+      reconcile,
     });
     const screen = await render(
       <PosPaymentsScreen
@@ -352,6 +377,21 @@ describe("PosPaymentsScreen", () => {
     });
     expect(await screen.findByText("Allocation preview")).toBeTruthy();
     expect(screen.getAllByText("ACC-PAY-0001")).toHaveLength(2);
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Reconcile selected payments" }),
+    );
+    expect(reconcile).toHaveBeenCalledWith({
+      customer: "CUST-001",
+      invoices: ["SINV-0001"],
+      paymentEntries: ["ACC-PAY-0001"],
+      posProfile: "POS-001",
+    });
+    expect(
+      await screen.findByText("Reconciled KES 58.00 successfully."),
+    ).toBeTruthy();
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Allocation preview")).toBeNull();
 
     await fireEvent.press(
       screen.getByRole("checkbox", { name: "Select invoice SINV-0001" }),

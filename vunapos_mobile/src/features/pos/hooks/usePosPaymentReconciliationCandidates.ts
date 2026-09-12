@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosPaymentReconciliationCandidates } from "@/features/pos/types";
@@ -9,9 +9,13 @@ type ReconciliationCandidatesState = {
   data: PosPaymentReconciliationCandidates | null;
   error: string | null;
   isLoading: boolean;
+  reload: () => void;
 };
 
-type RequestState = Omit<ReconciliationCandidatesState, "isLoading"> & {
+type RequestState = Omit<
+  ReconciliationCandidatesState,
+  "isLoading" | "reload"
+> & {
   requestKey: string | null;
 };
 
@@ -22,9 +26,10 @@ export function usePosPaymentReconciliationCandidates(
 ): ReconciliationCandidatesState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const [reloadKey, setReloadKey] = useState(0);
   const activeKey =
     companyUrl && sessionId && customer && posProfile
-      ? `${companyUrl}:${sessionId}:${posProfile}:${customer}`
+      ? `${companyUrl}:${sessionId}:${posProfile}:${customer}:${reloadKey}`
       : null;
   const requestKey = connectionStatus === "offline" ? null : activeKey;
   const [state, setState] = useState<RequestState>({
@@ -32,6 +37,11 @@ export function usePosPaymentReconciliationCandidates(
     error: null,
     requestKey: null,
   });
+  const reload = useCallback(() => {
+    if (connectionStatus !== "offline" && customer && posProfile) {
+      setReloadKey((current) => current + 1);
+    }
+  }, [connectionStatus, customer, posProfile]);
 
   useEffect(() => {
     if (!companyUrl || !sessionId || !posProfile || !customer || !requestKey)
@@ -74,10 +84,11 @@ export function usePosPaymentReconciliationCandidates(
     sessionId,
   ]);
 
-  if (!activeKey) return { data: null, error: null, isLoading: false };
+  if (!activeKey) return { data: null, error: null, isLoading: false, reload };
   return {
     data: state.requestKey === activeKey ? state.data : null,
     error: state.requestKey === activeKey ? state.error : null,
     isLoading: Boolean(requestKey) && state.requestKey !== activeKey,
+    reload,
   };
 }

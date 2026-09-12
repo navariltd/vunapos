@@ -73,7 +73,7 @@ describe("usePosPaymentReconciliationCandidates", () => {
       ),
     );
     await waitFor(() =>
-      expect(hook.result.current).toEqual({
+      expect(hook.result.current).toMatchObject({
         data: candidates,
         error: null,
         isLoading: false,
@@ -87,7 +87,7 @@ describe("usePosPaymentReconciliationCandidates", () => {
     );
 
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
-    expect(missingContext.result.current).toEqual({
+    expect(missingContext.result.current).toMatchObject({
       data: null,
       error: null,
       isLoading: false,
