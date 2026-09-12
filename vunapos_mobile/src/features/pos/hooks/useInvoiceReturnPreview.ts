@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosInvoiceReturnPreview } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -19,7 +20,8 @@ type ReturnPreviewState = {
 /** Loads the server-calculated remaining quantities before a return can be drafted. */
 export function useInvoiceReturnPreview({ enabled, invoiceName, posProfile }: UseInvoiceReturnPreviewArgs): ReturnPreviewState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const requestKey = enabled && companyUrl && sessionId && posProfile && invoiceName
+  const { connectionStatus } = useNetworkStatus();
+  const requestKey = enabled && connectionStatus !== 'offline' && companyUrl && sessionId && posProfile && invoiceName
     ? JSON.stringify({ companyUrl, invoiceName, posProfile, sessionId })
     : null;
   const [state, setState] = useState<{ data: PosInvoiceReturnPreview | null; error: string | null; requestKey: string | null }>({ data: null, error: null, requestKey: null });

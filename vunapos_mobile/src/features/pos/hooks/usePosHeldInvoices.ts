@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { PosHeldInvoice } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
@@ -17,11 +18,16 @@ export function usePosHeldInvoices({
   refreshKey = 0,
 }: UsePosHeldInvoicesArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [data, setData] = useState<PosHeldInvoice[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const load = useCallback(async () => {
+    if (connectionStatus === "offline") {
+      setError("Connection unavailable. Reconnect before loading held invoices.");
+      return;
+    }
     if (!companyUrl || !sessionId || !posProfile) return;
     setError(null);
     setIsLoading(true);
@@ -49,7 +55,7 @@ export function usePosHeldInvoices({
     } finally {
       setIsLoading(false);
     }
-  }, [companyUrl, invalidateSession, posProfile, sessionId]);
+  }, [companyUrl, connectionStatus, invalidateSession, posProfile, sessionId]);
 
   useEffect(() => {
     if (!enabled) return;

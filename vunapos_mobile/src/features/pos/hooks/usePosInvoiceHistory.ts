@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosInvoiceHistory, PosInvoiceHistoryFilters } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -24,13 +25,14 @@ type UsePosInvoiceHistoryArgs = {
 
 export function usePosInvoiceHistory({ filters, posProfile, start }: UsePosInvoiceHistoryArgs): PosInvoiceHistoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const requestKey = companyUrl && sessionId && posProfile
     ? JSON.stringify({ companyUrl, filters, posProfile, sessionId, start })
     : null;
   const [state, setState] = useState<PosInvoiceHistoryRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
-    if (!companyUrl || !sessionId || !posProfile) {
+    if (connectionStatus === 'offline' || !companyUrl || !sessionId || !posProfile) {
       return;
     }
 
@@ -61,10 +63,14 @@ export function usePosInvoiceHistory({ filters, posProfile, start }: UsePosInvoi
       });
 
     return () => controller.abort();
-  }, [companyUrl, filters, invalidateSession, posProfile, requestKey, sessionId, start]);
+  }, [companyUrl, connectionStatus, filters, invalidateSession, posProfile, requestKey, sessionId, start]);
 
   if (!requestKey) {
     return { data: null, error: null, isLoading: false };
+  }
+
+  if (connectionStatus === 'offline') {
+    return { data: state.data, error: null, isLoading: false };
   }
 
   return { ...state, error: state.requestKey === requestKey ? state.error : null, isLoading: state.requestKey !== requestKey };

@@ -285,6 +285,11 @@ export function usePosCart({
   async function restoreHeldInvoice(
     heldInvoice: PosHeldInvoice,
   ): Promise<PosRestoredInvoice> {
+    if (isOffline) {
+      throw new Error(
+        "Connection unavailable. Reconnect before restoring a held invoice.",
+      );
+    }
     if (!companyUrl || !sessionId || !posProfile) {
       throw new Error(
         "Your POS session is not ready. Try again once the workspace has loaded.",

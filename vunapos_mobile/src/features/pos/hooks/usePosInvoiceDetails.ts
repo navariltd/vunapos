@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosInvoiceDetail } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -23,13 +24,14 @@ type UsePosInvoiceDetailsArgs = {
 
 export function usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile, refreshKey = 0 }: UsePosInvoiceDetailsArgs): PosInvoiceDetailsState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const requestKey = companyUrl && sessionId && posProfile && invoiceName
     ? JSON.stringify({ companyUrl, invoiceDoctype, invoiceName, posProfile, refreshKey, sessionId })
     : null;
   const [state, setState] = useState<PosInvoiceDetailsRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
-    if (!companyUrl || !sessionId || !posProfile || !invoiceName) {
+    if (connectionStatus === 'offline' || !companyUrl || !sessionId || !posProfile || !invoiceName) {
       return;
     }
 
@@ -51,10 +53,14 @@ export function usePosInvoiceDetails({ invoiceDoctype, invoiceName, posProfile, 
       });
 
     return () => controller.abort();
-  }, [companyUrl, invalidateSession, invoiceDoctype, invoiceName, posProfile, refreshKey, requestKey, sessionId]);
+  }, [companyUrl, connectionStatus, invalidateSession, invoiceDoctype, invoiceName, posProfile, refreshKey, requestKey, sessionId]);
 
   if (!requestKey) {
     return { data: null, error: null, isLoading: false };
+  }
+
+  if (connectionStatus === 'offline') {
+    return { data: state.data, error: null, isLoading: false };
   }
 
   return { ...state, error: state.requestKey === requestKey ? state.error : null, isLoading: state.requestKey !== requestKey };
