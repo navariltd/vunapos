@@ -15,6 +15,11 @@ jest.mock("@/features/pos/hooks/usePosClosingPreview", () => ({
     mockUsePosClosingPreview(...args),
 }));
 
+const mockUseClosePosShift = jest.fn();
+jest.mock("@/features/pos/hooks/useClosePosShift", () => ({
+  useClosePosShift: () => mockUseClosePosShift(),
+}));
+
 jest.mock("@/theme/AppearanceProvider", () => ({
   useAppearance: () => ({
     palette: {
@@ -44,6 +49,12 @@ describe("PosCloseShiftScreen", () => {
       error: null,
       isLoading: false,
       reload: jest.fn(),
+    });
+    mockUseClosePosShift.mockReturnValue({
+      clearError: jest.fn(),
+      close: jest.fn(),
+      error: null,
+      isClosing: false,
     });
   });
   afterEach(async () => cleanup());
@@ -289,6 +300,74 @@ describe("PosCloseShiftScreen", () => {
       screen.getByRole("button", { name: "Back to shift counts" }),
     );
     expect(screen.queryByText("Counted amounts")).toBeNull();
+  });
+
+  it("submits reviewed balances and hands the closed session to the workspace", async () => {
+    const close = jest.fn().mockResolvedValue({
+      name: "POS-CLOSE-001",
+      session: {
+        has_opening_entry: false,
+        opening_entry: null,
+        ready: false,
+        status: "OPENING_REQUIRED",
+      },
+    });
+    const onShiftClosed = jest.fn();
+    mockUseClosePosShift.mockReturnValue({
+      clearError: jest.fn(),
+      close,
+      error: null,
+      isClosing: false,
+    });
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 580,
+        invoice_count: 2,
+        net_total: 500,
+        opening_entry: "POS-OPEN-001",
+        payments: [
+          {
+            closing_amount: 100,
+            difference: 0,
+            expected_amount: 100,
+            mode_of_payment: "Cash",
+            opening_amount: 0,
+          },
+        ],
+        period_end_date: "2026-09-13 10:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        onBackToPos={onBackToPos}
+        onShiftClosed={onShiftClosed}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Review shift counts" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Close POS Shift" }),
+    );
+
+    expect(close).toHaveBeenCalledWith({
+      closingBalances: [{ closing_amount: 100, mode_of_payment: "Cash" }],
+      posProfile: "POS-001",
+    });
+    expect(onShiftClosed).toHaveBeenCalledWith({
+      has_opening_entry: false,
+      opening_entry: null,
+      ready: false,
+      status: "OPENING_REQUIRED",
+    });
   });
 
   it("blocks the workflow while offline and explains the connection requirement", async () => {

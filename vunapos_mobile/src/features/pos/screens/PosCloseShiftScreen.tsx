@@ -11,7 +11,9 @@ import { Text } from "react-native-paper";
 
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { formatPosCurrency } from "@/features/pos/currency";
+import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
+import { PosSession } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -20,6 +22,7 @@ type PosCloseShiftScreenProps = {
   currency?: string;
   currencyPrecision?: number;
   onBackToPos: () => void;
+  onShiftClosed?: (session: PosSession) => void;
   posProfile?: string;
 };
 
@@ -31,11 +34,13 @@ export function PosCloseShiftScreen({
   currency = "KES",
   currencyPrecision = 2,
   onBackToPos,
+  onShiftClosed,
   posProfile,
 }: PosCloseShiftScreenProps) {
   const { palette } = useAppearance();
   const { connectionStatus } = useNetworkStatus();
   const preview = usePosClosingPreview(posProfile);
+  const closeShift = useClosePosShift();
   const [countedAmounts, setCountedAmounts] = useState<Record<string, string>>(
     {},
   );
@@ -83,8 +88,24 @@ export function PosCloseShiftScreen({
       }
     }
 
+    closeShift.clearError();
     setValidationError(null);
     setConfirmationVisible(true);
+  }
+
+  async function confirmClose() {
+    if (!preview.data || !posProfile || closeShift.isClosing) return;
+    const closingBalances = preview.data.payments.map((payment) => ({
+      closing_amount:
+        parseAmountInput(
+          countedAmount(payment.mode_of_payment, payment.expected_amount),
+        ) ?? 0,
+      mode_of_payment: payment.mode_of_payment,
+    }));
+    const result = await closeShift.close({ closingBalances, posProfile });
+    if (!result) return;
+    setConfirmationVisible(false);
+    onShiftClosed?.(result.session);
   }
 
   return (
@@ -337,8 +358,11 @@ export function PosCloseShiftScreen({
           }))}
           currency={currency}
           currencyPrecision={currencyPrecision}
+          error={closeShift.error}
           grandTotal={preview.data.grand_total}
           invoiceCount={preview.data.invoice_count}
+          isClosing={closeShift.isClosing}
+          onConfirm={() => void confirmClose()}
           onDismiss={() => setConfirmationVisible(false)}
           visible={confirmationVisible}
         />
@@ -401,8 +425,11 @@ function CloseShiftCountConfirmationDialog({
   countedAmounts,
   currency,
   currencyPrecision,
+  error,
   grandTotal,
   invoiceCount,
+  isClosing,
+  onConfirm,
   onDismiss,
   visible,
 }: {
@@ -413,8 +440,11 @@ function CloseShiftCountConfirmationDialog({
   }[];
   currency: string;
   currencyPrecision: number;
+  error: string | null;
   grandTotal: number;
   invoiceCount: number;
+  isClosing: boolean;
+  onConfirm: () => void;
   onDismiss: () => void;
   visible: boolean;
 }) {
@@ -514,6 +544,9 @@ function CloseShiftCountConfirmationDialog({
               );
             })}
           </View>
+          {error ? (
+            <StateCard message={error} palette={palette} tone="error" />
+          ) : null}
           <View style={styles.confirmationActions}>
             <Pressable
               accessibilityLabel="Back to shift counts"
@@ -526,6 +559,30 @@ function CloseShiftCountConfirmationDialog({
               >
                 Back to counts
               </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Close POS Shift"
+              accessibilityRole="button"
+              disabled={isClosing}
+              onPress={onConfirm}
+              style={[
+                styles.closeButton,
+                { backgroundColor: palette.error },
+                isClosing && styles.disabled,
+              ]}
+            >
+              {isClosing ? (
+                <ActivityIndicator color={palette.onPrimary} size="small" />
+              ) : (
+                <Text
+                  style={[
+                    styles.reviewButtonLabel,
+                    { color: palette.onPrimary },
+                  ]}
+                >
+                  Close POS Shift
+                </Text>
+              )}
             </Pressable>
           </View>
         </View>
@@ -560,6 +617,15 @@ const styles = StyleSheet.create({
   backButtonLabel: {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
+  },
+  closeButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 132,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
   confirmationActions: { alignItems: "flex-end" },
@@ -615,6 +681,7 @@ const styles = StyleSheet.create({
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
+  disabled: { opacity: 0.5 },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.md },
   heading: { flex: 1, gap: 4 },
   loadingState: {

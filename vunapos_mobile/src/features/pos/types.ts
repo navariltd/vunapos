@@ -191,6 +191,7 @@ export type PosBootstrapData = {
   } | null;
   items?: PosCatalogueItem[];
   payment_modes: PosPaymentMode[];
+  pos_session?: PosSession;
   pos_profile: {
     allow_credit_sales?: boolean;
     allow_customer_creation?: boolean;
@@ -222,6 +223,14 @@ export type PosBootstrapData = {
     require_manager_pin_item_removal?: boolean;
     salesperson_pin_session_minutes?: number;
   };
+};
+
+export type PosSession = {
+  closing_entry?: string | null;
+  has_opening_entry: boolean;
+  opening_entry?: string | null;
+  ready: boolean;
+  status?: "CLOSING" | "CLOSING_FAILED" | "OPEN" | "OPENING_REQUIRED";
 };
 
 export type PosPriceList = { currency?: string | null; name: string };
@@ -617,4 +626,10 @@ export type PosClosingPreview = {
   period_end_date: string;
   period_start_date: string;
   pos_profile: string;
+};
+
+export type PosCloseShiftResult = {
+  name: string;
+  session: PosSession;
+  status?: string;
 };

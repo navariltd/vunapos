@@ -12,12 +12,14 @@ import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetail
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
 import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
+import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScreen";
 import {
   PosBootstrapData,
   PosInvoicePaymentEntry,
   PosNavigationTab,
   PosOrderType,
   PosSaleCustomer,
+  PosSession,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -67,6 +69,7 @@ export function PosWorkspaceScreen() {
   >([]);
   const [posProfileConfig, setPosProfileConfig] =
     useState<PosBootstrapData["pos_profile"]>();
+  const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
@@ -80,6 +83,7 @@ export function PosWorkspaceScreen() {
     const defaultCustomer = bootstrap.default_customer;
     setPosProfile(bootstrap.pos_profile.name);
     setPosProfileConfig(bootstrap.pos_profile);
+    setPosSession(bootstrap.pos_session ?? null);
     setPaymentModes(bootstrap.payment_modes);
     setDefaultSaleCustomer(
       defaultCustomer
@@ -156,7 +160,9 @@ export function PosWorkspaceScreen() {
       orderType={orderType}
       paymentsEnabled={allowsCustomerPayments}
     >
-      {selectedPaymentEntry ? (
+      {posSession && !posSession.ready ? (
+        <PosSessionGateScreen session={posSession} />
+      ) : selectedPaymentEntry ? (
         <PosPaymentEntryDetailsScreen
           currency={selectedPaymentEntry.currency}
           currencyPrecision={selectedPaymentEntry.currencyPrecision}
@@ -335,6 +341,7 @@ export function PosWorkspaceScreen() {
           currency={posProfileConfig?.currency}
           currencyPrecision={posProfileConfig?.currency_precision}
           onBackToPos={() => changeTab("Home")}
+          onShiftClosed={setPosSession}
           posProfile={posProfile}
         />
       ) : (

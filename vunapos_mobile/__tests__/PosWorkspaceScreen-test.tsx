@@ -28,9 +28,9 @@ jest.mock('@/features/pos/components/SalespersonPinLock', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
-  PosHomeScreen: ({ onOpenCart }: { onOpenCart: () => void }) => {
+  PosHomeScreen: ({ onOpenCart, onPosProfileLoaded }: { onOpenCart: () => void; onPosProfileLoaded: (bootstrap: { payment_modes: []; pos_profile: { name: string }; pos_session?: { has_opening_entry: boolean; ready: boolean; status: 'OPENING_REQUIRED' } }) => void }) => {
     const { Pressable, Text } = require('react-native');
-    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable></>;
+    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { name: 'POS-001' }, pos_session: { has_opening_entry: false, ready: false, status: 'OPENING_REQUIRED' } })}><Text>Set closed shift session</Text></Pressable></>;
   },
 }));
 
@@ -122,5 +122,13 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Back to previous invoice' }));
 
     expect(screen.getByRole('button', { name: 'Open return' })).toBeTruthy();
+  });
+
+  it('blocks the POS workspace when the current session is not ready for sales', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Set closed shift session' }));
+
+    expect(screen.getByText('A new POS shift is required')).toBeTruthy();
   });
 });
