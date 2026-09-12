@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosBootstrapData } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -17,12 +18,13 @@ type PosBootstrapRequestState = Omit<PosBootstrapState, 'isLoading' | 'reload'> 
 
 export function usePosBootstrap(): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const requestKey = companyUrl && sessionId ? `${companyUrl}:${sessionId}:${reloadKey}` : null;
   const [state, setState] = useState<PosBootstrapRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
-    if (!companyUrl || !sessionId) {
+    if (connectionStatus === 'offline' || !companyUrl || !sessionId) {
       return;
     }
 
@@ -40,11 +42,17 @@ export function usePosBootstrap(): PosBootstrapState {
       });
 
     return () => controller.abort();
-  }, [companyUrl, invalidateSession, requestKey, sessionId]);
+  }, [companyUrl, connectionStatus, invalidateSession, requestKey, sessionId]);
 
-  const reload = useCallback(() => setReloadKey((current) => current + 1), []);
+  const reload = useCallback(() => {
+    if (connectionStatus !== 'offline') setReloadKey((current) => current + 1);
+  }, [connectionStatus]);
 
   if (!requestKey) return { data: null, error: 'Your session is no longer available. Sign in again to continue.', isLoading: false, reload };
+
+  if (connectionStatus === 'offline') {
+    return { data: state.data, error: null, isLoading: false, reload };
+  }
 
   return { ...state, isLoading: state.requestKey !== requestKey, reload };
 }

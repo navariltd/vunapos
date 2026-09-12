@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
+import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosSalespersonSession } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
 
@@ -20,6 +21,7 @@ type SalespersonPinState = {
 /** Owns the short-lived, server-issued salesperson PIN session for one POS workspace. */
 export function useSalespersonPin() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [state, setState] = useState<SalespersonPinState>({ error: null, isVerifying: false, session: null });
 
   useEffect(() => {
@@ -37,6 +39,10 @@ export function useSalespersonPin() {
   }
 
   async function verify(posProfile: string, salesperson: string, pin: string): Promise<boolean> {
+    if (connectionStatus === 'offline') {
+      setState((current) => ({ ...current, error: 'Connection unavailable. Reconnect before verifying a salesperson PIN.' }));
+      return false;
+    }
     if (!companyUrl || !sessionId) {
       setState((current) => ({ ...current, error: 'Your session is no longer available. Sign in again to continue.' }));
       return false;
