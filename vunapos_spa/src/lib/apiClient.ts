@@ -20,7 +20,12 @@ async function getJson(path: string, params: Record<string, string | undefined> 
 		credentials: "same-origin",
 	});
 	if (!response.ok) {
-		throw new VunaApiError(`Request to ${path} failed with status ${response.status}`, "HTTP_ERROR");
+		const code = response.status === 401
+			? "HTTP_401"
+			: response.status === 403
+				? "HTTP_403"
+				: "HTTP_ERROR";
+		throw new VunaApiError(`Request to ${path} failed with status ${response.status}`, code);
 	}
 	return response.json();
 }

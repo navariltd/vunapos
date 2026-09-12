@@ -423,6 +423,7 @@ def _get_catalogue_pricing_rule_map(
 		price_list_rate = (uom_rate_map or {}).get(item.name, {}).get(default_uom)
 		if price_list_rate is None:
 			price_list_rate = flt(rate_map.get(item.name, item.standard_rate)) * conversion_factor
+		weight_per_unit = flt(item.get("weight_per_unit"))
 		pricing_items.append(
 			{
 				"doctype": "Sales Invoice Item",
@@ -441,6 +442,8 @@ def _get_catalogue_pricing_rule_map(
 				"price_list_rate": price_list_rate,
 				"rate": price_list_rate,
 				"conversion_factor": conversion_factor,
+				"weight_per_unit": weight_per_unit,
+				"total_weight": weight_per_unit * conversion_factor,
 			}
 		)
 
@@ -485,6 +488,16 @@ def _get_catalogue_pricing_rule_map(
 				"territory": customer_fields.territory,
 			}
 		)
+	transaction_doc.total_net_weight = sum(flt(row.get("total_weight")) for row in pricing_items)
+	# Use real child Documents so ERPNext's condition evaluator can serialize the
+	# transaction document. Raw dictionaries make doc.as_dict() fail, causing
+	# dynamic conditions to be silently discarded.
+	transaction_doc.set("items", [])
+	for row in pricing_items:
+		transaction_doc.append("items", row)
+	# The ERPNext API expects mapping rows in args, while its condition
+	# evaluator reads the real child Documents from doc.items.
+	pricing_context["items"] = pricing_items
 	results = apply_pricing_rule(
 		pricing_context,
 		doc=transaction_doc,
@@ -699,8 +712,15 @@ def _search_items_uncached(
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
-	limit = cint(limit)
 	query = (query or "").strip()
+	requested_limit = cint(limit)
+	if since:
+		# Delta syncs use zero to mean "all changed rows". Do not truncate a
+		# change set or the local catalogue could remain permanently stale.
+		limit = requested_limit if requested_limit > 0 else 0
+	else:
+		max_limit = 60 if query else 500
+		limit = min(requested_limit, max_limit) if requested_limit > 0 else max_limit
 
 	barcode_item_code = _get_item_code_from_barcode(query) if query else None
 	# Keep variant children out of the main catalogue. Cashiers select a template
@@ -718,20 +738,24 @@ def _search_items_uncached(
 		# Serial and batch identifiers are inventory records, not Item fields.
 		# Resolve matching item codes server-side so the browser does not need to
 		# preload the complete serial/batch catalogue.
-		tracked_item_codes = set(
-			frappe.get_all(
-				"Batch",
-				filters={"name": ["like", f"%{query}%"], "disabled": 0},
-				pluck="item",
+		tracked_item_codes = set()
+		if len(query) >= 3:
+			tracked_item_codes.update(
+				frappe.get_all(
+					"Batch",
+					filters={"name": ["like", f"%{query}%"], "disabled": 0},
+					pluck="item",
+					limit_page_length=60,
+				)
 			)
-		)
-		tracked_item_codes.update(
-			frappe.get_all(
-				"Serial No",
-				filters={"name": ["like", f"%{query}%"]},
-				pluck="item_code",
+			tracked_item_codes.update(
+				frappe.get_all(
+					"Serial No",
+					filters={"name": ["like", f"%{query}%"]},
+					pluck="item_code",
+					limit_page_length=60,
+				)
 			)
-		)
 		tracked_item_codes.discard(None)
 		if tracked_item_codes:
 			or_filters.append(["Item", "name", "in", list(tracked_item_codes)])
@@ -774,6 +798,7 @@ def _search_items_uncached(
 			"image",
 			"stock_uom",
 			"sales_uom",
+			"weight_per_unit",
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",

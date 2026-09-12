@@ -799,7 +799,9 @@ def _get_row_batch_allocations(row):
 		return [
 			{
 				"batch_no": row.batch_no,
-				"qty": flt(row.qty),
+				# ERPNext stores row.qty in the selected sales UOM. Batch
+				# quantities are always stock-UOM quantities.
+				"qty": flt(row.qty) * flt(row.get("conversion_factor") or 1),
 				"expiry_date": frappe.db.get_value("Batch", row.batch_no, "expiry_date"),
 				"available_qty": None,
 			}
@@ -1022,6 +1024,17 @@ def _resolve_invoice_doctype(invoice_doctype=None):
 	return invoice_doctype
 
 
+def _populate_customer_pricing_context(doc, customer):
+	"""Copy customer defaults required by ERPNext Pricing Rule conditions."""
+	if not customer:
+		return
+	fields = frappe.db.get_value("Customer", customer, ["customer_group", "territory"], as_dict=True)
+	if not fields:
+		return
+	_set_if_has_field(doc, "customer_group", fields.customer_group)
+	_set_if_has_field(doc, "territory", fields.territory)
+
+
 def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, price_list=None):
 	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
 	profile = resolve_pos_profile(pos_profile)
@@ -1043,6 +1056,7 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 	# context) before item pricing rules are evaluated for the first cart row.
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
+	_populate_customer_pricing_context(doc, customer)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
@@ -1068,6 +1082,7 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	doc.customer = customer
 	doc.company = profile.company
 	doc.transaction_date = nowdate()
+	_populate_customer_pricing_context(doc, customer)
 	requested_delivery_date = getdate(delivery_date or nowdate())
 	if requested_delivery_date < getdate(nowdate()):
 		_throw("INVALID_DELIVERY_DATE", _("Sales Order delivery date cannot be before today."))

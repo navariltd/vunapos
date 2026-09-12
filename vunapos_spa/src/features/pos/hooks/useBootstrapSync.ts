@@ -3,7 +3,11 @@ import { useEffect } from "react";
 import { applyDelta, hydrateConfig } from "../../../lib/cacheEngine";
 import { DEFAULT_FRESHNESS_TTL_MS } from "../../../lib/freshness";
 import { useBootstrapSyncStore } from "../../../lib/stores/bootstrapSyncStore";
-import { checkReachability, onConnectivityChange } from "../../../lib/stores/connectivityStore";
+import {
+	checkReachability,
+	onConnectivityChange,
+	type ConnectivityState,
+} from "../../../lib/stores/connectivityStore";
 import { VunaApiError } from "../../../services/vunaApi";
 
 // Hydrates the process-local read cache. Every browser load requires a successful
@@ -65,10 +69,24 @@ export function useBootstrapSync() {
 
 	useEffect(() => {
 		void checkReachability();
+		let previousConnectivityState: ConnectivityState | null = null;
+		let authenticationExpired = false;
+		const refresh = () => {
+			if (authenticationExpired) return;
+			void refreshInBackground(() => {
+				authenticationExpired = true;
+				setError("Your session has expired. Sign in again to continue.", "AUTHENTICATION_REQUIRED");
+				setPhase("blocked");
+			});
+		};
 		const unsubscribe = onConnectivityChange((state) => {
-			if (state === "reachable") void refreshInBackground();
+			// A health check reports "reachable" on every interval. Refresh only
+			// when the browser actually recovers from an unavailable state.
+			const recovered = state === "reachable" && previousConnectivityState !== "reachable";
+			previousConnectivityState = state;
+			if (recovered) refresh();
 		});
-		const refreshInterval = window.setInterval(() => void refreshInBackground(), DEFAULT_FRESHNESS_TTL_MS);
+		const refreshInterval = window.setInterval(refresh, DEFAULT_FRESHNESS_TTL_MS);
 		return () => {
 			unsubscribe();
 			window.clearInterval(refreshInterval);
@@ -78,10 +96,19 @@ export function useBootstrapSync() {
 	return { phase, error, errorCode, retry: () => window.location.reload() };
 }
 
-async function refreshInBackground(): Promise<void> {
+async function refreshInBackground(onAuthenticationExpired?: () => void): Promise<void> {
 	try {
 		await applyDelta();
 	} catch (err) {
+		if (isAuthenticationError(err)) {
+			onAuthenticationExpired?.();
+			return;
+		}
 		console.error("Background catalogue refresh failed", err);
 	}
+}
+
+function isAuthenticationError(err: unknown): boolean {
+	if (!(err instanceof VunaApiError)) return false;
+	return err.code === "HTTP_401" || err.code === "AuthenticationError" || err.code === "NotLoggedIn";
 }

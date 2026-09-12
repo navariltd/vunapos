@@ -109,7 +109,7 @@ export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {
 	return payload;
 }
 
-export async function applyDelta(posProfile?: string): Promise<BootstrapPayload> {
+async function applyDeltaInternal(posProfile?: string): Promise<BootstrapPayload> {
 	const activePosProfile = posProfile || (await profileRepository.getActive())?.name;
 	const since = await metaRepository.get<string>(META_KEYS.lastDeltaSync);
 	if (!since) {
@@ -128,4 +128,21 @@ export async function applyDelta(posProfile?: string): Promise<BootstrapPayload>
 
 	await writeDelta(delta);
 	return delta;
+}
+
+// Connectivity, realtime, and freshness timers can all request the same refresh
+// at nearly the same time. Reuse the in-flight request instead of issuing
+// overlapping bootstrap/database work for the same POS Profile.
+const inFlightDeltas = new Map<string, Promise<BootstrapPayload>>();
+
+export function applyDelta(posProfile?: string): Promise<BootstrapPayload> {
+	const key = posProfile || "__active__";
+	const existing = inFlightDeltas.get(key);
+	if (existing) return existing;
+
+	const request = applyDeltaInternal(posProfile).finally(() => {
+		if (inFlightDeltas.get(key) === request) inFlightDeltas.delete(key);
+	});
+	inFlightDeltas.set(key, request);
+	return request;
 }
