@@ -545,6 +545,13 @@ export type PosPaymentReconciliationCandidates = {
   payments: PosPaymentReconciliationCandidate[];
 };
 
+export type PosPaymentReconciliationAllocation = {
+  allocated_amount: number;
+  currency?: string | null;
+  invoice: string;
+  payment_entry: string;
+};
+
 export type PosInvoiceHistory = {
   has_more: boolean;
   invoices: PosInvoiceHistoryRow[];

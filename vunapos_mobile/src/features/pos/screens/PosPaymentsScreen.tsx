@@ -15,6 +15,7 @@ import { Text } from "react-native-paper";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
+import { usePosPaymentReconciliationAllocation } from "@/features/pos/hooks/usePosPaymentReconciliationAllocation";
 import { usePosPaymentReconciliationCandidates } from "@/features/pos/hooks/usePosPaymentReconciliationCandidates";
 import { useReceiveCustomerPayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
@@ -24,6 +25,7 @@ import {
   PosCustomerSearchResult,
   PosGatewayPaymentLink,
   PosPaymentMode,
+  PosPaymentReconciliationAllocation,
   PosPaymentReconciliationCandidate,
 } from "@/features/pos/types";
 import {
@@ -1370,26 +1372,37 @@ function ReconcilePaymentContext({
     useState<PosCustomerSearchResult | null>(null);
   const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
+  const [allocationPreview, setAllocationPreview] = useState<
+    PosPaymentReconciliationAllocation[]
+  >([]);
   const customerSearch = usePosCustomerSearch(query, !isOffline);
+  const allocation = usePosPaymentReconciliationAllocation();
   const candidates = usePosPaymentReconciliationCandidates(
     selectedCustomer?.customer || "",
     posProfile,
   );
 
+  function resetSelections() {
+    setSelectedPayments([]);
+    setSelectedInvoices([]);
+    setAllocationPreview([]);
+    allocation.clearError();
+  }
+
   function selectCustomer(customer: PosCustomerSearchResult) {
     setSelectedCustomer(customer);
     setQuery("");
-    setSelectedPayments([]);
-    setSelectedInvoices([]);
+    resetSelections();
   }
 
   function changeCustomer() {
     setSelectedCustomer(null);
-    setSelectedPayments([]);
-    setSelectedInvoices([]);
+    resetSelections();
   }
 
   function togglePayment(name: string) {
+    setAllocationPreview([]);
+    allocation.clearError();
     setSelectedPayments((current) =>
       current.includes(name)
         ? current.filter((payment) => payment !== name)
@@ -1398,11 +1411,33 @@ function ReconcilePaymentContext({
   }
 
   function toggleInvoice(name: string) {
+    setAllocationPreview([]);
+    allocation.clearError();
     setSelectedInvoices((current) =>
       current.includes(name)
         ? current.filter((invoice) => invoice !== name)
         : [...current, name],
     );
+  }
+
+  const canAllocate = Boolean(
+    !isOffline &&
+    !allocation.isAllocating &&
+    posProfile &&
+    selectedCustomer &&
+    selectedPayments.length &&
+    selectedInvoices.length,
+  );
+
+  async function requestAllocationPreview() {
+    if (!selectedCustomer || !posProfile) return;
+    const preview = await allocation.allocate({
+      customer: selectedCustomer.customer,
+      invoices: selectedInvoices,
+      paymentEntries: selectedPayments,
+      posProfile,
+    });
+    if (preview) setAllocationPreview(preview);
   }
 
   return (
@@ -1568,8 +1603,113 @@ function ReconcilePaymentContext({
               />
             </View>
           ) : null}
+          {!candidates.isLoading && !candidates.error ? (
+            <>
+              {allocation.error ? (
+                <Text
+                  accessibilityRole="alert"
+                  style={[styles.errorText, { color: palette.error }]}
+                >
+                  {allocation.error}
+                </Text>
+              ) : null}
+              <Pressable
+                accessibilityLabel="Preview payment allocation"
+                accessibilityRole="button"
+                accessibilityState={{ disabled: !canAllocate }}
+                disabled={!canAllocate}
+                onPress={() => void requestAllocationPreview()}
+                style={[
+                  styles.allocateButton,
+                  {
+                    backgroundColor: palette.primary,
+                    opacity: canAllocate ? 1 : 0.5,
+                  },
+                ]}
+              >
+                {allocation.isAllocating ? (
+                  <ActivityIndicator color={palette.onPrimary} size="small" />
+                ) : (
+                  <Text
+                    style={[
+                      styles.submitButtonLabel,
+                      { color: palette.onPrimary },
+                    ]}
+                  >
+                    Allocate
+                  </Text>
+                )}
+              </Pressable>
+              {allocationPreview.length ? (
+                <AllocationPreview
+                  allocations={allocationPreview}
+                  currency={currency}
+                  currencyPrecision={currencyPrecision}
+                />
+              ) : null}
+            </>
+          ) : null}
         </>
       ) : null}
+    </View>
+  );
+}
+
+function AllocationPreview({
+  allocations,
+  currency,
+  currencyPrecision,
+}: {
+  allocations: PosPaymentReconciliationAllocation[];
+  currency: string;
+  currencyPrecision: number;
+}) {
+  const { palette } = useAppearance();
+
+  return (
+    <View
+      style={[
+        styles.allocationPreview,
+        {
+          backgroundColor: palette.surfaceContainer,
+          borderColor: palette.border,
+        },
+      ]}
+    >
+      <Text
+        style={[styles.reconciliationListTitle, { color: palette.onSurface }]}
+      >
+        Allocation preview
+      </Text>
+      {allocations.map((allocation, index) => (
+        <View
+          key={`${allocation.payment_entry}-${allocation.invoice}-${index}`}
+          style={[
+            styles.allocationPreviewRow,
+            { borderColor: palette.borderSubtle },
+          ]}
+        >
+          <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>
+            {allocation.payment_entry}
+          </Text>
+          <Text
+            style={[
+              styles.allocationPreviewAmount,
+              { color: palette.onSurface },
+            ]}
+          >
+            {formatPosCurrency(
+              allocation.allocated_amount,
+              allocation.currency || currency,
+              currencyPrecision,
+            )}{" "}
+            {"→"}
+          </Text>
+          <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>
+            {allocation.invoice}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -1677,6 +1817,31 @@ function ReconciliationCandidateList({
 }
 
 const styles = StyleSheet.create({
+  allocateButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    justifyContent: "center",
+    minHeight: 46,
+    paddingHorizontal: spacing.md,
+  },
+  allocationPreview: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  allocationPreviewAmount: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+    textAlign: "center",
+  },
+  allocationPreviewRow: {
+    alignItems: "center",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+  },
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
   customerMeta: {
     fontFamily: typography.fontFamily.regular,

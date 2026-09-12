@@ -9,6 +9,7 @@ import {
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
+const mockUsePosPaymentReconciliationAllocation = jest.fn();
 const mockUsePosPaymentReconciliationCandidates = jest.fn();
 const mockUseReceiveCustomerPayment = jest.fn();
 const mockUseGatewayPayment = jest.fn();
@@ -33,6 +34,11 @@ jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
 jest.mock("@/features/pos/hooks/usePosPaymentReconciliationCandidates", () => ({
   usePosPaymentReconciliationCandidates: (...args: unknown[]) =>
     mockUsePosPaymentReconciliationCandidates(...args),
+}));
+
+jest.mock("@/features/pos/hooks/usePosPaymentReconciliationAllocation", () => ({
+  usePosPaymentReconciliationAllocation: () =>
+    mockUsePosPaymentReconciliationAllocation(),
 }));
 
 jest.mock("@/features/pos/hooks/useReceiveInvoicePayment", () => ({
@@ -72,6 +78,12 @@ describe("PosPaymentsScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+    });
+    mockUsePosPaymentReconciliationAllocation.mockReturnValue({
+      allocate: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      isAllocating: false,
     });
     mockUseReceiveCustomerPayment.mockReturnValue({
       error: null,
@@ -254,6 +266,97 @@ describe("PosPaymentsScreen", () => {
         name: "Select payment ACC-PAY-0001",
       }).props.accessibilityState,
     ).toEqual({ checked: false });
+  });
+
+  it("previews the server allocation only after payment and invoice selections, then invalidates it", async () => {
+    const allocate = jest.fn().mockResolvedValue([
+      {
+        allocated_amount: 58,
+        currency: "KES",
+        invoice: "SINV-0001",
+        payment_entry: "ACC-PAY-0001",
+      },
+    ]);
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [{ customer: "CUST-001", customerName: "Example customer" }],
+    });
+    mockUsePosPaymentReconciliationCandidates.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            amount: 116,
+            currency: "KES",
+            name: "SINV-0001",
+            outstanding_amount: 58,
+            posting_date: "2026-09-12",
+          },
+        ],
+        payments: [
+          {
+            amount: 58,
+            currency: "KES",
+            name: "ACC-PAY-0001",
+            posting_date: "2026-09-11",
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    mockUsePosPaymentReconciliationAllocation.mockReturnValue({
+      allocate,
+      clearError: jest.fn(),
+      error: null,
+      isAllocating: false,
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation
+        allowReceive={false}
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[]}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select reconciliation customer Example customer",
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Preview payment allocation" }).props
+        .accessibilityState,
+    ).toEqual({ disabled: true });
+
+    await fireEvent.press(
+      screen.getByRole("checkbox", { name: "Select payment ACC-PAY-0001" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("checkbox", { name: "Select invoice SINV-0001" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Preview payment allocation" }),
+    );
+
+    expect(allocate).toHaveBeenCalledWith({
+      customer: "CUST-001",
+      invoices: ["SINV-0001"],
+      paymentEntries: ["ACC-PAY-0001"],
+      posProfile: "POS-001",
+    });
+    expect(await screen.findByText("Allocation preview")).toBeTruthy();
+    expect(screen.getAllByText("ACC-PAY-0001")).toHaveLength(2);
+
+    await fireEvent.press(
+      screen.getByRole("checkbox", { name: "Select invoice SINV-0001" }),
+    );
+    expect(screen.queryByText("Allocation preview")).toBeNull();
   });
 
   it("shows the online-only warning and returns to POS", async () => {
