@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
@@ -700,6 +700,12 @@ function CartLine({
   const isSerialTracked = Boolean(item.has_serial_no);
   const canExpandDetails = !item.is_free_item;
 
+  useEffect(() => {
+    if (disabled) return;
+    const sync = setTimeout(() => setDraftQuantity(String(item.qty)), 0);
+    return () => clearTimeout(sync);
+  }, [disabled, item.qty]);
+
   function changeQuantity(value: string) {
     if (/^\d*\.?\d*$/.test(value)) setDraftQuantity(value);
   }
@@ -973,6 +979,7 @@ function CartLine({
             editable={!itemDisabled}
             onBlur={commitQuantity}
             onChangeText={changeQuantity}
+            onSubmitEditing={commitQuantity}
             selectTextOnFocus
             style={styles.quantityInput}
             value={draftQuantity}
