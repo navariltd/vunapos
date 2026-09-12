@@ -1,6 +1,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react-native";
 
 const mockUseNetworkStatus = jest.fn();
+const mockUsePosCustomerDetails = jest.fn();
+const mockUsePosCustomerSearch = jest.fn();
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -8,6 +10,14 @@ jest.mock("react-native-paper", () => ({
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
+jest.mock("@/features/pos/hooks/usePosCustomerDetails", () => ({
+  usePosCustomerDetails: () => mockUsePosCustomerDetails(),
+}));
+
+jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
+  usePosCustomerSearch: () => mockUsePosCustomerSearch(),
 }));
 
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
@@ -18,6 +28,16 @@ describe("PosPaymentsScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
+    });
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [],
+    });
   });
 
   afterEach(async () => {
@@ -30,6 +50,8 @@ describe("PosPaymentsScreen", () => {
         allowHistory
         allowReconciliation={false}
         allowReceive
+        currency="KES"
+        currencyPrecision={2}
         onBackToPos={onBackToPos}
       />,
     );
@@ -55,6 +77,8 @@ describe("PosPaymentsScreen", () => {
         allowHistory={false}
         allowReconciliation={false}
         allowReceive={false}
+        currency="KES"
+        currencyPrecision={2}
         onBackToPos={onBackToPos}
       />,
     );
@@ -74,6 +98,8 @@ describe("PosPaymentsScreen", () => {
         allowHistory={false}
         allowReconciliation={false}
         allowReceive
+        currency="KES"
+        currencyPrecision={2}
         onBackToPos={onBackToPos}
       />,
     );
@@ -83,5 +109,73 @@ describe("PosPaymentsScreen", () => {
     ).toBeTruthy();
     await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
     expect(onBackToPos).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects a customer, shows current outstanding invoices, and pre-fills the chosen invoice amount", async () => {
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [
+        {
+          customer: "CUST-001",
+          customerName: "Example customer",
+          mobile: "+254700000000",
+        },
+      ],
+    });
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            currency: "KES",
+            is_return: false,
+            name: "SINV-0001",
+            outstanding_amount: 58,
+          },
+          {
+            currency: "KES",
+            is_return: true,
+            name: "SINV-RET-0001",
+            outstanding_amount: 20,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={false}
+        allowReceive
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select payment customer Example customer",
+      }),
+    );
+    expect(screen.getByText("Customer advance")).toBeTruthy();
+    expect(screen.getByText("SINV-0001")).toBeTruthy();
+    expect(screen.queryByText("SINV-RET-0001")).toBeNull();
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Apply payment to SINV-0001" }),
+    );
+    expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
+      "58",
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Apply as customer advance" }),
+    );
+    expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
+      "",
+    );
   });
 });

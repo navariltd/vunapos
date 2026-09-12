@@ -295,7 +295,10 @@ export function PosWorkspaceScreen() {
             posProfileConfig?.allow_payment_reconciliation !== false
           }
           allowReceive={allowsCustomerPayments}
+          currency={posProfileConfig?.currency ?? "KES"}
+          currencyPrecision={posProfileConfig?.currency_precision ?? 2}
           onBackToPos={() => changeTab("Home")}
+          posProfile={posProfile}
         />
       ) : (
         <PosInvoicesScreen

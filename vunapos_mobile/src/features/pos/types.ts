@@ -448,7 +448,22 @@ export type PosCustomerDetails = {
   balance: number;
   contact?: PosCustomerContact | null;
   customer: PosCustomerSummary;
+  invoices?: PosCustomerInvoice[];
   loyalty: PosCustomerLoyalty | null;
+};
+
+export type PosCustomerInvoice = {
+  currency?: string | null;
+  doctype?: string;
+  due_date?: string | null;
+  grand_total: number;
+  is_return: boolean;
+  name: string;
+  outstanding_amount: number;
+  paid_amount?: number;
+  posting_date?: string | null;
+  return_against?: string | null;
+  status?: string;
 };
 
 export type PosCustomerAddress = {
