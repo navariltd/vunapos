@@ -58,4 +58,23 @@ describe("usePosHeldInvoices", () => {
     });
     expect(getVunaMethod).toHaveBeenCalledTimes(2);
   });
+
+  it("does not load while the Held tab is inactive and presents request failures", async () => {
+    jest.mocked(getVunaMethod).mockRejectedValue(new Error("No active shift."));
+    const inactive = await renderHook(() =>
+      usePosHeldInvoices({ enabled: false, posProfile: "POS-001" }),
+    );
+
+    expect(getVunaMethod).not.toHaveBeenCalled();
+    await inactive.unmount();
+
+    const active = await renderHook(() =>
+      usePosHeldInvoices({ enabled: true, posProfile: "POS-001" }),
+    );
+
+    await waitFor(() =>
+      expect(active.result.current.error).toBe("No active shift."),
+    );
+    expect(active.result.current.isLoading).toBe(false);
+  });
 });
