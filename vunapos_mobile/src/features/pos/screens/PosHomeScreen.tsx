@@ -60,6 +60,7 @@ type PosHomeScreenProps = {
   onPosProfileLoaded: (bootstrap: PosBootstrapData) => void;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
+  workspaceNotice?: string | null;
 };
 
 export function PosHomeScreen({
@@ -69,6 +70,7 @@ export function PosHomeScreen({
   onPosProfileLoaded,
   pricingContext,
   refreshKey = 0,
+  workspaceNotice,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
   const { companyUrl } = useAppSession();
@@ -375,11 +377,11 @@ export function PosHomeScreen({
                 {addError}
               </Text>
             ) : null}
-            {catalogueNotice ? (
+            {catalogueNotice || workspaceNotice ? (
               <Text
                 style={[styles.catalogueNotice, { color: palette.success }]}
               >
-                {catalogueNotice}
+                {catalogueNotice || workspaceNotice}
               </Text>
             ) : null}
           </View>

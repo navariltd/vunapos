@@ -54,6 +54,7 @@ export function PosWorkspaceScreen() {
     useState<PosBootstrapData["pos_profile"]>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const cart = usePosCart({
     customer: saleCustomer,
     posProfile,
@@ -206,6 +207,10 @@ export function PosWorkspaceScreen() {
               setSaleCustomer(defaultSaleCustomer);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
+              setWorkspaceNotice(
+                `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
+              );
+              setCartVisible(false);
               return { name: heldInvoice.name };
             }
             return null;
@@ -268,6 +273,7 @@ export function PosWorkspaceScreen() {
             priceList: selectedPriceList,
           }}
           refreshKey={postSaleRefreshKey}
+          workspaceNotice={workspaceNotice}
         />
       ) : (
         <PosInvoicesScreen
