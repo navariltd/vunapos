@@ -9,6 +9,7 @@ import {
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
+const mockUsePosPaymentReconciliationCandidates = jest.fn();
 const mockUseReceiveCustomerPayment = jest.fn();
 const mockUseGatewayPayment = jest.fn();
 const mockUseGatewayPaymentRealtime = jest.fn();
@@ -27,6 +28,11 @@ jest.mock("@/features/pos/hooks/usePosCustomerDetails", () => ({
 
 jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
   usePosCustomerSearch: () => mockUsePosCustomerSearch(),
+}));
+
+jest.mock("@/features/pos/hooks/usePosPaymentReconciliationCandidates", () => ({
+  usePosPaymentReconciliationCandidates: (...args: unknown[]) =>
+    mockUsePosPaymentReconciliationCandidates(...args),
 }));
 
 jest.mock("@/features/pos/hooks/useReceiveInvoicePayment", () => ({
@@ -61,6 +67,11 @@ describe("PosPaymentsScreen", () => {
       error: null,
       isLoading: false,
       rows: [],
+    });
+    mockUsePosPaymentReconciliationCandidates.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
     });
     mockUseReceiveCustomerPayment.mockReturnValue({
       error: null,
@@ -134,6 +145,72 @@ describe("PosPaymentsScreen", () => {
         "All customer payment operations are disabled for this POS Profile.",
       ),
     ).toBeTruthy();
+  });
+
+  it("loads server-authoritative reconciliation candidates for the selected customer", async () => {
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [
+        {
+          customer: "CUST-001",
+          customerName: "Example customer",
+          mobile: "+254700000000",
+        },
+      ],
+    });
+    mockUsePosPaymentReconciliationCandidates.mockReturnValue({
+      data: {
+        invoices: [
+          {
+            amount: 116,
+            currency: "KES",
+            name: "SINV-0001",
+            outstanding_amount: 58,
+            posting_date: "2026-09-12",
+          },
+        ],
+        payments: [
+          {
+            amount: 58,
+            currency: "KES",
+            name: "ACC-PAY-0001",
+            posting_date: "2026-09-11",
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation
+        allowReceive={false}
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[]}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("Reconcile payments")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select reconciliation customer Example customer",
+      }),
+    );
+
+    expect(mockUsePosPaymentReconciliationCandidates).toHaveBeenLastCalledWith(
+      "CUST-001",
+      "POS-001",
+    );
+    expect(screen.getByText("Unallocated payments")).toBeTruthy();
+    expect(screen.getByText("Outstanding invoices")).toBeTruthy();
+    expect(screen.getByText("ACC-PAY-0001")).toBeTruthy();
+    expect(screen.getByText("SINV-0001")).toBeTruthy();
+    expect(screen.getAllByText("KES 58.00")).toHaveLength(2);
   });
 
   it("shows the online-only warning and returns to POS", async () => {

@@ -15,6 +15,7 @@ import { Text } from "react-native-paper";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
+import { usePosPaymentReconciliationCandidates } from "@/features/pos/hooks/usePosPaymentReconciliationCandidates";
 import { useReceiveCustomerPayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
@@ -23,6 +24,7 @@ import {
   PosCustomerSearchResult,
   PosGatewayPaymentLink,
   PosPaymentMode,
+  PosPaymentReconciliationCandidate,
 } from "@/features/pos/types";
 import {
   parsePaymentAmount,
@@ -211,6 +213,12 @@ export function PosPaymentsScreen({
           currency={currency}
           currencyPrecision={currencyPrecision}
           paymentModes={paymentModes}
+          posProfile={posProfile}
+        />
+      ) : activeTab === "reconcile" ? (
+        <ReconcilePaymentContext
+          currency={currency}
+          currencyPrecision={currencyPrecision}
           posProfile={posProfile}
         />
       ) : (
@@ -1341,6 +1349,282 @@ function ReceivePaymentContext({
   );
 }
 
+/**
+ * The first reconciliation increment deliberately stops at the authoritative
+ * candidate list. Selecting entries and committing allocations comes next.
+ */
+function ReconcilePaymentContext({
+  currency,
+  currencyPrecision,
+  posProfile,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  posProfile?: string;
+}) {
+  const { connectionStatus } = useNetworkStatus();
+  const { palette } = useAppearance();
+  const isOffline = connectionStatus === "offline";
+  const [query, setQuery] = useState("");
+  const [selectedCustomer, setSelectedCustomer] =
+    useState<PosCustomerSearchResult | null>(null);
+  const customerSearch = usePosCustomerSearch(query, !isOffline);
+  const candidates = usePosPaymentReconciliationCandidates(
+    selectedCustomer?.customer || "",
+    posProfile,
+  );
+
+  function selectCustomer(customer: PosCustomerSearchResult) {
+    setSelectedCustomer(customer);
+    setQuery("");
+  }
+
+  return (
+    <View
+      style={[
+        styles.receiveCard,
+        { backgroundColor: palette.surface, borderColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+        Reconcile payments
+      </Text>
+      <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
+        Match a customer’s available payments with their outstanding invoices.
+      </Text>
+
+      <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+        Customer
+      </Text>
+      {selectedCustomer ? (
+        <View
+          style={[
+            styles.selectedCustomer,
+            {
+              backgroundColor: palette.surfaceContainer,
+              borderColor: palette.border,
+            },
+          ]}
+        >
+          <View style={styles.customerSummary}>
+            <Text style={[styles.customerName, { color: palette.onSurface }]}>
+              {selectedCustomer.customerName}
+            </Text>
+            <Text
+              style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
+            >
+              {selectedCustomer.mobile ||
+                selectedCustomer.email ||
+                selectedCustomer.customer}
+            </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Change reconciliation customer"
+            accessibilityRole="button"
+            disabled={isOffline}
+            onPress={() => setSelectedCustomer(null)}
+            style={[styles.textButton, { borderColor: palette.border }]}
+          >
+            <Text
+              style={[styles.textButtonLabel, { color: palette.onSurface }]}
+            >
+              Change
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          <TextInput
+            accessibilityLabel="Search reconciliation customers"
+            editable={!isOffline}
+            onChangeText={setQuery}
+            placeholder="Search customer, phone, or email"
+            placeholderTextColor={palette.onSurfaceMuted}
+            style={[
+              styles.input,
+              {
+                backgroundColor: palette.surfaceContainer,
+                borderColor: palette.border,
+                color: palette.onSurface,
+              },
+            ]}
+            value={query}
+          />
+          {customerSearch.isLoading ? (
+            <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+              Searching customers…
+            </Text>
+          ) : null}
+          {customerSearch.error ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
+              {customerSearch.error}
+            </Text>
+          ) : null}
+          {!isOffline &&
+          !customerSearch.isLoading &&
+          !customerSearch.error &&
+          customerSearch.rows.length ? (
+            <View style={styles.searchResults}>
+              {customerSearch.rows.map((customer) => (
+                <Pressable
+                  accessibilityLabel={`Select reconciliation customer ${customer.customerName}`}
+                  accessibilityRole="button"
+                  key={customer.customer}
+                  onPress={() => selectCustomer(customer)}
+                  style={[
+                    styles.customerResult,
+                    { borderColor: palette.borderSubtle },
+                  ]}
+                >
+                  <Text
+                    style={[styles.customerName, { color: palette.onSurface }]}
+                  >
+                    {customer.customerName}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.customerMeta,
+                      { color: palette.onSurfaceMuted },
+                    ]}
+                  >
+                    {customer.mobile || customer.email || customer.customer}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+        </>
+      )}
+
+      {selectedCustomer ? (
+        <>
+          {candidates.isLoading ? (
+            <View style={styles.reconciliationLoading}>
+              <ActivityIndicator color={palette.primary} size="small" />
+              <Text
+                style={[styles.stateText, { color: palette.onSurfaceMuted }]}
+              >
+                Loading reconciliation candidates…
+              </Text>
+            </View>
+          ) : null}
+          {candidates.error ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
+              {candidates.error}
+            </Text>
+          ) : null}
+          {!candidates.isLoading && !candidates.error ? (
+            <View style={styles.reconciliationLists}>
+              <ReconciliationCandidateList
+                candidates={candidates.data?.payments || []}
+                currency={currency}
+                currencyPrecision={currencyPrecision}
+                emptyMessage="No unallocated payments for this customer."
+                title="Unallocated payments"
+              />
+              <ReconciliationCandidateList
+                candidates={candidates.data?.invoices || []}
+                currency={currency}
+                currencyPrecision={currencyPrecision}
+                emptyMessage="No outstanding invoices for this customer."
+                outstanding
+                title="Outstanding invoices"
+              />
+            </View>
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function ReconciliationCandidateList({
+  candidates,
+  currency,
+  currencyPrecision,
+  emptyMessage,
+  outstanding = false,
+  title,
+}: {
+  candidates: PosPaymentReconciliationCandidate[];
+  currency: string;
+  currencyPrecision: number;
+  emptyMessage: string;
+  outstanding?: boolean;
+  title: string;
+}) {
+  const { palette } = useAppearance();
+
+  return (
+    <View
+      style={[
+        styles.reconciliationList,
+        {
+          backgroundColor: palette.surfaceContainer,
+          borderColor: palette.border,
+        },
+      ]}
+    >
+      <Text
+        style={[styles.reconciliationListTitle, { color: palette.onSurface }]}
+      >
+        {title}
+      </Text>
+      {candidates.length ? (
+        candidates.map((candidate) => {
+          const amount = outstanding
+            ? candidate.outstanding_amount || 0
+            : candidate.amount;
+          return (
+            <View
+              key={candidate.name}
+              style={[
+                styles.reconciliationRow,
+                { borderColor: palette.borderSubtle },
+              ]}
+            >
+              <View style={styles.reconciliationRowDetails}>
+                <Text
+                  style={[styles.invoiceTitle, { color: palette.onSurface }]}
+                >
+                  {candidate.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.customerMeta,
+                    { color: palette.onSurfaceMuted },
+                  ]}
+                >
+                  {formatDate(candidate.posting_date)}
+                </Text>
+              </View>
+              <Text
+                style={[styles.invoiceAmount, { color: palette.onSurface }]}
+              >
+                {formatPosCurrency(
+                  amount,
+                  candidate.currency || currency,
+                  currencyPrecision,
+                )}
+              </Text>
+            </View>
+          );
+        })
+      ) : (
+        <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+          {emptyMessage}
+        </Text>
+      )}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
   customerMeta: {
@@ -1519,6 +1803,31 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  reconciliationList: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  reconciliationListTitle: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  reconciliationLists: { gap: spacing.sm },
+  reconciliationLoading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  reconciliationRow: {
+    alignItems: "center",
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    paddingTop: spacing.sm,
+  },
+  reconciliationRowDetails: { flex: 1, gap: 2 },
   remarksInput: {
     borderRadius: radii.md,
     borderWidth: 1,

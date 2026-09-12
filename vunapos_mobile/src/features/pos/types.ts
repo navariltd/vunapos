@@ -531,6 +531,20 @@ export type PosReceivedPayment = {
   name: string;
 };
 
+export type PosPaymentReconciliationCandidate = {
+  amount: number;
+  currency?: string | null;
+  name: string;
+  outstanding_amount?: number;
+  posting_date: string;
+  remarks?: string | null;
+};
+
+export type PosPaymentReconciliationCandidates = {
+  invoices: PosPaymentReconciliationCandidate[];
+  payments: PosPaymentReconciliationCandidate[];
+};
+
 export type PosInvoiceHistory = {
   has_more: boolean;
   invoices: PosInvoiceHistoryRow[];
