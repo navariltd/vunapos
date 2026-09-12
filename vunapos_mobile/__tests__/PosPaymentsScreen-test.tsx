@@ -157,6 +157,10 @@ describe("PosPaymentsScreen", () => {
           customerName: "Example customer",
           mobile: "+254700000000",
         },
+        {
+          customer: "CUST-002",
+          customerName: "Another customer",
+        },
       ],
     });
     mockUsePosPaymentReconciliationCandidates.mockReturnValue({
@@ -211,6 +215,45 @@ describe("PosPaymentsScreen", () => {
     expect(screen.getByText("ACC-PAY-0001")).toBeTruthy();
     expect(screen.getByText("SINV-0001")).toBeTruthy();
     expect(screen.getAllByText("KES 58.00")).toHaveLength(2);
+
+    const payment = screen.getByRole("checkbox", {
+      name: "Select payment ACC-PAY-0001",
+    });
+    const invoice = screen.getByRole("checkbox", {
+      name: "Select invoice SINV-0001",
+    });
+    expect(payment.props.accessibilityState).toEqual({ checked: false });
+    expect(invoice.props.accessibilityState).toEqual({ checked: false });
+
+    await fireEvent.press(payment);
+    await fireEvent.press(invoice);
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select payment ACC-PAY-0001",
+      }).props.accessibilityState,
+    ).toEqual({ checked: true });
+    expect(
+      screen.getByRole("checkbox", { name: "Select invoice SINV-0001" }).props
+        .accessibilityState,
+    ).toEqual({ checked: true });
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Change reconciliation customer" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", {
+        name: "Select reconciliation customer Another customer",
+      }),
+    );
+    expect(mockUsePosPaymentReconciliationCandidates).toHaveBeenLastCalledWith(
+      "CUST-002",
+      "POS-001",
+    );
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Select payment ACC-PAY-0001",
+      }).props.accessibilityState,
+    ).toEqual({ checked: false });
   });
 
   it("shows the online-only warning and returns to POS", async () => {

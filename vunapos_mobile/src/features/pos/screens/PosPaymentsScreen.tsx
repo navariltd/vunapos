@@ -1368,6 +1368,8 @@ function ReconcilePaymentContext({
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(null);
+  const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
+  const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const customerSearch = usePosCustomerSearch(query, !isOffline);
   const candidates = usePosPaymentReconciliationCandidates(
     selectedCustomer?.customer || "",
@@ -1377,6 +1379,30 @@ function ReconcilePaymentContext({
   function selectCustomer(customer: PosCustomerSearchResult) {
     setSelectedCustomer(customer);
     setQuery("");
+    setSelectedPayments([]);
+    setSelectedInvoices([]);
+  }
+
+  function changeCustomer() {
+    setSelectedCustomer(null);
+    setSelectedPayments([]);
+    setSelectedInvoices([]);
+  }
+
+  function togglePayment(name: string) {
+    setSelectedPayments((current) =>
+      current.includes(name)
+        ? current.filter((payment) => payment !== name)
+        : [...current, name],
+    );
+  }
+
+  function toggleInvoice(name: string) {
+    setSelectedInvoices((current) =>
+      current.includes(name)
+        ? current.filter((invoice) => invoice !== name)
+        : [...current, name],
+    );
   }
 
   return (
@@ -1422,7 +1448,7 @@ function ReconcilePaymentContext({
             accessibilityLabel="Change reconciliation customer"
             accessibilityRole="button"
             disabled={isOffline}
-            onPress={() => setSelectedCustomer(null)}
+            onPress={changeCustomer}
             style={[styles.textButton, { borderColor: palette.border }]}
           >
             <Text
@@ -1526,6 +1552,8 @@ function ReconcilePaymentContext({
                 currency={currency}
                 currencyPrecision={currencyPrecision}
                 emptyMessage="No unallocated payments for this customer."
+                onToggle={togglePayment}
+                selectedNames={selectedPayments}
                 title="Unallocated payments"
               />
               <ReconciliationCandidateList
@@ -1533,7 +1561,9 @@ function ReconcilePaymentContext({
                 currency={currency}
                 currencyPrecision={currencyPrecision}
                 emptyMessage="No outstanding invoices for this customer."
+                onToggle={toggleInvoice}
                 outstanding
+                selectedNames={selectedInvoices}
                 title="Outstanding invoices"
               />
             </View>
@@ -1549,14 +1579,18 @@ function ReconciliationCandidateList({
   currency,
   currencyPrecision,
   emptyMessage,
+  onToggle,
   outstanding = false,
+  selectedNames,
   title,
 }: {
   candidates: PosPaymentReconciliationCandidate[];
   currency: string;
   currencyPrecision: number;
   emptyMessage: string;
+  onToggle: (name: string) => void;
   outstanding?: boolean;
+  selectedNames: string[];
   title: string;
 }) {
   const { palette } = useAppearance();
@@ -1578,17 +1612,34 @@ function ReconciliationCandidateList({
       </Text>
       {candidates.length ? (
         candidates.map((candidate) => {
+          const selected = selectedNames.includes(candidate.name);
           const amount = outstanding
             ? candidate.outstanding_amount || 0
             : candidate.amount;
           return (
-            <View
+            <Pressable
+              accessibilityLabel={`Select ${outstanding ? "invoice" : "payment"} ${candidate.name}`}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: selected }}
               key={candidate.name}
+              onPress={() => onToggle(candidate.name)}
               style={[
                 styles.reconciliationRow,
-                { borderColor: palette.borderSubtle },
+                {
+                  backgroundColor: selected
+                    ? palette.surfaceContainerHigh
+                    : undefined,
+                  borderColor: selected
+                    ? palette.primary
+                    : palette.borderSubtle,
+                },
               ]}
             >
+              <MaterialCommunityIcons
+                color={selected ? palette.primary : palette.onSurfaceMuted}
+                name={selected ? "checkbox-marked" : "checkbox-blank-outline"}
+                size={22}
+              />
               <View style={styles.reconciliationRowDetails}>
                 <Text
                   style={[styles.invoiceTitle, { color: palette.onSurface }]}
@@ -1613,7 +1664,7 @@ function ReconciliationCandidateList({
                   currencyPrecision,
                 )}
               </Text>
-            </View>
+            </Pressable>
           );
         })
       ) : (
