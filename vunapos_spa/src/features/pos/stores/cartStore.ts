@@ -800,7 +800,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: getActiveCustomer(get())?.customer,
-				limit: 100000,
+				limit: 500,
 			});
 			await itemRepository.replaceAll(pricedItems);
 			useRuntimeCacheStore.getState().touch();
@@ -957,11 +957,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 		updateCartItemPricing: async (rowName, pricingOverride, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
+			const targetItem = invoice.items.find((item) => item.row_name === rowName);
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
 			);
 			const profile = await profileRepository.getActive();
-			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change) {
+			const isDeliveryCharge = Boolean(
+				targetItem?.item_code &&
+				profile?.allow_delivery_charge_change &&
+				profile.delivery_charge_item === targetItem.item_code,
+			);
+			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change && !isDeliveryCharge) {
 				throw new Error("Rate changes are not allowed for this POS Profile.");
 			}
 			if (pricingOverride?.type.startsWith("discount") && !profile?.allow_discount_change) {
@@ -1275,7 +1281,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
-				limit: 100000,
+				limit: 500,
 			}));
 			// Ignore a response that completed after the cashier selected another customer.
 			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
@@ -1291,7 +1297,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
 				price_list: priceList,
-				limit: 100000,
+				limit: 500,
 			}));
 			set({ selectedPriceList: priceList });
 			await itemRepository.replaceAll(pricedItems);
