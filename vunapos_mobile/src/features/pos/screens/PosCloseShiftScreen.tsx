@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   StyleSheet,
   TextInput,
@@ -38,6 +39,8 @@ export function PosCloseShiftScreen({
   const [countedAmounts, setCountedAmounts] = useState<Record<string, string>>(
     {},
   );
+  const [confirmationVisible, setConfirmationVisible] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   if (!posProfile) {
     return (
@@ -57,212 +60,290 @@ export function PosCloseShiftScreen({
     return countedAmounts[modeOfPayment] ?? formatAmountInput(expectedAmount);
   }
 
-  return (
-    <KeyboardAwareFormScroll
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: palette.background }}
-    >
-      <View style={styles.header}>
-        <View style={styles.heading}>
-          <Text style={[styles.title, { color: palette.onSurface }]}>
-            Close POS Shift
-          </Text>
-          <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
-            Reconcile the till and close {posProfile}.
-          </Text>
-        </View>
-        <Pressable
-          accessibilityLabel="Back to POS"
-          accessibilityRole="button"
-          onPress={onBackToPos}
-          style={[styles.backButton, { borderColor: palette.border }]}
-        >
-          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
-            Back to POS
-          </Text>
-        </Pressable>
-      </View>
+  function reviewCounts() {
+    if (!preview.data || connectionStatus !== "online") return;
 
-      {connectionStatus !== "online" ? (
-        <StateCard
-          message={
-            connectionStatus === "offline"
-              ? "Reconnect to the server before closing this shift."
-              : "Checking the server connection before closing this shift."
-          }
-          palette={palette}
-          tone="error"
-        />
-      ) : preview.isLoading ? (
-        <View style={styles.loadingState}>
-          <ActivityIndicator color={palette.primary} />
-          <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
-            Loading shift totals…
-          </Text>
-        </View>
-      ) : preview.error ? (
-        <StateCard message={preview.error} palette={palette} tone="error">
+    for (const payment of preview.data.payments) {
+      const rawAmount = countedAmount(
+        payment.mode_of_payment,
+        payment.expected_amount,
+      );
+      if (!rawAmount.trim()) {
+        setValidationError(
+          `Enter a counted amount for ${payment.mode_of_payment}.`,
+        );
+        return;
+      }
+      const amount = parseAmountInput(rawAmount);
+      if (amount === null || amount < 0) {
+        setValidationError(
+          `Enter a valid counted amount for ${payment.mode_of_payment}.`,
+        );
+        return;
+      }
+    }
+
+    setValidationError(null);
+    setConfirmationVisible(true);
+  }
+
+  return (
+    <>
+      <KeyboardAwareFormScroll
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: palette.background }}
+      >
+        <View style={styles.header}>
+          <View style={styles.heading}>
+            <Text style={[styles.title, { color: palette.onSurface }]}>
+              Close POS Shift
+            </Text>
+            <Text
+              style={[styles.description, { color: palette.onSurfaceMuted }]}
+            >
+              Reconcile the till and close {posProfile}.
+            </Text>
+          </View>
           <Pressable
-            accessibilityLabel="Retry closing preview"
+            accessibilityLabel="Back to POS"
             accessibilityRole="button"
-            onPress={preview.reload}
-            style={[styles.retryButton, { borderColor: palette.border }]}
+            onPress={onBackToPos}
+            style={[styles.backButton, { borderColor: palette.border }]}
           >
             <Text
               style={[styles.backButtonLabel, { color: palette.onSurface }]}
             >
-              Retry
+              Back to POS
             </Text>
           </Pressable>
-        </StateCard>
-      ) : preview.data ? (
-        <>
-          <View style={styles.summaryGrid}>
-            <SummaryCard
-              label="Invoices"
-              value={String(preview.data.invoice_count)}
-            />
-            <SummaryCard
-              label="Net sales"
-              value={formatPosCurrency(
-                preview.data.net_total,
-                currency,
-                currencyPrecision,
-              )}
-            />
-            <SummaryCard
-              label="Grand total"
-              value={formatPosCurrency(
-                preview.data.grand_total,
-                currency,
-                currencyPrecision,
-              )}
-            />
-          </View>
-          <View
-            style={[
-              styles.reconciliationCard,
-              { backgroundColor: palette.surface, borderColor: palette.border },
-            ]}
-          >
-            <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
-              Payment reconciliation
+        </View>
+
+        {connectionStatus !== "online" ? (
+          <StateCard
+            message={
+              connectionStatus === "offline"
+                ? "Reconnect to the server before closing this shift."
+                : "Checking the server connection before closing this shift."
+            }
+            palette={palette}
+            tone="error"
+          />
+        ) : preview.isLoading ? (
+          <View style={styles.loadingState}>
+            <ActivityIndicator color={palette.primary} />
+            <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+              Loading shift totals…
             </Text>
-            {preview.data.payments.length ? (
-              preview.data.payments.map((payment) => {
-                const rawAmount = countedAmount(
-                  payment.mode_of_payment,
-                  payment.expected_amount,
-                );
-                const counted = parseAmountInput(rawAmount);
-                const difference =
-                  rawAmount.trim() && counted !== null
-                    ? counted - payment.expected_amount
-                    : null;
-                return (
-                  <View
-                    key={payment.mode_of_payment}
-                    style={[
-                      styles.paymentRow,
-                      {
-                        backgroundColor: palette.surfaceContainer,
-                        borderColor: palette.borderSubtle,
-                      },
-                    ]}
-                  >
-                    <View style={styles.paymentHeading}>
-                      <Text
+          </View>
+        ) : preview.error ? (
+          <StateCard message={preview.error} palette={palette} tone="error">
+            <Pressable
+              accessibilityLabel="Retry closing preview"
+              accessibilityRole="button"
+              onPress={preview.reload}
+              style={[styles.retryButton, { borderColor: palette.border }]}
+            >
+              <Text
+                style={[styles.backButtonLabel, { color: palette.onSurface }]}
+              >
+                Retry
+              </Text>
+            </Pressable>
+          </StateCard>
+        ) : preview.data ? (
+          <>
+            <View style={styles.summaryGrid}>
+              <SummaryCard
+                label="Invoices"
+                value={String(preview.data.invoice_count)}
+              />
+              <SummaryCard
+                label="Net sales"
+                value={formatPosCurrency(
+                  preview.data.net_total,
+                  currency,
+                  currencyPrecision,
+                )}
+              />
+              <SummaryCard
+                label="Grand total"
+                value={formatPosCurrency(
+                  preview.data.grand_total,
+                  currency,
+                  currencyPrecision,
+                )}
+              />
+            </View>
+            <View
+              style={[
+                styles.reconciliationCard,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+                Payment reconciliation
+              </Text>
+              {validationError ? (
+                <StateCard
+                  message={validationError}
+                  palette={palette}
+                  tone="error"
+                />
+              ) : null}
+              {preview.data.payments.length ? (
+                preview.data.payments.map((payment) => {
+                  const rawAmount = countedAmount(
+                    payment.mode_of_payment,
+                    payment.expected_amount,
+                  );
+                  const counted = parseAmountInput(rawAmount);
+                  const difference =
+                    rawAmount.trim() && counted !== null
+                      ? counted - payment.expected_amount
+                      : null;
+                  return (
+                    <View
+                      key={payment.mode_of_payment}
+                      style={[
+                        styles.paymentRow,
+                        {
+                          backgroundColor: palette.surfaceContainer,
+                          borderColor: palette.borderSubtle,
+                        },
+                      ]}
+                    >
+                      <View style={styles.paymentHeading}>
+                        <Text
+                          style={[
+                            styles.paymentMode,
+                            { color: palette.onSurface },
+                          ]}
+                        >
+                          {payment.mode_of_payment}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.paymentMeta,
+                            { color: palette.onSurfaceMuted },
+                          ]}
+                        >
+                          Expected{" "}
+                          {formatPosCurrency(
+                            payment.expected_amount,
+                            currency,
+                            currencyPrecision,
+                          )}
+                        </Text>
+                      </View>
+                      <TextInput
+                        accessibilityLabel={`Counted amount ${payment.mode_of_payment}`}
+                        inputMode="decimal"
+                        keyboardType="decimal-pad"
+                        onChangeText={(value) =>
+                          setCountedAmounts((current) => ({
+                            ...current,
+                            [payment.mode_of_payment]: formatAmountInput(value),
+                          }))
+                        }
+                        placeholder="Counted amount"
+                        placeholderTextColor={palette.onSurfaceMuted}
                         style={[
-                          styles.paymentMode,
-                          { color: palette.onSurface },
+                          styles.countedInput,
+                          {
+                            backgroundColor: palette.surface,
+                            borderColor: palette.border,
+                            color: palette.onSurface,
+                          },
                         ]}
-                      >
-                        {payment.mode_of_payment}
-                      </Text>
+                        value={rawAmount}
+                      />
                       <Text
                         style={[
                           styles.paymentMeta,
                           { color: palette.onSurfaceMuted },
                         ]}
                       >
-                        Expected{" "}
-                        {formatPosCurrency(
-                          payment.expected_amount,
-                          currency,
-                          currencyPrecision,
-                        )}
+                        Difference:{" "}
+                        {difference === null
+                          ? "-"
+                          : formatPosCurrency(
+                              difference,
+                              currency,
+                              currencyPrecision,
+                            )}
                       </Text>
                     </View>
-                    <TextInput
-                      accessibilityLabel={`Counted amount ${payment.mode_of_payment}`}
-                      inputMode="decimal"
-                      keyboardType="decimal-pad"
-                      onChangeText={(value) =>
-                        setCountedAmounts((current) => ({
-                          ...current,
-                          [payment.mode_of_payment]: formatAmountInput(value),
-                        }))
-                      }
-                      placeholder="Counted amount"
-                      placeholderTextColor={palette.onSurfaceMuted}
-                      style={[
-                        styles.countedInput,
-                        {
-                          backgroundColor: palette.surface,
-                          borderColor: palette.border,
-                          color: palette.onSurface,
-                        },
-                      ]}
-                      value={rawAmount}
-                    />
-                    <Text
-                      style={[
-                        styles.paymentMeta,
-                        { color: palette.onSurfaceMuted },
-                      ]}
-                    >
-                      Difference:{" "}
-                      {difference === null
-                        ? "-"
-                        : formatPosCurrency(
-                            difference,
-                            currency,
-                            currencyPrecision,
-                          )}
-                    </Text>
-                  </View>
-                );
-              })
-            ) : (
-              <Text
-                style={[styles.paymentMeta, { color: palette.onSurfaceMuted }]}
-              >
-                No payment modes need closing reconciliation.
-              </Text>
-            )}
-          </View>
-          <Pressable
-            accessibilityLabel="Refresh shift totals"
-            accessibilityRole="button"
-            onPress={preview.reload}
-            style={[styles.refreshButton, { borderColor: palette.border }]}
-          >
-            <Text
-              style={[styles.backButtonLabel, { color: palette.onSurface }]}
+                  );
+                })
+              ) : (
+                <Text
+                  style={[
+                    styles.paymentMeta,
+                    { color: palette.onSurfaceMuted },
+                  ]}
+                >
+                  No payment modes need closing reconciliation.
+                </Text>
+              )}
+            </View>
+            <Pressable
+              accessibilityLabel="Review shift counts"
+              accessibilityRole="button"
+              onPress={reviewCounts}
+              style={[
+                styles.reviewButton,
+                { backgroundColor: palette.primary },
+              ]}
             >
-              Refresh totals
-            </Text>
-          </Pressable>
-        </>
-      ) : (
-        <StateCard
-          message="Unable to load closing summary."
-          palette={palette}
-          tone="error"
+              <Text
+                style={[styles.reviewButtonLabel, { color: palette.onPrimary }]}
+              >
+                Review shift counts
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Refresh shift totals"
+              accessibilityRole="button"
+              onPress={preview.reload}
+              style={[styles.refreshButton, { borderColor: palette.border }]}
+            >
+              <Text
+                style={[styles.backButtonLabel, { color: palette.onSurface }]}
+              >
+                Refresh totals
+              </Text>
+            </Pressable>
+          </>
+        ) : (
+          <StateCard
+            message="Unable to load closing summary."
+            palette={palette}
+            tone="error"
+          />
+        )}
+      </KeyboardAwareFormScroll>
+      {preview.data ? (
+        <CloseShiftCountConfirmationDialog
+          countedAmounts={preview.data.payments.map((payment) => ({
+            countedAmount: parseAmountInput(
+              countedAmount(payment.mode_of_payment, payment.expected_amount),
+            ),
+            expectedAmount: payment.expected_amount,
+            modeOfPayment: payment.mode_of_payment,
+          }))}
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          grandTotal={preview.data.grand_total}
+          invoiceCount={preview.data.invoice_count}
+          onDismiss={() => setConfirmationVisible(false)}
+          visible={confirmationVisible}
         />
-      )}
-    </KeyboardAwareFormScroll>
+      ) : null}
+    </>
   );
 }
 
@@ -316,6 +397,157 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CloseShiftCountConfirmationDialog({
+  countedAmounts,
+  currency,
+  currencyPrecision,
+  grandTotal,
+  invoiceCount,
+  onDismiss,
+  visible,
+}: {
+  countedAmounts: {
+    countedAmount: number | null;
+    expectedAmount: number;
+    modeOfPayment: string;
+  }[];
+  currency: string;
+  currencyPrecision: number;
+  grandTotal: number;
+  invoiceCount: number;
+  onDismiss: () => void;
+  visible: boolean;
+}) {
+  const { palette } = useAppearance();
+
+  return (
+    <Modal
+      animationType="fade"
+      onRequestClose={onDismiss}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible={visible}
+    >
+      <View style={[styles.modalBackdrop, { backgroundColor: palette.scrim }]}>
+        <Pressable
+          accessibilityLabel="Dismiss shift count review"
+          onPress={onDismiss}
+          style={StyleSheet.absoluteFill}
+        />
+        <View
+          accessibilityViewIsModal
+          style={[
+            styles.confirmationDialog,
+            { backgroundColor: palette.surface, borderColor: palette.border },
+          ]}
+        >
+          <Text
+            style={[styles.confirmationTitle, { color: palette.onSurface }]}
+          >
+            Review shift counts
+          </Text>
+          <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
+            Confirm the totals below before closing this POS shift.
+          </Text>
+          <View style={styles.confirmationSummary}>
+            <ConfirmationValue label="Invoices" value={String(invoiceCount)} />
+            <ConfirmationValue
+              label="Grand total"
+              value={formatPosCurrency(grandTotal, currency, currencyPrecision)}
+            />
+          </View>
+          <View
+            style={[styles.confirmedCounts, { borderColor: palette.border }]}
+          >
+            <Text
+              style={[
+                styles.confirmedCountsTitle,
+                { color: palette.onSurfaceMuted },
+              ]}
+            >
+              Counted amounts
+            </Text>
+            {countedAmounts.map((payment) => {
+              const difference =
+                payment.countedAmount === null
+                  ? null
+                  : payment.countedAmount - payment.expectedAmount;
+              return (
+                <View key={payment.modeOfPayment} style={styles.confirmedRow}>
+                  <Text
+                    style={[styles.paymentMeta, { color: palette.onSurface }]}
+                  >
+                    {payment.modeOfPayment}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.confirmedAmount,
+                      { color: palette.onSurface },
+                    ]}
+                  >
+                    {payment.countedAmount === null
+                      ? "-"
+                      : formatPosCurrency(
+                          payment.countedAmount,
+                          currency,
+                          currencyPrecision,
+                        )}{" "}
+                    {difference === null ? null : (
+                      <Text
+                        style={[
+                          styles.confirmedDifference,
+                          { color: palette.onSurfaceMuted },
+                        ]}
+                      >
+                        (
+                        {formatPosCurrency(
+                          difference,
+                          currency,
+                          currencyPrecision,
+                        )}{" "}
+                        difference)
+                      </Text>
+                    )}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <View style={styles.confirmationActions}>
+            <Pressable
+              accessibilityLabel="Back to shift counts"
+              accessibilityRole="button"
+              onPress={onDismiss}
+              style={[styles.backButton, { borderColor: palette.border }]}
+            >
+              <Text
+                style={[styles.backButtonLabel, { color: palette.onSurface }]}
+              >
+                Back to counts
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ConfirmationValue({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  return (
+    <View style={styles.confirmationValue}>
+      <Text style={[styles.summaryLabel, { color: palette.onSurfaceMuted }]}>
+        {label}
+      </Text>
+      <Text style={[styles.summaryValue, { color: palette.onSurface }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   backButton: {
     alignItems: "center",
@@ -330,6 +562,46 @@ const styles = StyleSheet.create({
     fontSize: typography.size.small,
   },
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
+  confirmationActions: { alignItems: "flex-end" },
+  confirmationDialog: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.md,
+    padding: spacing.lg,
+    width: "100%",
+  },
+  confirmationSummary: { flexDirection: "row", gap: spacing.lg },
+  confirmationTitle: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: 20,
+  },
+  confirmationValue: { flex: 1, gap: 2 },
+  confirmedAmount: {
+    flexShrink: 1,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+    textAlign: "right",
+  },
+  confirmedCounts: {
+    borderTopWidth: 1,
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  confirmedCountsTitle: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+    textTransform: "uppercase",
+  },
+  confirmedDifference: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  confirmedRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+  },
   countedInput: {
     borderRadius: radii.md,
     borderWidth: 1,
@@ -350,6 +622,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.sm,
     justifyContent: "center",
+  },
+  modalBackdrop: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: spacing.lg,
   },
   paymentHeading: { gap: 2 },
   paymentMeta: {
@@ -389,6 +667,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
+  },
+  reviewButton: {
+    alignItems: "center",
+    alignSelf: "flex-end",
+    borderRadius: radii.md,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  reviewButtonLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
   },
   stateCard: {
     borderRadius: radii.md,
@@ -436,16 +727,16 @@ const styles = StyleSheet.create({
 
 function parseAmountInput(value: string) {
   const normalized = value.replace(/,/g, "").trim();
-  if (!/^\d+(?:\.\d*)?$/.test(normalized)) return null;
+  if (!/^-?\d+(?:\.\d*)?$/.test(normalized)) return null;
   const amount = Number(normalized);
   return Number.isFinite(amount) ? amount : null;
 }
 
 function formatAmountInput(value: string | number) {
-  const normalized = String(value)
-    .replace(/,/g, "")
-    .replace(/[^\d.]/g, "");
-  if (!normalized) return "";
+  const input = String(value).trim();
+  const negative = input.startsWith("-");
+  const normalized = input.replace(/,/g, "").replace(/[^\d.]/g, "");
+  if (!normalized) return negative ? "-" : "";
 
   const [integer, ...decimalParts] = normalized.split(".");
   const decimal = decimalParts.join("");
@@ -453,7 +744,8 @@ function formatAmountInput(value: string | number) {
     ? Number(integer).toLocaleString(undefined, { maximumFractionDigits: 0 })
     : "0";
 
-  return decimalParts.length
+  const formatted = decimalParts.length
     ? `${formattedInteger}.${decimal}`
     : formattedInteger;
+  return negative ? `-${formatted}` : formatted;
 }

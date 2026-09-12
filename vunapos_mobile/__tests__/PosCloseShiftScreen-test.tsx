@@ -177,6 +177,120 @@ describe("PosCloseShiftScreen", () => {
     expect(screen.getByText("Difference: KES 1,100.50")).toBeTruthy();
   });
 
+  it("requires a valid non-negative count before showing the confirmation review", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 580,
+        invoice_count: 2,
+        net_total: 500,
+        opening_entry: "POS-OPEN-001",
+        payments: [
+          {
+            closing_amount: 100,
+            difference: 0,
+            expected_amount: 100,
+            mode_of_payment: "Cash",
+            opening_amount: 0,
+          },
+        ],
+        period_end_date: "2026-09-13 10:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        currency="KES"
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Counted amount Cash"),
+      "",
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Review shift counts" }),
+    );
+    expect(screen.getByText("Enter a counted amount for Cash.")).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "Confirm the totals below before closing this POS shift.",
+      ),
+    ).toBeNull();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Counted amount Cash"),
+      "-5",
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Review shift counts" }),
+    );
+    expect(
+      screen.getByText("Enter a valid counted amount for Cash."),
+    ).toBeTruthy();
+  });
+
+  it("opens a themed review with the validated totals and counts", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 580,
+        invoice_count: 2,
+        net_total: 500,
+        opening_entry: "POS-OPEN-001",
+        payments: [
+          {
+            closing_amount: 100,
+            difference: 0,
+            expected_amount: 100,
+            mode_of_payment: "Cash",
+            opening_amount: 0,
+          },
+        ],
+        period_end_date: "2026-09-13 10:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        currency="KES"
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Counted amount Cash"),
+      "90",
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Review shift counts" }),
+    );
+
+    expect(
+      screen.getByText(
+        "Confirm the totals below before closing this POS shift.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getAllByText("KES 580.00")).toHaveLength(2);
+    expect(screen.getByText(/\(−?KES|\(-KES/)).toBeTruthy();
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Back to shift counts" }),
+    );
+    expect(screen.queryByText("Counted amounts")).toBeNull();
+  });
+
   it("blocks the workflow while offline and explains the connection requirement", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
