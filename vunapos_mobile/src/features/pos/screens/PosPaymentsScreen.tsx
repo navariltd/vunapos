@@ -1,5 +1,8 @@
+import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
 import {
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +14,7 @@ import { Text } from "react-native-paper";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
-import { PosCustomerSearchResult } from "@/features/pos/types";
+import { PosCustomerSearchResult, PosPaymentMode } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -25,6 +28,7 @@ type PosPaymentsScreenProps = {
   currency: string;
   currencyPrecision: number;
   onBackToPos: () => void;
+  paymentModes: PosPaymentMode[];
   posProfile?: string;
 };
 
@@ -33,6 +37,30 @@ const tabDefinitions: { label: string; value: PaymentWorkspaceTab }[] = [
   { label: "Reconcile", value: "reconcile" },
   { label: "History", value: "history" },
 ];
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateFromInput(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function dateInputValue(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(dateFromInput(value));
+}
 
 /**
  * The native home for customer payment work. Individual workflows are added
@@ -45,6 +73,7 @@ export function PosPaymentsScreen({
   currency,
   currencyPrecision,
   onBackToPos,
+  paymentModes,
   posProfile,
 }: PosPaymentsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
@@ -69,8 +98,7 @@ export function PosPaymentsScreen({
     : (availableTabs[0]?.value ?? "receive");
 
   const selectedTabLabel =
-    availableTabs.find(({ value }) => value === activeTab)?.label ??
-    "Payments";
+    availableTabs.find(({ value }) => value === activeTab)?.label ?? "Payments";
 
   if (!availableTabs.length) {
     return (
@@ -78,7 +106,9 @@ export function PosPaymentsScreen({
         accessibilityRole="alert"
         style={[styles.emptyState, { backgroundColor: palette.background }]}
       >
-        <Text style={[styles.title, { color: palette.onSurface }]}>Payments disabled</Text>
+        <Text style={[styles.title, { color: palette.onSurface }]}>
+          Payments disabled
+        </Text>
         <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
           All customer payment operations are disabled for this POS Profile.
         </Text>
@@ -93,7 +123,9 @@ export function PosPaymentsScreen({
     >
       <View style={styles.headerRow}>
         <View style={styles.header}>
-          <Text style={[styles.title, { color: palette.onSurface }]}>Payments</Text>
+          <Text style={[styles.title, { color: palette.onSurface }]}>
+            Payments
+          </Text>
           <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
             Receive and reconcile customer payments.
           </Text>
@@ -104,7 +136,9 @@ export function PosPaymentsScreen({
           onPress={onBackToPos}
           style={[styles.backButton, { borderColor: palette.border }]}
         >
-          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>Back to POS</Text>
+          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
+            Back to POS
+          </Text>
         </Pressable>
       </View>
 
@@ -113,7 +147,10 @@ export function PosPaymentsScreen({
           accessibilityRole="alert"
           style={[
             styles.notice,
-            { backgroundColor: palette.errorSurface, borderColor: palette.error },
+            {
+              backgroundColor: palette.errorSurface,
+              borderColor: palette.error,
+            },
           ]}
         >
           <Text style={[styles.noticeText, { color: palette.onError }]}>
@@ -156,6 +193,7 @@ export function PosPaymentsScreen({
         <ReceivePaymentContext
           currency={currency}
           currencyPrecision={currencyPrecision}
+          paymentModes={paymentModes}
           posProfile={posProfile}
         />
       ) : (
@@ -169,8 +207,8 @@ export function PosPaymentsScreen({
             {selectedTabLabel}
           </Text>
           <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
-            This workspace is ready. Its {selectedTabLabel.toLowerCase()} workflow
-            will be added next.
+            This workspace is ready. Its {selectedTabLabel.toLowerCase()}{" "}
+            workflow will be added next.
           </Text>
         </View>
       )}
@@ -181,20 +219,31 @@ export function PosPaymentsScreen({
 function ReceivePaymentContext({
   currency,
   currencyPrecision,
+  paymentModes,
   posProfile,
 }: {
   currency: string;
   currencyPrecision: number;
+  paymentModes: PosPaymentMode[];
   posProfile?: string;
 }) {
   const { connectionStatus } = useNetworkStatus();
-  const { palette } = useAppearance();
+  const { appearance, palette } = useAppearance();
   const isOffline = connectionStatus === "offline";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
+  const defaultMode =
+    paymentModes.find((mode) => mode.default)?.mode_of_payment ||
+    paymentModes[0]?.mode_of_payment ||
+    "";
+  const [mode, setMode] = useState(defaultMode);
+  const [referenceNo, setReferenceNo] = useState("");
+  const [referenceDate, setReferenceDate] = useState(today());
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [remarks, setRemarks] = useState("");
   const customerSearch = usePosCustomerSearch(query, !isOffline);
   const customerDetails = usePosCustomerDetails({
     customer: selectedCustomer?.customer || "",
@@ -203,6 +252,19 @@ function ReceivePaymentContext({
   const outstandingInvoices = (customerDetails.data?.invoices || []).filter(
     (invoice) => !invoice.is_return && invoice.outstanding_amount > 0,
   );
+  const activeMode = paymentModes.some(
+    (paymentMode) => paymentMode.mode_of_payment === mode,
+  )
+    ? mode
+    : defaultMode;
+  const selectedMode = paymentModes.find(
+    (paymentMode) => paymentMode.mode_of_payment === activeMode,
+  );
+  const requiresReference = Boolean(selectedMode?.requires_reference);
+  const isGatewayMode = Boolean(selectedMode?.payment_gateway);
+  const hasInvalidAmount =
+    Boolean(amount.trim()) &&
+    (!Number.isFinite(Number(amount)) || Number(amount) <= 0);
 
   function selectCustomer(customer: PosCustomerSearchResult) {
     setSelectedCustomer(customer);
@@ -211,7 +273,10 @@ function ReceivePaymentContext({
     setQuery("");
   }
 
-  function selectInvoice(invoice: { name: string; outstanding_amount: number }) {
+  function selectInvoice(invoice: {
+    name: string;
+    outstanding_amount: number;
+  }) {
     setSelectedInvoice(invoice.name);
     setAmount(String(invoice.outstanding_amount));
   }
@@ -221,6 +286,12 @@ function ReceivePaymentContext({
     setAmount("");
   }
 
+  function changeMode(nextMode: string) {
+    setMode(nextMode);
+    setReferenceNo("");
+    setReferenceDate(today());
+  }
+
   return (
     <View
       style={[
@@ -228,12 +299,16 @@ function ReceivePaymentContext({
         { backgroundColor: palette.surface, borderColor: palette.border },
       ]}
     >
-      <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>Receive payment</Text>
+      <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+        Receive payment
+      </Text>
       <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
         Choose the customer and where their payment should be applied.
       </Text>
 
-      <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>Customer</Text>
+      <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+        Customer
+      </Text>
       {selectedCustomer ? (
         <View
           style={[
@@ -248,7 +323,9 @@ function ReceivePaymentContext({
             <Text style={[styles.customerName, { color: palette.onSurface }]}>
               {selectedCustomer.customerName}
             </Text>
-            <Text style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}>
+            <Text
+              style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
+            >
               {selectedCustomer.mobile ||
                 selectedCustomer.email ||
                 selectedCustomer.customer}
@@ -265,7 +342,11 @@ function ReceivePaymentContext({
             }}
             style={[styles.textButton, { borderColor: palette.border }]}
           >
-            <Text style={[styles.textButtonLabel, { color: palette.onSurface }]}>Change</Text>
+            <Text
+              style={[styles.textButtonLabel, { color: palette.onSurface }]}
+            >
+              Change
+            </Text>
           </Pressable>
         </View>
       ) : (
@@ -292,7 +373,10 @@ function ReceivePaymentContext({
             </Text>
           ) : null}
           {customerSearch.error ? (
-            <Text accessibilityRole="alert" style={[styles.errorText, { color: palette.error }]}>
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
               {customerSearch.error}
             </Text>
           ) : null}
@@ -312,10 +396,17 @@ function ReceivePaymentContext({
                     { borderColor: palette.borderSubtle },
                   ]}
                 >
-                  <Text style={[styles.customerName, { color: palette.onSurface }]}>
+                  <Text
+                    style={[styles.customerName, { color: palette.onSurface }]}
+                  >
                     {customer.customerName}
                   </Text>
-                  <Text style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}>
+                  <Text
+                    style={[
+                      styles.customerMeta,
+                      { color: palette.onSurfaceMuted },
+                    ]}
+                  >
                     {customer.mobile || customer.email || customer.customer}
                   </Text>
                 </Pressable>
@@ -327,14 +418,19 @@ function ReceivePaymentContext({
 
       {selectedCustomer ? (
         <>
-          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>Apply payment to</Text>
+          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+            Apply payment to
+          </Text>
           {customerDetails.isLoading ? (
             <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
               Loading outstanding invoices…
             </Text>
           ) : null}
           {customerDetails.error ? (
-            <Text accessibilityRole="alert" style={[styles.errorText, { color: palette.error }]}>
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
               {customerDetails.error}
             </Text>
           ) : null}
@@ -352,12 +448,23 @@ function ReceivePaymentContext({
                         ? palette.surfaceContainerHigh
                         : palette.surface,
                     borderColor:
-                      selectedInvoice === null ? palette.primary : palette.border,
+                      selectedInvoice === null
+                        ? palette.primary
+                        : palette.border,
                   },
                 ]}
               >
-                <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>Customer advance</Text>
-                <Text style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}>
+                <Text
+                  style={[styles.invoiceTitle, { color: palette.onSurface }]}
+                >
+                  Customer advance
+                </Text>
+                <Text
+                  style={[
+                    styles.customerMeta,
+                    { color: palette.onSurfaceMuted },
+                  ]}
+                >
                   Leave this payment unallocated.
                 </Text>
               </Pressable>
@@ -381,10 +488,20 @@ function ReceivePaymentContext({
                     ]}
                   >
                     <View style={styles.invoiceRow}>
-                      <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>
+                      <Text
+                        style={[
+                          styles.invoiceTitle,
+                          { color: palette.onSurface },
+                        ]}
+                      >
                         {invoice.name}
                       </Text>
-                      <Text style={[styles.invoiceAmount, { color: palette.onSurface }]}>
+                      <Text
+                        style={[
+                          styles.invoiceAmount,
+                          { color: palette.onSurface },
+                        ]}
+                      >
                         {formatPosCurrency(
                           invoice.outstanding_amount,
                           invoiceCurrency,
@@ -392,21 +509,30 @@ function ReceivePaymentContext({
                         )}
                       </Text>
                     </View>
-                    <Text style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}>
+                    <Text
+                      style={[
+                        styles.customerMeta,
+                        { color: palette.onSurfaceMuted },
+                      ]}
+                    >
                       Outstanding balance
                     </Text>
                   </Pressable>
                 );
               })}
               {!outstandingInvoices.length ? (
-                <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+                <Text
+                  style={[styles.stateText, { color: palette.onSurfaceMuted }]}
+                >
                   No outstanding invoices for this customer.
                 </Text>
               ) : null}
             </View>
           ) : null}
 
-          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>Amount</Text>
+          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+            Amount
+          </Text>
           <TextInput
             accessibilityLabel="Receive payment amount"
             inputMode="decimal"
@@ -423,6 +549,174 @@ function ReceivePaymentContext({
               },
             ]}
             value={amount}
+          />
+          {hasInvalidAmount ? (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
+              Enter an amount greater than zero.
+            </Text>
+          ) : null}
+
+          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+            Payment mode
+          </Text>
+          {paymentModes.length ? (
+            <View style={styles.paymentModeOptions}>
+              {paymentModes.map((paymentMode) => {
+                const active = paymentMode.mode_of_payment === activeMode;
+                return (
+                  <Pressable
+                    accessibilityLabel={`Payment mode ${paymentMode.mode_of_payment}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    key={paymentMode.mode_of_payment}
+                    onPress={() => changeMode(paymentMode.mode_of_payment)}
+                    style={[
+                      styles.paymentModeOption,
+                      {
+                        backgroundColor: active
+                          ? palette.surfaceContainerHigh
+                          : palette.surface,
+                        borderColor: active ? palette.primary : palette.border,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.invoiceTitle,
+                        { color: palette.onSurface },
+                      ]}
+                    >
+                      {paymentMode.mode_of_payment}
+                    </Text>
+                    {paymentMode.default ? (
+                      <Text
+                        style={[
+                          styles.customerMeta,
+                          { color: palette.onSurfaceMuted },
+                        ]}
+                      >
+                        Default
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : (
+            <Text
+              accessibilityRole="alert"
+              style={[styles.errorText, { color: palette.error }]}
+            >
+              No payment mode is configured for this POS Profile.
+            </Text>
+          )}
+
+          {!isGatewayMode ? (
+            <>
+              <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+                Reference number{requiresReference ? " *" : ""}
+              </Text>
+              <TextInput
+                accessibilityLabel="Payment reference number"
+                onChangeText={setReferenceNo}
+                placeholder={
+                  requiresReference
+                    ? "Required for this payment mode"
+                    : "Optional reference"
+                }
+                placeholderTextColor={palette.onSurfaceMuted}
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: palette.surfaceContainer,
+                    borderColor: palette.border,
+                    color: palette.onSurface,
+                  },
+                ]}
+                value={referenceNo}
+              />
+              {requiresReference || referenceNo ? (
+                <>
+                  <Text
+                    style={[styles.fieldLabel, { color: palette.onSurface }]}
+                  >
+                    Reference date{requiresReference ? " *" : ""}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel="Choose payment reference date"
+                    accessibilityRole="button"
+                    onPress={() => setDatePickerVisible(true)}
+                    style={[
+                      styles.datePickerButton,
+                      {
+                        backgroundColor: palette.surfaceContainer,
+                        borderColor: palette.border,
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      color={palette.onSurfaceMuted}
+                      name="calendar-month-outline"
+                      size={20}
+                    />
+                    <Text
+                      style={[
+                        styles.datePickerButtonLabel,
+                        { color: palette.onSurface },
+                      ]}
+                    >
+                      {formatDate(referenceDate)}
+                    </Text>
+                  </Pressable>
+                  {datePickerVisible ? (
+                    <DateTimePicker
+                      accentColor={palette.primary}
+                      mode="date"
+                      negativeButton={{ label: "Cancel" }}
+                      onDismiss={() => setDatePickerVisible(false)}
+                      onValueChange={(_event, selectedDate) => {
+                        setReferenceDate(dateInputValue(selectedDate));
+                        setDatePickerVisible(false);
+                      }}
+                      positiveButton={{ label: "Select" }}
+                      presentation={
+                        Platform.OS === "android" ? "dialog" : "inline"
+                      }
+                      themeVariant={appearance}
+                      value={dateFromInput(referenceDate)}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : null}
+          {isGatewayMode ? (
+            <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+              Gateway collection for this payment mode will be added separately.
+            </Text>
+          ) : null}
+
+          <Text style={[styles.fieldLabel, { color: palette.onSurface }]}>
+            Remarks
+          </Text>
+          <TextInput
+            accessibilityLabel="Payment remarks"
+            multiline
+            onChangeText={setRemarks}
+            placeholder="Optional payment note"
+            placeholderTextColor={palette.onSurfaceMuted}
+            style={[
+              styles.remarksInput,
+              {
+                backgroundColor: palette.surfaceContainer,
+                borderColor: palette.border,
+                color: palette.onSurface,
+              },
+            ]}
+            value={remarks}
           />
         </>
       ) : null}
@@ -448,6 +742,19 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   customerSummary: { flex: 1, gap: 2 },
+  datePickerButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 46,
+    paddingHorizontal: spacing.sm,
+  },
+  datePickerButtonLabel: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+  },
   description: {
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
@@ -522,6 +829,18 @@ const styles = StyleSheet.create({
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.compact,
   },
+  paymentModeOption: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: 2,
+    minWidth: 108,
+    padding: spacing.sm,
+  },
+  paymentModeOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   placeholder: {
     borderRadius: radii.lg,
     borderWidth: 1,
@@ -537,6 +856,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
+  },
+  remarksInput: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    minHeight: 88,
+    padding: spacing.sm,
+    textAlignVertical: "top",
   },
   searchResults: { gap: 0 },
   sectionTitle: {

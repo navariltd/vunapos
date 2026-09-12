@@ -53,6 +53,7 @@ describe("PosPaymentsScreen", () => {
         currency="KES"
         currencyPrecision={2}
         onBackToPos={onBackToPos}
+        paymentModes={[]}
       />,
     );
 
@@ -68,7 +69,11 @@ describe("PosPaymentsScreen", () => {
     expect(
       screen.getByRole("tab", { name: "History" }).props.accessibilityState,
     ).toEqual({ selected: true });
-    expect(screen.getByText("This workspace is ready. Its history workflow will be added next.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "This workspace is ready. Its history workflow will be added next.",
+      ),
+    ).toBeTruthy();
   });
 
   it("explains when all payment operations are disabled", async () => {
@@ -80,6 +85,7 @@ describe("PosPaymentsScreen", () => {
         currency="KES"
         currencyPrecision={2}
         onBackToPos={onBackToPos}
+        paymentModes={[]}
       />,
     );
 
@@ -101,11 +107,14 @@ describe("PosPaymentsScreen", () => {
         currency="KES"
         currencyPrecision={2}
         onBackToPos={onBackToPos}
+        paymentModes={[]}
       />,
     );
 
     expect(
-      screen.getByText("Payments require a connection. Reconnect before continuing."),
+      screen.getByText(
+        "Payments require a connection. Reconnect before continuing.",
+      ),
     ).toBeTruthy();
     await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
     expect(onBackToPos).toHaveBeenCalledTimes(1);
@@ -151,6 +160,10 @@ describe("PosPaymentsScreen", () => {
         currency="KES"
         currencyPrecision={2}
         onBackToPos={onBackToPos}
+        paymentModes={[
+          { default: true, mode_of_payment: "Cash" },
+          { mode_of_payment: "Bank", requires_reference: true },
+        ]}
         posProfile="POS-001"
       />,
     );
@@ -176,6 +189,31 @@ describe("PosPaymentsScreen", () => {
     );
     expect(screen.getByLabelText("Receive payment amount").props.value).toBe(
       "",
+    );
+    expect(
+      screen.getByRole("radio", { name: "Payment mode Cash" }).props
+        .accessibilityState,
+    ).toEqual({ selected: true });
+
+    await fireEvent.press(
+      screen.getByRole("radio", { name: "Payment mode Bank" }),
+    );
+    expect(screen.getByLabelText("Payment reference number")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Choose payment reference date" }),
+    ).toBeTruthy();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Receive payment amount"),
+      "0",
+    );
+    expect(screen.getByText("Enter an amount greater than zero.")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Payment remarks"),
+      "Cheque received at counter",
+    );
+    expect(screen.getByLabelText("Payment remarks").props.value).toBe(
+      "Cheque received at counter",
     );
   });
 });

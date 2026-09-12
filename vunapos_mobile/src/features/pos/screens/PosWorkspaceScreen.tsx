@@ -54,6 +54,9 @@ export function PosWorkspaceScreen() {
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [posProfile, setPosProfile] = useState<string>();
+  const [paymentModes, setPaymentModes] = useState<
+    PosBootstrapData["payment_modes"]
+  >([]);
   const [posProfileConfig, setPosProfileConfig] =
     useState<PosBootstrapData["pos_profile"]>();
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
@@ -69,6 +72,7 @@ export function PosWorkspaceScreen() {
     const defaultCustomer = bootstrap.default_customer;
     setPosProfile(bootstrap.pos_profile.name);
     setPosProfileConfig(bootstrap.pos_profile);
+    setPaymentModes(bootstrap.payment_modes);
     setDefaultSaleCustomer(
       defaultCustomer
         ? {
@@ -298,6 +302,7 @@ export function PosWorkspaceScreen() {
           currency={posProfileConfig?.currency ?? "KES"}
           currencyPrecision={posProfileConfig?.currency_precision ?? 2}
           onBackToPos={() => changeTab("Home")}
+          paymentModes={paymentModes}
           posProfile={posProfile}
         />
       ) : (
