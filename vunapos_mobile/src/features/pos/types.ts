@@ -598,3 +598,23 @@ export type PosInvoiceHistory = {
     returns: number;
   };
 };
+
+export type PosClosingPreviewPayment = {
+  closing_amount: number;
+  difference: number;
+  expected_amount: number;
+  mode_of_payment: string;
+  opening_amount: number;
+};
+
+export type PosClosingPreview = {
+  cashier: string;
+  grand_total: number;
+  invoice_count: number;
+  net_total: number;
+  opening_entry: string;
+  payments: PosClosingPreviewPayment[];
+  period_end_date: string;
+  period_start_date: string;
+  pos_profile: string;
+};

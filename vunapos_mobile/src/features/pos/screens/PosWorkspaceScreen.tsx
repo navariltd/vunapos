@@ -332,6 +332,8 @@ export function PosWorkspaceScreen() {
         />
       ) : activeTab === "Close Shift" ? (
         <PosCloseShiftScreen
+          currency={posProfileConfig?.currency}
+          currencyPrecision={posProfileConfig?.currency_precision}
           onBackToPos={() => changeTab("Home")}
           posProfile={posProfile}
         />
