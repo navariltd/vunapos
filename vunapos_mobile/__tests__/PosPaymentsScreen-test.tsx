@@ -9,6 +9,7 @@ import {
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
 const mockUsePosCustomerSearch = jest.fn();
+const mockUsePosPaymentHistory = jest.fn();
 const mockUsePosPaymentReconciliationAllocation = jest.fn();
 const mockUsePosPaymentReconciliationCandidates = jest.fn();
 const mockUsePosPaymentReconciliation = jest.fn();
@@ -30,6 +31,10 @@ jest.mock("@/features/pos/hooks/usePosCustomerDetails", () => ({
 
 jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
   usePosCustomerSearch: () => mockUsePosCustomerSearch(),
+}));
+
+jest.mock("@/features/pos/hooks/usePosPaymentHistory", () => ({
+  usePosPaymentHistory: () => mockUsePosPaymentHistory(),
 }));
 
 jest.mock("@/features/pos/hooks/usePosPaymentReconciliationCandidates", () => ({
@@ -78,6 +83,11 @@ describe("PosPaymentsScreen", () => {
       error: null,
       isLoading: false,
       rows: [],
+    });
+    mockUsePosPaymentHistory.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
     });
     mockUsePosPaymentReconciliationCandidates.mockReturnValue({
       data: null,
@@ -143,11 +153,53 @@ describe("PosPaymentsScreen", () => {
     expect(
       screen.getByRole("tab", { name: "History" }).props.accessibilityState,
     ).toEqual({ selected: true });
-    expect(
-      screen.getByText(
-        "This workspace is ready. Its history workflow will be added next.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Payment history")).toBeTruthy();
+  });
+
+  it("shows active-POS payment history with its core payment details", async () => {
+    mockUsePosPaymentHistory.mockReturnValue({
+      data: {
+        payments: [
+          {
+            allocated_amount: 40,
+            cashier: "cashier@example.com",
+            customer: "CUST-001",
+            customer_name: "Example customer",
+            mode_of_payment: "Cash",
+            name: "ACC-PAY-0001",
+            posting_date: "2026-09-12",
+            received_amount: 58,
+            references: [],
+            status: "Submitted",
+            unallocated_amount: 18,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory
+        allowReconciliation={false}
+        allowReceive={false}
+        currency="KES"
+        currencyPrecision={2}
+        onBackToPos={onBackToPos}
+        paymentModes={[]}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("ACC-PAY-0001")).toBeTruthy();
+    expect(screen.getByText("No external reference")).toBeTruthy();
+    expect(screen.getByText("Example customer")).toBeTruthy();
+    expect(screen.getByText("Cashier: cashier@example.com")).toBeTruthy();
+    expect(screen.getByText("Sep 12, 2026 · Cash")).toBeTruthy();
+    expect(screen.getByText("Submitted")).toBeTruthy();
+    expect(screen.getByText("KES 58.00")).toBeTruthy();
+    expect(screen.getByText("KES 40.00")).toBeTruthy();
+    expect(screen.getByText("KES 18.00")).toBeTruthy();
   });
 
   it("explains when all payment operations are disabled", async () => {

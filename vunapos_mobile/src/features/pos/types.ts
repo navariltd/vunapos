@@ -552,6 +552,40 @@ export type PosPaymentReconciliationAllocation = {
   payment_entry: string;
 };
 
+export type PosPaymentHistoryReference = {
+  allocated_amount: number;
+  reference_doctype: string;
+  reference_name: string;
+};
+
+export type PosPaymentHistoryRow = {
+  allocated_amount: number;
+  cashier?: string | null;
+  closing_entry?: string | null;
+  customer: string;
+  customer_name?: string | null;
+  gateway_links?: {
+    name: string;
+    source_doctype: string;
+    source_name: string;
+    status: string;
+    transaction_reference?: string | null;
+  }[];
+  mode_of_payment?: string | null;
+  name: string;
+  posting_date: string;
+  received_amount: number;
+  reference_no?: string | null;
+  references: PosPaymentHistoryReference[];
+  remarks?: string | null;
+  status: "Cancelled" | "Submitted";
+  unallocated_amount: number;
+};
+
+export type PosPaymentHistory = {
+  payments: PosPaymentHistoryRow[];
+};
+
 export type PosInvoiceHistory = {
   has_more: boolean;
   invoices: PosInvoiceHistoryRow[];

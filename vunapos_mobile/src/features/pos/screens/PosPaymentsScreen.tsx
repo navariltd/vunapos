@@ -15,6 +15,7 @@ import { Text } from "react-native-paper";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
+import { usePosPaymentHistory } from "@/features/pos/hooks/usePosPaymentHistory";
 import { usePosPaymentReconciliationAllocation } from "@/features/pos/hooks/usePosPaymentReconciliationAllocation";
 import { usePosPaymentReconciliationCandidates } from "@/features/pos/hooks/usePosPaymentReconciliationCandidates";
 import { usePosPaymentReconciliation } from "@/features/pos/hooks/usePosPaymentReconciliation";
@@ -25,6 +26,7 @@ import {
   PosC2BGatewayPayment,
   PosCustomerSearchResult,
   PosGatewayPaymentLink,
+  PosPaymentHistoryRow,
   PosPaymentMode,
   PosPaymentReconciliationAllocation,
   PosPaymentReconciliationCandidate,
@@ -118,9 +120,6 @@ export function PosPaymentsScreen({
   const activeTab = availableTabs.some(({ value }) => value === selectedTab)
     ? selectedTab
     : (availableTabs[0]?.value ?? "receive");
-
-  const selectedTabLabel =
-    availableTabs.find(({ value }) => value === activeTab)?.label ?? "Payments";
 
   if (!availableTabs.length) {
     return (
@@ -225,22 +224,207 @@ export function PosPaymentsScreen({
           posProfile={posProfile}
         />
       ) : (
-        <View
-          style={[
-            styles.placeholder,
-            { backgroundColor: palette.surface, borderColor: palette.border },
-          ]}
-        >
-          <Text style={[styles.placeholderTitle, { color: palette.onSurface }]}>
-            {selectedTabLabel}
-          </Text>
-          <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
-            This workspace is ready. Its {selectedTabLabel.toLowerCase()}{" "}
-            workflow will be added next.
-          </Text>
-        </View>
+        <PaymentHistoryContext
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          posProfile={posProfile}
+        />
       )}
     </ScrollView>
+  );
+}
+
+function PaymentHistoryContext({
+  currency,
+  currencyPrecision,
+  posProfile,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  posProfile?: string;
+}) {
+  const { connectionStatus } = useNetworkStatus();
+  const { palette } = useAppearance();
+  const history = usePosPaymentHistory(posProfile);
+  const isOffline = connectionStatus === "offline";
+
+  return (
+    <View
+      style={[
+        styles.receiveCard,
+        { backgroundColor: palette.surface, borderColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+        Payment history
+      </Text>
+      <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
+        Payments received through this POS Profile.
+      </Text>
+      {isOffline ? (
+        <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+          Reconnect to load payment history.
+        </Text>
+      ) : history.isLoading ? (
+        <View style={styles.reconciliationLoading}>
+          <ActivityIndicator color={palette.primary} size="small" />
+          <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+            Loading payments…
+          </Text>
+        </View>
+      ) : history.error ? (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.errorText, { color: palette.error }]}
+        >
+          {history.error}
+        </Text>
+      ) : history.data ? (
+        history.data.payments.length ? (
+          <View style={styles.paymentHistoryList}>
+            {history.data.payments.map((payment) => (
+              <PaymentHistoryRowCard
+                currency={currency}
+                currencyPrecision={currencyPrecision}
+                key={payment.name}
+                payment={payment}
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+            No customer payments match these filters.
+          </Text>
+        )
+      ) : null}
+    </View>
+  );
+}
+
+function PaymentHistoryRowCard({
+  currency,
+  currencyPrecision,
+  payment,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  payment: PosPaymentHistoryRow;
+}) {
+  const { palette } = useAppearance();
+  const cancelled = payment.status === "Cancelled";
+
+  return (
+    <View
+      style={[
+        styles.paymentHistoryRow,
+        {
+          backgroundColor: palette.surfaceContainer,
+          borderColor: palette.border,
+        },
+      ]}
+    >
+      <View style={styles.historyHeader}>
+        <View style={styles.reconciliationRowDetails}>
+          <Text style={[styles.invoiceTitle, { color: palette.onSurface }]}>
+            {payment.name}
+          </Text>
+          <Text
+            style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
+          >
+            {payment.reference_no || "No external reference"}
+          </Text>
+        </View>
+        <Text
+          style={[
+            styles.historyStatus,
+            { color: cancelled ? palette.error : palette.success },
+          ]}
+        >
+          {payment.status}
+        </Text>
+      </View>
+      <View style={styles.historyDetails}>
+        <View style={styles.historyDetail}>
+          <Text
+            style={[
+              styles.historyDetailLabel,
+              { color: palette.onSurfaceMuted },
+            ]}
+          >
+            Customer
+          </Text>
+          <Text style={[styles.customerMeta, { color: palette.onSurface }]}>
+            {payment.customer_name || payment.customer}
+          </Text>
+          <Text
+            style={[styles.customerMeta, { color: palette.onSurfaceMuted }]}
+          >
+            Cashier: {payment.cashier || "-"}
+          </Text>
+        </View>
+        <View style={styles.historyDetail}>
+          <Text
+            style={[
+              styles.historyDetailLabel,
+              { color: palette.onSurfaceMuted },
+            ]}
+          >
+            Date / mode
+          </Text>
+          <Text style={[styles.customerMeta, { color: palette.onSurface }]}>
+            {formatDate(payment.posting_date)} ·{" "}
+            {payment.mode_of_payment || "-"}
+          </Text>
+        </View>
+      </View>
+      <View style={styles.historyAmounts}>
+        <HistoryAmount
+          amount={payment.received_amount}
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          label="Received"
+        />
+        <HistoryAmount
+          amount={payment.allocated_amount}
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          label="Allocated"
+        />
+        <HistoryAmount
+          amount={payment.unallocated_amount}
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          label="Unallocated"
+        />
+      </View>
+    </View>
+  );
+}
+
+function HistoryAmount({
+  amount,
+  currency,
+  currencyPrecision,
+  label,
+}: {
+  amount: number;
+  currency: string;
+  currencyPrecision: number;
+  label: string;
+}) {
+  const { palette } = useAppearance();
+
+  return (
+    <View style={styles.historyAmount}>
+      <Text
+        style={[styles.historyDetailLabel, { color: palette.onSurfaceMuted }]}
+      >
+        {label}
+      </Text>
+      <Text style={[styles.invoiceAmount, { color: palette.onSurface }]}>
+        {formatPosCurrency(amount, currency, currencyPrecision)}
+      </Text>
+    </View>
   );
 }
 
@@ -2002,6 +2186,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
+  historyAmount: { flex: 1, gap: 2 },
+  historyAmounts: { flexDirection: "row", gap: spacing.sm },
+  historyDetail: { flex: 1, gap: 2 },
+  historyDetailLabel: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+  },
+  historyDetails: { flexDirection: "row", gap: spacing.sm },
+  historyHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  historyStatus: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
   fieldLabel: {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
@@ -2086,6 +2288,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm,
+  },
+  paymentHistoryList: { gap: spacing.sm },
+  paymentHistoryRow: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
   },
   placeholder: {
     borderRadius: radii.lg,
