@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Image, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -10,6 +10,7 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosItemCardProps = {
   currency: string;
   currencyPrecision?: number;
+  imageUrl?: string | null;
   item: PosCatalogueItem;
   onAdd: (item: PosCatalogueItem) => void;
 };
@@ -31,6 +32,7 @@ function quantityLabel(item: PosCatalogueItem) {
 export function PosItemCard({
   currency,
   currencyPrecision = 2,
+  imageUrl,
   item,
   onAdd,
 }: PosItemCardProps) {
@@ -61,12 +63,22 @@ export function PosItemCard({
           { backgroundColor: palette.surfaceContainer },
         ]}
       >
-        <Text
-          numberOfLines={2}
-          style={[styles.previewName, { color: palette.onSurfaceMuted }]}
-        >
-          {item.item_name}
-        </Text>
+        {imageUrl ? (
+          <Image
+            accessibilityLabel={`${item.item_name} image`}
+            resizeMode="cover"
+            source={{ uri: imageUrl }}
+            style={styles.previewImage}
+            testID={`Item image ${item.item_code}`}
+          />
+        ) : (
+          <Text
+            numberOfLines={2}
+            style={[styles.previewName, { color: palette.onSurfaceMuted }]}
+          >
+            {item.item_name}
+          </Text>
+        )}
       </Pressable>
 
       <View style={styles.details}>
@@ -167,6 +179,10 @@ const styles = StyleSheet.create({
     height: 128,
     justifyContent: "center",
     padding: spacing.md,
+  },
+  previewImage: {
+    height: "100%",
+    width: "100%",
   },
   previewName: {
     fontFamily: typography.fontFamily.medium,

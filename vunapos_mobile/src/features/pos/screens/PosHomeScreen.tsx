@@ -11,10 +11,12 @@ import { Text } from "react-native-paper";
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
+import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
 import { PosItemSearch } from "@/features/pos/components/PosItemSearch";
 import { usePosBarcodeScan } from "@/features/pos/hooks/usePosBarcodeScan";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
+import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosBootstrapData, PosCatalogueItem } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -23,6 +25,21 @@ function matchesSearch(item: PosCatalogueItem, searchTerm: string) {
   const normalizedItem =
     `${item.item_name} ${item.item_code} ${item.barcode || ""}`.toLowerCase();
   return normalizedItem.includes(searchTerm.trim().toLowerCase());
+}
+
+function itemImageUrl(
+  image: string | null | undefined,
+  companyUrl?: string | null,
+) {
+  if (!image?.trim()) return null;
+  if (/^https?:\/\//i.test(image)) return image;
+  if (!companyUrl) return null;
+
+  try {
+    return new URL(image, `${companyUrl.replace(/\/+$/, "")}/`).toString();
+  } catch {
+    return null;
+  }
 }
 
 type PosHomeScreenProps = {
@@ -43,6 +60,7 @@ export function PosHomeScreen({
   refreshKey = 0,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
+  const { companyUrl } = useAppSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const bootstrap = usePosBootstrap();
@@ -66,6 +84,7 @@ export function PosHomeScreen({
       : localMatches;
   const currency = bootstrap.data?.pos_profile.currency || "KES";
   const currencyPrecision = bootstrap.data?.pos_profile.currency_precision ?? 2;
+  const hideImages = Boolean(bootstrap.data?.pos_profile.hide_images);
   const barcodeScan = usePosBarcodeScan({
     customer: pricingContext?.customer,
     posProfile: bootstrap.data?.pos_profile.name,
@@ -108,14 +127,23 @@ export function PosHomeScreen({
     return null;
   }
 
-  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) => (
-    <PosItemCard
-      currency={currency}
-      currencyPrecision={currencyPrecision}
-      item={item}
-      onAdd={addItem}
-    />
-  );
+  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) =>
+    hideImages ? (
+      <PosItemListRow
+        currency={currency}
+        currencyPrecision={currencyPrecision}
+        item={item}
+        onAdd={addItem}
+      />
+    ) : (
+      <PosItemCard
+        currency={currency}
+        currencyPrecision={currencyPrecision}
+        imageUrl={itemImageUrl(item.image, companyUrl)}
+        item={item}
+        onAdd={addItem}
+      />
+    );
 
   if (bootstrap.isLoading)
     return (
@@ -147,10 +175,11 @@ export function PosHomeScreen({
   return (
     <View style={styles.content}>
       <FlatList
-        columnWrapperStyle={styles.row}
+        columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
         data={items}
         keyExtractor={(item) => item.item_code}
+        key={`catalogue-${hideImages ? "list" : "grid"}`}
         ListEmptyComponent={
           <Text
             style={[
@@ -177,7 +206,7 @@ export function PosHomeScreen({
             />
           </View>
         }
-        numColumns={2}
+        numColumns={hideImages ? 1 : 2}
         renderItem={renderItem}
         showsVerticalScrollIndicator={false}
       />
