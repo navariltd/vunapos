@@ -16,10 +16,16 @@ jest.mock("@/services/frappeClient", () => ({
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosHeldInvoices } from "@/features/pos/hooks/usePosHeldInvoices";
 import { getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 
 describe("usePosHeldInvoices", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await posCache.clearNamespace({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    });
     jest.mocked(useAppSession).mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession: jest.fn(),
@@ -51,6 +57,7 @@ describe("usePosHeldInvoices", () => {
       "sid-1",
       "vunapos.api.sales.list_held_invoices",
       { limit: 20, pos_profile: "POS-001" },
+      expect.any(AbortSignal),
     );
 
     await act(async () => {

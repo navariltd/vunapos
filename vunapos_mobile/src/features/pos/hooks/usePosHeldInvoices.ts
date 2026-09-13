@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { usePosCachedResource } from "@/hooks/usePosCachedResource";
 import { PosHeldInvoice } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type UsePosHeldInvoicesArgs = {
   enabled: boolean;
@@ -11,7 +12,7 @@ type UsePosHeldInvoicesArgs = {
   refreshKey?: number;
 };
 
-/** Lists the active POS profile's server-held drafts; no local queue is used. */
+/** Cached draft list for browsing; a restore is still verified live by the server. */
 export function usePosHeldInvoices({
   enabled,
   posProfile,
@@ -19,49 +20,52 @@ export function usePosHeldInvoices({
 }: UsePosHeldInvoicesArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const [data, setData] = useState<PosHeldInvoice[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const load = useCallback(async () => {
-    if (connectionStatus === "offline") {
-      setError("Connection unavailable. Reconnect before loading held invoices.");
-      return;
+  const cacheKey =
+    companyUrl && sessionId && posProfile
+      ? {
+          query: { limit: 20 },
+          resource: "held-invoices",
+          scope: { companyUrl, posProfile, userId: sessionId },
+        }
+      : null;
+  const load = useCallback(async (signal: AbortSignal) => {
+    if (!companyUrl || !sessionId || !posProfile) {
+      throw new Error("Your POS workspace is still loading.");
     }
-    if (!companyUrl || !sessionId || !posProfile) return;
-    setError(null);
-    setIsLoading(true);
     try {
-      const heldInvoices = await getVunaMethod<PosHeldInvoice[]>(
+      return await getVunaMethod<PosHeldInvoice[]>(
         companyUrl,
         sessionId,
         "vunapos.api.sales.list_held_invoices",
         { limit: 20, pos_profile: posProfile },
+        signal,
       );
-      setData(heldInvoices);
-    } catch (requestError) {
-      if (
-        requestError instanceof FrappeClientError &&
-        requestError.code === "session"
-      ) {
+    } catch (error) {
+      if (error instanceof FrappeClientError && error.code === "session") {
         void invalidateSession();
-        return;
       }
-      setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Could not load held invoices.",
-      );
-    } finally {
-      setIsLoading(false);
+      throw error;
     }
-  }, [companyUrl, connectionStatus, invalidateSession, posProfile, sessionId]);
+  }, [companyUrl, invalidateSession, posProfile, sessionId]);
+  const resource = usePosCachedResource({
+    cacheKey,
+    connectionStatus,
+    enabled,
+    load,
+  });
+  const reload = resource.refresh;
 
   useEffect(() => {
-    if (!enabled) return;
-    const timeout = setTimeout(() => void load(), 0);
-    return () => clearTimeout(timeout);
-  }, [enabled, load, refreshKey]);
+    if (enabled && refreshKey > 0) void reload();
+  }, [enabled, refreshKey, reload]);
 
-  return { data, error, isLoading, reload: load };
+  return {
+    data: resource.data,
+    error: resource.error,
+    isLoading: resource.isLoading,
+    isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
+    lastUpdated: resource.lastUpdated,
+    reload,
+  };
 }

@@ -1,21 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useState } from "react";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
-import { PosInvoiceHistory, PosInvoiceHistoryFilters } from '@/features/pos/types';
-import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { usePosCachedResource } from "@/hooks/usePosCachedResource";
+import { PosInvoiceHistory, PosInvoiceHistoryFilters } from "@/features/pos/types";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 const pageLength = 25;
-
-type PosInvoiceHistoryState = {
-  data: PosInvoiceHistory | null;
-  error: string | null;
-  isLoading: boolean;
-};
-
-type PosInvoiceHistoryRequestState = Omit<PosInvoiceHistoryState, 'isLoading'> & {
-  requestKey: string | null;
-};
 
 type UsePosInvoiceHistoryArgs = {
   filters: PosInvoiceHistoryFilters;
@@ -23,55 +14,88 @@ type UsePosInvoiceHistoryArgs = {
   start: number;
 };
 
-export function usePosInvoiceHistory({ filters, posProfile, start }: UsePosInvoiceHistoryArgs): PosInvoiceHistoryState {
+type PosInvoiceHistoryState = {
+  data: PosInvoiceHistory | null;
+  error: string | null;
+  isLoading: boolean;
+  isRefreshing?: boolean;
+  isStale?: boolean;
+  lastUpdated?: number | null;
+  reload: () => void | Promise<void>;
+};
+
+/** Cached, readonly history. Detail and financial actions remain live-only. */
+export function usePosInvoiceHistory({
+  filters,
+  posProfile,
+  start,
+}: UsePosInvoiceHistoryArgs): PosInvoiceHistoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const requestKey = companyUrl && sessionId && posProfile
-    ? JSON.stringify({ companyUrl, filters, posProfile, sessionId, start })
-    : null;
-  const [state, setState] = useState<PosInvoiceHistoryRequestState>({ data: null, error: null, requestKey: null });
-
-  useEffect(() => {
-    if (connectionStatus === 'offline' || !companyUrl || !sessionId || !posProfile) {
-      return;
-    }
-
-    const controller = new AbortController();
-
-    void getVunaMethod<PosInvoiceHistory>(companyUrl, sessionId, 'vunapos.api.sales.get_invoice_history', {
-      current_shift: filters.currentShift ? 1 : 0,
-      customer: filters.customer.trim(),
-      document_type: filters.documentType,
-      from_date: filters.fromDate,
-      invoice: filters.invoice.trim(),
-      page_length: pageLength,
-      payment_mode: filters.paymentMode,
-      pos_profile: posProfile,
-      sale_type: filters.saleType,
-      start,
-      status: filters.status,
-      to_date: filters.toDate,
-    }, controller.signal)
-      .then((data) => setState({ data, error: null, requestKey }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (error instanceof FrappeClientError && error.code === 'session') {
-          void invalidateSession();
-          return;
+  const [sessionInvalid, setSessionInvalid] = useState(false);
+  const query = {
+    currentShift: Boolean(filters.currentShift),
+    customer: filters.customer.trim(),
+    documentType: filters.documentType,
+    fromDate: filters.fromDate,
+    invoice: filters.invoice.trim(),
+    paymentMode: filters.paymentMode,
+    saleType: filters.saleType,
+    start,
+    status: filters.status,
+    toDate: filters.toDate,
+  };
+  const cacheKey =
+    companyUrl && sessionId && posProfile
+      ? {
+          query,
+          resource: "invoice-history",
+          scope: { companyUrl, posProfile, userId: sessionId },
         }
-        setState((current) => ({ ...current, error: error instanceof Error ? error.message : 'Could not load invoice history.', requestKey }));
-      });
+      : null;
+  const load = useCallback(async (signal: AbortSignal) => {
+    if (!companyUrl || !sessionId || !posProfile) {
+      throw new Error("Your POS workspace is still loading.");
+    }
+    try {
+      return await getVunaMethod<PosInvoiceHistory>(
+        companyUrl,
+        sessionId,
+        "vunapos.api.sales.get_invoice_history",
+        {
+          current_shift: filters.currentShift ? 1 : 0,
+          customer: filters.customer.trim(),
+          document_type: filters.documentType,
+          from_date: filters.fromDate,
+          invoice: filters.invoice.trim(),
+          page_length: pageLength,
+          payment_mode: filters.paymentMode,
+          pos_profile: posProfile,
+          sale_type: filters.saleType,
+          start,
+          status: filters.status,
+          to_date: filters.toDate,
+        },
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof FrappeClientError && error.code === "session") {
+        setSessionInvalid(true);
+        void invalidateSession();
+      }
+      throw error;
+    }
+  }, [companyUrl, filters, invalidateSession, posProfile, sessionId, start]);
+  const resource = usePosCachedResource({ cacheKey, connectionStatus, load });
 
-    return () => controller.abort();
-  }, [companyUrl, connectionStatus, filters, invalidateSession, posProfile, requestKey, sessionId, start]);
-
-  if (!requestKey) {
-    return { data: null, error: null, isLoading: false };
-  }
-
-  if (connectionStatus === 'offline') {
-    return { data: state.data, error: null, isLoading: false };
-  }
-
-  return { ...state, error: state.requestKey === requestKey ? state.error : null, isLoading: state.requestKey !== requestKey };
+  if (!cacheKey) return { data: null, error: null, isLoading: false, reload: resource.refresh };
+  return {
+    data: resource.data,
+    error: sessionInvalid ? null : resource.error,
+    isLoading: resource.isLoading,
+    isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
+    lastUpdated: resource.lastUpdated,
+    reload: resource.refresh,
+  };
 }

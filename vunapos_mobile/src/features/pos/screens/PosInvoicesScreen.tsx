@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
-import { FlatList, Pressable, StyleSheet, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosInvoiceFiltersSheet } from "@/features/pos/components/PosInvoiceFiltersSheet";
 import { PosInvoiceListItem } from "@/features/pos/components/PosInvoiceListItem";
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -15,6 +16,7 @@ import {
   PosInvoiceListRow,
 } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 const initialFilters: PosInvoiceHistoryFilters = {
@@ -134,6 +136,7 @@ export function PosInvoicesScreen({
   onRestoreHeld,
 }: PosInvoicesScreenProps) {
   const { palette } = useAppearance();
+  const { connectionStatus } = useNetworkStatus();
   const styles = createStyles(palette);
   const [activeTab, setActiveTab] = useState<"history" | "held">("history");
   const [filters, setFilters] =
@@ -163,6 +166,13 @@ export function PosInvoicesScreen({
   );
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoringName, setRestoringName] = useState<string | null>(null);
+  const isOffline = connectionStatus === "offline";
+  const reloadHeld = held.reload;
+  const reloadHistory = history.reload;
+  const refreshActiveTab = useCallback(async () => {
+    if (activeTab === "held") await reloadHeld();
+    else await reloadHistory();
+  }, [activeTab, reloadHeld, reloadHistory]);
 
   function updateFilter<Key extends keyof PosInvoiceHistoryFilters>(
     field: Key,
@@ -272,6 +282,14 @@ export function PosInvoicesScreen({
             </Text>
           )
         }
+        ListFooterComponent={
+          <PosCacheStatus
+            isOffline={isOffline}
+            isRefreshing={held.isRefreshing}
+            isStale={held.isStale}
+            lastUpdated={held.lastUpdated}
+          />
+        }
         ListHeaderComponent={
           <View style={styles.header}>
             <View style={styles.heading}>
@@ -298,15 +316,18 @@ export function PosInvoicesScreen({
               </Text>
               <Pressable
                 accessibilityLabel="Refresh held invoices"
-                disabled={held.isLoading}
+                disabled={Boolean(held.isLoading || held.isRefreshing)}
                 onPress={() => void held.reload()}
                 style={[
                   styles.filtersButton,
-                  held.isLoading && styles.paginationButtonDisabled,
+                  (held.isLoading || held.isRefreshing) &&
+                    styles.paginationButtonDisabled,
                 ]}
               >
                 <Text style={styles.filtersButtonLabel}>
-                  {held.isLoading ? "Refreshing…" : "Refresh"}
+                  {held.isLoading || held.isRefreshing
+                    ? "Refreshing…"
+                    : "Refresh"}
                 </Text>
               </Pressable>
             </View>
@@ -355,6 +376,14 @@ export function PosInvoicesScreen({
             </View>
           </View>
         )}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.primary]}
+            onRefresh={() => void refreshActiveTab()}
+            refreshing={Boolean(held.isRefreshing)}
+            tintColor={palette.primary}
+          />
+        }
         showsVerticalScrollIndicator={false}
       />
     );
@@ -383,27 +412,35 @@ export function PosInvoicesScreen({
         }
         ListFooterComponent={
           history.data ? (
-            <View style={styles.pagination}>
-              <Pressable
-                disabled={start === 0}
-                onPress={() => setStart((current) => Math.max(0, current - 25))}
-                style={[
-                  styles.paginationButton,
-                  start === 0 && styles.paginationButtonDisabled,
-                ]}
-              >
-                <Text style={styles.paginationLabel}>Previous</Text>
-              </Pressable>
-              <Pressable
-                disabled={!history.data.has_more}
-                onPress={() => setStart((current) => current + 25)}
-                style={[
-                  styles.paginationButton,
-                  !history.data.has_more && styles.paginationButtonDisabled,
-                ]}
-              >
-                <Text style={styles.paginationLabel}>Next</Text>
-              </Pressable>
+            <View>
+              <View style={styles.pagination}>
+                <Pressable
+                  disabled={start === 0}
+                  onPress={() => setStart((current) => Math.max(0, current - 25))}
+                  style={[
+                    styles.paginationButton,
+                    start === 0 && styles.paginationButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.paginationLabel}>Previous</Text>
+                </Pressable>
+                <Pressable
+                  disabled={!history.data.has_more}
+                  onPress={() => setStart((current) => current + 25)}
+                  style={[
+                    styles.paginationButton,
+                    !history.data.has_more && styles.paginationButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.paginationLabel}>Next</Text>
+                </Pressable>
+              </View>
+              <PosCacheStatus
+                isOffline={isOffline}
+                isRefreshing={history.isRefreshing}
+                isStale={history.isStale}
+                lastUpdated={history.lastUpdated}
+              />
             </View>
           ) : null
         }
@@ -451,7 +488,7 @@ export function PosInvoicesScreen({
                 <Text style={styles.errorText}>{historyError}</Text>
               </View>
             ) : null}
-            {history.isLoading && history.data ? (
+            {history.isRefreshing && history.data ? (
               <Text style={styles.refreshingText}>
                 Refreshing invoice history…
               </Text>
@@ -510,6 +547,14 @@ export function PosInvoicesScreen({
             }
           />
         )}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.primary]}
+            onRefresh={() => void refreshActiveTab()}
+            refreshing={Boolean(history.isRefreshing)}
+            tintColor={palette.primary}
+          />
+        }
         showsVerticalScrollIndicator={false}
       />
       <PosInvoiceFiltersSheet

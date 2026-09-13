@@ -20,6 +20,7 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosInvoiceHistory } from "@/features/pos/hooks/usePosInvoiceHistory";
 import { PosInvoiceHistoryFilters } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 
 const filters = {
   currentShift: false,
@@ -36,8 +37,13 @@ const filters = {
 describe("usePosInvoiceHistory", () => {
   const invalidateSession = jest.fn();
 
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await posCache.clearNamespace({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    });
     jest.mocked(useAppSession).mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
