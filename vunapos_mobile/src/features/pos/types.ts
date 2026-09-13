@@ -527,6 +527,25 @@ export type PosCustomerSummary = {
   territory?: string | null;
 };
 
+export type PosCustomerDirectoryRow = PosCustomerSummary & {
+  invoice_count?: number | null;
+  last_purchase_date?: string | null;
+  loyalty_points?: number | null;
+  outstanding_balance?: number | null;
+};
+
+export type PosCustomerDirectory = {
+  as_of: string;
+  customer_groups: string[];
+  customers: PosCustomerDirectoryRow[];
+  financials_visible: boolean;
+  limit: number;
+  loyalty_visible: boolean;
+  start: number;
+  territories: string[];
+  total_count: number;
+};
+
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;

@@ -344,6 +344,7 @@ export function PosWorkspaceScreen() {
       ) : activeTab === "Customers" ? (
         <PosCustomersScreen
           customerManagementEnabled={allowsCustomerManagement}
+          currencyPrecision={posProfileConfig?.currency_precision}
           onBackToPos={() => changeTab("Home")}
           posProfile={posProfile}
         />
