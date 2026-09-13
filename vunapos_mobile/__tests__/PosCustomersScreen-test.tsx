@@ -199,6 +199,20 @@ describe("PosCustomersScreen", () => {
       { customerGroup: "", customerType: "", territory: "" },
       25,
     );
+    expect(
+      screen.getByRole("button", { name: "Next customer page" }).props
+        .accessibilityState?.disabled,
+    ).toBe(true);
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Previous customer page" }),
+    );
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+      0,
+    );
 
     await fireEvent.changeText(screen.getByLabelText("Search customers"), "ABC");
     expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
@@ -247,13 +261,13 @@ describe("PosCustomersScreen", () => {
       data: {
         as_of: "2026-09-13 09:00:00",
         customer_groups: ["Commercial"],
-        customers: [],
+        customers: [{ customer: "CUST-001", customer_name: "ABC Corp" }],
         financials_visible: true,
         limit: 25,
         loyalty_visible: true,
         start: 0,
         territories: ["Nairobi"],
-        total_count: 0,
+        total_count: 50,
       },
       error: null,
       isLoading: false,
@@ -265,6 +279,16 @@ describe("PosCustomersScreen", () => {
         onBackToPos={jest.fn()}
         posProfile="POS-001"
       />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Next customer page" }),
+    );
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+      25,
     );
 
     await fireEvent.press(
@@ -287,7 +311,7 @@ describe("PosCustomersScreen", () => {
       "POS-001",
       "",
       { customerGroup: "", customerType: "", territory: "" },
-      0,
+      25,
     );
 
     await fireEvent.press(screen.getByText("Apply filters"));
