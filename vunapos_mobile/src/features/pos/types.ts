@@ -627,10 +627,21 @@ export type PosClosingPaymentActivity = {
   sales_collected: number;
 };
 
+export type PosClosingPreviewInvoice = {
+  customer?: string | null;
+  doctype: string;
+  grand_total: number;
+  is_return: boolean;
+  name: string;
+  posting_date?: string | null;
+  posting_time?: string | null;
+};
+
 export type PosClosingPreview = {
   cashier: string;
   grand_total: number;
   invoice_count: number;
+  invoices?: PosClosingPreviewInvoice[];
   net_total: number;
   opening_entry: string;
   payment_activity?: PosClosingPaymentActivity;

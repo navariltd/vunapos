@@ -13,7 +13,7 @@ import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormSc
 import { formatPosCurrency } from "@/features/pos/currency";
 import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
-import { PosSession } from "@/features/pos/types";
+import { PosClosingPreviewInvoice, PosSession } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -263,6 +263,62 @@ export function PosCloseShiftScreen({
             ) : null}
             <View
               style={[
+                styles.salesCard,
+                {
+                  backgroundColor: palette.surfaceContainer,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
+              <View style={styles.salesHeading}>
+                <View style={styles.heading}>
+                  <Text
+                    style={[styles.sectionTitle, { color: palette.onSurface }]}
+                  >
+                    Sales in this shift
+                  </Text>
+                  <Text
+                    style={[
+                      styles.paymentMeta,
+                      { color: palette.onSurfaceMuted },
+                    ]}
+                  >
+                    Invoices included in this closing reconciliation.
+                  </Text>
+                </View>
+                <Text style={[styles.salesCount, { color: palette.onSurface }]}>
+                  {preview.data.invoice_count} total
+                </Text>
+              </View>
+              {(preview.data.invoices ?? []).length ? (
+                <View style={styles.salesList}>
+                  {(preview.data.invoices ?? []).map((invoice) => (
+                    <ShiftSaleCard
+                      currency={currency}
+                      currencyPrecision={currencyPrecision}
+                      invoice={invoice}
+                      key={`${invoice.doctype}:${invoice.name}`}
+                    />
+                  ))}
+                </View>
+              ) : (
+                <View
+                  style={[
+                    styles.noSalesState,
+                    { backgroundColor: palette.surface },
+                  ]}
+                >
+                  <Text
+                    style={[styles.paymentMeta, { color: palette.onSurfaceMuted }]}
+                  >
+                    No submitted VunaPOS invoices belong to this opening session
+                    yet.
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View
+              style={[
                 styles.reconciliationCard,
                 {
                   backgroundColor: palette.surface,
@@ -510,6 +566,60 @@ function ActivityValue({
       </Text>
       <Text style={[styles.activityAmount, { color: palette.onSurface }]}>
         {formatPosCurrency(value, currency, currencyPrecision)}
+      </Text>
+    </View>
+  );
+}
+
+function ShiftSaleCard({
+  currency,
+  currencyPrecision,
+  invoice,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  invoice: PosClosingPreviewInvoice;
+}) {
+  const { palette } = useAppearance();
+  const date = invoice.posting_date
+    ? invoice.posting_date.split("-").reverse().join("/")
+    : "-";
+  const time = invoice.posting_time?.split(".")[0]?.slice(0, 5);
+
+  return (
+    <View
+      style={[
+        styles.saleRow,
+        { backgroundColor: palette.surface, borderColor: palette.borderSubtle },
+      ]}
+    >
+      <View style={styles.saleIdentity}>
+        <View style={styles.saleNameRow}>
+          <Text style={[styles.saleName, { color: palette.onSurface }]}>
+            {invoice.name}
+          </Text>
+          {invoice.is_return ? (
+            <View
+              style={[
+                styles.returnTag,
+                { backgroundColor: palette.errorSurface },
+              ]}
+            >
+              <Text style={[styles.returnTagLabel, { color: palette.onError }]}>
+                Return
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        <Text style={[styles.paymentMeta, { color: palette.onSurfaceMuted }]}>
+          {time ? `${date} · ${time}` : date}
+        </Text>
+        <Text style={[styles.paymentMeta, { color: palette.onSurfaceMuted }]}>
+          {invoice.customer || "-"}
+        </Text>
+      </View>
+      <Text style={[styles.saleTotal, { color: palette.onSurface }]}>
+        {formatPosCurrency(invoice.grand_total, currency, currencyPrecision)}
       </Text>
     </View>
   );
@@ -866,6 +976,54 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
+  noSalesState: { borderRadius: radii.sm, padding: spacing.sm },
+  returnTag: {
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  returnTagLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  saleIdentity: { flex: 1, gap: 2 },
+  saleName: {
+    flexShrink: 1,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  saleNameRow: { alignItems: "center", flexDirection: "row", gap: spacing.xs },
+  saleRow: {
+    alignItems: "flex-start",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    padding: spacing.sm,
+  },
+  saleTotal: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+    textAlign: "right",
+  },
+  salesCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  salesCount: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+  },
+  salesHeading: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+  },
+  salesList: { gap: spacing.sm },
   stateCard: {
     borderRadius: radii.md,
     borderWidth: 1,

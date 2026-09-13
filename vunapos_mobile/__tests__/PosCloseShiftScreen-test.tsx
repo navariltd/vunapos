@@ -172,6 +172,92 @@ describe("PosCloseShiftScreen", () => {
     expect(screen.getByText("KES 340.00")).toBeTruthy();
   });
 
+  it("shows the server sales audit as mobile cards, including returns", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 450,
+        invoice_count: 2,
+        invoices: [
+          {
+            customer: "ABC Corp",
+            doctype: "Sales Invoice",
+            grand_total: 500,
+            is_return: false,
+            name: "ACC-SINV-00001",
+            posting_date: "2026-09-13",
+            posting_time: "10:30:20.000000",
+          },
+          {
+            customer: null,
+            doctype: "Sales Invoice",
+            grand_total: -50,
+            is_return: true,
+            name: "ACC-SINV-00002",
+            posting_date: "2026-09-13",
+            posting_time: "11:00:00.000000",
+          },
+        ],
+        net_total: 400,
+        opening_entry: "POS-OPEN-001",
+        payments: [],
+        period_end_date: "2026-09-13 12:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        currency="KES"
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("Sales in this shift")).toBeTruthy();
+    expect(screen.getByText("2 total")).toBeTruthy();
+    expect(screen.getByText("ACC-SINV-00001")).toBeTruthy();
+    expect(screen.getByText("ABC Corp")).toBeTruthy();
+    expect(screen.getByText("13/09/2026 · 10:30")).toBeTruthy();
+    expect(screen.getByText("KES 500.00")).toBeTruthy();
+    expect(screen.getByText("ACC-SINV-00002")).toBeTruthy();
+    expect(screen.getByText("Return")).toBeTruthy();
+    expect(screen.getByText("-")).toBeTruthy();
+    expect(screen.getByText("-KES 50.00")).toBeTruthy();
+  });
+
+  it("shows the shift-sales empty state when the server has no submitted invoices", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 0,
+        invoice_count: 0,
+        invoices: [],
+        net_total: 0,
+        opening_entry: "POS-OPEN-001",
+        payments: [],
+        period_end_date: "2026-09-13 12:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen onBackToPos={onBackToPos} posProfile="POS-001" />,
+    );
+
+    expect(
+      screen.getByText(
+        "No submitted VunaPOS invoices belong to this opening session yet.",
+      ),
+    ).toBeTruthy();
+  });
+
   it("pre-fills each payment count and calculates its live difference", async () => {
     mockUsePosClosingPreview.mockReturnValue({
       data: {
