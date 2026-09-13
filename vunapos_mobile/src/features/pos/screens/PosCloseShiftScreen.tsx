@@ -196,6 +196,71 @@ export function PosCloseShiftScreen({
                 )}
               />
             </View>
+            {preview.data.payment_activity ? (
+              <View
+                style={[
+                  styles.activityCard,
+                  {
+                    backgroundColor: palette.surfaceContainer,
+                    borderColor: palette.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.sectionTitle, { color: palette.onSurface }]}>
+                  Shift payment activity
+                </Text>
+                <Text
+                  style={[styles.activityDescription, { color: palette.onSurfaceMuted }]}
+                >
+                  Credit sales are reported as sales, but only their deposits are
+                  included in cash received. Reconciled credits are allocations only.
+                </Text>
+                <View style={styles.activityGrid}>
+                  <ActivityValue
+                    label="Checkout collections"
+                    value={preview.data.payment_activity.sales_collected}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Credit sales"
+                    value={preview.data.payment_activity.credit_sales}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Credit outstanding"
+                    value={preview.data.payment_activity.credit_outstanding}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Old invoice payments"
+                    value={preview.data.payment_activity.outstanding_invoice_payments}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Customer advances"
+                    value={preview.data.payment_activity.customer_advances}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Credits reconciled"
+                    value={preview.data.payment_activity.reconciled_existing_credits}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                  <ActivityValue
+                    label="Cash received"
+                    value={preview.data.payment_activity.cash_received}
+                    currency={currency}
+                    currencyPrecision={currencyPrecision}
+                  />
+                </View>
+              </View>
+            ) : null}
             <View
               style={[
                 styles.reconciliationCard,
@@ -421,6 +486,35 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ActivityValue({
+  currency,
+  currencyPrecision,
+  label,
+  value,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  label: string;
+  value: number;
+}) {
+  const { palette } = useAppearance();
+  return (
+    <View
+      style={[
+        styles.activityValue,
+        { backgroundColor: palette.surface, borderColor: palette.borderSubtle },
+      ]}
+    >
+      <Text style={[styles.summaryLabel, { color: palette.onSurfaceMuted }]}>
+        {label}
+      </Text>
+      <Text style={[styles.activityAmount, { color: palette.onSurface }]}>
+        {formatPosCurrency(value, currency, currencyPrecision)}
+      </Text>
+    </View>
+  );
+}
+
 function CloseShiftCountConfirmationDialog({
   countedAmounts,
   currency,
@@ -606,6 +700,30 @@ function ConfirmationValue({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  activityAmount: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  activityCard: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  activityDescription: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.body,
+  },
+  activityGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  activityValue: {
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexGrow: 1,
+    gap: 2,
+    minWidth: "46%",
+    padding: spacing.sm,
+  },
   backButton: {
     alignItems: "center",
     borderRadius: radii.md,

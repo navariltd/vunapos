@@ -616,12 +616,24 @@ export type PosClosingPreviewPayment = {
   opening_amount: number;
 };
 
+/** Server-calculated payment activity for the active POS opening session. */
+export type PosClosingPaymentActivity = {
+  cash_received: number;
+  credit_outstanding: number;
+  credit_sales: number;
+  customer_advances: number;
+  outstanding_invoice_payments: number;
+  reconciled_existing_credits: number;
+  sales_collected: number;
+};
+
 export type PosClosingPreview = {
   cashier: string;
   grand_total: number;
   invoice_count: number;
   net_total: number;
   opening_entry: string;
+  payment_activity?: PosClosingPaymentActivity;
   payments: PosClosingPreviewPayment[];
   period_end_date: string;
   period_start_date: string;

@@ -121,6 +121,57 @@ describe("PosCloseShiftScreen", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it("shows server-calculated shift payment activity when the preview supplies it", async () => {
+    mockUsePosClosingPreview.mockReturnValue({
+      data: {
+        cashier: "cashier@example.com",
+        grand_total: 580,
+        invoice_count: 2,
+        net_total: 500,
+        opening_entry: "POS-OPEN-001",
+        payment_activity: {
+          cash_received: 340,
+          credit_outstanding: 80,
+          credit_sales: 100,
+          customer_advances: 30,
+          outstanding_invoice_payments: 40,
+          reconciled_existing_credits: 10,
+          sales_collected: 270,
+        },
+        payments: [],
+        period_end_date: "2026-09-13 10:00:00",
+        period_start_date: "2026-09-13 08:00:00",
+        pos_profile: "POS-001",
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCloseShiftScreen
+        currency="KES"
+        onBackToPos={onBackToPos}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.getByText("Shift payment activity")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Credit sales are reported as sales, but only their deposits are included in cash received. Reconciled credits are allocations only.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Checkout collections")).toBeTruthy();
+    expect(screen.getByText("Credit sales")).toBeTruthy();
+    expect(screen.getByText("Credit outstanding")).toBeTruthy();
+    expect(screen.getByText("Old invoice payments")).toBeTruthy();
+    expect(screen.getByText("Customer advances")).toBeTruthy();
+    expect(screen.getByText("Credits reconciled")).toBeTruthy();
+    expect(screen.getByText("Cash received")).toBeTruthy();
+    expect(screen.getByText("KES 270.00")).toBeTruthy();
+    expect(screen.getByText("KES 340.00")).toBeTruthy();
+  });
+
   it("pre-fills each payment count and calculates its live difference", async () => {
     mockUsePosClosingPreview.mockReturnValue({
       data: {
