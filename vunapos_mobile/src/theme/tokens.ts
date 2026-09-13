@@ -13,9 +13,11 @@ export type AppPalette = {
   error: string;
   errorSurface: string;
   onError: string;
+  onNotification: string;
   onPrimary: string;
   onSurface: string;
   onSurfaceMuted: string;
+  notification: string;
   primary: string;
   scrim: string;
   success: string;
@@ -32,10 +34,12 @@ export const lightPalette: AppPalette = {
   error: "#cc2929",
   errorSurface: "#fff0f0",
   onError: "#941f1f",
+  onNotification: "#ffffff",
   onPrimary: "#ffffff",
   onSurface: "#171717",
   onSurfaceMuted: "#525252",
   primary: "#16794c",
+  notification: "#d32f2f",
   scrim: "rgba(23, 23, 23, 0.48)",
   success: "#16794c",
   surface: "#ffffff",
@@ -51,10 +55,12 @@ export const darkPalette: AppPalette = {
   error: "#eb9091",
   errorSurface: "#442126",
   onError: "#ffd9db",
+  onNotification: "#ffffff",
   onPrimary: "#171717",
   onSurface: "#f8f8f8",
   onSurfaceMuted: "#c7c7c7",
   primary: "#e2e2e2",
+  notification: "#d32f2f",
   scrim: "rgba(0, 0, 0, 0.64)",
   success: "#39b976",
   surface: "#1c1c1c",

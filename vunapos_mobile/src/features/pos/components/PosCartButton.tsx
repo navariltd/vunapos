@@ -1,9 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { Pressable, StyleSheet, View } from "react-native";
-import { Badge } from "react-native-paper";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useAppearance } from "@/theme/AppearanceProvider";
-import { radii } from "@/theme/tokens";
+import { radii, typography } from "@/theme/tokens";
 
 type PosCartButtonProps = {
   itemCount: number;
@@ -27,14 +26,20 @@ export function PosCartButton({ itemCount, onPress }: PosCartButtonProps) {
         />
       </Pressable>
       {itemCount > 0 ? (
-        <Badge
+        <Text
+          accessibilityElementsHidden
+          importantForAccessibility="no"
+          testID="cart-item-count"
           style={[
             styles.badge,
-            { backgroundColor: palette.error, color: palette.onError },
+            {
+              backgroundColor: palette.notification,
+              color: palette.onNotification,
+            },
           ]}
         >
           {itemCount}
-        </Badge>
+        </Text>
       ) : null}
     </View>
   );
@@ -42,8 +47,16 @@ export function PosCartButton({ itemCount, onPress }: PosCartButtonProps) {
 
 const styles = StyleSheet.create({
   badge: {
+    borderRadius: radii.pill,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+    height: 20,
+    lineHeight: 20,
+    minWidth: 20,
+    paddingHorizontal: 5,
     position: "absolute",
     right: -2,
+    textAlign: "center",
     top: -4,
   },
   button: {
