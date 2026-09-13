@@ -28,6 +28,11 @@ jest.mock("@/theme/AppearanceProvider", () => ({
   }),
 }));
 
+const mockUseNetworkStatus = jest.fn();
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
@@ -43,6 +48,7 @@ const reloadDetails = jest.fn();
 describe("PosCustomerDetailsScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUsePosBootstrap.mockReturnValue({
       data: {
         payment_modes: [],
@@ -256,5 +262,27 @@ describe("PosCustomerDetailsScreen", () => {
       mobile: "+254 700 000 000",
       taxId: "P012345678X",
     });
+  });
+
+  it("keeps Start new sale unavailable offline and explains why", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Reconnect to the server to start a sale for this customer.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByLabelText("Start new sale").props.accessibilityState?.disabled,
+    ).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Start new sale"));
+    expect(onStartSale).not.toHaveBeenCalled();
   });
 });

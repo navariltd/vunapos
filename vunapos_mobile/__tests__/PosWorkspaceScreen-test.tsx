@@ -19,7 +19,7 @@ jest.mock('@/features/shell/components/AppShell', () => ({
 }));
 
 jest.mock('@/features/pos/hooks/usePosCart', () => ({
-  usePosCart: () => ({ add: jest.fn(), clear: jest.fn(), error: null, isUpdating: false, itemCount: 0, items: [], refresh: jest.fn(), remove: jest.fn(), retry: jest.fn(), subtotal: 0, taxes: [], totals: {}, updateQuantity: jest.fn() }),
+  usePosCart: () => ({ add: jest.fn(), clear: () => true, error: null, isUpdating: false, itemCount: 0, items: [], refresh: jest.fn(), remove: jest.fn(), retry: jest.fn(), subtotal: 0, taxes: [], totals: {}, updateQuantity: jest.fn() }),
 }));
 
 jest.mock('@/features/pos/hooks/useSalespersonPin', () => ({
@@ -31,9 +31,9 @@ jest.mock('@/features/pos/components/SalespersonPinLock', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
-  PosHomeScreen: ({ onOpenCart, onPosProfileLoaded }: { onOpenCart: () => void; onPosProfileLoaded: (bootstrap: { payment_modes: []; pos_profile: { allow_customer_management?: boolean; name: string }; pos_session?: { has_opening_entry: boolean; ready: boolean; status: 'OPENING_REQUIRED' } }) => void }) => {
+  PosHomeScreen: ({ onOpenCart, onPosProfileLoaded, pricingContext }: { onOpenCart: () => void; onPosProfileLoaded: (bootstrap: { payment_modes: []; pos_profile: { allow_customer_management?: boolean; name: string }; pos_session?: { has_opening_entry: boolean; ready: boolean; status: 'OPENING_REQUIRED' } }) => void; pricingContext?: { customer?: string } }) => {
     const { Pressable, Text } = require('react-native');
-    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { name: 'POS-001' }, pos_session: { has_opening_entry: false, ready: false, status: 'OPENING_REQUIRED' } })}><Text>Set closed shift session</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: true, name: 'POS-001' } })}><Text>Enable customer management</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: false, name: 'POS-001' } })}><Text>Disable customer management</Text></Pressable></>;
+    return <><Text>POS home</Text><Text>{`Catalogue customer: ${pricingContext?.customer || 'none'}`}</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { name: 'POS-001' }, pos_session: { has_opening_entry: false, ready: false, status: 'OPENING_REQUIRED' } })}><Text>Set closed shift session</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: true, name: 'POS-001' } })}><Text>Enable customer management</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: false, name: 'POS-001' } })}><Text>Disable customer management</Text></Pressable></>;
   },
 }));
 
@@ -51,9 +51,9 @@ jest.mock('@/features/pos/screens/PosCustomersScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosCustomerDetailsScreen', () => ({
-  PosCustomerDetailsScreen: ({ customer, onBack }: { customer: string; onBack: () => void }) => {
+  PosCustomerDetailsScreen: ({ customer, onBack, onStartSale }: { customer: string; onBack: () => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
     const { Pressable, Text } = require('react-native');
-    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable></>;
+    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onStartSale({ customer, customerName: 'Directory customer' })}><Text>Start customer sale</Text></Pressable></>;
   },
 }));
 
@@ -184,5 +184,17 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Back to customers' }));
 
     expect(screen.getByText('Customer query: ABC')).toBeTruthy();
+  });
+
+  it('starts a fresh customer sale with the customer-aware catalogue context', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Enable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customer' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Start customer sale' }));
+
+    expect(screen.getByText('POS home')).toBeTruthy();
+    expect(screen.getByText('Catalogue customer: CUST-001')).toBeTruthy();
   });
 });

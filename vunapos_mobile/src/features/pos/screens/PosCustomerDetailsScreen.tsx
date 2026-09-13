@@ -302,6 +302,14 @@ export function PosCustomerDetailsScreen({
           Start new sale
         </Text>
       </Pressable>
+      {isOffline ? (
+        <Text
+          accessibilityRole="alert"
+          style={[styles.offlineNotice, { color: palette.onSurfaceMuted }]}
+        >
+          Reconnect to the server to start a sale for this customer.
+        </Text>
+      ) : null}
     </ScrollView>
   );
 }
@@ -360,6 +368,11 @@ const styles = StyleSheet.create({
   },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 4 },
+  offlineNotice: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    textAlign: "center",
+  },
   state: {
     alignItems: "center",
     flex: 1,
