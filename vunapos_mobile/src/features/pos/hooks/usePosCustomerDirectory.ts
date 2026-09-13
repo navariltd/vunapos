@@ -24,13 +24,25 @@ type PosCustomerDirectoryRequestState = Omit<
 /** Loads the first live, permission-filtered page of the POS customer directory. */
 export function usePosCustomerDirectory(
   posProfile: string | undefined,
+  query = "",
 ): PosCustomerDirectoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => clearTimeout(timeout);
+  }, [query]);
   const activeKey =
     companyUrl && sessionId && posProfile
-      ? JSON.stringify({ companyUrl, posProfile, reloadKey, sessionId })
+      ? JSON.stringify({
+          companyUrl,
+          posProfile,
+          query: debouncedQuery,
+          reloadKey,
+          sessionId,
+        })
       : null;
   const requestKey = connectionStatus === "offline" ? null : activeKey;
   const [state, setState] = useState<PosCustomerDirectoryRequestState>({
@@ -55,6 +67,7 @@ export function usePosCustomerDirectory(
       {
         limit: CUSTOMER_DIRECTORY_PAGE_SIZE,
         pos_profile: posProfile,
+        query: debouncedQuery,
         start: 0,
       },
       controller.signal,
@@ -77,7 +90,14 @@ export function usePosCustomerDirectory(
       });
 
     return () => controller.abort();
-  }, [companyUrl, invalidateSession, posProfile, requestKey, sessionId]);
+  }, [
+    companyUrl,
+    debouncedQuery,
+    invalidateSession,
+    posProfile,
+    requestKey,
+    sessionId,
+  ]);
 
   if (!activeKey) return { data: null, error: null, isLoading: false, reload };
 

@@ -3,8 +3,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from "react-native";
+import { useState } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -30,8 +32,10 @@ export function PosCustomersScreen({
 }: PosCustomersScreenProps) {
   const { palette } = useAppearance();
   const { connectionStatus } = useNetworkStatus();
+  const [query, setQuery] = useState("");
   const directory = usePosCustomerDirectory(
     customerManagementEnabled ? posProfile : undefined,
+    query,
   );
 
   if (!posProfile) {
@@ -87,6 +91,22 @@ export function PosCustomersScreen({
         </View>
         <BackToPosButton onPress={onBackToPos} />
       </View>
+      <TextInput
+        accessibilityLabel="Search customers"
+        autoCapitalize="none"
+        onChangeText={setQuery}
+        placeholder="Search name, mobile or email"
+        placeholderTextColor={palette.onSurfaceMuted}
+        style={[
+          styles.searchInput,
+          {
+            backgroundColor: palette.surface,
+            borderColor: palette.border,
+            color: palette.onSurface,
+          },
+        ]}
+        value={query}
+      />
 
       {connectionStatus === "offline" && !directory.data ? (
         <DirectoryStateCard
@@ -322,6 +342,14 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  searchInput: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },

@@ -129,7 +129,7 @@ describe("PosCustomersScreen", () => {
     );
 
     expect(screen.getByText("Customers")).toBeTruthy();
-    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith("POS-001");
+    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith("POS-001", "");
     expect(screen.getByText("ABC Corp")).toBeTruthy();
     expect(screen.getByText("accounts@example.com")).toBeTruthy();
     expect(screen.getByText("KES 1,200")).toBeTruthy();
@@ -141,6 +141,12 @@ describe("PosCustomersScreen", () => {
     expect(screen.getByText("Restricted")).toBeTruthy();
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("No purchases")).toBeTruthy();
+
+    await fireEvent.changeText(screen.getByLabelText("Search customers"), "ABC");
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "ABC",
+    );
   });
 
   it("shows a retryable directory error", async () => {

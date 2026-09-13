@@ -1,4 +1,4 @@
-import { cleanup, renderHook, waitFor } from "@testing-library/react-native";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react-native";
 
 jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: jest.fn(),
@@ -54,7 +54,7 @@ describe("usePosCustomerDirectory", () => {
         "https://vuna.example.com",
         "sid-1",
         "vunapos.api.customer.get_customer_directory",
-        { limit: 25, pos_profile: "POS-001", start: 0 },
+        { limit: 25, pos_profile: "POS-001", query: "", start: 0 },
         expect.any(AbortSignal),
       ),
     );
@@ -72,5 +72,53 @@ describe("usePosCustomerDirectory", () => {
     const offline = await renderHook(() => usePosCustomerDirectory("POS-001"));
     expect(offline.result.current.isLoading).toBe(false);
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it("debounces the server query instead of requesting on every keystroke", async () => {
+    jest.useFakeTimers();
+    mockGetVunaMethod.mockResolvedValue({
+      as_of: "2026-09-13 09:00:00",
+      customer_groups: [],
+      customers: [],
+      financials_visible: true,
+      limit: 25,
+      loyalty_visible: true,
+      start: 0,
+      territories: [],
+      total_count: 0,
+    });
+    try {
+      const hook = await renderHook<
+        ReturnType<typeof usePosCustomerDirectory>,
+        { query: string }
+      >(({ query }) => usePosCustomerDirectory("POS-001", query), {
+        initialProps: { query: "" },
+      });
+      await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+      mockGetVunaMethod.mockClear();
+
+      await hook.rerender({ query: "A" });
+      await hook.rerender({ query: "AB" });
+      await hook.rerender({ query: "ABC" });
+      expect(mockGetVunaMethod).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(299);
+      });
+      expect(mockGetVunaMethod).not.toHaveBeenCalled();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(mockGetVunaMethod).toHaveBeenCalledWith(
+        "https://vuna.example.com",
+        "sid-1",
+        "vunapos.api.customer.get_customer_directory",
+        { limit: 25, pos_profile: "POS-001", query: "ABC", start: 0 },
+        expect.any(AbortSignal),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
