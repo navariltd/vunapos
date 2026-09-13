@@ -772,32 +772,38 @@ describe('PosCheckoutScreen', () => {
   });
 
   it('selects and submits a Sales Order delivery date', async () => {
-    submit.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0001' });
-    const screen = await render(
-      <PosCheckoutScreen
-        currency="KES"
-        items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
-        onBack={jest.fn()}
-        onComplete={onComplete}
-        orderType="Order"
-        saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
-        subtotal={100}
-      />,
-    );
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-01T12:00:00'));
+    try {
+      submit.mockResolvedValue({ doctype: 'Sales Order', name: 'SAL-ORD-0001' });
+      const screen = await render(
+        <PosCheckoutScreen
+          currency="KES"
+          items={[{ allow_negative_stock: false, available_qty: 4, is_stock_item: true, item_code: 'ITEM-001', item_name: 'Stock item', qty: 1, rate: 100, uom: 'Nos' }]}
+          onBack={jest.fn()}
+          onComplete={onComplete}
+          orderType="Order"
+          saleCustomer={{ customer: 'CUST-001', customerName: 'ABC Corps' }}
+          subtotal={100}
+        />,
+      );
 
-    expect(screen.getByText('Delivery date')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('Choose Sales Order delivery date'));
-    await fireEvent(screen.getByTestId('sales-order-delivery-date-picker'), 'valueChange', {}, new Date(2026, 8, 12, 12));
+      expect(screen.getByText('Delivery date')).toBeTruthy();
+      await fireEvent.press(screen.getByLabelText('Choose Sales Order delivery date'));
+      await fireEvent(screen.getByTestId('sales-order-delivery-date-picker'), 'valueChange', {}, new Date(2026, 8, 12, 12));
 
-    await fireEvent.press(screen.getByLabelText('Submit sales order'));
-    expect(screen.getByText('This will submit the Sales Order for delivery on Sep 12, 2026.')).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText('Confirm sales order submission'));
+      await fireEvent.press(screen.getByLabelText('Submit sales order'));
+      expect(screen.getByText('This will submit the Sales Order for delivery on Sep 12, 2026.')).toBeTruthy();
+      await fireEvent.press(screen.getByLabelText('Confirm sales order submission'));
 
-    await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
-      deliveryDate: '2026-09-12',
-      orderType: 'Order',
-      payments: [],
-    })));
+      await waitFor(() => expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+        deliveryDate: '2026-09-12',
+        orderType: 'Order',
+        payments: [],
+      })));
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('collects an optional Sales Order advance only when the POS profile permits it', async () => {

@@ -482,6 +482,7 @@ export function PosCloseShiftScreen({
           error={closeShift.error}
           grandTotal={preview.data.grand_total}
           invoiceCount={preview.data.invoice_count}
+          isOffline={connectionStatus !== "online"}
           isClosing={closeShift.isClosing}
           onConfirm={() => void confirmClose()}
           onDismiss={() => setConfirmationVisible(false)}
@@ -632,6 +633,7 @@ function CloseShiftCountConfirmationDialog({
   error,
   grandTotal,
   invoiceCount,
+  isOffline,
   isClosing,
   onConfirm,
   onDismiss,
@@ -647,6 +649,7 @@ function CloseShiftCountConfirmationDialog({
   error: string | null;
   grandTotal: number;
   invoiceCount: number;
+  isOffline: boolean;
   isClosing: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
@@ -767,12 +770,12 @@ function CloseShiftCountConfirmationDialog({
             <Pressable
               accessibilityLabel="Close POS Shift"
               accessibilityRole="button"
-              disabled={isClosing}
+              disabled={isClosing || isOffline}
               onPress={onConfirm}
               style={[
                 styles.closeButton,
                 { backgroundColor: palette.error },
-                isClosing && styles.disabled,
+                (isClosing || isOffline) && styles.disabled,
               ]}
             >
               {isClosing ? (
