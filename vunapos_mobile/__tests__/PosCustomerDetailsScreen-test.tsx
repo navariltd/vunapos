@@ -41,6 +41,7 @@ const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
 const onBack = jest.fn();
 const onOpenInvoice = jest.fn();
+const onOpenPaymentEntry = jest.fn();
 const onReceivePayment = jest.fn();
 const onStartSale = jest.fn();
 const reloadBootstrap = jest.fn();
@@ -85,6 +86,7 @@ describe("PosCustomerDetailsScreen", () => {
         },
         loyalty: { points: 24, program: "Vuna rewards", tier: "Gold" },
         invoices: [],
+        payments: [],
       },
       error: null,
       isLoading: false,
@@ -123,6 +125,9 @@ describe("PosCustomerDetailsScreen", () => {
     ).toBeTruthy();
     expect(screen.queryByText("Receive payment")).toBeNull();
     expect(screen.getByText("No submitted invoices available.")).toBeTruthy();
+    expect(
+      screen.getByText("No permitted Payment Entries available."),
+    ).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Start new sale"));
     expect(onStartSale).toHaveBeenCalledWith({
@@ -183,6 +188,7 @@ describe("PosCustomerDetailsScreen", () => {
         },
         loyalty: null,
         invoices: [],
+        payments: [],
       },
       error: null,
       isLoading: false,
@@ -289,6 +295,57 @@ describe("PosCustomerDetailsScreen", () => {
     );
     expect(onOpenInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ name: "ACC-SINV-002", status: "Partly Paid" }),
+    );
+  });
+
+  it("shows permitted customer payments and opens the selected payment entry", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        as_of: "2026-09-07 10:00:00",
+        balance: 0,
+        customer: { customer: "CUST-001", customer_name: "Example customer" },
+        invoices: [],
+        loyalty: null,
+        payments: [
+          {
+            mode_of_payment: "Cash",
+            name: "ACC-PAY-001",
+            posting_date: "2026-09-06",
+            received_amount: 200,
+            unallocated_amount: 50,
+          },
+          {
+            mode_of_payment: null,
+            name: "ACC-PAY-002",
+            posting_date: "2026-09-05",
+            received_amount: 120,
+            unallocated_amount: 0,
+          },
+        ],
+      },
+      error: null,
+      isLoading: false,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Recent payments")).toBeTruthy();
+    expect(screen.getByText("Cash")).toBeTruthy();
+    expect(screen.getByText("Unspecified")).toBeTruthy();
+    expect(screen.getByText("KES 200.00")).toBeTruthy();
+    expect(screen.getByText("KES 50.00")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open customer payment ACC-PAY-001" }),
+    );
+    expect(onOpenPaymentEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ACC-PAY-001", unallocated_amount: 50 }),
     );
   });
 

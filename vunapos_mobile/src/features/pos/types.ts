@@ -465,6 +465,7 @@ export type PosCustomerDetails = {
   customer: PosCustomerSummary;
   invoices?: PosCustomerInvoice[];
   loyalty: PosCustomerLoyalty | null;
+  payments?: PosCustomerPayment[];
 };
 
 export type PosCustomerInvoice = {
@@ -479,6 +480,15 @@ export type PosCustomerInvoice = {
   posting_date?: string | null;
   return_against?: string | null;
   status?: string;
+};
+
+export type PosCustomerPayment = {
+  mode_of_payment?: string | null;
+  name: string;
+  paid_amount?: number;
+  posting_date?: string | null;
+  received_amount: number;
+  unallocated_amount: number;
 };
 
 export type PosCustomerAddress = {

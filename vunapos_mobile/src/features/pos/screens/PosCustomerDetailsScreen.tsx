@@ -8,6 +8,7 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import {
   PosCustomerAddress,
   PosCustomerInvoice,
+  PosCustomerPayment,
   PosSaleCustomer,
 } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -18,6 +19,7 @@ type PosCustomerDetailsScreenProps = {
   customer: string;
   onBack: () => void;
   onOpenInvoice?: (invoice: PosCustomerInvoice) => void;
+  onOpenPaymentEntry?: (payment: PosCustomerPayment) => void;
   onReceivePayment?: (customer: PosSaleCustomer) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
@@ -195,10 +197,67 @@ function InvoiceAmount({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CustomerPaymentRow({
+  currency,
+  currencyPrecision,
+  onPress,
+  payment,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  onPress?: () => void;
+  payment: PosCustomerPayment;
+}) {
+  const { palette } = useAppearance();
+  const formatCurrency = (amount: number) =>
+    formatPosCurrency(amount, currency, currencyPrecision);
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open customer payment ${payment.name}`}
+      accessibilityRole="button"
+      disabled={!onPress}
+      onPress={onPress}
+      style={[
+        styles.invoiceRow,
+        {
+          backgroundColor: palette.surfaceContainer,
+          borderColor: palette.borderSubtle,
+        },
+      ]}
+    >
+      <View style={styles.invoiceRowHeader}>
+        <View style={styles.invoiceIdentity}>
+          <Text style={[styles.invoiceName, { color: palette.onSurface }]}>
+            {payment.name}
+          </Text>
+          <Text style={[styles.invoiceDate, { color: palette.onSurfaceMuted }]}>
+            {formatDate(payment.posting_date)}
+          </Text>
+        </View>
+        <Text style={[styles.paymentMode, { color: palette.onSurfaceMuted }]}>
+          {payment.mode_of_payment || "Unspecified"}
+        </Text>
+      </View>
+      <View style={styles.invoiceAmounts}>
+        <InvoiceAmount
+          label="Received"
+          value={formatCurrency(payment.received_amount)}
+        />
+        <InvoiceAmount
+          label="Unallocated"
+          value={formatCurrency(payment.unallocated_amount)}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
 export function PosCustomerDetailsScreen({
   customer,
   onBack,
   onOpenInvoice,
+  onOpenPaymentEntry,
   onReceivePayment,
   onStartSale,
 }: PosCustomerDetailsScreenProps) {
@@ -387,6 +446,30 @@ export function PosCustomerDetailsScreen({
         )}
       </DetailCard>
 
+      <DetailCard title="Recent payments">
+        {details.data.payments?.length ? (
+          <View style={styles.invoiceList}>
+            {details.data.payments.map((payment) => (
+              <CustomerPaymentRow
+                currency={currency}
+                currencyPrecision={currencyPrecision}
+                key={payment.name}
+                onPress={
+                  onOpenPaymentEntry
+                    ? () => onOpenPaymentEntry(payment)
+                    : undefined
+                }
+                payment={payment}
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
+            No permitted Payment Entries available.
+          </Text>
+        )}
+      </DetailCard>
+
       {canReceivePayment ? (
         <Pressable
           accessibilityLabel="Receive payment"
@@ -519,6 +602,10 @@ const styles = StyleSheet.create({
   },
   invoiceStatus: {
     fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
+  paymentMode: {
+    fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   offlineNotice: {

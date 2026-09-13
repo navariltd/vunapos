@@ -61,6 +61,7 @@ export function PosWorkspaceScreen() {
     currency: string;
     currencyPrecision: number;
     paymentEntry: PosInvoicePaymentEntry;
+    returnToCustomer?: string;
   } | null>(null);
   const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(
     null,
@@ -178,7 +179,11 @@ export function PosWorkspaceScreen() {
         <PosPaymentEntryDetailsScreen
           currency={selectedPaymentEntry.currency}
           currencyPrecision={selectedPaymentEntry.currencyPrecision}
-          onBack={() => setSelectedPaymentEntry(null)}
+          onBack={() => {
+            const returnToCustomer = selectedPaymentEntry.returnToCustomer;
+            setSelectedPaymentEntry(null);
+            if (returnToCustomer) setSelectedCustomer(returnToCustomer);
+          }}
           paymentEntry={selectedPaymentEntry.paymentEntry}
         />
       ) : selectedCustomer ? (
@@ -190,6 +195,26 @@ export function PosWorkspaceScreen() {
             setSelectedInvoice({
               doctype: invoice.doctype,
               name: invoice.name,
+              returnToCustomer: selectedCustomer,
+            });
+          }}
+          onOpenPaymentEntry={(payment) => {
+            setSelectedCustomer(null);
+            setSelectedPaymentEntry({
+              currency: posProfileConfig?.currency ?? "KES",
+              currencyPrecision: posProfileConfig?.currency_precision ?? 2,
+              paymentEntry: {
+                allocated_amount: Math.max(
+                  payment.received_amount - payment.unallocated_amount,
+                  0,
+                ),
+                docstatus: 1,
+                mode_of_payment: payment.mode_of_payment,
+                name: payment.name,
+                posting_date: payment.posting_date,
+                received_amount: payment.received_amount,
+                unallocated_amount: payment.unallocated_amount,
+              },
               returnToCustomer: selectedCustomer,
             });
           }}
