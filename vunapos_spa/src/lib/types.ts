@@ -8,6 +8,9 @@ export type CachedItem = {
 	description?: string | null;
 	image?: string | null;
 	stock_uom?: string;
+	sales_uom?: string | null;
+	uom?: string;
+	conversion_factor?: number;
 	uoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
 	rate?: number | null;
 	price_list_rate?: number | null;
@@ -141,6 +144,18 @@ export type CachedProfile = {
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
+	checkout_fields?: Array<{
+		doctype: "Sales Invoice" | "POS Invoice" | "Sales Order";
+		fieldname: string;
+		label: string;
+		fieldtype: string;
+		options?: string | null;
+		required?: boolean;
+		placeholder?: string | null;
+		help_text?: string | null;
+		order?: number;
+	}>;
+	workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
 	default_customer?: unknown;
 	modes_of_payment?: CachedPaymentMode[];
 	print_format?: string | null;
@@ -177,6 +192,14 @@ export type CachedPosSession = {
 export type MetaRow = {
 	key: string;
 	value: unknown;
+};
+
+export type BootstrapConfigPayload = {
+	server_time: string;
+	pos_profile: CachedProfile;
+	pos_session: CachedPosSession;
+	tax_settings: TaxSettings;
+	payment_modes: CachedPaymentMode[];
 };
 
 export type BootstrapDeleted = {

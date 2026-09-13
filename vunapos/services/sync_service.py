@@ -106,6 +106,28 @@ def _sync_payment_modes(profile):
 	]
 
 
+def _get_bootstrap_config(profile, invoice_mode, server_time):
+	"""Return the small configuration payload needed to render the POS shell.
+
+	Catalogue enrichment is intentionally kept out of this response. The client
+	can render the profile/session/payment controls immediately while the larger
+	item and customer snapshot hydrates in the background.
+	"""
+	return {
+		"server_time": server_time,
+		"pos_profile": profile_to_dict(profile, invoice_mode),
+		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),
+		"tax_settings": _get_tax_settings(),
+		"payment_modes": _sync_payment_modes(profile),
+	}
+
+
+def get_pos_bootstrap_config(pos_profile=None):
+	profile = resolve_pos_profile(pos_profile)
+	server_time = now_datetime()
+	return _get_bootstrap_config(profile, get_invoice_mode(), server_time)
+
+
 def _deleted_since(since):
 	if not since:
 		return {}
@@ -127,11 +149,9 @@ def get_pos_bootstrap(pos_profile=None, since=None):
 	since = since or None
 
 	result = {
-		"server_time": server_time,
+		**_get_bootstrap_config(profile, invoice_mode, server_time),
 		"bootstrap_version": _bootstrap_version(),
 		"mode": "delta" if since else "full",
-		"pos_profile": profile_to_dict(profile, invoice_mode),
-		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),
 		"items": search_items(
 			pos_profile=profile.name,
 			limit=0 if since else INITIAL_ITEM_LIMIT,

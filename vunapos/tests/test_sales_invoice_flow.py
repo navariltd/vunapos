@@ -39,6 +39,7 @@ from vunapos.tests.helpers import (
 	ensure_test_customer,
 	ensure_test_item,
 	ensure_test_pos_profile,
+	ensure_test_sales_uom_item,
 	ensure_test_shipping_address,
 	ensure_test_stock_item,
 	set_invoice_mode,
@@ -388,6 +389,40 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
 		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
 
+	def test_preview_pricing_rule_sees_customer_group_defaults(self):
+		profile_name = ensure_test_pos_profile()
+		profile = frappe.get_doc("POS Profile", profile_name)
+		customer = ensure_test_customer()
+		customer_group = frappe.db.get_value("Customer", customer, "customer_group")
+		item_code = ensure_test_item()
+		rule = frappe.get_doc(
+			{
+				"doctype": "Pricing Rule",
+				"title": "_Test VunaPOS Customer Group Price",
+				"company": profile.company,
+				"apply_on": "Item Code",
+				"items": [{"item_code": item_code}],
+				"selling": 1,
+				"currency": profile.currency,
+				"price_or_product_discount": "Price",
+				"rate_or_discount": "Rate",
+				"rate": 77,
+				"min_qty": 1,
+				"condition": f"customer_group == {customer_group!r}",
+				"priority": 20,
+			}
+		).insert(ignore_permissions=True)
+		self.addCleanup(lambda: frappe.delete_doc("Pricing Rule", rule.name, force=True))
+
+		response = preview_invoice(
+			pos_profile=profile_name,
+			customer=customer,
+			items=[{"item_code": item_code, "qty": 1}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["rate"], 77)
+
 	def test_checkout_allows_erpnext_pricing_rule_without_rate_change_permission(self):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)
@@ -507,6 +542,40 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		item = response["data"]["items"][0]
 		self.assertEqual(item["batch_no"], "VUNA-BATCH-ONE-A")
 		self.assertEqual(item["batch_allocations"][0]["batch_no"], "VUNA-BATCH-ONE-A")
+
+	def test_batch_allocation_uses_stock_quantity_for_sales_uom(self):
+		profile = ensure_test_pos_profile()
+		warehouse = frappe.db.get_value("POS Profile", profile, "warehouse")
+		item_code = ensure_test_sales_uom_item("_Test Vuna Batch Sales UOM Item")
+		frappe.db.set_value("Item", item_code, {"has_batch_no": 1, "is_stock_item": 1})
+		ensure_batch_stock(item_code, warehouse, [("VUNA-BATCH-BOX-A", 18, add_days(nowdate(), 30))])
+
+		response = create_invoice_from_cart(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1, "uom": "Box"}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		item = response["data"]["items"][0]
+		self.assertEqual(item["uom"], "Box")
+		self.assertEqual(item["conversion_factor"], 18)
+		self.assertEqual(item["batch_allocations"][0]["qty"], 18)
+
+	def test_sales_order_does_not_allocate_batches(self):
+		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Sales Order Batch Item")
+		ensure_batch_stock(item_code, warehouse, [("VUNA-SO-BATCH-A", 5, add_days(nowdate(), 30))])
+
+		response = create_and_submit_sales_order(
+			pos_profile=profile,
+			customer=ensure_test_customer(),
+			items=[{"item_code": item_code, "qty": 1}],
+			idempotency_key="sales-order-batch-deferred-key",
+		)
+
+		self.assertTrue(response["ok"], response)
+		item = response["data"]["items"][0]
+		self.assertIsNone(item.get("batch_no"))
+		self.assertEqual(item.get("batch_allocations"), [])
 
 	def test_batch_item_splits_allocation_across_multiple_batches(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Batch Split Item")

@@ -610,7 +610,7 @@ describe("refreshCustomerPricing", () => {
 		expect(searchItems).toHaveBeenCalledWith({
 			pos_profile: "Profile-1",
 			customer: "MWENDWA",
-			limit: 100000,
+			limit: 500,
 		});
 		expect((await db.items.get("ITEM-1"))?.rate).toBe(75);
 		expect(useCartStore.getState().invoice?.items[0].rate).toBe(75);
@@ -638,7 +638,7 @@ describe("refreshPriceListPricing", () => {
 			pos_profile: "Profile-1",
 			customer: undefined,
 			price_list: "Wholesale",
-			limit: 100000,
+			limit: 500,
 		});
 		expect(useCartStore.getState().selectedPriceList).toBe("Wholesale");
 		expect(useCartStore.getState().invoice?.selling_price_list).toBe("Wholesale");
@@ -914,6 +914,8 @@ describe("submitCart", () => {
 			}),
 			true,
 			false,
+			undefined,
+			undefined,
 			undefined,
 			undefined,
 			undefined,

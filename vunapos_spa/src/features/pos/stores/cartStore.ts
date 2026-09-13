@@ -26,6 +26,7 @@ import {
 	createInvoiceFromCart,
 	getItemBatches,
 	getItemDetails,
+	getInvoice,
 	resolveBarcode,
 	searchItems,
 	holdInvoice,
@@ -45,6 +46,7 @@ import {
 export type CartApi = {
 	addItem: FrappeCall;
 	getItemDetails: FrappeCall;
+	getInvoice?: FrappeCall;
 	searchItems: FrappeCall;
 	resolveBarcode: FrappeCall;
 	getItemBatches: FrappeCall;
@@ -478,7 +480,7 @@ function isStockControlled(item: ItemDTO) {
 	return item.is_stock_item === undefined || Boolean(item.is_stock_item);
 }
 
-function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
+function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number, stockQtyOverride?: number) {
 	if ("is_stock_item" in item && item.is_stock_item !== undefined && !item.is_stock_item) {
 		return;
 	}
@@ -487,7 +489,7 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number) {
 		return;
 	}
 
-	const stockQty = qty * Number(("conversion_factor" in item && item.conversion_factor) || 1);
+	const stockQty = stockQtyOverride ?? (qty * Number(("conversion_factor" in item && item.conversion_factor) || 1));
 	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
 	}
@@ -514,7 +516,8 @@ async function refreshAndValidateStock(
 				customer,
 				price_list: priceList,
 			});
-			validateAvailableQty(fresh, qty);
+			// `qty` is already expressed in stock-UOM units in requestedByCode.
+			validateAvailableQty(fresh, qty, qty);
 			freshByCode.set(itemCode, fresh);
 		}),
 	);
@@ -630,12 +633,14 @@ type CartActions = {
 		loyaltyPoints?: number,
 		taxId?: string,
 		shippingAddressName?: string,
+		checkoutFields?: Record<string, string | number | boolean | null>,
 		orderType?: "Sales Invoice" | "Sales Order",
 		salesperson?: string,
 		salespersonToken?: string,
 	) => Promise<SubmitCartResult | null>;
-	holdCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	holdCart: (api: CartApi, orderType?: "Sales Invoice" | "Sales Order") => Promise<InvoiceDTO | null>;
 	restoreHeldInvoice: (heldInvoice: HeldInvoiceDTO, api: CartApi) => Promise<InvoiceDTO>;
+	editDraftInvoice: (invoiceDoctype: string, invoiceName: string, api: CartApi) => Promise<InvoiceDTO>;
 };
 
 export type CartStore = CartState & CartActions;
@@ -765,7 +770,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 		const optimistic = await previewLocalCart(nextItems, pendingInvoice);
 		const revision = ++localCartRevision;
 		if (get().invoice === pendingInvoice) set({ invoice: optimistic, error: null });
-		scheduleBackgroundPricing(nextItems, optimistic, api, revision);
+		// Existing workflow Sales Orders are already server-priced. Defer their
+		// complete repricing until checkout so local additions do not call the
+		// invoice-only preview endpoint with a Sales Order doctype.
+		if (optimistic.source_invoice_doctype !== "Sales Order") {
+			scheduleBackgroundPricing(nextItems, optimistic, api, revision);
+		}
 		return optimistic;
 	}
 
@@ -790,7 +800,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: getActiveCustomer(get())?.customer,
-				limit: 100000,
+				limit: 500,
 			});
 			await itemRepository.replaceAll(pricedItems);
 			useRuntimeCacheStore.getState().touch();
@@ -947,11 +957,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 		updateCartItemPricing: async (rowName, pricingOverride, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
+			const targetItem = invoice.items.find((item) => item.row_name === rowName);
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
 			);
 			const profile = await profileRepository.getActive();
-			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change) {
+			const isDeliveryCharge = Boolean(
+				targetItem?.item_code &&
+				profile?.allow_delivery_charge_change &&
+				profile.delivery_charge_item === targetItem.item_code,
+			);
+			if (pricingOverride?.type === "rate" && !profile?.allow_rate_change && !isDeliveryCharge) {
 				throw new Error("Rate changes are not allowed for this POS Profile.");
 			}
 			if (pricingOverride?.type.startsWith("discount") && !profile?.allow_discount_change) {
@@ -1265,7 +1281,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
-				limit: 100000,
+				limit: 500,
 			}));
 			// Ignore a response that completed after the cashier selected another customer.
 			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
@@ -1281,7 +1297,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
 				price_list: priceList,
-				limit: 100000,
+				limit: 500,
 			}));
 			set({ selectedPriceList: priceList });
 			await itemRepository.replaceAll(pricedItems);
@@ -1301,6 +1317,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			loyaltyPoints,
 			taxId,
 			shippingAddressName,
+			checkoutFields,
 			orderType = "Sales Invoice",
 			salesperson,
 			salespersonToken,
@@ -1312,6 +1329,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (!invoice) {
 				return null;
 			}
+			// An edited draft keeps its original document type in the local-cart
+			// source metadata. Preserve that type even when the workspace selector
+			// is still set to its normal default (Sales Invoice).
+			const effectiveOrderType =
+				invoice.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
 
 			const selectedCustomer = getActiveCustomer(get());
 			if (isOnline && isUnsyncedLocalCart(invoice)) {
@@ -1332,7 +1354,14 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			validateManualBatchAllocations(invoice.items);
 
-			if (orderType === "Sales Order") {
+			if (effectiveOrderType === "Sales Order") {
+				if (invoice.source_invoice_doctype === "Sales Order" && invoice.source_invoice_name) {
+					const updated = await runMutation(() => syncLocalCartToSource(invoice, api));
+					if (updated) {
+						set({ invoice: updated });
+						return { invoice: updated, queued: false, printPayload: null };
+					}
+				}
 				if (!isUnsyncedLocalCart(invoice)) {
 					throw new Error("Restore this held invoice as a Sales Invoice, or clear the cart and create a new Sales Order.");
 				}
@@ -1347,6 +1376,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						delivery_date: dueDate,
 						tax_id: taxId,
 						shipping_address_name: shippingAddressName,
+						checkout_fields: checkoutFields,
 						salesperson,
 						salesperson_token: salespersonToken,
 					}),
@@ -1382,6 +1412,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						loyalty_points: loyaltyPoints,
 						tax_id: taxId,
 						shipping_address_name: shippingAddressName,
+						checkout_fields: checkoutFields,
 						salesperson,
 						salesperson_token: salespersonToken,
 					}),
@@ -1425,6 +1456,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 							due_date: dueDate,
 							loyalty_points: loyaltyPoints,
 							tax_id: taxId,
+							checkout_fields: checkoutFields,
 							 salesperson,
 							salesperson_token: salespersonToken,
 						}),
@@ -1440,6 +1472,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					due_date: dueDate,
 					loyalty_points: loyaltyPoints,
 					tax_id: taxId,
+					checkout_fields: checkoutFields,
 						salesperson,
 						salesperson_token: salespersonToken,
 				});
@@ -1465,7 +1498,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 		},
 
-		holdCart: async (api) => {
+		holdCart: async (api, orderType = "Sales Invoice") => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) {
 				return null;
@@ -1496,6 +1529,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 						price_list: get().selectedPriceList,
 						items: cartItemsPayload(invoice.items),
 						loyalty_points: invoice.loyalty_points || undefined,
+						invoice_doctype: orderType === "Sales Order" ? "Sales Order" : invoice.source_invoice_doctype || invoice.doctype,
 					}).then((draftInvoice) =>
 						holdInvoice(api.holdInvoice, {
 							invoice_doctype: draftInvoice.doctype,
@@ -1532,6 +1566,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			await get().listHeld(api);
 			return restoredInvoice;
+		},
+		editDraftInvoice: async (invoiceDoctype, invoiceName, api) => {
+			if (!api.getInvoice) throw new Error("Draft editing is unavailable.");
+			const draft = await runMutation(() => getInvoice(api.getInvoice!, {
+				invoice_doctype: invoiceDoctype,
+				invoice_name: invoiceName,
+			}));
+			if (draft.docstatus !== 0) throw new Error("Only draft transactions can be edited.");
+			const local = invoiceToLocalCart(draft);
+			set({ invoice: local, selectedPriceList: draft.selling_price_list, error: null });
+			return local;
 		},
 	};
 });

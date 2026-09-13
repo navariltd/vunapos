@@ -2,15 +2,23 @@ import frappe
 from erpnext.accounts.doctype.pricing_rule.pricing_rule import apply_pricing_rule
 from erpnext.accounts.utils import get_currency_precision
 from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
-	get_sre_reserved_qty_for_item_and_warehouse,
+	get_sre_reserved_qty_for_items_and_warehouses,
 )
 from erpnext.stock.get_item_details import get_item_details
-from erpnext.stock.utils import get_stock_balance
 from frappe import _
 from frappe.utils import cint, flt, today
 from pypika import Order
 
 from vunapos.dto.item import item_to_dict
+from vunapos.services.catalogue_cache import (
+	get as get_catalogue_cache,
+)
+from vunapos.services.catalogue_cache import (
+	item_search_key,
+)
+from vunapos.services.catalogue_cache import (
+	set as set_catalogue_cache,
+)
 from vunapos.services.price_list_service import get_default_price_list, resolve_price_list
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.utils.permissions import require_read
@@ -27,9 +35,7 @@ def _get_item_code_from_barcode(barcode):
 def _get_actual_qty(item_code, warehouse):
 	if not warehouse:
 		return None
-	stock_balance = flt(get_stock_balance(item_code, warehouse))
-	reserved_stock = flt(get_sre_reserved_qty_for_item_and_warehouse(item_code, warehouse))
-	return max(stock_balance - reserved_stock, 0)
+	return _get_actual_qty_map([item_code], warehouse).get(item_code, 0)
 
 
 def _get_rate(item_code, profile, price_list=None):
@@ -57,6 +63,8 @@ def _get_rate(item_code, profile, price_list=None):
 def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 	require_read("Item", item_code)
 	item = frappe.get_cached_doc("Item", item_code)
+	if item.get("is_fixed_asset"):
+		frappe.throw(_("Fixed Asset item {0} cannot be sold through VunaPOS.").format(item_code))
 	price_list = price_list or get_priority_price_list(customer=profile.customer, pos_profile=profile)
 	uom_rates = _get_uom_rate_map([item_code], price_list, profile.customer)
 	uoms = []
@@ -76,7 +84,14 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		prices_include_tax=profile.get("vunapos_item_prices_include_tax"),
 		profile_tax_inclusivity=_get_profile_tax_inclusivity(profile),
 	)
-	rate = _get_rate(item.item_code, profile, price_list)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_rate = uom_rates.get(item_code, {}).get(default_uom)
+	for row in item.get("uoms", []):
+		if row.uom == default_uom:
+			default_conversion_factor = flt(row.conversion_factor) or 1.0
+			break
+	rate = default_rate if default_rate is not None else _get_rate(item.item_code, profile, price_list)
 	bundle = _get_product_bundle_map([item.item_code], profile.warehouse).get(item.item_code, {})
 	variant_count = _get_variant_count_map([item.item_code]).get(item.item_code, 0)
 	actual_qty = _get_actual_qty(item.item_code, profile.warehouse)
@@ -90,6 +105,8 @@ def _to_item_payload(item_code, profile, barcode=None, price_list=None):
 		item_tax_template=item_tax_template,
 		item_tax=_with_item_tax_prices(item_tax_summary.get(item_tax_template), rate),
 		uoms=uoms,
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
 		variant_count=variant_count,
@@ -201,11 +218,22 @@ def _get_actual_qty_map(item_codes, warehouse):
 	if not item_codes or not warehouse:
 		return None
 
-	# Bin.reserved_stock does not include every reservation source in every
-	# ERPNext release (notably native Stock Reservation Entries). Use the same
-	# reservation-aware calculation as the item-details endpoint so catalogue
-	# quantities represent sellable stock, not merely physical stock.
-	return {item_code: _get_actual_qty(item_code, warehouse) for item_code in item_codes}
+	# Avoid one stock and one reservation query per catalogue item. The initial
+	# bootstrap can contain hundreds of items, so use the Bin aggregate and the
+	# ERPNext batch reservation helper in one query each. Bin.reserved_stock does
+	# not include every reservation source in every ERPNext release; subtracting
+	# native Stock Reservation Entries keeps the displayed quantity authoritative.
+	stock_rows = frappe.get_all(
+		"Bin",
+		filters={"item_code": ["in", item_codes], "warehouse": warehouse},
+		fields=["item_code", "actual_qty"],
+	)
+	stock_map = {row.item_code: flt(row.actual_qty) for row in stock_rows}
+	reserved_map = get_sre_reserved_qty_for_items_and_warehouses(item_codes, [warehouse])
+	return {
+		item_code: max(stock_map.get(item_code, 0) - flt(reserved_map.get((item_code, warehouse), 0)), 0)
+		for item_code in item_codes
+	}
 
 
 def _get_product_bundle_map(item_codes, warehouse=None):
@@ -271,7 +299,7 @@ def _get_variant_count_map(item_codes):
 		return {}
 	rows = frappe.get_all(
 		"Item",
-		filters={"variant_of": ["in", item_codes], "disabled": 0, "is_sales_item": 1},
+		filters={"variant_of": ["in", item_codes], "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
 		fields=["variant_of"],
 	)
 	counts = {}
@@ -330,22 +358,44 @@ def _to_item_payload_from_row(
 	if price_list_rate is None:
 		price_list_rate = flt(item.standard_rate)
 	pricing_rule = (pricing_rule_map or {}).get(item.name)
-	rate = flt(pricing_rule.get("rate")) if pricing_rule else price_list_rate
 	bundle = (bundle_map or {}).get(item.name, {})
 	actual_qty = actual_qty_map.get(item.name, 0) if actual_qty_map is not None else None
 	if bundle.get("available_qty") is not None:
 		actual_qty = bundle["available_qty"]
 
 	item_tax_template = (item_tax_template_map or {}).get(item.name)
+	default_uom = item.get("sales_uom") or item.stock_uom
+	default_conversion_factor = 1.0
+	default_price_list_rate = price_list_rate
+	for row in (uom_map or {}).get(item.name, []):
+		if row.get("uom") == default_uom:
+			default_conversion_factor = flt(row.get("conversion_factor")) or 1.0
+			if row.get("rate") is not None:
+				default_price_list_rate = flt(row.get("rate"))
+			else:
+				default_price_list_rate = flt(price_list_rate) * default_conversion_factor
+			break
+	default_rate = default_price_list_rate
+	if pricing_rule and pricing_rule.get("kind") == "price":
+		# Use ERPNext's effective rate for fixed-rate rules. Discount rules carry
+		# only a percentage, which must be applied to the selected UOM price.
+		if pricing_rule.get("rate") is not None:
+			default_rate = flt(pricing_rule.get("rate"))
+		else:
+			default_rate = flt(default_price_list_rate) * (
+				1 - flt(pricing_rule.get("discount_percentage")) / 100
+			)
 	return item_to_dict(
 		item,
-		rate=rate,
-		price_list_rate=price_list_rate,
+		rate=default_rate,
+		price_list_rate=default_price_list_rate,
 		actual_qty=actual_qty,
 		barcode=barcode_map.get(item.name),
 		item_tax_template=item_tax_template,
-		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), rate),
+		item_tax=_with_item_tax_prices((item_tax_summary_map or {}).get(item_tax_template), default_rate),
 		uoms=(uom_map or {}).get(item.name, []),
+		uom=default_uom,
+		conversion_factor=default_conversion_factor,
 		pricing_rule=pricing_rule,
 		is_product_bundle=bool(bundle),
 		bundle_items=bundle.get("items", []),
@@ -353,13 +403,27 @@ def _to_item_payload_from_row(
 	)
 
 
-def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_list):
+def _get_catalogue_pricing_rule_map(
+	items, rate_map, profile, customer, price_list, uom_rate_map=None, uom_map=None
+):
 	if not items or profile.get("ignore_pricing_rule"):
 		return {}
 
 	pricing_items = []
 	for item in items:
-		price_list_rate = flt(rate_map.get(item.name, item.standard_rate))
+		default_uom = item.get("sales_uom") or item.stock_uom
+		conversion_factor = next(
+			(
+				flt(row.get("conversion_factor")) or 1.0
+				for row in (uom_map or {}).get(item.name, [])
+				if row.get("uom") == default_uom
+			),
+			1.0,
+		)
+		price_list_rate = (uom_rate_map or {}).get(item.name, {}).get(default_uom)
+		if price_list_rate is None:
+			price_list_rate = flt(rate_map.get(item.name, item.standard_rate)) * conversion_factor
+		weight_per_unit = flt(item.get("weight_per_unit"))
 		pricing_items.append(
 			{
 				"doctype": "Sales Invoice Item",
@@ -369,35 +433,74 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 				"item_group": item.item_group,
 				"brand": item.get("brand"),
 				"qty": 1,
-				"stock_qty": 1,
-				"uom": item.stock_uom,
+				"stock_qty": conversion_factor,
+				"uom": default_uom,
 				"stock_uom": item.stock_uom,
 				"parenttype": "Sales Invoice",
 				"parent": "",
 				"warehouse": profile.warehouse,
 				"price_list_rate": price_list_rate,
 				"rate": price_list_rate,
-				"conversion_factor": 1,
+				"conversion_factor": conversion_factor,
+				"weight_per_unit": weight_per_unit,
+				"total_weight": weight_per_unit * conversion_factor,
 			}
 		)
 
+	# Pass a transaction document to ERPNext's evaluator. Without `doc`, dynamic
+	# Pricing Rule conditions are evaluated against only the item args and rules
+	# that reference invoice/customer fields silently fail in the catalogue.
+	transaction_doc = frappe.new_doc("Sales Invoice")
+	customer_fields = None
+	transaction_doc.customer = customer
+	transaction_doc.company = profile.company
+	transaction_doc.currency = profile.currency
+	transaction_doc.selling_price_list = price_list
+	transaction_doc.posting_date = today()
+	transaction_doc.pos_profile = profile.name
+	if customer:
+		customer_fields = frappe.db.get_value(
+			"Customer", customer, ["customer_group", "territory"], as_dict=True
+		)
+		if customer_fields:
+			transaction_doc.customer_group = customer_fields.customer_group
+			transaction_doc.territory = customer_fields.territory
+	pricing_context = {
+		"items": pricing_items,
+		"customer": customer,
+		"currency": profile.currency,
+		"conversion_rate": 1,
+		"price_list": price_list,
+		"price_list_currency": profile.currency,
+		"plc_conversion_rate": 1,
+		"company": profile.company,
+		"transaction_date": today(),
+		"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
+		"doctype": "Sales Invoice",
+		"name": "",
+		"update_stock": 1,
+		"pos_profile": profile.name,
+	}
+	if customer_fields:
+		pricing_context.update(
+			{
+				"customer_group": customer_fields.customer_group,
+				"territory": customer_fields.territory,
+			}
+		)
+	transaction_doc.total_net_weight = sum(flt(row.get("total_weight")) for row in pricing_items)
+	# Use real child Documents so ERPNext's condition evaluator can serialize the
+	# transaction document. Raw dictionaries make doc.as_dict() fail, causing
+	# dynamic conditions to be silently discarded.
+	transaction_doc.set("items", [])
+	for row in pricing_items:
+		transaction_doc.append("items", row)
+	# The ERPNext API expects mapping rows in args, while its condition
+	# evaluator reads the real child Documents from doc.items.
+	pricing_context["items"] = pricing_items
 	results = apply_pricing_rule(
-		{
-			"items": pricing_items,
-			"customer": customer,
-			"currency": profile.currency,
-			"conversion_rate": 1,
-			"price_list": price_list,
-			"price_list_currency": profile.currency,
-			"plc_conversion_rate": 1,
-			"company": profile.company,
-			"transaction_date": today(),
-			"ignore_pricing_rule": cint(profile.get("ignore_pricing_rule")),
-			"doctype": "Sales Invoice",
-			"name": "",
-			"update_stock": 1,
-			"pos_profile": profile.name,
-		}
+		pricing_context,
+		doc=transaction_doc,
 	)
 
 	precision = get_currency_precision()
@@ -405,7 +508,19 @@ def _get_catalogue_pricing_rule_map(items, rate_map, profile, customer, price_li
 	for item, result in zip(items, results, strict=True):
 		if not result.get("has_pricing_rule"):
 			continue
-		original_rate = flt(rate_map.get(item.name, item.standard_rate), precision)
+		default_uom = item.get("sales_uom") or item.stock_uom
+		original_rate = (uom_rate_map or {}).get(item.name, {}).get(default_uom)
+		if original_rate is None:
+			conversion_factor = next(
+				(
+					flt(row.get("conversion_factor")) or 1.0
+					for row in (uom_map or {}).get(item.name, [])
+					if row.get("uom") == default_uom
+				),
+				1.0,
+			)
+			original_rate = flt(rate_map.get(item.name, item.standard_rate)) * conversion_factor
+		original_rate = flt(original_rate, precision)
 		if result.get("price_or_product_discount") == "Product":
 			free_items = [
 				{
@@ -537,7 +652,11 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 		row.item_code
 		for row in [*item_barcode_rows, *serial_rows, *batch_rows]
 		if row.item_code
-		and frappe.db.get_value("Item", {"name": row.item_code, "disabled": 0, "is_sales_item": 1}, "name")
+		and frappe.db.get_value(
+			"Item",
+			{"name": row.item_code, "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
+			"name",
+		)
 	}
 	if len(item_codes) != 1:
 		if not item_codes:
@@ -587,18 +706,27 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 	return payload
 
 
-def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+def _search_items_uncached(
+	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None
+):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	price_list = resolve_price_list(profile, customer=customer, requested_price_list=price_list)
-	limit = cint(limit)
 	query = (query or "").strip()
+	requested_limit = cint(limit)
+	if since:
+		# Delta syncs use zero to mean "all changed rows". Do not truncate a
+		# change set or the local catalogue could remain permanently stale.
+		limit = requested_limit if requested_limit > 0 else 0
+	else:
+		max_limit = 60 if query else 500
+		limit = min(requested_limit, max_limit) if requested_limit > 0 else max_limit
 
 	barcode_item_code = _get_item_code_from_barcode(query) if query else None
 	# Keep variant children out of the main catalogue. Cashiers select a template
 	# first and choose its concrete variant in the variant picker; barcode scans
 	# still resolve an exact variant through the separate fallback lookup below.
-	filters = {"disabled": 0, "is_sales_item": 1}
+	filters = {"disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0}
 	query_filters = dict(filters)
 	query_filters["variant_of"] = ["is", "not set"]
 	or_filters = []
@@ -610,20 +738,24 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		# Serial and batch identifiers are inventory records, not Item fields.
 		# Resolve matching item codes server-side so the browser does not need to
 		# preload the complete serial/batch catalogue.
-		tracked_item_codes = set(
-			frappe.get_all(
-				"Batch",
-				filters={"name": ["like", f"%{query}%"], "disabled": 0},
-				pluck="item",
+		tracked_item_codes = set()
+		if len(query) >= 3:
+			tracked_item_codes.update(
+				frappe.get_all(
+					"Batch",
+					filters={"name": ["like", f"%{query}%"], "disabled": 0},
+					pluck="item",
+					limit_page_length=60,
+				)
 			)
-		)
-		tracked_item_codes.update(
-			frappe.get_all(
-				"Serial No",
-				filters={"name": ["like", f"%{query}%"]},
-				pluck="item_code",
+			tracked_item_codes.update(
+				frappe.get_all(
+					"Serial No",
+					filters={"name": ["like", f"%{query}%"]},
+					pluck="item_code",
+					limit_page_length=60,
+				)
 			)
-		)
 		tracked_item_codes.discard(None)
 		if tracked_item_codes:
 			or_filters.append(["Item", "name", "in", list(tracked_item_codes)])
@@ -665,6 +797,8 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 			"description",
 			"image",
 			"stock_uom",
+			"sales_uom",
+			"weight_per_unit",
 			"standard_rate",
 			"is_stock_item",
 			"allow_negative_stock",
@@ -728,6 +862,8 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		profile,
 		customer,
 		price_list,
+		uom_rate_map,
+		uom_map,
 	)
 	if barcode_item_code:
 		barcode_map[barcode_item_code] = query
@@ -747,6 +883,31 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		)
 		for item_code in item_codes
 	]
+
+
+def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+	"""Search the POS catalogue, using a short-lived Redis snapshot for stable reads."""
+	if since or frappe.flags.in_test:
+		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since)
+	profile = resolve_pos_profile(pos_profile)
+	resolved_customer = customer or profile.customer
+	resolved_price_list = resolve_price_list(
+		profile, customer=resolved_customer, requested_price_list=price_list
+	)
+	key = item_search_key(
+		frappe.session.user,
+		(query or "").strip(),
+		profile.name,
+		resolved_customer,
+		resolved_price_list,
+		cint(limit),
+	)
+	cached = get_catalogue_cache(key)
+	if cached is not None:
+		return cached
+	result = _search_items_uncached(query, profile.name, resolved_customer, resolved_price_list, limit, None)
+	set_catalogue_cache(key, result)
+	return result
 
 
 def get_item_details_for_pos(item_code, pos_profile=None, customer=None, price_list=None):
@@ -786,11 +947,13 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 		profile, customer=customer or profile.customer, requested_price_list=price_list
 	)
 	template = frappe.get_cached_doc("Item", template_item_code)
+	if template.get("is_fixed_asset"):
+		frappe.throw(_("Fixed Asset item {0} cannot be sold through VunaPOS.").format(template_item_code))
 	if not template.has_variants:
 		frappe.throw(_("Item {0} is not a variant template").format(template_item_code))
 	variants = frappe.get_all(
 		"Item",
-		filters={"variant_of": template_item_code, "disabled": 0, "is_sales_item": 1},
+		filters={"variant_of": template_item_code, "disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0},
 		fields=["name", "item_name", "description", "item_group", "variant_based_on"],
 		order_by="item_name asc",
 	)

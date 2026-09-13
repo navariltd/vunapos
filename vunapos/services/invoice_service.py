@@ -22,6 +22,7 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
+from vunapos.services.checkout_field_service import apply_checkout_field_values
 from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_PROCESSING,
 	QUEUE_STATUS_QUEUED,
@@ -47,6 +48,7 @@ from vunapos.services.stock_reservation_service import (
 	create_invoice_stock_reservations,
 	validate_invoice_stock_reservations,
 )
+from vunapos.services.workflow_service import assert_pos_workflow_editable, workflow_enabled_for
 from vunapos.utils.permissions import require_create, require_read, require_write
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
@@ -225,8 +227,12 @@ def _save_invoice(doc):
 	return doc
 
 
-def _load_draft_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+def _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
+	if allow_sales_order:
+		if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+			_throw("UNSUPPORTED_INVOICE_DOCTYPE", _("Unsupported transaction type"))
+	else:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus != 0:
@@ -587,7 +593,7 @@ def _cart_item_rows(items):
 
 def _resolve_item_uom(item_code, uom=None):
 	item = frappe.get_cached_doc("Item", item_code)
-	uom = uom or item.stock_uom
+	uom = uom or item.get("sales_uom") or item.stock_uom
 	if uom == item.stock_uom:
 		return uom, 1.0
 	for row in item.get("uoms", []):
@@ -642,7 +648,7 @@ def _get_actual_qty(item_code, warehouse):
 	return max(stock_balance - reserved_stock, 0)
 
 
-def validate_cart_items(items, profile):
+def validate_cart_items(items, profile, *, validate_stock=True):
 	delivery_charge_item = profile.get("vunapos_delivery_charge_item")
 	if delivery_charge_item:
 		matches = [item for item in items if item.get("item_code") == delivery_charge_item]
@@ -652,7 +658,8 @@ def validate_cart_items(items, profile):
 				_("Only one Delivery Charge line is allowed on an invoice"),
 			)
 	item_qtys = _get_cart_item_qtys(items)
-	_validate_stock_qtys(item_qtys, profile)
+	if validate_stock:
+		_validate_stock_qtys(item_qtys, profile)
 	return item_qtys
 
 
@@ -840,7 +847,9 @@ def _get_row_batch_allocations(row):
 		return [
 			{
 				"batch_no": row.batch_no,
-				"qty": flt(row.qty),
+				# ERPNext stores row.qty in the selected sales UOM. Batch
+				# quantities are always stock-UOM quantities.
+				"qty": flt(row.qty) * flt(row.get("conversion_factor") or 1),
 				"expiry_date": frappe.db.get_value("Batch", row.batch_no, "expiry_date"),
 				"available_qty": None,
 			}
@@ -939,7 +948,7 @@ def _apply_batch_allocation(row, doc, profile, qty=None):
 
 	allocation = allocate_item_batches(
 		row.item_code,
-		qty or row.qty,
+		qty or flt(row.qty) * flt(row.get("conversion_factor") or 1),
 		warehouse=profile.warehouse or row.get("warehouse"),
 		strategy="FEFO",
 	)
@@ -1010,6 +1019,10 @@ def _materialize_batch_bundles(doc):
 
 
 def validate_invoice_batch_allocations(doc):
+	# Sales Orders do not issue stock. Batch/serial allocation is performed when
+	# a stock transaction is created from the order, not during POS order entry.
+	if doc.doctype == "Sales Order":
+		return
 	allocated_by_batch = {}
 	for row in doc.get("items", []):
 		flags = get_item_tracking_flags(row.item_code)
@@ -1029,7 +1042,12 @@ def validate_invoice_batch_allocations(doc):
 				"BATCH_ALLOCATION_REQUIRED",
 				_("Batch allocation is required for item {0}.").format(row.item_code),
 			)
-		validate_batch_allocation(row.item_code, row.qty, allocations, warehouse=row.get("warehouse"))
+		validate_batch_allocation(
+			row.item_code,
+			flt(row.qty) * flt(row.get("conversion_factor") or 1),
+			allocations,
+			warehouse=row.get("warehouse"),
+		)
 		for allocation in allocations:
 			key = (row.item_code, row.get("warehouse"), allocation.get("batch_no"))
 			allocated_by_batch[key] = allocated_by_batch.get(key, 0) + flt(allocation.get("qty"))
@@ -1054,6 +1072,17 @@ def _resolve_invoice_doctype(invoice_doctype=None):
 	return invoice_doctype
 
 
+def _populate_customer_pricing_context(doc, customer):
+	"""Copy customer defaults required by ERPNext Pricing Rule conditions."""
+	if not customer:
+		return
+	fields = frappe.db.get_value("Customer", customer, ["customer_group", "territory"], as_dict=True)
+	if not fields:
+		return
+	_set_if_has_field(doc, "customer_group", fields.customer_group)
+	_set_if_has_field(doc, "territory", fields.territory)
+
+
 def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, price_list=None):
 	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
 	profile = resolve_pos_profile(pos_profile)
@@ -1071,6 +1100,11 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 	_set_if_has_field(doc, "pos_profile", profile.name)
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_sync_profile_pricing_fields(doc, profile, price_list)
+	# Populate ERPNext customer defaults (customer group, territory, and related
+	# context) before item pricing rules are evaluated for the first cart row.
+	if hasattr(doc, "set_missing_values"):
+		doc.set_missing_values()
+	_populate_customer_pricing_context(doc, customer)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
@@ -1096,6 +1130,7 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	doc.customer = customer
 	doc.company = profile.company
 	doc.transaction_date = nowdate()
+	_populate_customer_pricing_context(doc, customer)
 	requested_delivery_date = getdate(delivery_date or nowdate())
 	if requested_delivery_date < getdate(nowdate()):
 		_throw("INVALID_DELIVERY_DATE", _("Sales Order delivery date cannot be before today."))
@@ -1105,6 +1140,8 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_set_if_has_field(doc, "vunapos_pos_profile", profile.name)
 	_sync_profile_pricing_fields(doc, profile, price_list)
+	if hasattr(doc, "set_missing_values"):
+		doc.set_missing_values()
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
 	_reset_invoice_totals(doc)
@@ -1128,6 +1165,20 @@ def _append_cart_items(doc, profile, items):
 		flags = get_item_tracking_flags(item.get("item_code"))
 		_unused_uom, conversion_factor = _resolve_item_uom(item.get("item_code"), item.get("uom"))
 		stock_qty = flt(item.get("qty")) * conversion_factor
+		if doc.doctype == "Sales Order":
+			row = doc.append(
+				"items",
+				_get_item_row(
+					item.get("item_code"),
+					item.get("qty"),
+					doc,
+					profile,
+					item_tax_template=item.get("item_tax_template"),
+					pricing_item=item,
+				),
+			)
+			_apply_vunapos_item_metadata(row, item)
+			continue
 		if flags["requires_serial"]:
 			serials = (
 				validate_serial_allocation(
@@ -1229,15 +1280,20 @@ def _validate_existing_pricing_permissions(doc, profile):
 			_throw("DISCOUNT_CHANGE_NOT_ALLOWED", _("Discount changes are not allowed for this POS Profile"))
 
 
-def create_draft_invoice(pos_profile=None, customer=None, price_list=None):
-	invoice_doctype = _resolve_invoice_doctype()
-	require_create(invoice_doctype)
-	doc, _profile = _build_invoice_doc(
-		pos_profile=pos_profile,
-		customer=customer,
-		invoice_doctype=invoice_doctype,
-		price_list=price_list,
-	)
+def create_draft_invoice(pos_profile=None, customer=None, price_list=None, invoice_doctype=None):
+	invoice_doctype = invoice_doctype or _resolve_invoice_doctype()
+	if invoice_doctype == "Sales Order":
+		require_create(invoice_doctype)
+		doc, _profile = _build_sales_order_doc(pos_profile, customer, price_list)
+	else:
+		invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
+		require_create(invoice_doctype)
+		doc, _profile = _build_invoice_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			invoice_doctype=invoice_doctype,
+			price_list=price_list,
+		)
 	doc.insert(ignore_mandatory=True)
 	return invoice_to_dict(doc)
 
@@ -1268,13 +1324,14 @@ def preview_invoice(
 
 
 def get_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+	if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	return invoice_to_dict(frappe.get_doc(invoice_doctype, invoice_name))
 
 
 def hold_invoice(invoice_doctype, invoice_name):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	opening_entry = require_open_pos_session(doc.get("pos_profile"))
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1313,8 +1370,9 @@ def update_invoice_from_cart(
 	price_list=None,
 	loyalty_points=None,
 ):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	cart_items = _cart_item_rows(items)
 	validate_cart_items(cart_items, profile)
 
@@ -1354,7 +1412,7 @@ def _held_invoice_row(doctype, row):
 def list_held_invoices(pos_profile=None, limit=20):
 	limit = min(int(limit or 20), 100)
 	rows = []
-	for doctype in SUPPORTED_INVOICE_DOCTYPES:
+	for doctype in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
 		if not frappe.db.table_exists(doctype):
 			continue
 		require_read(doctype)
@@ -1365,9 +1423,11 @@ def list_held_invoices(pos_profile=None, limit=20):
 			filters[VUNAPOS_FIELD] = 1
 		if _has_field(doctype, HELD_FIELD):
 			filters[HELD_FIELD] = 1
-		if pos_profile and _has_field(doctype, "pos_profile"):
-			filters["pos_profile"] = pos_profile
+		profile_field = "pos_profile" if _has_field(doctype, "pos_profile") else "vunapos_pos_profile"
+		if pos_profile and _has_field(doctype, profile_field):
+			filters[profile_field] = pos_profile
 
+		date_field = "posting_date" if _has_field(doctype, "posting_date") else "transaction_date"
 		for row in frappe.get_all(
 			doctype,
 			filters=filters,
@@ -1375,7 +1435,7 @@ def list_held_invoices(pos_profile=None, limit=20):
 				"name",
 				"customer",
 				"customer_name",
-				"posting_date",
+				date_field,
 				"modified",
 				"grand_total",
 				"rounded_total",
@@ -1384,6 +1444,8 @@ def list_held_invoices(pos_profile=None, limit=20):
 			order_by="modified desc",
 			limit_page_length=limit,
 		):
+			if date_field != "posting_date":
+				row["posting_date"] = row.get(date_field)
 			rows.append(_held_invoice_row(doctype, row))
 
 	rows.sort(key=lambda row: row.get("modified") or "", reverse=True)
@@ -1391,8 +1453,9 @@ def list_held_invoices(pos_profile=None, limit=20):
 
 
 def add_item(invoice_doctype, invoice_name, item_code, qty=1):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": item_code, "qty": qty}], profile)
 	_append_cart_items(doc, profile, [{"item_code": item_code, "qty": qty}])
@@ -1405,11 +1468,12 @@ def add_item(invoice_doctype, invoice_name, item_code, qty=1):
 
 
 def update_item(invoice_doctype, invoice_name, row_name, qty):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	row = next((item for item in doc.get("items", []) if item.name == row_name), None)
 	if not row:
 		frappe.throw(_("Invoice item row {0} was not found").format(row_name))
-	profile = resolve_pos_profile(doc.get("pos_profile"))
 	_sync_profile_pricing_fields(doc, profile)
 	validate_cart_items([{"item_code": row.item_code, "qty": qty}], profile)
 	flags = get_item_tracking_flags(row.item_code)
@@ -1430,14 +1494,15 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 	row.batch_no = None
 	if row.meta.has_field("serial_and_batch_bundle"):
 		row.serial_and_batch_bundle = None
-	_apply_batch_allocation(row, doc, profile, qty)
+	_apply_batch_allocation(row, doc, profile, flt(qty) * flt(row.get("conversion_factor") or 1))
 	_save_invoice(doc)
 	return invoice_to_dict(doc)
 
 
 def remove_item(invoice_doctype, invoice_name, row_name, manager_pin_token=None):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
+	assert_pos_workflow_editable(doc, profile)
 	manager_identity = None
 	if profile.get("vunapos_require_manager_pin_item_removal"):
 		manager_state = consume_pin_token(manager_pin_token, profile, "manager")
@@ -1529,6 +1594,7 @@ def submit_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
@@ -1550,6 +1616,7 @@ def submit_invoice(
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
 	_apply_shipping_address(doc, shipping_address_name)
+	apply_checkout_field_values(doc, checkout_fields, profile)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	if hasattr(doc, "set_paid_amount"):
@@ -1558,6 +1625,8 @@ def submit_invoice(
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	_apply_shipping_address(doc, shipping_address_name, persist=True)
+	if workflow_enabled_for(resolve_pos_profile(doc.get("pos_profile")), doc.doctype):
+		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(gateway_links, doc)
 	return invoice_to_dict(doc)
@@ -1575,6 +1644,7 @@ def checkout_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = _find_submitted_invoice_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1601,7 +1671,11 @@ def checkout_invoice(
 		shipping_address_name=shipping_address_name,
 		salesperson=salesperson,
 		salesperson_token=salesperson_token,
+		checkout_fields=checkout_fields,
 	)
+	profile = resolve_pos_profile(doc.get("pos_profile"))
+	if workflow_enabled_for(profile, doc.doctype):
+		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(getattr(doc.flags, "vunapos_gateway_payment_links", []), doc)
 	return invoice_to_dict(doc)
@@ -1619,6 +1693,7 @@ def _prepare_invoice_for_checkout(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
@@ -1639,6 +1714,7 @@ def _prepare_invoice_for_checkout(
 	_apply_credit_sale_fields(doc, is_credit_sale, due_date)
 	_apply_checkout_tax_id(doc, tax_id)
 	_apply_shipping_address(doc, shipping_address_name)
+	apply_checkout_field_values(doc, checkout_fields, profile)
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1661,6 +1737,7 @@ def create_invoice_from_cart(
 	price_list=None,
 	loyalty_points=None,
 	idempotency_key=None,
+	invoice_doctype=None,
 ):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
@@ -1673,6 +1750,7 @@ def create_invoice_from_cart(
 			pos_profile=profile.name,
 			customer=customer,
 			price_list=price_list,
+			invoice_doctype=invoice_doctype,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		if idempotency_key:
@@ -1703,6 +1781,7 @@ def create_and_submit_invoice(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1713,7 +1792,11 @@ def create_and_submit_invoice(
 			_throw("INVOICE_ALREADY_SUBMITTED", _("This checkout attempt can no longer be submitted"))
 		existing_profile = resolve_pos_profile(existing.get("pos_profile"))
 		has_gateway_payment = _has_gateway_payment_rows(payments, existing_profile)
-		if get_queue_limits(existing_profile)["enabled"] and not has_gateway_payment:
+		if (
+			get_queue_limits(existing_profile)["enabled"]
+			and not has_gateway_payment
+			and not workflow_enabled_for(existing_profile, existing.doctype)
+		):
 			if existing.get("vunapos_queue_status") in (QUEUE_STATUS_QUEUED, QUEUE_STATUS_PROCESSING):
 				return invoice_to_dict(existing)
 			if existing.get("vunapos_queue_status"):
@@ -1733,6 +1816,7 @@ def create_and_submit_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 			if existing.get("vunapos_reservation_fingerprint"):
 				validate_invoice_stock_reservations(existing)
@@ -1754,6 +1838,7 @@ def create_and_submit_invoice(
 			shipping_address_name=shipping_address_name,
 			salesperson=salesperson,
 			salesperson_token=salesperson_token,
+			checkout_fields=checkout_fields,
 		)
 	savepoint = "vunapos_checkout"
 	frappe.db.savepoint(savepoint)
@@ -1763,6 +1848,7 @@ def create_and_submit_invoice(
 		if (
 			get_queue_limits(profile)["enabled"]
 			and not has_gateway_payment
+			and not workflow_enabled_for(profile, "Sales Invoice")
 			and not str(idempotency_key or "").strip()
 		):
 			_throw(
@@ -1782,7 +1868,11 @@ def create_and_submit_invoice(
 			idempotency_key=idempotency_key,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
-		if get_queue_limits(profile)["enabled"] and not has_gateway_payment:
+		if (
+			get_queue_limits(profile)["enabled"]
+			and not has_gateway_payment
+			and not workflow_enabled_for(profile, "Sales Invoice")
+		):
 			_prepare_invoice_for_checkout(
 				doc,
 				payments=payments,
@@ -1830,6 +1920,7 @@ def create_and_submit_sales_order(
 	shipping_address_name=None,
 	salesperson=None,
 	salesperson_token=None,
+	checkout_fields=None,
 ):
 	existing = _find_submitted_order_by_idempotency_key(idempotency_key)
 	if existing:
@@ -1844,7 +1935,7 @@ def create_and_submit_sales_order(
 		profile = resolve_pos_profile(pos_profile)
 		opening_entry = require_open_pos_session(profile.name)
 		cart_items = _cart_item_rows(items)
-		validate_cart_items(cart_items, profile)
+		validate_cart_items(cart_items, profile, validate_stock=False)
 		doc, profile = _build_sales_order_doc(
 			pos_profile=profile.name,
 			customer=customer,
@@ -1884,11 +1975,14 @@ def create_and_submit_sales_order(
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 		_apply_checkout_tax_id(doc, tax_id)
 		_apply_shipping_address(doc, shipping_address_name)
+		apply_checkout_field_values(doc, checkout_fields, profile)
 		doc.flags.ignore_mandatory = False
 		doc.insert()
 		_materialize_batch_bundles(doc)
 		_apply_checkout_tax_id(doc, tax_id, persist=True)
 		_apply_shipping_address(doc, shipping_address_name, persist=True)
+		if workflow_enabled_for(profile, doc.doctype):
+			return invoice_to_dict(doc)
 		doc.submit()
 		advance_payments = []
 		if payment_rows:

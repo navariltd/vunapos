@@ -9,21 +9,36 @@ export type ConnectivityState = "unknown" | "checking" | "reachable" | "unreacha
 
 type ConnectivityStore = {
 	state: ConnectivityState;
+	failedChecks: number;
 	reportReachable: () => void;
 	checkReachability: () => Promise<ConnectivityState>;
 };
 
 export const useConnectivityStore = create<ConnectivityStore>((set, get) => ({
 	state: "unknown",
+	failedChecks: 0,
 	// A successful application request is stronger proof of reachability than a separate ping.
-	reportReachable: () => set({ state: "reachable" }),
+	reportReachable: () => set({ state: "reachable", failedChecks: 0 }),
 	checkReachability: async () => {
-		set({ state: "checking" });
+		const previousState = get().state;
+		// Do not briefly turn a known-good connection into "checking". Consumers
+		// use this state to disable actions, so doing that on every 30-second ping
+		// creates false offline prompts during a normal request round-trip.
+		if (previousState !== "reachable") set({ state: "checking" });
 		try {
 			await pingServer();
-			set({ state: "reachable" });
+			set({ state: "reachable", failedChecks: 0 });
 		} catch {
-			set({ state: "unreachable" });
+			const failedChecks = get().failedChecks + 1;
+			const browserOffline = typeof navigator !== "undefined" && navigator.onLine === false;
+			// A single failed health check is often a transient timeout. Preserve a
+			// previously reachable state and only mark it unavailable after a second
+			// failure (or an explicit browser offline event).
+			if (previousState === "reachable" && failedChecks < 2 && !browserOffline) {
+				set({ failedChecks });
+				return get().state;
+			}
+			set({ state: "unreachable", failedChecks });
 		}
 		return get().state;
 	},

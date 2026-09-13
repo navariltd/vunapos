@@ -78,6 +78,22 @@ describe("hydrate", () => {
 });
 
 describe("applyDelta", () => {
+	it("shares a concurrent refresh for the same POS Profile", async () => {
+		vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce(makeBootstrap());
+		await hydrate("Test Profile");
+
+		let resolveDelta!: (payload: BootstrapPayload) => void;
+		const deltaRequest = new Promise<BootstrapPayload>((resolve) => { resolveDelta = resolve; });
+		const spy = vi.spyOn(apiClient, "fetchBootstrap").mockReturnValue(deltaRequest);
+		const first = applyDelta("Test Profile");
+		const second = applyDelta("Test Profile");
+
+		expect(first).toBe(second);
+		expect(spy).toHaveBeenCalledTimes(1);
+		resolveDelta(makeBootstrap({ mode: "delta", server_time: "2026-07-10 09:00:00" }));
+		await first;
+	});
+
 	it("falls back to a full hydrate when there is no prior sync to delta against", async () => {
 		const spy = vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValue(makeBootstrap());
 

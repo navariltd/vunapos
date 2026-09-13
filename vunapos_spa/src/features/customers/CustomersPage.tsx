@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { Search, Users } from "lucide-react";
 
@@ -12,6 +12,16 @@ import type { CustomerDirectoryDTO } from "../pos/types";
 
 type Props = { posProfile?: string; defaultCurrency?: string };
 const PAGE_SIZE = 25;
+const CUSTOMER_FILTERS_STORAGE_KEY = "vunapos.customers-filters";
+type CustomerFilters = { query: string; group: string; type: string; territory: string };
+const EMPTY_CUSTOMER_FILTERS: CustomerFilters = { query: "", group: "", type: "", territory: "" };
+function readCustomerFilters(): CustomerFilters {
+  if (typeof window === "undefined") return EMPTY_CUSTOMER_FILTERS;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(CUSTOMER_FILTERS_STORAGE_KEY) || "null");
+    return saved && typeof saved === "object" ? { ...EMPTY_CUSTOMER_FILTERS, ...saved } : EMPTY_CUSTOMER_FILTERS;
+  } catch { return EMPTY_CUSTOMER_FILTERS; }
+}
 
 function money(value: number, currency?: string | null) {
   return new Intl.NumberFormat(undefined, {
@@ -21,11 +31,12 @@ function money(value: number, currency?: string | null) {
 }
 
 export function CustomersPage({ posProfile, defaultCurrency }: Props) {
-  const [query, setQuery] = useState("");
-  const [group, setGroup] = useState("");
-  const [type, setType] = useState("");
-  const [territory, setTerritory] = useState("");
+  const [filters, setFilters] = useState<CustomerFilters>(readCustomerFilters);
+  const { query, group, type, territory } = filters;
   const [start, setStart] = useState(0);
+  useEffect(() => {
+    window.localStorage.setItem(CUSTOMER_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
   const params = {
     pos_profile: posProfile,
     query,
@@ -72,7 +83,7 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
               placeholder="Search name, mobile or email"
               value={query}
               onChange={(event) => {
-                setQuery(event.target.value);
+                setFilters((current) => ({ ...current, query: event.target.value }));
                 setStart(0);
               }}
             />
@@ -81,7 +92,7 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
             className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm"
             value={group}
             onChange={(event) => {
-              setGroup(event.target.value);
+              setFilters((current) => ({ ...current, group: event.target.value }));
               setStart(0);
             }}
           >
@@ -94,7 +105,7 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
             className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm"
             value={type}
             onChange={(event) => {
-              setType(event.target.value);
+              setFilters((current) => ({ ...current, type: event.target.value }));
               setStart(0);
             }}
           >
@@ -106,7 +117,7 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
             className="rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm"
             value={territory}
             onChange={(event) => {
-              setTerritory(event.target.value);
+              setFilters((current) => ({ ...current, territory: event.target.value }));
               setStart(0);
             }}
           >

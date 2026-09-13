@@ -111,6 +111,7 @@ def invoice_to_dict(doc):
 		"doctype": doc.doctype,
 		"name": doc.name,
 		"docstatus": doc.docstatus,
+		"workflow_state": _value(doc, "workflow_state"),
 		"queue_status": _value(doc, "vunapos_queue_status"),
 		"queue_attempts": _value(doc, "vunapos_queue_attempts", 0),
 		"queue_error": _value(doc, "vunapos_queue_error"),

@@ -2,6 +2,7 @@ import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { useState, type ReactNode } from "react";
 import {
   ArrowLeft,
+  ChevronDown,
   CreditCard,
   Printer,
   RotateCcw,
@@ -17,7 +18,7 @@ import {
   navigateToCustomerPayment,
   navigateToPosPage,
 } from "../../../lib/stores/navigationStore";
-import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
+import { applyWorkflowAction, unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { CustomerDTO, InvoiceDTO } from "../types";
 
 type Details = InvoiceDTO & {
@@ -32,6 +33,7 @@ type Details = InvoiceDTO & {
   opening_entry?: string;
   cashier?: string;
   closing_entry?: string;
+  can_edit?: boolean;
   returns: Array<{
     name: string;
     posting_date: string;
@@ -69,6 +71,7 @@ type Props = {
   posProfile?: string;
   isOnline: boolean;
   onStartSale: (customer: CustomerDTO) => void;
+  onEdit?: () => void;
 };
 
 export function InvoiceDetailsPage({
@@ -77,6 +80,7 @@ export function InvoiceDetailsPage({
   posProfile,
   isOnline,
   onStartSale,
+  onEdit,
 }: Props) {
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
@@ -84,6 +88,8 @@ export function InvoiceDetailsPage({
   const [returnKey, setReturnKey] = useState("");
   const [returnError, setReturnError] = useState("");
   const [printError, setPrintError] = useState("");
+  const [workflowError, setWorkflowError] = useState("");
+  const [actionsOpen, setActionsOpen] = useState(false);
   const call = useFrappeGetCall<unknown>(
     vunaMethods.getInvoiceDetails,
     { pos_profile: posProfile, invoice_name: invoice, invoice_doctype: invoiceDoctype || undefined },
@@ -98,6 +104,12 @@ export function InvoiceDetailsPage({
       : null,
   );
   const createReturnCall = useFrappePostCall(vunaMethods.createInvoiceReturn);
+  const workflowActionsCall = useFrappeGetCall<unknown>(
+    vunaMethods.getWorkflowActions,
+    { doctype: invoiceDoctype || "Sales Invoice", docname: invoice, pos_profile: posProfile },
+    posProfile ? ["vunapos_workflow_actions", posProfile, invoiceDoctype, invoice] : null,
+  );
+  const workflowActionCall = useFrappePostCall(vunaMethods.applyWorkflowAction);
   let details: Details | null = null;
   let parseError = "";
   try {
@@ -105,6 +117,27 @@ export function InvoiceDetailsPage({
   } catch (error) {
     parseError =
       error instanceof Error ? error.message : "Unable to load invoice";
+  }
+  let workflowActions: Array<{ action: string; next_state: string }> = [];
+  try {
+    if (workflowActionsCall.data) workflowActions = unwrapVunaResponse<Array<{ action: string; next_state: string }>>(workflowActionsCall.data);
+  } catch {
+    workflowActions = [];
+  }
+  async function runWorkflowAction(action: string) {
+    setWorkflowError("");
+    try {
+      await applyWorkflowAction(workflowActionCall.call, {
+        doctype: details?.doctype || invoiceDoctype || "Sales Invoice",
+        docname: invoice,
+        action,
+        pos_profile: posProfile,
+      });
+      await call.mutate?.();
+      await workflowActionsCall.mutate?.();
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Unable to apply workflow action");
+    }
   }
   async function printReceipt() {
     if (!details) return;
@@ -224,6 +257,7 @@ export function InvoiceDetailsPage({
                 {formatDate(details.posting_date)}{" "}
                 {formatTime(details.posting_time || details.posting_date)} ·{" "}
                 {details.status}
+                {details.workflow_state ? ` · ${details.workflow_state}` : ""}
                 {details.is_credit_sale && details.due_date
                   ? ` · Due ${formatDate(details.due_date)}`
                   : ""}
@@ -231,6 +265,41 @@ export function InvoiceDetailsPage({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            {details.docstatus === 0 && details.can_edit !== false && onEdit ? (
+              <Button variant="secondary" onClick={onEdit} title="Edit draft">
+                <span aria-hidden="true">✎</span>
+                <span className="ml-2">Edit</span>
+              </Button>
+            ) : null}
+            {workflowActions.length ? (
+              <div className="relative">
+                <Button
+                  variant="secondary"
+                  className="bg-neutral-900 text-white hover:bg-neutral-800 hover:text-white dark:bg-neutral-800 dark:hover:bg-neutral-700"
+                  disabled={workflowActionCall.loading}
+                  onClick={() => setActionsOpen((open) => !open)}
+                  aria-expanded={actionsOpen}
+                >
+                  Actions <ChevronDown className="ml-2 size-4" />
+                </Button>
+                {actionsOpen ? (
+                  <div className="absolute right-0 z-20 mt-2 min-w-48 overflow-hidden rounded-lg border border-outline-variant bg-surface-container p-1.5 shadow-xl ring-1 ring-black/5 dark:ring-white/10">
+                    {workflowActions.map((transition) => (
+                      <button
+                        key={transition.action}
+                        className="block w-full rounded-md px-3 py-2.5 text-left text-sm text-on-surface transition-colors hover:bg-surface-container-high focus-visible:bg-surface-container-high focus-visible:outline-none"
+                        onClick={() => {
+                          setActionsOpen(false);
+                          void runWorkflowAction(transition.action);
+                        }}
+                      >
+                        {transition.action}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
               <Button
                 variant="secondary"
@@ -259,6 +328,9 @@ export function InvoiceDetailsPage({
             </a>
           </div>
         </div>
+        {workflowError ? (
+          <p className="text-sm text-error">{workflowError}</p>
+        ) : null}
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Summary label="Grand total" value={money(total, details.currency)} />
           <Summary

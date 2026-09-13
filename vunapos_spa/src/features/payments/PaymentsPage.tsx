@@ -72,6 +72,17 @@ type HistoryFilters = {
   status: string;
   cashier: string;
 };
+type PaymentTab = "receive" | "reconcile" | "history";
+const PAYMENT_TAB_STORAGE_KEY = "vunapos.payments-tab";
+const PAYMENT_HISTORY_FILTERS_STORAGE_KEY = "vunapos.payment-history-filters";
+const EMPTY_HISTORY_FILTERS: HistoryFilters = { customer: "", from_date: "", to_date: "", mode_of_payment: "", reference: "", status: "", cashier: "" };
+function readPaymentHistoryFilters(): HistoryFilters {
+  if (typeof window === "undefined") return EMPTY_HISTORY_FILTERS;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(PAYMENT_HISTORY_FILTERS_STORAGE_KEY) || "null");
+    return saved && typeof saved === "object" ? { ...EMPTY_HISTORY_FILTERS, ...saved } : EMPTY_HISTORY_FILTERS;
+  } catch { return EMPTY_HISTORY_FILTERS; }
+}
 const fieldClass =
   "mt-1 w-full rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary";
 
@@ -97,12 +108,25 @@ export function PaymentsPage({
       ].filter(Boolean) as Array<"receive" | "reconcile" | "history">,
     [allowHistory, allowReceive, allowReconciliation],
   );
-  const [tab, setTab] = useState<"receive" | "reconcile" | "history">(
-    availableTabs[0] || "receive",
-  );
+  const [tab, setTab] = useState<PaymentTab>(() => {
+    if (typeof window !== "undefined") {
+      const saved = window.localStorage.getItem(PAYMENT_TAB_STORAGE_KEY);
+      if (saved === "receive" || saved === "reconcile" || saved === "history") {
+        return saved;
+      }
+    }
+    return availableTabs[0] || "receive";
+  });
   const activeTab = availableTabs.includes(tab)
     ? tab
     : availableTabs[0] || "receive";
+  useEffect(() => {
+    if (activeTab !== tab) {
+      setTab(activeTab);
+      return;
+    }
+    window.localStorage.setItem(PAYMENT_TAB_STORAGE_KEY, activeTab);
+  }, [activeTab, tab]);
   const [receiveCustomer, setReceiveCustomer] = useState(
     initial.get("customer") || "",
   );
@@ -137,15 +161,10 @@ export function PaymentsPage({
   const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
   const [selectedInvoices, setSelectedInvoices] = useState<string[]>([]);
   const [allocationPreview, setAllocationPreview] = useState<Allocation[]>([]);
-  const [historyFilters, setHistoryFilters] = useState({
-    customer: "",
-    from_date: "",
-    to_date: "",
-    mode_of_payment: "",
-    reference: "",
-    status: "",
-    cashier: "",
-  });
+  const [historyFilters, setHistoryFilters] = useState<HistoryFilters>(readPaymentHistoryFilters);
+  useEffect(() => {
+    window.localStorage.setItem(PAYMENT_HISTORY_FILTERS_STORAGE_KEY, JSON.stringify(historyFilters));
+  }, [historyFilters]);
 
   const receiveCall = useFrappePostCall(vunaMethods.receiveCustomerPayment);
   const initiateStkCall = useFrappePostCall(

@@ -8,6 +8,8 @@ def item_to_dict(
 	item_tax=None,
 	uoms=None,
 	pricing_rule=None,
+	uom=None,
+	conversion_factor=None,
 	is_product_bundle=False,
 	bundle_items=None,
 	variant_count=0,
@@ -19,16 +21,16 @@ def item_to_dict(
 	uom_rows = [{"uom": item.stock_uom, "conversion_factor": 1.0, "rate": rate}]
 	seen = {item.stock_uom}
 	for row in uoms or []:
-		uom = row.get("uom")
-		if uom and uom not in seen:
+		uom_name = row.get("uom")
+		if uom_name and uom_name not in seen:
 			uom_rows.append(
 				{
-					"uom": uom,
+					"uom": uom_name,
 					"conversion_factor": float(row.get("conversion_factor") or 0),
 					"rate": row.get("rate"),
 				}
 			)
-			seen.add(uom)
+			seen.add(uom_name)
 	return {
 		"item_code": item.item_code,
 		"item_name": item.item_name,
@@ -36,6 +38,9 @@ def item_to_dict(
 		"description": item.description,
 		"image": item.image,
 		"stock_uom": item.stock_uom,
+		"sales_uom": item.get("sales_uom"),
+		"uom": uom or item.stock_uom,
+		"conversion_factor": float(conversion_factor or 1),
 		"uoms": uom_rows,
 		"rate": rate,
 		"price_list_rate": price_list_rate,

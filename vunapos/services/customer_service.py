@@ -8,6 +8,15 @@ from frappe.contacts.doctype.contact.contact import get_default_contact
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
 from vunapos.dto.customer import customer_to_dict
+from vunapos.services.catalogue_cache import (
+	customer_search_key,
+)
+from vunapos.services.catalogue_cache import (
+	get as get_catalogue_cache,
+)
+from vunapos.services.catalogue_cache import (
+	set as set_catalogue_cache,
+)
 from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
 
@@ -15,6 +24,11 @@ from vunapos.utils.permissions import require_create, require_read
 def search_customers(query=None, limit=20, since=None):
 	limit = cint(limit) or 20
 	query = (query or "").strip()
+	if not since and not frappe.flags.in_test:
+		key = customer_search_key(frappe.session.user, query, limit)
+		cached = get_catalogue_cache(key)
+		if cached is not None:
+			return cached
 	filters = {"disabled": 0}
 	if since:
 		filters["modified"] = [">", since]
@@ -33,11 +47,27 @@ def search_customers(query=None, limit=20, since=None):
 		"Customer",
 		filters=filters,
 		or_filters=or_filters,
-		fields=["name"],
+		# Fetch the fields used by customer_to_dict in the directory query. The
+		# previous get_list(name) + get_doc() loop issued one request per customer
+		# during the initial POS bootstrap.
+		fields=[
+			"name",
+			"customer_name",
+			"mobile_no",
+			"email_id",
+			"customer_group",
+			"default_price_list",
+			"is_walkin",
+			"tax_id",
+			"modified",
+		],
 		limit_page_length=limit,
 		order_by="customer_name asc",
 	)
-	return [customer_to_dict(frappe.get_doc("Customer", row.name)) for row in customers]
+	result = [customer_to_dict(row) for row in customers]
+	if not since and not frappe.flags.in_test:
+		set_catalogue_cache(key, result)
+	return result
 
 
 def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=None):

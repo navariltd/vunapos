@@ -1,4 +1,4 @@
-import { fetchBootstrap } from "./apiClient";
+import { fetchBootstrap, fetchBootstrapConfig } from "./apiClient";
 import { db } from "./db";
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
 import { profileRepository } from "./repositories/profileRepository";
@@ -9,6 +9,22 @@ export class BootstrapVerificationError extends Error { }
 
 export async function cachePosSession(session: CachedPosSession): Promise<void> {
 	await metaRepository.set(META_KEYS.posSession, session);
+}
+
+/** Hydrate only the configuration required for the first interactive paint. */
+export async function hydrateConfig(posProfile?: string): Promise<void> {
+	const payload = await fetchBootstrapConfig(posProfile);
+	if (!payload.pos_profile?.name || !payload.pos_session || !payload.payment_modes.length) {
+		throw new BootstrapVerificationError("Bootstrap configuration is incomplete");
+	}
+	await db.paymentModes.clear();
+	await Promise.all([
+		db.profile.put(payload.pos_profile),
+		db.paymentModes.bulkPut(payload.payment_modes),
+		db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings }),
+		db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session }),
+	]);
+	useRuntimeCacheStore.getState().touch();
 }
 
 // Sanity thresholds before Ready is shown (§10.1 Verify step) - catches a bootstrap
@@ -45,7 +61,7 @@ async function writeFullSnapshot(payload: BootstrapPayload): Promise<void> {
 		db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings }),
 		db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session }),
 	]);
-	useRuntimeCacheStore.getState().touch();
+	useRuntimeCacheStore.getState().markCatalogueReady();
 }
 
 async function writeDelta(payload: BootstrapPayload): Promise<void> {
@@ -83,7 +99,7 @@ async function writeDelta(payload: BootstrapPayload): Promise<void> {
 		await db.meta.put({ key: META_KEYS.taxSettings, value: payload.tax_settings });
 		await db.meta.put({ key: META_KEYS.posSession, value: payload.pos_session });
 	})();
-	useRuntimeCacheStore.getState().touch();
+	useRuntimeCacheStore.getState().markCatalogueReady();
 }
 
 export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {
@@ -93,7 +109,7 @@ export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {
 	return payload;
 }
 
-export async function applyDelta(posProfile?: string): Promise<BootstrapPayload> {
+async function applyDeltaInternal(posProfile?: string): Promise<BootstrapPayload> {
 	const activePosProfile = posProfile || (await profileRepository.getActive())?.name;
 	const since = await metaRepository.get<string>(META_KEYS.lastDeltaSync);
 	if (!since) {
@@ -112,4 +128,21 @@ export async function applyDelta(posProfile?: string): Promise<BootstrapPayload>
 
 	await writeDelta(delta);
 	return delta;
+}
+
+// Connectivity, realtime, and freshness timers can all request the same refresh
+// at nearly the same time. Reuse the in-flight request instead of issuing
+// overlapping bootstrap/database work for the same POS Profile.
+const inFlightDeltas = new Map<string, Promise<BootstrapPayload>>();
+
+export function applyDelta(posProfile?: string): Promise<BootstrapPayload> {
+	const key = posProfile || "__active__";
+	const existing = inFlightDeltas.get(key);
+	if (existing) return existing;
+
+	const request = applyDeltaInternal(posProfile).finally(() => {
+		if (inFlightDeltas.get(key) === request) inFlightDeltas.delete(key);
+	});
+	inFlightDeltas.set(key, request);
+	return request;
 }

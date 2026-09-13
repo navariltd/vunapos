@@ -29,6 +29,26 @@ describe("connectivityStore", () => {
 		expect(result).toBe("unreachable");
 	});
 
+	it("keeps a known connection during one transient ping failure", async () => {
+		useConnectivityStore.setState({ state: "reachable", failedChecks: 0 });
+		vi.spyOn(apiClient, "pingServer").mockRejectedValue(new TypeError("Request timed out"));
+
+		const result = await useConnectivityStore.getState().checkReachability();
+
+		expect(result).toBe("reachable");
+		expect(getConnectivityState()).toBe("reachable");
+	});
+
+	it("marks a known connection unavailable after repeated ping failures", async () => {
+		useConnectivityStore.setState({ state: "reachable", failedChecks: 0 });
+		vi.spyOn(apiClient, "pingServer").mockRejectedValue(new TypeError("Failed to fetch"));
+
+		await useConnectivityStore.getState().checkReachability();
+		const result = await useConnectivityStore.getState().checkReachability();
+
+		expect(result).toBe("unreachable");
+	});
+
 	it("notifies subscribers on state changes", async () => {
 		vi.spyOn(apiClient, "pingServer").mockResolvedValue({ server_time: "2026-07-10" });
 		const seen: string[] = [];

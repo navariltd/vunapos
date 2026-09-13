@@ -14,6 +14,7 @@ export function useItemSearch(query: string) {
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
 	const [items, setItems] = useState<ItemDTO[]>();
 	const revision = useRuntimeCacheStore((state) => state.revision);
+	const catalogueReady = useRuntimeCacheStore((state) => state.catalogueReady);
 
 	useEffect(() => {
 		const timeout = window.setTimeout(() => {
@@ -62,7 +63,7 @@ export function useItemSearch(query: string) {
 
 	return {
 		error: null as string | null,
-		isLoading: query !== debouncedQuery || items === undefined,
+		isLoading: query !== debouncedQuery || items === undefined || (!catalogueReady && items.length === 0),
 		items: (items ?? []) as ItemDTO[],
 		reload: () => { },
 	};

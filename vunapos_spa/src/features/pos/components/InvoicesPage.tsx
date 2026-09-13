@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
 import { Button } from "../../../components/ui/Button";
@@ -71,6 +71,17 @@ type History = {
     credit_outstanding: number;
   };
 };
+type InvoiceTab = "history" | "orders" | "draft-orders" | "queue" | "issues";
+const INVOICE_TAB_STORAGE_KEY = "vunapos.invoices-tab";
+const INVOICE_FILTERS_STORAGE_KEY = "vunapos.invoices-filters";
+const EMPTY_INVOICE_FILTERS: Filters = { invoice: "", customer: "", from_date: "", to_date: "", status: "", payment_mode: "", sale_type: "", current_shift: "1" };
+function readInvoiceFilters(): Filters {
+  if (typeof window === "undefined") return EMPTY_INVOICE_FILTERS;
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(INVOICE_FILTERS_STORAGE_KEY) || "null");
+    return saved && typeof saved === "object" ? { ...EMPTY_INVOICE_FILTERS, ...saved } : EMPTY_INVOICE_FILTERS;
+  } catch { return EMPTY_INVOICE_FILTERS; }
+}
 const fieldClass =
   "rounded-md border border-outline-variant bg-surface px-3 py-2 text-sm outline-none focus:border-primary";
 
@@ -84,28 +95,31 @@ export function InvoicesPage({
   onRefreshHeld,
   onRestoreHeld,
 }: Props) {
-  const [tab, setTab] = useState<"history" | "orders" | "queue" | "issues">("history");
-  const [filters, setFilters] = useState<Filters>({
-    invoice: "",
-    customer: "",
-    from_date: "",
-    to_date: "",
-    status: "",
-    payment_mode: "",
-    sale_type: "",
-    current_shift: "1",
+  const [tab, setTab] = useState<InvoiceTab>(() => {
+    if (typeof window === "undefined") return "history";
+    const saved = window.localStorage.getItem(INVOICE_TAB_STORAGE_KEY);
+    return ["history", "orders", "draft-orders", "queue", "issues"].includes(saved || "")
+      ? (saved as InvoiceTab)
+      : "history";
   });
+  useEffect(() => {
+    window.localStorage.setItem(INVOICE_TAB_STORAGE_KEY, tab);
+  }, [tab]);
+  const [filters, setFilters] = useState<Filters>(readInvoiceFilters);
+  useEffect(() => {
+    window.localStorage.setItem(INVOICE_FILTERS_STORAGE_KEY, JSON.stringify(filters));
+  }, [filters]);
   const [start, setStart] = useState(0);
   const call = useFrappeGetCall<unknown>(
     vunaMethods.getInvoiceHistory,
     {
       pos_profile: posProfile,
-      document_type: tab === "orders" ? "Order" : "Invoice",
+      document_type: tab === "orders" ? "Order" : tab === "draft-orders" ? "Draft Order" : "Invoice",
       ...filters,
       start,
       page_length: 50,
     },
-    posProfile && (tab === "history" || tab === "orders")
+    posProfile && (tab === "history" || tab === "orders" || tab === "draft-orders")
       ? ["vunapos_invoice_history", posProfile, tab, filters, start]
       : null,
   );
@@ -122,16 +136,7 @@ export function InvoicesPage({
     setStart(0);
   };
   const clearFilters = () => {
-    setFilters({
-      invoice: "",
-      customer: "",
-      from_date: "",
-      to_date: "",
-      status: "",
-      payment_mode: "",
-      sale_type: "",
-      current_shift: "1",
-    });
+    setFilters(EMPTY_INVOICE_FILTERS);
     setStart(0);
   };
   const openDetails = (event: MouseEvent<HTMLElement>) => {
@@ -156,7 +161,11 @@ export function InvoicesPage({
           <div>
             <h2 className="text-lg font-semibold">Invoices</h2>
             <p className="text-sm text-on-surface-variant">
-              Review completed sales and restore held invoices.
+              {tab === "orders"
+                ? "Review submitted and cancelled Sales Orders."
+                : tab === "draft-orders"
+                  ? "Review Sales Orders awaiting workflow approval."
+                : "Review completed sales and restore held invoices."}
             </p>
           </div>
           <Button onClick={onBack}>Back to POS</Button>
@@ -167,6 +176,9 @@ export function InvoicesPage({
           </Tab>
           <Tab active={tab === "orders"} onClick={() => setTab("orders")}>
             Sales Orders
+          </Tab>
+          <Tab active={tab === "draft-orders"} onClick={() => setTab("draft-orders")}>
+            Draft Orders
           </Tab>
           <Tab active={tab === "queue"} onClick={() => setTab("queue")}>
             Checkout Queue
@@ -217,6 +229,7 @@ export function InvoicesPage({
               >
                 <option value="">All statuses</option>
                 {[
+                  ...(tab === "orders" || tab === "draft-orders" ? ["Draft"] : []),
                   "Paid",
                   "Partly Paid",
                   "Unpaid",
@@ -267,7 +280,7 @@ export function InvoicesPage({
               <>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Summary
-                    label={tab === "orders" ? "Orders" : "Invoices"}
+                    label={tab === "orders" || tab === "draft-orders" ? "Orders" : "Invoices"}
                     value={String(history.summary.invoice_count)}
                   />
                   <Summary
@@ -332,7 +345,7 @@ export function InvoicesPage({
                               {formatDate(row.posting_date)}
                               <span className="block text-xs text-on-surface-variant">
                                 {formatTime(
-                                  row.posting_time || row.posting_date,
+                                  row.posting_time,
                                 )}
                               </span>
                               {row.vunapos_credit_sale && row.due_date ? (

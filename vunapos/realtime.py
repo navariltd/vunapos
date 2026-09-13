@@ -2,6 +2,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils import cint, flt
 
+from vunapos.services.catalogue_cache import invalidate_catalogue_cache
+
 CONFIGURATION_EVENT = "vunapos_configuration_changed"
 CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed"
 GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
@@ -9,6 +11,7 @@ GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
 
 def publish_configuration_change(doc: Document, method: str | None = None) -> None:
 	"""Tell active VunaPOS terminals to reload their permission-filtered configuration."""
+	invalidate_catalogue_cache(doc, method)
 	enabled_profiles = frappe.get_all("POS Profile", filters={"disabled": 0}, pluck="name")
 	if not enabled_profiles:
 		return
