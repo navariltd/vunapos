@@ -38,9 +38,22 @@ jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosCustomersScreen', () => ({
-  PosCustomersScreen: ({ customerManagementEnabled }: { customerManagementEnabled: boolean }) => {
-    const { Text } = require('react-native');
-    return <Text>{customerManagementEnabled ? 'Customers enabled' : 'Customers disabled'}</Text>;
+  initialCustomerDirectoryViewState: { filters: { customerGroup: '', customerType: '', territory: '' }, query: '', start: 0 },
+  PosCustomersScreen: ({ customerManagementEnabled, directoryState, onDirectoryStateChange, onOpenCustomer }: { customerManagementEnabled: boolean; directoryState: { filters: { customerGroup: string; customerType: '' | 'Company' | 'Individual'; territory: string }; query: string; start: number }; onDirectoryStateChange: (state: { filters: { customerGroup: string; customerType: '' | 'Company' | 'Individual'; territory: string }; query: string; start: number }) => void; onOpenCustomer: (customer: string) => void }) => {
+    const { Pressable, Text } = require('react-native');
+    return <>
+      <Text>{customerManagementEnabled ? 'Customers enabled' : 'Customers disabled'}</Text>
+      <Text>{`Customer query: ${directoryState.query}`}</Text>
+      <Pressable accessibilityRole="button" onPress={() => onDirectoryStateChange({ ...directoryState, query: 'ABC', start: 0 })}><Text>Search customers</Text></Pressable>
+      <Pressable accessibilityRole="button" onPress={() => onOpenCustomer('CUST-001')}><Text>Open customer</Text></Pressable>
+    </>;
+  },
+}));
+
+jest.mock('@/features/pos/screens/PosCustomerDetailsScreen', () => ({
+  PosCustomerDetailsScreen: ({ customer, onBack }: { customer: string; onBack: () => void }) => {
+    const { Pressable, Text } = require('react-native');
+    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable></>;
   },
 }));
 
@@ -156,5 +169,20 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Disable customer management' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
     expect(screen.getByText('Customers disabled')).toBeTruthy();
+  });
+
+  it('returns to the Customer directory with its current view state after opening a customer', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Enable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Search customers' }));
+    expect(screen.getByText('Customer query: ABC')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customer' }));
+    expect(screen.getByText('Customer details: CUST-001')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to customers' }));
+
+    expect(screen.getByText('Customer query: ABC')).toBeTruthy();
   });
 });

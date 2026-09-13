@@ -7,7 +7,11 @@ import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
 import { PosCloseShiftScreen } from "@/features/pos/screens/PosCloseShiftScreen";
-import { PosCustomersScreen } from "@/features/pos/screens/PosCustomersScreen";
+import {
+  initialCustomerDirectoryViewState,
+  PosCustomerDirectoryViewState,
+  PosCustomersScreen,
+} from "@/features/pos/screens/PosCustomersScreen";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
@@ -48,6 +52,8 @@ export function PosWorkspaceScreen() {
   const [selectedInvoice, setSelectedInvoice] =
     useState<SelectedInvoice | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [customerDirectoryState, setCustomerDirectoryState] =
+    useState<PosCustomerDirectoryViewState>(initialCustomerDirectoryViewState);
   const [receivePaymentContext, setReceivePaymentContext] =
     useState<ReceivePaymentContext | null>(null);
   const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{
@@ -345,7 +351,10 @@ export function PosWorkspaceScreen() {
         <PosCustomersScreen
           customerManagementEnabled={allowsCustomerManagement}
           currencyPrecision={posProfileConfig?.currency_precision}
+          directoryState={customerDirectoryState}
           onBackToPos={() => changeTab("Home")}
+          onDirectoryStateChange={setCustomerDirectoryState}
+          onOpenCustomer={setSelectedCustomer}
           posProfile={posProfile}
         />
       ) : activeTab === "Close Shift" ? (

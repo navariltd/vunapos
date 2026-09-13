@@ -23,7 +23,10 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosCustomersScreenProps = {
   customerManagementEnabled: boolean;
   currencyPrecision?: number;
+  directoryState?: PosCustomerDirectoryViewState;
   onBackToPos: () => void;
+  onDirectoryStateChange?: (state: PosCustomerDirectoryViewState) => void;
+  onOpenCustomer?: (customer: string) => void;
   posProfile?: string;
 };
 
@@ -33,23 +36,40 @@ const initialFilters: PosCustomerDirectoryFilters = {
   territory: "",
 };
 
+export type PosCustomerDirectoryViewState = {
+  filters: PosCustomerDirectoryFilters;
+  query: string;
+  start: number;
+};
+
+export const initialCustomerDirectoryViewState: PosCustomerDirectoryViewState = {
+  filters: initialFilters,
+  query: "",
+  start: 0,
+};
+
 /** Customer-tab access boundary and live first page of the POS directory. */
 export function PosCustomersScreen({
   customerManagementEnabled,
   currencyPrecision = 2,
+  directoryState,
   onBackToPos,
+  onDirectoryStateChange,
+  onOpenCustomer,
   posProfile,
 }: PosCustomersScreenProps) {
   const { palette } = useAppearance();
   const { connectionStatus } = useNetworkStatus();
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState<PosCustomerDirectoryFilters>(
+  const [localDirectoryState, setLocalDirectoryState] =
+    useState<PosCustomerDirectoryViewState>(
+      initialCustomerDirectoryViewState,
+    );
+  const currentDirectoryState = directoryState ?? localDirectoryState;
+  const { filters, query, start } = currentDirectoryState;
+  const [draftFilters, setDraftFilters] = useState<PosCustomerDirectoryFilters>(
     initialFilters,
   );
-  const [draftFilters, setDraftFilters] =
-    useState<PosCustomerDirectoryFilters>(initialFilters);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
-  const [start, setStart] = useState(0);
   const directory = usePosCustomerDirectory(
     customerManagementEnabled ? posProfile : undefined,
     query,
@@ -63,9 +83,16 @@ export function PosCustomersScreen({
     setFilterSheetVisible(true);
   }
 
+  function updateDirectoryState(nextState: PosCustomerDirectoryViewState) {
+    if (directoryState && onDirectoryStateChange) {
+      onDirectoryStateChange(nextState);
+      return;
+    }
+    setLocalDirectoryState(nextState);
+  }
+
   function applyFilters() {
-    setFilters(draftFilters);
-    setStart(0);
+    updateDirectoryState({ ...currentDirectoryState, filters: draftFilters, start: 0 });
     setFilterSheetVisible(false);
   }
 
@@ -81,8 +108,11 @@ export function PosCustomersScreen({
   }
 
   function updateQuery(value: string) {
-    setQuery(value);
-    setStart(0);
+    updateDirectoryState({ ...currentDirectoryState, query: value, start: 0 });
+  }
+
+  function updatePage(nextStart: number) {
+    updateDirectoryState({ ...currentDirectoryState, start: nextStart });
   }
 
   if (!posProfile) {
@@ -212,16 +242,19 @@ export function PosCustomersScreen({
                 customer={customer}
                 currencyPrecision={currencyPrecision}
                 key={customer.customer}
+                onPress={
+                  onOpenCustomer
+                    ? () => onOpenCustomer(customer.customer)
+                    : undefined
+                }
               />
             ))}
           </View>
           <DirectoryPagination
             directory={directory.data}
             start={start}
-            onNext={() => setStart((current) => current + directory.data!.limit)}
-            onPrevious={() =>
-              setStart((current) => Math.max(0, current - directory.data!.limit))
-            }
+            onNext={() => updatePage(start + directory.data!.limit)}
+            onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
         </>
       ) : directory.data ? (
@@ -234,10 +267,8 @@ export function PosCustomersScreen({
           <DirectoryPagination
             directory={directory.data}
             start={start}
-            onNext={() => setStart((current) => current + directory.data!.limit)}
-            onPrevious={() =>
-              setStart((current) => Math.max(0, current - directory.data!.limit))
-            }
+            onNext={() => updatePage(start + directory.data!.limit)}
+            onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
         </>
       ) : null}
@@ -334,9 +365,11 @@ function BackToPosButton({ onPress }: { onPress: () => void }) {
 function CustomerDirectoryCard({
   currencyPrecision,
   customer,
+  onPress,
 }: {
   currencyPrecision: number;
   customer: PosCustomerDirectoryRow;
+  onPress?: () => void;
 }) {
   const { palette } = useAppearance();
   const identifier =
@@ -346,7 +379,11 @@ function CustomerDirectoryCard({
   }`;
 
   return (
-    <View
+    <Pressable
+      accessibilityLabel={`Open customer ${customer.customer_name}`}
+      accessibilityRole="button"
+      disabled={!onPress}
+      onPress={onPress}
       style={[
         styles.customerCard,
         { backgroundColor: palette.surface, borderColor: palette.border },
@@ -391,7 +428,7 @@ function CustomerDirectoryCard({
           }
         />
       </View>
-    </View>
+    </Pressable>
   );
 }
 

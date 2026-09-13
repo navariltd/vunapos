@@ -209,6 +209,39 @@ describe("PosCustomersScreen", () => {
     );
   });
 
+  it("opens the selected customer from a directory card", async () => {
+    const onOpenCustomer = jest.fn();
+    mockUsePosCustomerDirectory.mockReturnValue({
+      data: {
+        as_of: "2026-09-13 09:00:00",
+        customer_groups: [],
+        customers: [{ customer: "CUST-001", customer_name: "ABC Corp" }],
+        financials_visible: true,
+        limit: 25,
+        loyalty_visible: true,
+        start: 0,
+        territories: [],
+        total_count: 1,
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCustomersScreen
+        customerManagementEnabled
+        onBackToPos={jest.fn()}
+        onOpenCustomer={onOpenCustomer}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open customer ABC Corp" }),
+    );
+    expect(onOpenCustomer).toHaveBeenCalledWith("CUST-001");
+  });
+
   it("keeps Customer filters as a draft until they are applied", async () => {
     mockUsePosCustomerDirectory.mockReturnValue({
       data: {
