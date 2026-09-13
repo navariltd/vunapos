@@ -51,9 +51,17 @@ jest.mock('@/features/pos/screens/PosCustomersScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosCustomerDetailsScreen', () => ({
-  PosCustomerDetailsScreen: ({ customer, onBack, onStartSale }: { customer: string; onBack: () => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
+  PosCustomerDetailsScreen: ({ customer, onBack, onReceivePayment, onStartSale }: { customer: string; onBack: () => void; onReceivePayment: (customer: { customer: string; customerName: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
     const { Pressable, Text } = require('react-native');
-    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onStartSale({ customer, customerName: 'Directory customer' })}><Text>Start customer sale</Text></Pressable></>;
+    const selectedCustomer = { customer, customerName: 'Directory customer' };
+    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onStartSale(selectedCustomer)}><Text>Start customer sale</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReceivePayment(selectedCustomer)}><Text>Receive customer payment</Text></Pressable></>;
+  },
+}));
+
+jest.mock('@/features/pos/screens/PosPaymentsScreen', () => ({
+  PosPaymentsScreen: ({ initialReceiveCustomer }: { initialReceiveCustomer?: { customer: string } }) => {
+    const { Text } = require('react-native');
+    return <Text>{`Payment customer: ${initialReceiveCustomer?.customer || 'none'}`}</Text>;
   },
 }));
 
@@ -196,5 +204,16 @@ describe('PosWorkspaceScreen', () => {
 
     expect(screen.getByText('POS home')).toBeTruthy();
     expect(screen.getByText('Catalogue customer: CUST-001')).toBeTruthy();
+  });
+
+  it('opens Receive payment with the selected directory customer', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Enable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customer' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Receive customer payment' }));
+
+    expect(screen.getByText('Payment customer: CUST-001')).toBeTruthy();
   });
 });

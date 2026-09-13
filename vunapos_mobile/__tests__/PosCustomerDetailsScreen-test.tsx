@@ -264,6 +264,32 @@ describe("PosCustomerDetailsScreen", () => {
     });
   });
 
+  it("hides Receive payment when the POS Profile does not allow customer payments", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [],
+        pos_profile: {
+          allow_customer_payments: false,
+          currency: "KES",
+          name: "POS-001",
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: reloadBootstrap,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onReceivePayment={onReceivePayment}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Receive payment")).toBeNull();
+  });
+
   it("keeps Start new sale unavailable offline and explains why", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
@@ -276,7 +302,7 @@ describe("PosCustomerDetailsScreen", () => {
 
     expect(
       screen.getByText(
-        "Reconnect to the server to start a sale for this customer.",
+        "Reconnect to the server to start a sale or receive payment for this customer.",
       ),
     ).toBeTruthy();
     expect(

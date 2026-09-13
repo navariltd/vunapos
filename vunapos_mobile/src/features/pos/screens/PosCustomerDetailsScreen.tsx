@@ -307,7 +307,7 @@ export function PosCustomerDetailsScreen({
           accessibilityRole="alert"
           style={[styles.offlineNotice, { color: palette.onSurfaceMuted }]}
         >
-          Reconnect to the server to start a sale for this customer.
+          Reconnect to the server to start a sale or receive payment for this customer.
         </Text>
       ) : null}
     </ScrollView>
