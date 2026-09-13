@@ -1,0 +1,448 @@
+import { useCallback, useEffect, useState } from "react";
+
+import { AppShell } from "@/features/shell/components/AppShell";
+import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
+import { useSalespersonPin } from "@/features/pos/hooks/useSalespersonPin";
+import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
+import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
+import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+import { PosCloseShiftScreen } from "@/features/pos/screens/PosCloseShiftScreen";
+import {
+  initialCustomerDirectoryViewState,
+  PosCustomerDirectoryViewState,
+  PosCustomersScreen,
+} from "@/features/pos/screens/PosCustomersScreen";
+import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
+import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
+import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
+import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
+import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
+import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScreen";
+import {
+  PosBootstrapData,
+  PosInvoicePaymentEntry,
+  PosNavigationTab,
+  PosOrderType,
+  PosSaleCustomer,
+  PosSession,
+} from "@/features/pos/types";
+import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+
+type SelectedInvoice = {
+  doctype?: string;
+  name: string;
+  returnTo?: { doctype?: string; name: string };
+  returnToCustomer?: string;
+};
+
+type ReceivePaymentContext = {
+  customer: PosSaleCustomer;
+  invoice?: string;
+};
+
+/** Owns POS-wide shell state while feature screens remain independent. */
+export function PosWorkspaceScreen() {
+  const { connectionStatus } = useNetworkStatus();
+  const isOffline = connectionStatus === "offline";
+  const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
+  const [cartVisible, setCartVisible] = useState(false);
+  const [checkoutVisible, setCheckoutVisible] = useState(false);
+  const [cartCurrency, setCartCurrency] = useState("KES");
+  const [orderType, setOrderType] = useState<PosOrderType>("Invoice");
+  const [selectedInvoice, setSelectedInvoice] =
+    useState<SelectedInvoice | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [customerDirectoryState, setCustomerDirectoryState] =
+    useState<PosCustomerDirectoryViewState>(initialCustomerDirectoryViewState);
+  const [receivePaymentContext, setReceivePaymentContext] =
+    useState<ReceivePaymentContext | null>(null);
+  const [selectedPaymentEntry, setSelectedPaymentEntry] = useState<{
+    currency: string;
+    currencyPrecision: number;
+    paymentEntry: PosInvoicePaymentEntry;
+    returnToCustomer?: string;
+  } | null>(null);
+  const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(
+    null,
+  );
+  const [selectedPriceList, setSelectedPriceList] = useState<string>();
+  const [priceListFallbackNotice, setPriceListFallbackNotice] = useState<
+    string | null
+  >(null);
+  const [defaultSaleCustomer, setDefaultSaleCustomer] =
+    useState<PosSaleCustomer | null>(null);
+  const [posProfile, setPosProfile] = useState<string>();
+  const [paymentModes, setPaymentModes] = useState<
+    PosBootstrapData["payment_modes"]
+  >([]);
+  const [posProfileConfig, setPosProfileConfig] =
+    useState<PosBootstrapData["pos_profile"]>();
+  const [posSession, setPosSession] = useState<PosSession | null>(null);
+  const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
+  const [heldRefreshKey, setHeldRefreshKey] = useState(0);
+  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
+  const cart = usePosCart({
+    customer: saleCustomer,
+    posProfile,
+    priceList: selectedPriceList,
+  });
+  const salespersonPin = useSalespersonPin();
+  const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
+    const defaultCustomer = bootstrap.default_customer;
+    setPosProfile(bootstrap.pos_profile.name);
+    setPosProfileConfig(bootstrap.pos_profile);
+    setPosSession(bootstrap.pos_session ?? null);
+    setPaymentModes(bootstrap.payment_modes);
+    setDefaultSaleCustomer(
+      defaultCustomer
+        ? {
+            customer: defaultCustomer.customer,
+            customerName: defaultCustomer.customer_name,
+            defaultPriceList: defaultCustomer.default_price_list,
+            isWalkin: Boolean(defaultCustomer.is_walkin),
+            mobile: defaultCustomer.mobile_no || undefined,
+            taxId: defaultCustomer.tax_id || undefined,
+          }
+        : null,
+    );
+  }, []);
+  const salespersonLocked = Boolean(
+    posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
+  );
+  const allowsCustomerPayments =
+    posProfileConfig?.allow_customer_payments !== false;
+  const allowsCustomerManagement = posProfileConfig
+    ? posProfileConfig.allow_customer_management !== false
+    : false;
+
+  useEffect(() => {
+    if (!selectedPriceList || !posProfileConfig) return;
+    const permitted =
+      posProfileConfig.allowed_price_lists?.map(({ name }) => name) || [];
+    if (permitted.includes(selectedPriceList)) return;
+    const fallback = setTimeout(() => {
+      setSelectedPriceList(undefined);
+      setPriceListFallbackNotice(
+        "The selected price list is no longer available. Prices were reset to the POS default.",
+      );
+    }, 0);
+    return () => clearTimeout(fallback);
+  }, [posProfileConfig, selectedPriceList]);
+
+  function changeTab(tab: PosNavigationTab) {
+    setSelectedInvoice(null);
+    setSelectedCustomer(null);
+    setSelectedPaymentEntry(null);
+    setReceivePaymentContext(null);
+    setCartVisible(false);
+    setCheckoutVisible(false);
+    setActiveTab(tab);
+  }
+
+  function startSale(customer: PosSaleCustomer) {
+    if (isOffline) return;
+    if (!cart.clear()) return;
+    setSelectedPriceList(undefined);
+    setSaleCustomer(customer);
+    setSelectedCustomer(null);
+    setSelectedInvoice(null);
+    setSelectedPaymentEntry(null);
+    setReceivePaymentContext(null);
+    setCheckoutVisible(false);
+    setActiveTab("Home");
+  }
+
+  function openReceivePayment(customer: PosSaleCustomer, invoice?: string) {
+    if (isOffline || !allowsCustomerPayments) return;
+    setSelectedInvoice(null);
+    setSelectedCustomer(null);
+    setSelectedPaymentEntry(null);
+    setCartVisible(false);
+    setCheckoutVisible(false);
+    setReceivePaymentContext({ customer, invoice });
+    setActiveTab("Payments");
+  }
+
+  return (
+    <AppShell
+    activeTab={activeTab}
+      customersEnabled={allowsCustomerManagement}
+      onOrderTypeChange={setOrderType}
+      onTabChange={changeTab}
+      orderType={orderType}
+      paymentsEnabled={allowsCustomerPayments}
+    >
+      {posSession && !posSession.ready ? (
+        <PosSessionGateScreen session={posSession} />
+      ) : selectedPaymentEntry ? (
+        <PosPaymentEntryDetailsScreen
+          currency={selectedPaymentEntry.currency}
+          currencyPrecision={selectedPaymentEntry.currencyPrecision}
+          onBack={() => {
+            const returnToCustomer = selectedPaymentEntry.returnToCustomer;
+            setSelectedPaymentEntry(null);
+            if (returnToCustomer) setSelectedCustomer(returnToCustomer);
+          }}
+          paymentEntry={selectedPaymentEntry.paymentEntry}
+        />
+      ) : selectedCustomer ? (
+        <PosCustomerDetailsScreen
+          customer={selectedCustomer}
+          onBack={() => setSelectedCustomer(null)}
+          onOpenInvoice={(invoice) => {
+            setSelectedCustomer(null);
+            setSelectedInvoice({
+              doctype: invoice.doctype,
+              name: invoice.name,
+              returnToCustomer: selectedCustomer,
+            });
+          }}
+          onOpenPaymentEntry={(payment) => {
+            setSelectedCustomer(null);
+            setSelectedPaymentEntry({
+              currency: posProfileConfig?.currency ?? "KES",
+              currencyPrecision: posProfileConfig?.currency_precision ?? 2,
+              paymentEntry: {
+                allocated_amount: Math.max(
+                  payment.received_amount - payment.unallocated_amount,
+                  0,
+                ),
+                docstatus: 1,
+                mode_of_payment: payment.mode_of_payment,
+                name: payment.name,
+                posting_date: payment.posting_date,
+                received_amount: payment.received_amount,
+                unallocated_amount: payment.unallocated_amount,
+              },
+              returnToCustomer: selectedCustomer,
+            });
+          }}
+          onReceivePayment={openReceivePayment}
+          onStartSale={startSale}
+        />
+      ) : selectedInvoice ? (
+        <PosInvoiceDetailsScreen
+          invoiceDoctype={selectedInvoice.doctype}
+          invoiceName={selectedInvoice.name}
+          onBack={() => {
+            if (selectedInvoice.returnTo) {
+              setSelectedInvoice(selectedInvoice.returnTo);
+              return;
+            }
+            if (selectedInvoice.returnToCustomer) {
+              setSelectedInvoice(null);
+              setSelectedCustomer(selectedInvoice.returnToCustomer);
+              return;
+            }
+            setSelectedInvoice(null);
+          }}
+          onOpenCustomer={setSelectedCustomer}
+          onOpenPaymentEntry={(paymentEntry, currency) =>
+            setSelectedPaymentEntry({
+              currency,
+              currencyPrecision: posProfileConfig?.currency_precision ?? 2,
+              paymentEntry,
+            })
+          }
+          onOpenReturn={(invoiceReturn) =>
+            setSelectedInvoice({
+              doctype: selectedInvoice.doctype,
+              name: invoiceReturn.name,
+              returnTo: selectedInvoice,
+            })
+          }
+          onReceivePayment={openReceivePayment}
+          onStartSale={startSale}
+        />
+      ) : checkoutVisible ? (
+        <PosCheckoutScreen
+          currency={cartCurrency}
+          items={cart.items}
+          onApplyDeliveryCharge={cart.applyDeliveryCharge}
+          onBack={() => setCheckoutVisible(false)}
+          onComplete={(result) => {
+            cart.clear();
+            setSaleCustomer(null);
+            setPostSaleRefreshKey((current) => current + 1);
+            setHeldRefreshKey((current) => current + 1);
+            if (posProfileConfig?.require_pin_before_every_sale)
+              salespersonPin.lock();
+            setCheckoutVisible(false);
+            setCartVisible(false);
+            setSelectedInvoice({ doctype: result.doctype, name: result.name });
+          }}
+          onSalespersonTokenExpired={() => salespersonPin.lock()}
+          orderType={orderType}
+          priceList={selectedPriceList}
+          saleCustomer={saleCustomer}
+          salesperson={salespersonPin.session}
+          sourceInvoice={cart.sourceInvoice}
+          subtotal={cart.subtotal}
+        />
+      ) : cartVisible ? (
+        <PosCartScreen
+          allowCustomerCreation={Boolean(
+            posProfileConfig?.allow_customer_creation,
+          )}
+          allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
+          allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
+          currency={cartCurrency}
+          currencyPrecision={posProfileConfig?.currency_precision}
+          hasPendingHold={cart.hasPendingHold}
+          holdError={cart.holdError}
+          isOffline={isOffline}
+          items={cart.items}
+          onBack={() => setCartVisible(false)}
+          onCheckout={() => {
+            if (!cart.requiresCustomer && !cart.isUpdating && !cart.error)
+              setCheckoutVisible(true);
+          }}
+          onClear={cart.clear}
+          onHold={async () => {
+            const heldInvoice = await cart.hold();
+            if (heldInvoice) {
+              setSelectedPriceList(undefined);
+              setSaleCustomer(defaultSaleCustomer);
+              setPostSaleRefreshKey((current) => current + 1);
+              setHeldRefreshKey((current) => current + 1);
+              setWorkspaceNotice(
+                `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
+              );
+              setCartVisible(false);
+              return { name: heldInvoice.name };
+            }
+            return null;
+          }}
+          onClearSaleCustomer={() => {
+            if (isOffline) return;
+            setSelectedPriceList(undefined);
+            setSaleCustomer(defaultSaleCustomer);
+          }}
+          onRemove={cart.remove}
+          onSelectSaleCustomer={(customer) => {
+            if (isOffline) return;
+            setSelectedPriceList(undefined);
+            setSaleCustomer(customer);
+          }}
+          onSelectPriceList={(priceList) => {
+            if (isOffline) return;
+            setPriceListFallbackNotice(null);
+            setSelectedPriceList(priceList);
+          }}
+          onUpdateBatchAllocations={cart.updateBatchAllocations}
+          onUpdateItemNote={cart.updateItemNote}
+          onUpdatePricing={cart.updatePricing}
+          onUpdateQuantity={cart.updateQuantity}
+          onUpdateSerialAllocations={cart.updateSerialAllocations}
+          onUpdateUom={cart.updateUom}
+          orderType={orderType}
+          posProfile={posProfile}
+          priceList={selectedPriceList}
+          priceListFallbackNotice={priceListFallbackNotice}
+          priceListOptions={posProfileConfig?.allowed_price_lists}
+          requireManagerPinForItemRemoval={Boolean(
+            posProfileConfig?.require_manager_pin_item_removal,
+          )}
+          allowPriceListSwitching={Boolean(
+            posProfileConfig?.allow_price_list_switching,
+          )}
+          requiresCustomer={cart.requiresCustomer}
+          saleCustomer={saleCustomer}
+          sourceInvoice={cart.sourceInvoice}
+          defaultSaleCustomer={defaultSaleCustomer}
+          subtotal={cart.subtotal}
+          taxes={cart.taxes}
+          totals={cart.totals}
+          isHolding={cart.isHolding}
+          isUpdating={cart.isUpdating}
+          error={cart.error}
+          onRetry={() => {
+            void cart.retry();
+          }}
+        />
+      ) : activeTab === "Home" ? (
+        <PosHomeScreen
+          cartItemCount={cart.itemCount}
+          onAddToCart={async (item, currency) => {
+            setCartCurrency(currency);
+            return cart.add(item);
+          }}
+          onOpenCart={() => setCartVisible(true)}
+          onPosProfileLoaded={receivePosProfile}
+          pricingContext={{
+            customer: saleCustomer?.customer,
+            priceList: selectedPriceList,
+          }}
+          refreshKey={postSaleRefreshKey}
+          workspaceNotice={workspaceNotice}
+        />
+      ) : activeTab === "Payments" ? (
+        <PosPaymentsScreen
+          allowHistory={posProfileConfig?.allow_payment_history !== false}
+          allowReconciliation={
+            posProfileConfig?.allow_payment_reconciliation !== false
+          }
+          allowReceive={allowsCustomerPayments}
+          currency={posProfileConfig?.currency ?? "KES"}
+          currencyPrecision={posProfileConfig?.currency_precision ?? 2}
+          initialReceiveCustomer={receivePaymentContext?.customer}
+          initialReceiveInvoice={receivePaymentContext?.invoice}
+          onBackToPos={() => changeTab("Home")}
+          paymentModes={paymentModes}
+          posProfile={posProfile}
+        />
+      ) : activeTab === "Customers" ? (
+        <PosCustomersScreen
+          customerManagementEnabled={allowsCustomerManagement}
+          currencyPrecision={posProfileConfig?.currency_precision}
+          directoryState={customerDirectoryState}
+          onBackToPos={() => changeTab("Home")}
+          onDirectoryStateChange={setCustomerDirectoryState}
+          onOpenCustomer={setSelectedCustomer}
+          posProfile={posProfile}
+        />
+      ) : activeTab === "Close Shift" ? (
+        <PosCloseShiftScreen
+          currency={posProfileConfig?.currency}
+          currencyPrecision={posProfileConfig?.currency_precision}
+          onBackToPos={() => changeTab("Home")}
+          onShiftClosed={setPosSession}
+          posProfile={posProfile}
+        />
+      ) : (
+        <PosInvoicesScreen
+          heldRefreshKey={heldRefreshKey}
+          onBackToPos={() => changeTab("Home")}
+          onOpenInvoice={setSelectedInvoice}
+          onRestoreHeld={async (invoice) => {
+            const restored = await cart.restoreHeldInvoice(invoice);
+            setSelectedPriceList(restored.selling_price_list);
+            setSaleCustomer(
+              restored.customer
+                ? {
+                    customer: restored.customer,
+                    customerName: restored.customer_name || restored.customer,
+                  }
+                : defaultSaleCustomer,
+            );
+            setCheckoutVisible(false);
+            setCartVisible(true);
+            setActiveTab("Home");
+            setHeldRefreshKey((current) => current + 1);
+          }}
+        />
+      )}
+      <SalespersonPinLock
+        error={salespersonPin.error}
+        isVerifying={salespersonPin.isVerifying}
+        onVerify={(salesperson, pin) =>
+          salespersonPin.verify(posProfileConfig?.name || "", salesperson, pin)
+        }
+        pinUsers={posProfileConfig?.pin_users}
+        posProfile={posProfileConfig?.name}
+        visible={salespersonLocked}
+      />
+    </AppShell>
+  );
+}
