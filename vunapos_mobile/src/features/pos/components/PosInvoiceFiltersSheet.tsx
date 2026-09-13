@@ -217,7 +217,7 @@ export function PosInvoiceFiltersSheet({
       <View style={styles.modalRoot}>
         <Pressable accessibilityLabel="Dismiss filters" onPress={onDismiss} style={styles.backdrop} />
         <KeyboardAvoidingView behavior={Platform.select({ ios: 'padding', default: undefined })} style={styles.keyboardView}>
-          <View accessibilityViewIsModal style={[styles.sheet, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+          <View accessibilityViewIsModal style={styles.sheet}>
             <View style={styles.handle} />
             <View style={styles.sheetHeader}>
               <View>
@@ -229,7 +229,7 @@ export function PosInvoiceFiltersSheet({
               </Pressable>
             </View>
 
-            <KeyboardAwareFormScroll contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]} showsVerticalScrollIndicator={false} style={styles.formScroll}>
+            <KeyboardAwareFormScroll contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} style={styles.formScroll}>
               <Text style={styles.label}>Invoice number</Text>
               <TextInput
                 accessibilityLabel="Filter by invoice number"
@@ -445,6 +445,7 @@ function createStyles(palette: AppPalette) {
   },
   formScroll: {
     flex: 1,
+    minHeight: 0,
   },
   handle: {
     alignSelf: 'center',
@@ -483,8 +484,7 @@ function createStyles(palette: AppPalette) {
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     borderTopWidth: 1,
-    flexShrink: 1,
-    maxHeight: '88%',
+    height: '88%',
   },
   sheetHeader: {
     alignItems: 'flex-start',
