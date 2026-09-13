@@ -48,7 +48,8 @@
           "barcodeScannerEnabled": true,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
