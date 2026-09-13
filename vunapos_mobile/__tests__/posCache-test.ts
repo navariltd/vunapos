@@ -19,6 +19,10 @@ type StoredEntry = {
 class MemoryStorage {
   entries = new Map<string, StoredEntry>();
 
+  async clearAll() {
+    this.entries.clear();
+  }
+
   async clearNamespace(namespace: string) {
     for (const [key, entry] of this.entries) {
       if (entry.namespace === namespace) this.entries.delete(key);
@@ -153,6 +157,15 @@ describe("PosCache", () => {
     await expect(cache.read({ ...key, query: "milk" })).resolves.toBeNull();
     await expect(cache.read({ ...key, query: "bread" })).resolves.toBeNull();
     await expect(cache.read(invoices)).resolves.toMatchObject({ data: ["SINV-1"] });
+  });
+
+  it("clears memory and durable data on an account change", async () => {
+    await cache.write(key, ["milk"], 1_000);
+
+    await cache.clearAll();
+
+    await expect(cache.read(key)).resolves.toBeNull();
+    expect(storage.entries.size).toBe(0);
   });
 
   it("shares simultaneous live requests for a resource", async () => {

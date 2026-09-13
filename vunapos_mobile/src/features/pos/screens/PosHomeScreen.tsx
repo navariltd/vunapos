@@ -3,6 +3,7 @@ import {
   FlatList,
   ListRenderItem,
   Pressable,
+  RefreshControl,
   StyleSheet,
   View,
 } from "react-native";
@@ -142,6 +143,14 @@ export function PosHomeScreen({
   const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
   const reloadCatalogue = itemSearch.reload;
+
+  const refreshHome = useCallback(async () => {
+    if (connectionStatus !== "online") return;
+    await Promise.all([
+      Promise.resolve(bootstrap.reload()),
+      itemSearch.reload(),
+    ]);
+  }, [bootstrap, connectionStatus, itemSearch]);
 
   useEffect(() => {
     if (bootstrap.data) onPosProfileLoaded(bootstrap.data);
@@ -414,6 +423,14 @@ export function PosHomeScreen({
         }
         numColumns={hideImages ? 1 : 2}
         renderItem={renderItem}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.primary]}
+            onRefresh={() => void refreshHome()}
+            refreshing={Boolean(itemSearch.isRefreshing)}
+            tintColor={palette.primary}
+          />
+        }
         showsVerticalScrollIndicator={false}
       />
       <PosCartButton itemCount={cartItemCount} onPress={onOpenCart} />

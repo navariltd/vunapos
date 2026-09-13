@@ -16,7 +16,7 @@ type UsePosCachedResourceArgs<T> = {
   cacheKey: PosCacheKey | null;
   connectionStatus: NetworkConnectionStatus;
   enabled?: boolean;
-  load: () => Promise<T>;
+  load: (signal: AbortSignal) => Promise<T>;
   ttlMs?: number;
 };
 
@@ -67,9 +67,9 @@ export function usePosCachedResource<T>({
   const loadResource = useCallback(
     async (forceRefresh: boolean) => {
       const activeKey = cacheKeyRef.current;
-      if (!enabled || !activeKey) return;
+      if (!activeKey) return;
 
-      const canRequest = connectionStatus === "online";
+      const canRequest = enabled && connectionStatus !== "offline";
       const cached = await cache.read<T>(activeKey);
 
       if (!forceRefresh && cached && !cached.isStale) {
@@ -109,7 +109,12 @@ export function usePosCachedResource<T>({
       if (!canRequest) return;
 
       try {
-        const data = await cache.fetch(activeKey, () => loadRef.current(), ttlMs);
+        const controller = new AbortController();
+        const data = await cache.fetch(
+          activeKey,
+          () => loadRef.current(controller.signal),
+          ttlMs,
+        );
         setState({
           data,
           error: null,
@@ -131,7 +136,7 @@ export function usePosCachedResource<T>({
   );
 
   useEffect(() => {
-    if (!enabled || !keyFingerprint) {
+    if (!keyFingerprint) {
       setState(emptyState);
       return;
     }

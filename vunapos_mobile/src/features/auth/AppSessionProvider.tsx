@@ -10,6 +10,7 @@ import {
   persistCompanyUrl,
   persistSessionId,
 } from '@/services/sessionStore';
+import { posCache } from '@/services/posCache';
 
 export type AuthState = 'needsCompanyUrl' | 'signedIn' | 'signedOut' | 'sessionExpired';
 type SaveCompanyUrlResult = { ok: true } | { ok: false; message: string };
@@ -86,7 +87,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const clearCompanyUrl = useCallback(async () => {
-    await clearStoredCompanyUrl();
+    await Promise.all([clearStoredCompanyUrl(), posCache.clearAll()]);
     setSessionId(null);
     setCompanyUrl(null);
     setAuthState('needsCompanyUrl');
@@ -102,7 +103,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
       await verifyVunaPosSite(normalized.url);
       const isDifferentCompany = companyUrl !== normalized.url;
       if (isDifferentCompany) {
-        await clearStoredSession();
+        await Promise.all([clearStoredSession(), posCache.clearAll()]);
         setSessionId(null);
       }
       await persistCompanyUrl(normalized.url);
@@ -137,13 +138,13 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
   }, [companyUrl]);
 
   const signOut = useCallback(async () => {
-    await clearStoredSession();
+    await Promise.all([clearStoredSession(), posCache.clearAll()]);
     setSessionId(null);
     setAuthState(companyUrl ? 'signedOut' : 'needsCompanyUrl');
   }, [companyUrl]);
 
   const invalidateSession = useCallback(async () => {
-    await clearStoredSession();
+    await Promise.all([clearStoredSession(), posCache.clearAll()]);
     setSessionId(null);
     setAuthState(companyUrl ? 'sessionExpired' : 'needsCompanyUrl');
   }, [companyUrl]);

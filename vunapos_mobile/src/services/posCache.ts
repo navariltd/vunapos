@@ -36,6 +36,7 @@ type StoredCacheEntry = {
 };
 
 type CacheStorage = {
+  clearAll(): Promise<void>;
   clearNamespace(namespace: string): Promise<void>;
   clearResource(namespace: string, resource: string): Promise<void>;
   delete(cacheKey: string): Promise<void>;
@@ -187,6 +188,11 @@ class ExpoSqliteCacheStorage implements CacheStorage {
     );
   }
 
+  async clearAll() {
+    const database = await this.database();
+    await database.execAsync("DELETE FROM pos_cache_entries");
+  }
+
   async clearResource(namespace: string, resource: string) {
     const database = await this.database();
     await database.runAsync(
@@ -321,6 +327,16 @@ export class PosCache {
       await this.storage.clearNamespace(namespace);
     } catch {
       // Cache cleanup cannot block a sign-out or company change.
+    }
+  }
+
+  /** Used when the active account changes, so no POS data outlives its owner. */
+  async clearAll() {
+    this.memory.clear();
+    try {
+      await this.storage.clearAll();
+    } catch {
+      // A cache cleanup failure must not block sign-out or company switching.
     }
   }
 

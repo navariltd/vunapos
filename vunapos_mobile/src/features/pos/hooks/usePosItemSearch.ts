@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { usePosCachedResource } from "@/hooks/usePosCachedResource";
 import { PosCatalogueItem } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type UsePosItemSearchArgs = {
   customer?: string;
@@ -13,12 +15,14 @@ type UsePosItemSearchArgs = {
   query: string;
 };
 
-type ItemSearchState = {
+type PosItemSearchResult = {
   cachedItems: PosCatalogueItem[];
-  catalogueKey: string | null;
   error: string | null;
+  hasLoaded: boolean;
+  isLoading: boolean;
+  isRefreshing?: boolean;
   items: PosCatalogueItem[];
-  requestKey: string | null;
+  reload: () => void | Promise<void>;
 };
 
 /**
@@ -35,113 +39,80 @@ export function usePosItemSearch({
   posProfile,
   priceList,
   query,
-}: UsePosItemSearchArgs) {
+}: UsePosItemSearchArgs): PosItemSearchResult {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
-  const [reloadKey, setReloadKey] = useState(0);
-  const [state, setState] = useState<ItemSearchState>({
-    cachedItems: [],
-    catalogueKey: null,
-    error: null,
-    items: [],
-    requestKey: null,
-  });
   const normalizedQuery = query.trim();
-  const catalogueKey =
-    companyUrl && sessionId && posProfile
-      ? JSON.stringify({ companyUrl, customer, posProfile, priceList, sessionId })
-      : null;
-  const requestKey =
-    enabled && companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
-      ? JSON.stringify({
-          companyUrl,
-          customer,
-          debouncedQuery,
-          posProfile,
-          priceList,
-          reloadKey,
-          sessionId,
-        })
-      : null;
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedQuery(normalizedQuery), 300);
     return () => clearTimeout(timeout);
   }, [normalizedQuery]);
 
-  useEffect(() => {
-    if (!requestKey || !companyUrl || !sessionId || !posProfile) return;
-    const controller = new AbortController();
-
-    void getVunaMethod<PosCatalogueItem[]>(
-      companyUrl,
-      sessionId,
-      "vunapos.api.item.search_items",
-      {
-        limit: loadAll && !debouncedQuery ? 0 : 60,
-        customer,
-        pos_profile: posProfile,
-        price_list: priceList,
-        query: debouncedQuery,
-      },
-      controller.signal,
-    )
-      .then((items) =>
-        setState((current) => ({
-          cachedItems:
-            !debouncedQuery && loadAll ? items : current.cachedItems,
-          catalogueKey:
-            !debouncedQuery && loadAll ? catalogueKey : current.catalogueKey,
-          error: null,
-          items,
-          requestKey,
-        })),
-      )
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (error instanceof FrappeClientError && error.code === "session") {
-          void invalidateSession();
-          return;
+  const cacheKey =
+    companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
+      ? {
+          query: {
+            customer: customer || null,
+            limit: loadAll && !debouncedQuery ? 0 : 60,
+            priceList: priceList || null,
+            query: debouncedQuery,
+          },
+          resource: "catalogue",
+          scope: { companyUrl, posProfile, userId: sessionId },
         }
-        setState((current) => ({
-          cachedItems: current.cachedItems,
-          catalogueKey: current.catalogueKey,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Could not search the item catalogue.",
-          items: current.items,
-          requestKey,
-        }));
-      });
-
-    return () => controller.abort();
+      : null;
+  const load = useCallback(async (signal: AbortSignal) => {
+    if (!companyUrl || !sessionId || !posProfile) {
+      throw new Error("Your POS workspace is still loading.");
+    }
+    try {
+      return await getVunaMethod<PosCatalogueItem[]>(
+        companyUrl,
+        sessionId,
+        "vunapos.api.item.search_items",
+        {
+          limit: loadAll && !debouncedQuery ? 0 : 60,
+          customer,
+          pos_profile: posProfile,
+          price_list: priceList,
+          query: debouncedQuery,
+        },
+        signal,
+      );
+    } catch (error) {
+      if (error instanceof FrappeClientError && error.code === "session") {
+        void invalidateSession();
+      }
+      throw error;
+    }
   }, [
-    catalogueKey,
     companyUrl,
     customer,
     debouncedQuery,
-    enabled,
     invalidateSession,
     loadAll,
     posProfile,
     priceList,
-    reloadKey,
-    requestKey,
     sessionId,
   ]);
-
-  const reload = useCallback(() => setReloadKey((current) => current + 1), []);
+  const resource = usePosCachedResource({
+    cacheKey,
+    connectionStatus,
+    enabled,
+    load,
+  });
 
   return {
-    cachedItems:
-      state.catalogueKey === catalogueKey ? state.cachedItems : [],
-    error: state.requestKey === requestKey ? state.error : null,
-    hasLoaded: state.requestKey === requestKey,
+    cachedItems: !debouncedQuery && loadAll ? resource.data ?? [] : [],
+    error: resource.error,
+    hasLoaded: resource.data !== null,
     isLoading:
-      Boolean(requestKey) &&
-      (normalizedQuery !== debouncedQuery || state.requestKey !== requestKey),
-    items: state.requestKey === requestKey ? state.items : [],
-    reload,
+      Boolean(cacheKey) &&
+      (normalizedQuery !== debouncedQuery || resource.isLoading),
+    isRefreshing: resource.isRefreshing,
+    items: resource.data ?? [],
+    reload: resource.refresh,
   };
 }

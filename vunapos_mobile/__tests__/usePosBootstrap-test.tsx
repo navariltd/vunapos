@@ -17,14 +17,20 @@ jest.mock("@/services/frappeClient", () => ({
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
 const mockUseAppSession = jest.mocked(useAppSession);
 const invalidateSession = jest.fn();
 
 describe("usePosBootstrap", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await posCache.clearNamespace({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "workspace",
+      userId: "sid-1",
+    });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
