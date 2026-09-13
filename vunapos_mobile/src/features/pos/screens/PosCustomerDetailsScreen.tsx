@@ -8,7 +8,7 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import { PosCustomerAddress, PosSaleCustomer } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { radii, spacing, typography } from "@/theme/tokens";
 
 type PosCustomerDetailsScreenProps = {
   customer: string;
@@ -34,6 +34,14 @@ function formatAddress(address?: PosCustomerAddress | null) {
   );
 }
 
+function formatDateTime(value: string) {
+  const [date, time] = value.split(" ");
+  const [year, month, day] = date.split("-");
+  const formattedDate = year && month && day ? `${day}/${month}/${year}` : date;
+  const formattedTime = time?.split(".")[0];
+  return formattedTime ? `${formattedDate} ${formattedTime}` : formattedDate;
+}
+
 function DetailCard({
   children,
   title,
@@ -41,9 +49,16 @@ function DetailCard({
   children: React.ReactNode;
   title: string;
 }) {
+  const { palette } = useAppearance();
+
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+    <View
+      style={[
+        styles.card,
+        { backgroundColor: palette.surface, borderColor: palette.border },
+      ]}
+    >
+      <Text style={[styles.cardTitle, { color: palette.onSurface }]}>{title}</Text>
       {children}
     </View>
   );
@@ -58,14 +73,26 @@ function SummaryValue({
   value: string;
   sub?: string | null;
 }) {
+  const { palette } = useAppearance();
+
   return (
-    <View style={styles.summaryValue}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text numberOfLines={1} style={styles.summaryText}>
+    <View
+      style={[styles.summaryValue, { backgroundColor: palette.surfaceContainer }]}
+    >
+      <Text style={[styles.summaryLabel, { color: palette.onSurfaceMuted }]}>
+        {label}
+      </Text>
+      <Text
+        numberOfLines={1}
+        style={[styles.summaryText, { color: palette.onSurface }]}
+      >
         {value}
       </Text>
       {sub ? (
-        <Text numberOfLines={1} style={styles.summarySubtext}>
+        <Text
+          numberOfLines={1}
+          style={[styles.summarySubtext, { color: palette.onSurfaceMuted }]}
+        >
           {sub}
         </Text>
       ) : null}
@@ -165,25 +192,29 @@ export function PosCustomerDetailsScreen({
     <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
+      style={{ backgroundColor: palette.background }}
     >
       <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to customers"
           accessibilityRole="button"
           onPress={onBack}
-          style={styles.backIconButton}
+          style={[styles.backIconButton, { borderColor: palette.border }]}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="arrow-left"
             size={22}
           />
         </Pressable>
         <View style={styles.heading}>
-          <Text numberOfLines={1} style={styles.title}>
+          <Text
+            numberOfLines={1}
+            style={[styles.title, { color: palette.onSurface }]}
+          >
             {profile.customer_name}
           </Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.subtitle, { color: palette.onSurfaceMuted }]}>
             {profile.customer} · {profile.customer_group || "Uncategorized"}
           </Text>
         </View>
@@ -212,18 +243,28 @@ export function PosCustomerDetailsScreen({
           sub={profile.territory}
           value={profile.customer_type || "-"}
         />
+        <SummaryValue
+          label="Last updated"
+          value={formatDateTime(details.data.as_of)}
+        />
       </View>
 
       <DetailCard title="Contact information">
-        <Text style={styles.detailText}>{phone || "No phone number"}</Text>
-        <Text style={styles.detailText}>{email || "No email address"}</Text>
+        <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
+          {phone || "No phone number"}
+        </Text>
+        <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
+          {email || "No email address"}
+        </Text>
         {profile.tax_id ? (
-          <Text style={styles.detailText}>Tax ID: {profile.tax_id}</Text>
+          <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
+            Tax ID: {profile.tax_id}
+          </Text>
         ) : null}
       </DetailCard>
 
       <DetailCard title="Primary address">
-        <Text style={styles.detailText}>
+        <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
           {address || "No permitted primary address available."}
         </Text>
       </DetailCard>
@@ -235,10 +276,15 @@ export function PosCustomerDetailsScreen({
           onPress={() => onReceivePayment?.(saleCustomer)}
           style={[
             styles.receivePaymentButton,
+            { borderColor: palette.border },
             isOffline && styles.actionDisabled,
           ]}
         >
-          <Text style={styles.receivePaymentButtonLabel}>Receive payment</Text>
+          <Text
+            style={[styles.receivePaymentButtonLabel, { color: palette.onSurface }]}
+          >
+            Receive payment
+          </Text>
         </Pressable>
       ) : null}
 
@@ -246,9 +292,15 @@ export function PosCustomerDetailsScreen({
         accessibilityLabel="Start new sale"
         disabled={isOffline}
         onPress={() => onStartSale(saleCustomer)}
-        style={[styles.startSaleButton, isOffline && styles.actionDisabled]}
+        style={[
+          styles.startSaleButton,
+          { backgroundColor: palette.primary },
+          isOffline && styles.actionDisabled,
+        ]}
       >
-        <Text style={styles.startSaleButtonLabel}>Start new sale</Text>
+        <Text style={[styles.startSaleButtonLabel, { color: palette.onPrimary }]}>
+          Start new sale
+        </Text>
       </Pressable>
     </ScrollView>
   );
@@ -257,20 +309,17 @@ export function PosCustomerDetailsScreen({
 const styles = StyleSheet.create({
   actionDisabled: { opacity: 0.5 },
   backButton: {
-    borderColor: posDarkColors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   backButtonLabel: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   backIconButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
@@ -278,41 +327,34 @@ const styles = StyleSheet.create({
     width: 40,
   },
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },
   cardTitle: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   detailText: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   errorText: {
-    color: posDarkColors.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
   },
   receivePaymentButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
     padding: spacing.md,
   },
   receivePaymentButtonLabel: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
@@ -326,45 +368,37 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   stateText: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
   startSaleButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
     borderRadius: radii.md,
     justifyContent: "center",
     padding: spacing.md,
   },
   startSaleButtonLabel: {
-    color: posDarkColors.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   summarySubtext: {
-    color: posDarkColors.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   summaryText: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   summaryValue: {
-    backgroundColor: posDarkColors.surfaceContainer,
     borderRadius: radii.md,
     flexBasis: "47%",
     flexGrow: 1,
@@ -372,7 +406,6 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   title: {
-    color: posDarkColors.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },

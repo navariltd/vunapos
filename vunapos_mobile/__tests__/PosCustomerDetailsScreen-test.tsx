@@ -18,8 +18,12 @@ jest.mock("@/theme/AppearanceProvider", () => ({
       background: "#ffffff",
       border: "#cccccc",
       error: "#cc2929",
+      onPrimary: "#ffffff",
       onSurface: "#111111",
       onSurfaceMuted: "#666666",
+      primary: "#16794c",
+      surface: "#ffffff",
+      surfaceContainer: "#f3f3f3",
     },
   }),
 }));
@@ -52,8 +56,11 @@ describe("PosCustomerDetailsScreen", () => {
       data: {
         address: {
           address_line1: "42 Vuna Street",
+          address_line2: "Suite 5",
           city: "Nairobi",
           country: "Kenya",
+          pincode: "00100",
+          state: "Nairobi County",
         },
         as_of: "2026-09-07 10:00:00",
         balance: 1250,
@@ -98,9 +105,14 @@ describe("PosCustomerDetailsScreen", () => {
     expect(screen.getByText("CUST-001 · Retail")).toBeTruthy();
     expect(screen.getByText("KES 1,250.00")).toBeTruthy();
     expect(screen.getByText("24")).toBeTruthy();
+    expect(screen.getByText("07/09/2026 10:00:00")).toBeTruthy();
     expect(screen.getByText("+254 700 000 000")).toBeTruthy();
     expect(screen.getByText("customer@example.com")).toBeTruthy();
-    expect(screen.getByText("42 Vuna Street, Nairobi, Kenya")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "42 Vuna Street, Suite 5, Nairobi, Nairobi County, Kenya, 00100",
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText("Receive payment")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Start new sale"));
@@ -125,6 +137,61 @@ describe("PosCustomerDetailsScreen", () => {
     await fireEvent.press(screen.getByLabelText("Back to customers"));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a customer-detail loading state", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: true,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Loading customer details…")).toBeTruthy();
+  });
+
+  it("uses the SPA-equivalent missing contact, address, and loyalty fallbacks", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        address: null,
+        as_of: "2026-09-07 10:00:00",
+        balance: 0,
+        contact: null,
+        customer: {
+          customer: "CUST-001",
+          customer_name: "Example customer",
+          customer_type: null,
+          email_id: null,
+          mobile_no: null,
+          territory: null,
+        },
+        loyalty: null,
+      },
+      error: null,
+      isLoading: false,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Not enrolled")).toBeTruthy();
+    expect(screen.getByText("No phone number")).toBeTruthy();
+    expect(screen.getByText("No email address")).toBeTruthy();
+    expect(
+      screen.getByText("No permitted primary address available."),
+    ).toBeTruthy();
   });
 
   it("shows a retryable detail error and lets the cashier return to customers", async () => {
