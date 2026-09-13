@@ -1,9 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useMemo, useState } from "react";
 import {
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -193,7 +192,6 @@ export function PosCheckoutFieldsCard({
 
       {dateField ? (
         <DateTimePicker
-          accentColor={palette.primary}
           mode="date"
           negativeButton={{ label: "Cancel" }}
           onDismiss={() => setDateField(undefined)}
@@ -202,8 +200,6 @@ export function PosCheckoutFieldsCard({
             setDateField(undefined);
           }}
           positiveButton={{ label: "Select" }}
-          presentation={Platform.OS === "android" ? "dialog" : "inline"}
-          themeVariant="dark"
           value={dateFromInput(
             values[dateField.fieldname] || dateInputValue(new Date()),
           )}

@@ -1,10 +1,9 @@
-import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -257,7 +256,7 @@ function PaymentHistoryContext({
   posProfile?: string;
 }) {
   const { connectionStatus } = useNetworkStatus();
-  const { appearance, palette } = useAppearance();
+  const { palette } = useAppearance();
   const [customer, setCustomer] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -523,7 +522,6 @@ function PaymentHistoryContext({
       />
       {activeDatePicker ? (
         <DateTimePicker
-          accentColor={palette.primary}
           maximumDate={
             activeDatePicker === "from" && toDate
               ? dateFromInput(toDate)
@@ -539,8 +537,6 @@ function PaymentHistoryContext({
           onDismiss={() => setActiveDatePicker(null)}
           onValueChange={(_event, selectedDate) => selectDate(selectedDate)}
           positiveButton={{ label: "Select" }}
-          presentation={Platform.OS === "android" ? "dialog" : "inline"}
-          themeVariant={appearance}
           value={
             activeDatePicker === "from" && fromDate
               ? dateFromInput(fromDate)
@@ -966,7 +962,7 @@ function ReceivePaymentContext({
   posProfile?: string;
 }) {
   const { connectionStatus } = useNetworkStatus();
-  const { appearance, palette } = useAppearance();
+  const { palette } = useAppearance();
   const isOffline = connectionStatus === "offline";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
@@ -1650,7 +1646,6 @@ function ReceivePaymentContext({
                   </Pressable>
                   {datePickerVisible ? (
                     <DateTimePicker
-                      accentColor={palette.primary}
                       mode="date"
                       negativeButton={{ label: "Cancel" }}
                       onDismiss={() => setDatePickerVisible(false)}
@@ -1659,10 +1654,6 @@ function ReceivePaymentContext({
                         setDatePickerVisible(false);
                       }}
                       positiveButton={{ label: "Select" }}
-                      presentation={
-                        Platform.OS === "android" ? "dialog" : "inline"
-                      }
-                      themeVariant={appearance}
                       value={dateFromInput(referenceDate)}
                     />
                   ) : null}

@@ -10,11 +10,11 @@ jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
-jest.mock("@expo/ui/community/datetime-picker", () => {
+jest.mock("@react-native-community/datetimepicker", () => {
   const { View } = require("react-native");
   return {
     __esModule: true,
-    DateTimePicker: (props: object) => (
+    default: (props: object) => (
       <View accessibilityLabel="Credit sale date picker" {...props} />
     ),
   };

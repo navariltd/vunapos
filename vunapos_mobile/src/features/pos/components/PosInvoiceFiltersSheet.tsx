@@ -1,5 +1,5 @@
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -182,14 +182,11 @@ export function PosInvoiceFiltersSheet({
   ];
   const selectedDate = datePickerField ? parseFilterDate(filters[datePickerField]) : new Date();
 
-  function selectDate(event: DateTimePickerEvent, selectedDate?: Date) {
-    if (Platform.OS === 'android') {
-      setDatePickerField(null);
-    }
-
-    if (event.type === 'set' && selectedDate && datePickerField) {
+  function selectDate(selectedDate: Date) {
+    if (datePickerField) {
       onChange(datePickerField, formatFilterDate(selectedDate));
     }
+    setDatePickerField(null);
   }
 
   function openSelection(field: SelectableFilterField, label: string, options: FilterOption[], value: string) {
@@ -311,11 +308,13 @@ export function PosInvoiceFiltersSheet({
 
             {datePickerField ? (
               <DateTimePicker
-                display={Platform.select({ android: 'default', ios: 'compact' })}
                 maximumDate={datePickerField === 'fromDate' && filters.toDate ? parseFilterDate(filters.toDate) : new Date()}
                 minimumDate={datePickerField === 'toDate' && filters.fromDate ? parseFilterDate(filters.fromDate) : undefined}
                 mode="date"
-                onChange={selectDate}
+                negativeButton={{ label: 'Cancel' }}
+                onDismiss={() => setDatePickerField(null)}
+                onValueChange={(_event, selectedDate) => selectDate(selectedDate)}
+                positiveButton={{ label: 'Select' }}
                 value={selectedDate}
               />
             ) : null}

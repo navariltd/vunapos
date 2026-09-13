@@ -1,10 +1,9 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { DateTimePicker } from "@expo/ui/community/datetime-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
-  Platform,
   Pressable,
   StyleSheet,
   Switch,
@@ -1105,7 +1104,6 @@ export function PosCheckoutScreen({
           </Pressable>
           {isDeliveryDatePickerVisible ? (
             <DateTimePicker
-              accentColor={palette.primary}
               minimumDate={dateFromInput(today())}
               mode="date"
               negativeButton={{ label: "Cancel" }}
@@ -1115,9 +1113,7 @@ export function PosCheckoutScreen({
                 setIsDeliveryDatePickerVisible(false);
               }}
               positiveButton={{ label: "Select" }}
-              presentation={Platform.OS === "android" ? "dialog" : "inline"}
               testID="sales-order-delivery-date-picker"
-              themeVariant="dark"
               value={dateFromInput(deliveryDate)}
             />
           ) : null}
@@ -1170,7 +1166,6 @@ export function PosCheckoutScreen({
                   </Pressable>
                   {isDueDatePickerVisible ? (
                     <DateTimePicker
-                      accentColor={palette.primary}
                       minimumDate={dateFromInput(postingDate)}
                       mode="date"
                       negativeButton={{ label: "Cancel" }}
@@ -1180,10 +1175,6 @@ export function PosCheckoutScreen({
                         setIsDueDatePickerVisible(false);
                       }}
                       positiveButton={{ label: "Select" }}
-                      presentation={
-                        Platform.OS === "android" ? "dialog" : "inline"
-                      }
-                      themeVariant="dark"
                       value={dateFromInput(dueDate)}
                     />
                   ) : null}
@@ -1629,7 +1620,6 @@ export function PosCheckoutScreen({
           ) : null}
           {referenceDateMode ? (
             <DateTimePicker
-              accentColor={palette.primary}
               maximumDate={dateFromInput(today())}
               mode="date"
               negativeButton={{ label: "Cancel" }}
@@ -1642,9 +1632,7 @@ export function PosCheckoutScreen({
                 setReferenceDateMode(null);
               }}
               positiveButton={{ label: "Select" }}
-              presentation={Platform.OS === "android" ? "dialog" : "inline"}
               testID={`payment-reference-date-picker-${referenceDateMode}`}
-              themeVariant="dark"
               value={dateFromInput(
                 paymentReferences[referenceDateMode]?.referenceDate || today(),
               )}
