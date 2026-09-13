@@ -25,6 +25,7 @@ type PreviewInput = {
 };
 
 type SubmitInput = PreviewInput & {
+  checkoutFields?: Record<string, boolean | number | string | null>;
   deliveryDate?: string;
   dueDate?: string;
   isCreditSale: boolean;
@@ -236,7 +237,9 @@ export function useSubmitPosCheckout() {
 
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
     if (connectionStatus === "offline") {
-      setError("Connection unavailable. Reconnect before submitting this sale.");
+      setError(
+        "Connection unavailable. Reconnect before submitting this sale.",
+      );
       return null;
     }
     if (!companyUrl || !sessionId || !input.posProfile) {
@@ -249,8 +252,19 @@ export function useSubmitPosCheckout() {
     setError(null);
     setIsSubmitting(true);
     try {
+      const checkoutFields = input.checkoutFields
+        ? Object.fromEntries(
+            Object.entries(input.checkoutFields).filter(
+              ([, value]) =>
+                value !== "" && value !== null && value !== undefined,
+            ),
+          )
+        : {};
       const submitParams = {
         customer: input.customer,
+        ...(Object.keys(checkoutFields).length
+          ? { checkout_fields: JSON.stringify(checkoutFields) }
+          : {}),
         idempotency_key: idempotencyKey.current,
         payments: JSON.stringify(input.payments),
         ...(input.orderType === "Invoice" && input.isCreditSale

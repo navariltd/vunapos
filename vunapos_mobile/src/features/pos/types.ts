@@ -2,11 +2,7 @@ export type PosOrderType = "Invoice" | "Order";
 
 /** Tabs enabled in the native increment. The remaining shell tabs are visual only. */
 export type PosNavigationTab =
-  | "Home"
-  | "Invoices"
-  | "Payments"
-  | "Customers"
-  | "Close Shift";
+  "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift";
 
 export type PosCatalogueItem = {
   actual_qty?: number | null;
@@ -213,6 +209,7 @@ export type PosBootstrapData = {
     allow_sales_order_payments?: boolean;
     auto_allocate_payment_balance?: boolean;
     automatically_add_filtered_item_to_cart?: boolean;
+    checkout_fields?: PosCheckoutFieldDefinition[];
     currency?: string;
     currency_precision?: number;
     delivery_charge_item?: string | null;
@@ -224,11 +221,25 @@ export type PosBootstrapData = {
     enable_salesperson_pin?: boolean;
     hide_images?: boolean;
     hide_unavailable_items?: boolean;
+    invoice_mode?: "POS Invoice" | "Sales Invoice";
     pin_users?: PosPinUser[];
     require_pin_before_every_sale?: boolean;
     require_manager_pin_item_removal?: boolean;
     salesperson_pin_session_minutes?: number;
   };
+};
+
+/** A server-approved transaction field that VunaPOS may collect at checkout. */
+export type PosCheckoutFieldDefinition = {
+  doctype: "POS Invoice" | "Sales Invoice" | "Sales Order";
+  fieldname: string;
+  fieldtype: string;
+  help_text?: string | null;
+  label: string;
+  options?: string | null;
+  order?: number;
+  placeholder?: string | null;
+  required?: boolean;
 };
 
 export type PosSession = {

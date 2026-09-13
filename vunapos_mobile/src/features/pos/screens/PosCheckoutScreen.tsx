@@ -14,6 +14,10 @@ import {
 import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import {
+  PosCheckoutFieldsCard,
+  PosCheckoutFieldValues,
+} from "@/features/pos/components/PosCheckoutFieldsCard";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -129,6 +133,14 @@ function createGatewayIdempotencyKey(modeOfPayment: string) {
   return `mobile-gateway-${modeOfPayment}-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+function isCheckoutFieldValuePresent(
+  fieldtype: string,
+  value: string | undefined,
+) {
+  if (fieldtype === "Check") return value === "1" || value === "true";
+  return Boolean(value?.trim());
+}
+
 /**
  * Final online-only checkout. Invoice totals are previewed by Frappe before
  * payment is entered; the submit endpoint repeats all stock and pricing checks.
@@ -156,6 +168,8 @@ export function PosCheckoutScreen({
   const [loyaltyError, setLoyaltyError] = useState<string | null>(null);
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
+  const [checkoutFieldValues, setCheckoutFieldValues] =
+    useState<PosCheckoutFieldValues>({});
   const [deliveryChargeAmount, setDeliveryChargeAmount] = useState<
     string | null
   >(null);
@@ -236,6 +250,19 @@ export function PosCheckoutScreen({
   useGatewayPaymentRealtime(updateGatewayPaymentFromRealtime);
 
   const profile = bootstrap.data?.pos_profile;
+  const transactionDoctype = isInvoice
+    ? profile?.invoice_mode || "Sales Invoice"
+    : "Sales Order";
+  const requiredCheckoutField = profile?.checkout_fields
+    ?.filter((field) => field.doctype === transactionDoctype)
+    .find(
+      (field) =>
+        field.required &&
+        !isCheckoutFieldValuePresent(
+          field.fieldtype,
+          checkoutFieldValues[field.fieldname],
+        ),
+    );
   const customerLoyalty = usePosCustomerLoyalty(
     isInvoice ? saleCustomer?.customer : undefined,
     profile?.name,
@@ -771,6 +798,12 @@ export function PosCheckoutScreen({
       );
       return;
     }
+    if (requiredCheckoutField) {
+      setValidationError(
+        `${requiredCheckoutField.label} is required before checkout.`,
+      );
+      return;
+    }
     if (isInvoice && !preview.data) {
       setValidationError(
         preview.error || "Waiting for the server to calculate this sale.",
@@ -869,6 +902,7 @@ export function PosCheckoutScreen({
   async function submit() {
     if (!profile) return;
     const result = await checkout.submit({
+      checkoutFields: checkoutFieldValues,
       customer: saleCustomer?.customer,
       deliveryDate: !isInvoice ? deliveryDate : undefined,
       dueDate: isCreditSale ? dueDate : undefined,
@@ -1377,6 +1411,19 @@ export function PosCheckoutScreen({
           ) : null}
         </View>
       ) : null}
+
+      <PosCheckoutFieldsCard
+        disabled={checkout.isSubmitting}
+        fields={profile?.checkout_fields}
+        onChange={(fieldname, value) =>
+          setCheckoutFieldValues((current) => ({
+            ...current,
+            [fieldname]: value,
+          }))
+        }
+        transactionDoctype={transactionDoctype}
+        values={checkoutFieldValues}
+      />
 
       {isInvoice || allowsSalesOrderAdvancePayments ? (
         <View style={styles.card}>
