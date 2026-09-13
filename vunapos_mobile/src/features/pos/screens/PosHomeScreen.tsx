@@ -10,6 +10,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -420,6 +421,16 @@ export function PosHomeScreen({
               </Text>
             ) : null}
           </View>
+        }
+        ListFooterComponent={
+          <PosCacheStatus
+            isOffline={isOffline}
+            isRefreshing={
+              Boolean(bootstrap.isRefreshing) || Boolean(itemSearch.isRefreshing)
+            }
+            isStale={Boolean(bootstrap.isStale) || Boolean(itemSearch.isStale)}
+            lastUpdated={itemSearch.lastUpdated ?? bootstrap.lastUpdated}
+          />
         }
         numColumns={hideImages ? 1 : 2}
         renderItem={renderItem}

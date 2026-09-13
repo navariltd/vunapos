@@ -13,6 +13,9 @@ type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
   isLoading: boolean;
+  isRefreshing?: boolean;
+  isStale?: boolean;
+  lastUpdated?: number | null;
   reload: () => void;
 };
 
@@ -148,6 +151,9 @@ export function usePosBootstrap(): PosBootstrapState {
     data: resource.data,
     error: resource.error,
     isLoading: resource.isLoading,
+    isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
+    lastUpdated: resource.lastUpdated,
     reload: resource.refresh,
   };
 }

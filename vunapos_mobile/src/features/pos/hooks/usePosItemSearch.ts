@@ -21,7 +21,9 @@ type PosItemSearchResult = {
   hasLoaded: boolean;
   isLoading: boolean;
   isRefreshing?: boolean;
+  isStale?: boolean;
   items: PosCatalogueItem[];
+  lastUpdated?: number | null;
   reload: () => void | Promise<void>;
 };
 
@@ -112,7 +114,9 @@ export function usePosItemSearch({
       Boolean(cacheKey) &&
       (normalizedQuery !== debouncedQuery || resource.isLoading),
     isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
     items: resource.data ?? [],
+    lastUpdated: resource.lastUpdated,
     reload: resource.refresh,
   };
 }
