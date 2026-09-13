@@ -33,6 +33,7 @@ type SelectedInvoice = {
   doctype?: string;
   name: string;
   returnTo?: { doctype?: string; name: string };
+  returnToCustomer?: string;
 };
 
 type ReceivePaymentContext = {
@@ -184,6 +185,14 @@ export function PosWorkspaceScreen() {
         <PosCustomerDetailsScreen
           customer={selectedCustomer}
           onBack={() => setSelectedCustomer(null)}
+          onOpenInvoice={(invoice) => {
+            setSelectedCustomer(null);
+            setSelectedInvoice({
+              doctype: invoice.doctype,
+              name: invoice.name,
+              returnToCustomer: selectedCustomer,
+            });
+          }}
           onReceivePayment={openReceivePayment}
           onStartSale={startSale}
         />
@@ -191,7 +200,18 @@ export function PosWorkspaceScreen() {
         <PosInvoiceDetailsScreen
           invoiceDoctype={selectedInvoice.doctype}
           invoiceName={selectedInvoice.name}
-          onBack={() => setSelectedInvoice(selectedInvoice.returnTo ?? null)}
+          onBack={() => {
+            if (selectedInvoice.returnTo) {
+              setSelectedInvoice(selectedInvoice.returnTo);
+              return;
+            }
+            if (selectedInvoice.returnToCustomer) {
+              setSelectedInvoice(null);
+              setSelectedCustomer(selectedInvoice.returnToCustomer);
+              return;
+            }
+            setSelectedInvoice(null);
+          }}
           onOpenCustomer={setSelectedCustomer}
           onOpenPaymentEntry={(paymentEntry, currency) =>
             setSelectedPaymentEntry({

@@ -51,10 +51,10 @@ jest.mock('@/features/pos/screens/PosCustomersScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosCustomerDetailsScreen', () => ({
-  PosCustomerDetailsScreen: ({ customer, onBack, onReceivePayment, onStartSale }: { customer: string; onBack: () => void; onReceivePayment: (customer: { customer: string; customerName: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
+  PosCustomerDetailsScreen: ({ customer, onBack, onOpenInvoice, onReceivePayment, onStartSale }: { customer: string; onBack: () => void; onOpenInvoice: (invoice: { doctype?: string; name: string }) => void; onReceivePayment: (customer: { customer: string; customerName: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
     const { Pressable, Text } = require('react-native');
     const selectedCustomer = { customer, customerName: 'Directory customer' };
-    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onStartSale(selectedCustomer)}><Text>Start customer sale</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReceivePayment(selectedCustomer)}><Text>Receive customer payment</Text></Pressable></>;
+    return <><Text>{`Customer details: ${customer}`}</Text><Pressable accessibilityRole="button" onPress={onBack}><Text>Back to customers</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onStartSale(selectedCustomer)}><Text>Start customer sale</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onReceivePayment(selectedCustomer)}><Text>Receive customer payment</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onOpenInvoice({ doctype: 'Sales Invoice', name: 'ACC-SINV-001' })}><Text>Open customer invoice</Text></Pressable></>;
   },
 }));
 
@@ -83,9 +83,10 @@ jest.mock('@/features/pos/screens/PosInvoicesScreen', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosInvoiceDetailsScreen', () => ({
-  PosInvoiceDetailsScreen: ({ onBack, onOpenPaymentEntry, onOpenReturn, onStartSale }: { onBack: () => void; onOpenPaymentEntry: (paymentEntry: { allocated_amount: number; docstatus: number; name: string; received_amount: number; unallocated_amount: number }, currency: string) => void; onOpenReturn: (invoiceReturn: { name: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
+  PosInvoiceDetailsScreen: ({ invoiceName, onBack, onOpenPaymentEntry, onOpenReturn, onStartSale }: { invoiceName: string; onBack: () => void; onOpenPaymentEntry: (paymentEntry: { allocated_amount: number; docstatus: number; name: string; received_amount: number; unallocated_amount: number }, currency: string) => void; onOpenReturn: (invoiceReturn: { name: string }) => void; onStartSale: (customer: { customer: string; customerName: string }) => void }) => {
     const { Pressable, Text } = require('react-native');
     return <>
+      <Text>{`Invoice details: ${invoiceName}`}</Text>
       <Pressable accessibilityRole="button" onPress={() => onStartSale({ customer: 'CUST-001', customerName: 'Example customer' })}><Text>Start new sale</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={() => onOpenPaymentEntry({ allocated_amount: 150, docstatus: 1, name: 'ACC-PAY-0001', received_amount: 150, unallocated_amount: 0 }, 'KES')}><Text>Open payment</Text></Pressable>
       <Pressable accessibilityRole="button" onPress={() => onOpenReturn({ name: 'POS-INV-RET-0001' })}><Text>Open return</Text></Pressable>
@@ -215,5 +216,18 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Receive customer payment' }));
 
     expect(screen.getByText('Payment customer: CUST-001')).toBeTruthy();
+  });
+
+  it('opens a customer invoice and returns to the same customer detail', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Enable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customer' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customer invoice' }));
+    expect(screen.getByText('Invoice details: ACC-SINV-001')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to previous invoice' }));
+    expect(screen.getByText('Customer details: CUST-001')).toBeTruthy();
   });
 });

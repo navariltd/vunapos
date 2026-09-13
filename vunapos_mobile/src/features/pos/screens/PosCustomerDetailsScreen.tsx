@@ -5,7 +5,11 @@ import { Text } from "react-native-paper";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { formatPosCurrency } from "@/features/pos/currency";
-import { PosCustomerAddress, PosSaleCustomer } from "@/features/pos/types";
+import {
+  PosCustomerAddress,
+  PosCustomerInvoice,
+  PosSaleCustomer,
+} from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -13,6 +17,7 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosCustomerDetailsScreenProps = {
   customer: string;
   onBack: () => void;
+  onOpenInvoice?: (invoice: PosCustomerInvoice) => void;
   onReceivePayment?: (customer: PosSaleCustomer) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
@@ -40,6 +45,12 @@ function formatDateTime(value: string) {
   const formattedDate = year && month && day ? `${day}/${month}/${year}` : date;
   const formattedTime = time?.split(".")[0];
   return formattedTime ? `${formattedDate} ${formattedTime}` : formattedDate;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  const [year, month, day] = value.split(" ")[0].split("-");
+  return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
 function DetailCard({
@@ -100,9 +111,94 @@ function SummaryValue({
   );
 }
 
+function CustomerInvoiceRow({
+  currency,
+  currencyPrecision,
+  invoice,
+  onPress,
+}: {
+  currency: string;
+  currencyPrecision: number;
+  invoice: PosCustomerInvoice;
+  onPress?: () => void;
+}) {
+  const { palette } = useAppearance();
+  const status = invoice.status || "Unknown";
+  const statusColor =
+    status === "Paid"
+      ? palette.success
+      : status === "Partly Paid"
+        ? palette.primary
+        : status === "Unpaid" || status === "Overdue"
+          ? palette.error
+          : palette.onSurface;
+  const formatCurrency = (amount: number, amountCurrency = currency) =>
+    formatPosCurrency(amount, amountCurrency, currencyPrecision);
+
+  return (
+    <Pressable
+      accessibilityLabel={`Open customer invoice ${invoice.name}`}
+      accessibilityRole="button"
+      disabled={!onPress}
+      onPress={onPress}
+      style={[
+        styles.invoiceRow,
+        {
+          backgroundColor: palette.surfaceContainer,
+          borderColor: palette.borderSubtle,
+        },
+      ]}
+    >
+      <View style={styles.invoiceRowHeader}>
+        <View style={styles.invoiceIdentity}>
+          <Text style={[styles.invoiceName, { color: palette.onSurface }]}>
+            {invoice.name}
+          </Text>
+          <Text style={[styles.invoiceDate, { color: palette.onSurfaceMuted }]}>
+            {formatDate(invoice.posting_date)}
+          </Text>
+        </View>
+        <Text style={[styles.invoiceStatus, { color: statusColor }]}>{status}</Text>
+      </View>
+      <View style={styles.invoiceAmounts}>
+        <InvoiceAmount
+          label="Total"
+          value={formatCurrency(invoice.grand_total, invoice.currency || currency)}
+        />
+        <InvoiceAmount
+          label="Paid"
+          value={formatCurrency(invoice.paid_amount || 0, invoice.currency || currency)}
+        />
+        <InvoiceAmount
+          label="Outstanding"
+          value={formatCurrency(
+            invoice.outstanding_amount,
+            invoice.currency || currency,
+          )}
+        />
+      </View>
+    </Pressable>
+  );
+}
+
+function InvoiceAmount({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  return (
+    <View style={styles.invoiceAmount}>
+      <Text style={[styles.invoiceAmountLabel, { color: palette.onSurfaceMuted }]}>
+        {label}
+      </Text>
+      <Text style={[styles.invoiceAmountValue, { color: palette.onSurface }]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 export function PosCustomerDetailsScreen({
   customer,
   onBack,
+  onOpenInvoice,
   onReceivePayment,
   onStartSale,
 }: PosCustomerDetailsScreenProps) {
@@ -269,6 +365,28 @@ export function PosCustomerDetailsScreen({
         </Text>
       </DetailCard>
 
+      <DetailCard title="Recent invoices">
+        {details.data.invoices?.length ? (
+          <View style={styles.invoiceList}>
+            {details.data.invoices.map((invoice) => (
+              <CustomerInvoiceRow
+                currency={currency}
+                currencyPrecision={currencyPrecision}
+                invoice={invoice}
+                key={`${invoice.doctype || "Sales Invoice"}:${invoice.name}`}
+                onPress={
+                  onOpenInvoice ? () => onOpenInvoice(invoice) : undefined
+                }
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.detailText, { color: palette.onSurfaceMuted }]}>
+            No submitted invoices available.
+          </Text>
+        )}
+      </DetailCard>
+
       {canReceivePayment ? (
         <Pressable
           accessibilityLabel="Receive payment"
@@ -368,6 +486,41 @@ const styles = StyleSheet.create({
   },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 4 },
+  invoiceAmount: { flex: 1, gap: 2 },
+  invoiceAmountLabel: {
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.tiny,
+  },
+  invoiceAmountValue: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  invoiceAmounts: { flexDirection: "row", gap: spacing.sm },
+  invoiceDate: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.tiny,
+  },
+  invoiceIdentity: { flex: 1, gap: 2 },
+  invoiceList: { gap: spacing.sm },
+  invoiceName: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  invoiceRow: {
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.sm,
+  },
+  invoiceRowHeader: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  invoiceStatus: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.tiny,
+  },
   offlineNotice: {
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,

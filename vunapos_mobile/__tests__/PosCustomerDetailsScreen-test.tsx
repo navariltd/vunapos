@@ -40,6 +40,7 @@ import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDeta
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
 const onBack = jest.fn();
+const onOpenInvoice = jest.fn();
 const onReceivePayment = jest.fn();
 const onStartSale = jest.fn();
 const reloadBootstrap = jest.fn();
@@ -83,6 +84,7 @@ describe("PosCustomerDetailsScreen", () => {
           territory: "Kenya",
         },
         loyalty: { points: 24, program: "Vuna rewards", tier: "Gold" },
+        invoices: [],
       },
       error: null,
       isLoading: false,
@@ -120,6 +122,7 @@ describe("PosCustomerDetailsScreen", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText("Receive payment")).toBeNull();
+    expect(screen.getByText("No submitted invoices available.")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Start new sale"));
     expect(onStartSale).toHaveBeenCalledWith({
@@ -179,6 +182,7 @@ describe("PosCustomerDetailsScreen", () => {
           territory: null,
         },
         loyalty: null,
+        invoices: [],
       },
       error: null,
       isLoading: false,
@@ -198,6 +202,94 @@ describe("PosCustomerDetailsScreen", () => {
     expect(
       screen.getByText("No permitted primary address available."),
     ).toBeTruthy();
+  });
+
+  it("shows server-provided invoice status and financial fields, and opens the selected invoice", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: {
+        as_of: "2026-09-07 10:00:00",
+        balance: 0,
+        customer: { customer: "CUST-001", customer_name: "Example customer" },
+        invoices: [
+          {
+            currency: "KES",
+            grand_total: 120,
+            is_return: false,
+            name: "ACC-SINV-001",
+            outstanding_amount: 0,
+            paid_amount: 120,
+            posting_date: "2026-09-01",
+            status: "Paid",
+          },
+          {
+            currency: "KES",
+            grand_total: 120,
+            is_return: false,
+            name: "ACC-SINV-002",
+            outstanding_amount: 40,
+            paid_amount: 80,
+            posting_date: "2026-09-02",
+            status: "Partly Paid",
+          },
+          {
+            currency: "KES",
+            grand_total: 120,
+            is_return: false,
+            name: "ACC-SINV-003",
+            outstanding_amount: 120,
+            paid_amount: 0,
+            posting_date: "2026-09-03",
+            status: "Unpaid",
+          },
+          {
+            currency: "KES",
+            grand_total: 120,
+            is_return: false,
+            name: "ACC-SINV-004",
+            outstanding_amount: 120,
+            paid_amount: 0,
+            posting_date: "2026-09-04",
+            status: "Overdue",
+          },
+          {
+            currency: "KES",
+            grand_total: -120,
+            is_return: true,
+            name: "ACC-CN-001",
+            outstanding_amount: 0,
+            paid_amount: 0,
+            posting_date: "2026-09-05",
+            status: "Credit Note",
+          },
+        ],
+        loyalty: null,
+      },
+      error: null,
+      isLoading: false,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onOpenInvoice={onOpenInvoice}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Recent invoices")).toBeTruthy();
+    expect(screen.getAllByText("Paid")).toHaveLength(6);
+    expect(screen.getByText("Partly Paid")).toBeTruthy();
+    expect(screen.getByText("Unpaid")).toBeTruthy();
+    expect(screen.getByText("Overdue")).toBeTruthy();
+    expect(screen.getByText("Credit Note")).toBeTruthy();
+    expect(screen.getAllByText("KES 120.00")).toHaveLength(7);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open customer invoice ACC-SINV-002" }),
+    );
+    expect(onOpenInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "ACC-SINV-002", status: "Partly Paid" }),
+    );
   });
 
   it("shows a retryable detail error and lets the cashier return to customers", async () => {
