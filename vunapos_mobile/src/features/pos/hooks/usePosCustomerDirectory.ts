@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { PosCustomerDirectory } from "@/features/pos/types";
+import {
+  PosCustomerDirectory,
+  PosCustomerDirectoryFilters,
+} from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 const CUSTOMER_DIRECTORY_PAGE_SIZE = 25;
+const initialFilters: PosCustomerDirectoryFilters = {
+  customerGroup: "",
+  customerType: "",
+  territory: "",
+};
 
 type PosCustomerDirectoryState = {
   data: PosCustomerDirectory | null;
@@ -25,6 +33,7 @@ type PosCustomerDirectoryRequestState = Omit<
 export function usePosCustomerDirectory(
   posProfile: string | undefined,
   query = "",
+  filters: PosCustomerDirectoryFilters = initialFilters,
 ): PosCustomerDirectoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -38,10 +47,13 @@ export function usePosCustomerDirectory(
     companyUrl && sessionId && posProfile
       ? JSON.stringify({
           companyUrl,
+          customerGroup: filters.customerGroup,
+          customerType: filters.customerType,
           posProfile,
           query: debouncedQuery,
           reloadKey,
           sessionId,
+          territory: filters.territory,
         })
       : null;
   const requestKey = connectionStatus === "offline" ? null : activeKey;
@@ -66,9 +78,12 @@ export function usePosCustomerDirectory(
       "vunapos.api.customer.get_customer_directory",
       {
         limit: CUSTOMER_DIRECTORY_PAGE_SIZE,
+        customer_group: filters.customerGroup,
+        customer_type: filters.customerType,
         pos_profile: posProfile,
         query: debouncedQuery,
         start: 0,
+        territory: filters.territory,
       },
       controller.signal,
     )
@@ -93,10 +108,13 @@ export function usePosCustomerDirectory(
   }, [
     companyUrl,
     debouncedQuery,
+    filters.customerGroup,
+    filters.customerType,
     invalidateSession,
     posProfile,
     requestKey,
     sessionId,
+    filters.territory,
   ]);
 
   if (!activeKey) return { data: null, error: null, isLoading: false, reload };

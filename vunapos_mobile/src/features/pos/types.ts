@@ -546,6 +546,12 @@ export type PosCustomerDirectory = {
   total_count: number;
 };
 
+export type PosCustomerDirectoryFilters = {
+  customerGroup: string;
+  customerType: "" | "Company" | "Individual";
+  territory: string;
+};
+
 export type PosSaleCustomer = {
   customer: string;
   customerName: string;

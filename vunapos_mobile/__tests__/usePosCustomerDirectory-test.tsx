@@ -54,7 +54,15 @@ describe("usePosCustomerDirectory", () => {
         "https://vuna.example.com",
         "sid-1",
         "vunapos.api.customer.get_customer_directory",
-        { limit: 25, pos_profile: "POS-001", query: "", start: 0 },
+        {
+          customer_group: "",
+          customer_type: "",
+          limit: 25,
+          pos_profile: "POS-001",
+          query: "",
+          start: 0,
+          territory: "",
+        },
         expect.any(AbortSignal),
       ),
     );
@@ -114,7 +122,15 @@ describe("usePosCustomerDirectory", () => {
         "https://vuna.example.com",
         "sid-1",
         "vunapos.api.customer.get_customer_directory",
-        { limit: 25, pos_profile: "POS-001", query: "ABC", start: 0 },
+        {
+          customer_group: "",
+          customer_type: "",
+          limit: 25,
+          pos_profile: "POS-001",
+          query: "ABC",
+          start: 0,
+          territory: "",
+        },
         expect.any(AbortSignal),
       );
     } finally {

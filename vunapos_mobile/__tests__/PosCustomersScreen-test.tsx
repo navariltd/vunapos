@@ -4,6 +4,10 @@ jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ bottom: 0 }),
+}));
+
 jest.mock("@/theme/AppearanceProvider", () => ({
   useAppearance: () => ({
     palette: {
@@ -129,7 +133,11 @@ describe("PosCustomersScreen", () => {
     );
 
     expect(screen.getByText("Customers")).toBeTruthy();
-    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith("POS-001", "");
+    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith("POS-001", "", {
+      customerGroup: "",
+      customerType: "",
+      territory: "",
+    });
     expect(screen.getByText("ABC Corp")).toBeTruthy();
     expect(screen.getByText("accounts@example.com")).toBeTruthy();
     expect(screen.getByText("KES 1,200")).toBeTruthy();
@@ -146,7 +154,68 @@ describe("PosCustomersScreen", () => {
     expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
       "POS-001",
       "ABC",
+      { customerGroup: "", customerType: "", territory: "" },
     );
+  });
+
+  it("keeps Customer filters as a draft until they are applied", async () => {
+    mockUsePosCustomerDirectory.mockReturnValue({
+      data: {
+        as_of: "2026-09-13 09:00:00",
+        customer_groups: ["Commercial"],
+        customers: [],
+        financials_visible: true,
+        limit: 25,
+        loyalty_visible: true,
+        start: 0,
+        territories: ["Nairobi"],
+        total_count: 0,
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCustomersScreen
+        customerManagementEnabled
+        onBackToPos={jest.fn()}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open customer filters" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select customer group" }),
+    );
+    await fireEvent.press(screen.getByText("Commercial"));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select customer type" }),
+    );
+    await fireEvent.press(screen.getByText("Individual"));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select customer territory" }),
+    );
+    await fireEvent.press(screen.getByText("Nairobi"));
+
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+    );
+
+    await fireEvent.press(screen.getByText("Apply filters"));
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      {
+        customerGroup: "Commercial",
+        customerType: "Individual",
+        territory: "Nairobi",
+      },
+    );
+    expect(screen.getByText("3 active filters")).toBeTruthy();
   });
 
   it("shows a retryable directory error", async () => {

@@ -10,8 +10,12 @@ import { useState } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
+import { PosCustomerFiltersSheet } from "@/features/pos/components/PosCustomerFiltersSheet";
 import { usePosCustomerDirectory } from "@/features/pos/hooks/usePosCustomerDirectory";
-import { PosCustomerDirectoryRow } from "@/features/pos/types";
+import {
+  PosCustomerDirectoryFilters,
+  PosCustomerDirectoryRow,
+} from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
@@ -21,6 +25,12 @@ type PosCustomersScreenProps = {
   currencyPrecision?: number;
   onBackToPos: () => void;
   posProfile?: string;
+};
+
+const initialFilters: PosCustomerDirectoryFilters = {
+  customerGroup: "",
+  customerType: "",
+  territory: "",
 };
 
 /** Customer-tab access boundary and live first page of the POS directory. */
@@ -33,10 +43,39 @@ export function PosCustomersScreen({
   const { palette } = useAppearance();
   const { connectionStatus } = useNetworkStatus();
   const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState<PosCustomerDirectoryFilters>(
+    initialFilters,
+  );
+  const [draftFilters, setDraftFilters] =
+    useState<PosCustomerDirectoryFilters>(initialFilters);
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
   const directory = usePosCustomerDirectory(
     customerManagementEnabled ? posProfile : undefined,
     query,
+    filters,
   );
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+
+  function openFilterSheet() {
+    setDraftFilters(filters);
+    setFilterSheetVisible(true);
+  }
+
+  function applyFilters() {
+    setFilters(draftFilters);
+    setFilterSheetVisible(false);
+  }
+
+  function clearDraftFilters() {
+    setDraftFilters(initialFilters);
+  }
+
+  function updateDraftFilter<Key extends keyof PosCustomerDirectoryFilters>(
+    field: Key,
+    value: PosCustomerDirectoryFilters[Key],
+  ) {
+    setDraftFilters((current) => ({ ...current, [field]: value }));
+  }
 
   if (!posProfile) {
     return (
@@ -75,11 +114,12 @@ export function PosCustomersScreen({
   }
 
   return (
-    <ScrollView
+    <>
+      <ScrollView
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
       style={{ backgroundColor: palette.background }}
-    >
+      >
       <View style={styles.header}>
         <View style={styles.heading}>
           <Text style={[styles.title, { color: palette.onSurface }]}>
@@ -107,6 +147,28 @@ export function PosCustomersScreen({
         ]}
         value={query}
       />
+      <View style={styles.filterActionRow}>
+        <Text style={[styles.filterSummary, { color: palette.onSurfaceMuted }]}>
+          {activeFilterCount
+            ? `${activeFilterCount} active filter${
+                activeFilterCount === 1 ? "" : "s"
+              }`
+            : "All customers"}
+        </Text>
+        <Pressable
+          accessibilityLabel="Open customer filters"
+          accessibilityRole="button"
+          onPress={openFilterSheet}
+          style={[
+            styles.filtersButton,
+            { borderColor: palette.border, backgroundColor: palette.surface },
+          ]}
+        >
+          <Text style={[styles.filtersButtonLabel, { color: palette.onSurface }]}>
+            {activeFilterCount ? `Filters (${activeFilterCount})` : "Filters"}
+          </Text>
+        </Pressable>
+      </View>
 
       {connectionStatus === "offline" && !directory.data ? (
         <DirectoryStateCard
@@ -151,7 +213,18 @@ export function PosCustomersScreen({
           tone="neutral"
         />
       ) : null}
-    </ScrollView>
+      </ScrollView>
+      <PosCustomerFiltersSheet
+        customerGroups={directory.data?.customer_groups ?? []}
+        filters={draftFilters}
+        onApply={applyFilters}
+        onChange={updateDraftFilter}
+        onClear={clearDraftFilters}
+        onDismiss={() => setFilterSheetVisible(false)}
+        territories={directory.data?.territories ?? []}
+        visible={filterSheetVisible}
+      />
+    </>
   );
 }
 
@@ -332,6 +405,29 @@ const styles = StyleSheet.create({
     lineHeight: typography.lineHeight.body,
   },
   directoryValue: { flexBasis: "46%", flexGrow: 1, gap: 2 },
+  filterActionRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  filterSummary: {
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+  },
+  filtersButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  filtersButtonLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.md },
   heading: { flex: 1, gap: 4 },
   loadingState: { alignItems: "center", gap: spacing.sm, padding: spacing.xxl },
