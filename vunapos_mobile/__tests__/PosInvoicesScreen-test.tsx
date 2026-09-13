@@ -235,7 +235,20 @@ describe("PosInvoicesScreen", () => {
   it("changes the history query when switching to sales orders", async () => {
     const screen = await renderScreen();
 
-    fireEvent.press(screen.getByText("Sales orders"));
+    expect(
+      screen.getByRole("tab", { name: "Sales history" }).props
+        .accessibilityState,
+    ).toEqual({
+      selected: true,
+    });
+    expect(
+      screen.getByRole("tab", { name: "Sales orders" }).props
+        .accessibilityState,
+    ).toEqual({
+      selected: false,
+    });
+
+    fireEvent.press(screen.getByRole("tab", { name: "Sales orders" }));
 
     await waitFor(() =>
       expect(mockUsePosInvoiceHistory).toHaveBeenLastCalledWith(
@@ -245,6 +258,12 @@ describe("PosInvoicesScreen", () => {
         }),
       ),
     );
+    expect(
+      screen.getByRole("tab", { name: "Sales orders" }).props
+        .accessibilityState,
+    ).toEqual({
+      selected: true,
+    });
     expect(screen.getByText("Orders")).toBeTruthy();
   });
 

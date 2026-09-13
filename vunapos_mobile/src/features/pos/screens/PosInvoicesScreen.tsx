@@ -62,24 +62,26 @@ function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
   };
 }
 
-type FilterChoiceProps = {
+type DocumentTabProps = {
   active: boolean;
   label: string;
   onPress: () => void;
 };
 
-function FilterChoice({ active, label, onPress }: FilterChoiceProps) {
+function DocumentTab({ active, label, onPress }: DocumentTabProps) {
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   return (
     <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
       onPress={onPress}
-      style={[styles.filterChoice, active && styles.filterChoiceActive]}
+      style={[styles.documentTab, active && styles.documentTabActive]}
     >
       <Text
         style={[
-          styles.filterChoiceLabel,
-          active && styles.filterChoiceLabelActive,
+          styles.documentTabLabel,
+          { color: active ? palette.primary : palette.onSurfaceMuted },
         ]}
       >
         {label}
@@ -224,8 +226,8 @@ export function PosInvoicesScreen({
   ].filter(Boolean).length;
 
   const tabs = (
-    <View style={styles.documentTabs}>
-      <FilterChoice
+    <View accessibilityRole="tablist" style={styles.documentTabs}>
+      <DocumentTab
         active={activeTab === "history" && filters.documentType === "Invoice"}
         label="Sales history"
         onPress={() => {
@@ -233,7 +235,7 @@ export function PosInvoicesScreen({
           updateFilter("documentType", "Invoice");
         }}
       />
-      <FilterChoice
+      <DocumentTab
         active={activeTab === "history" && filters.documentType === "Order"}
         label="Sales orders"
         onPress={() => {
@@ -241,7 +243,7 @@ export function PosInvoicesScreen({
           updateFilter("documentType", "Order");
         }}
       />
-      <FilterChoice
+      <DocumentTab
         active={activeTab === "held"}
         label="Held invoices"
         onPress={() => setActiveTab("held")}
@@ -546,8 +548,9 @@ function createStyles(palette: AppPalette) {
     paddingBottom: spacing.xxl,
   },
   documentTabs: {
+    borderBottomColor: palette.border,
+    borderBottomWidth: 1,
     flexDirection: "row",
-    gap: spacing.xs,
   },
   emptyState: {
     color: palette.onSurfaceMuted,
@@ -569,24 +572,17 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
-  filterChoice: {
-    borderColor: palette.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
+  documentTab: {
+    borderBottomWidth: 2,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
+    paddingVertical: spacing.sm,
   },
-  filterChoiceActive: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
+  documentTabActive: {
+    borderBottomColor: palette.primary,
   },
-  filterChoiceLabel: {
-    color: palette.onSurfaceMuted,
+  documentTabLabel: {
     fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
-  },
-  filterChoiceLabelActive: {
-    color: palette.onPrimary,
+    fontSize: typography.size.small,
   },
   filterActionRow: {
     alignItems: "center",
