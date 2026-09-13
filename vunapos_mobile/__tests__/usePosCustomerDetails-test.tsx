@@ -89,6 +89,27 @@ describe("usePosCustomerDetails", () => {
     expect(hook.result.current.isLoading).toBe(false);
   });
 
+  it("rejects malformed customer detail responses before the screen can render them", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      as_of: "2026-09-07 10:00:00",
+      balance: "invalid",
+      customer: { customer: "CUST-001", customer_name: "Example customer" },
+      loyalty: null,
+    });
+
+    const hook = await renderHook(() =>
+      usePosCustomerDetails({ customer: "CUST-001", posProfile: "POS-001" }),
+    );
+
+    await waitFor(() =>
+      expect(hook.result.current).toMatchObject({
+        data: null,
+        error: "The server returned incomplete customer details.",
+        isLoading: false,
+      }),
+    );
+  });
+
   it("keeps previously loaded customer details readable when connectivity is lost", async () => {
     const details = {
       as_of: "2026-09-07 10:00:00",

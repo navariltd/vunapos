@@ -7,6 +7,7 @@ import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetail
 import { formatPosCurrency } from "@/features/pos/currency";
 import { PosCustomerAddress, PosSaleCustomer } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { useAppearance } from "@/theme/AppearanceProvider";
 import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCustomerDetailsScreenProps = {
@@ -79,6 +80,7 @@ export function PosCustomerDetailsScreen({
   onStartSale,
 }: PosCustomerDetailsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
+  const { palette } = useAppearance();
   const isOffline = connectionStatus === "offline";
   const bootstrap = usePosBootstrap();
   const details = usePosCustomerDetails({
@@ -89,18 +91,50 @@ export function PosCustomerDetailsScreen({
 
   if (bootstrap.isLoading || details.isLoading) {
     return (
-      <View style={styles.state}>
-        <Text style={styles.stateText}>Loading customer details…</Text>
+      <View style={[styles.state, { backgroundColor: palette.background }]}>
+        <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
+          Loading customer details…
+        </Text>
       </View>
     );
   }
 
   if (!details.data || error) {
+    const message = error
+      ? error
+      : isOffline
+        ? "Reconnect to the server to load this customer."
+        : "Customer not found.";
     return (
-      <View style={styles.state}>
-        <Text style={styles.errorText}>{error || "Customer not found."}</Text>
-        <Pressable onPress={onBack} style={styles.backButton}>
-          <Text style={styles.backButtonLabel}>Back to invoice</Text>
+      <View style={[styles.state, { backgroundColor: palette.background }]}>
+        <Text style={[styles.errorText, { color: palette.error }]}>{message}</Text>
+        <Pressable
+          accessibilityLabel="Retry customer details"
+          accessibilityRole="button"
+          disabled={isOffline}
+          onPress={() => {
+            bootstrap.reload();
+            details.reload();
+          }}
+          style={[
+            styles.backButton,
+            { borderColor: palette.border },
+            isOffline && styles.actionDisabled,
+          ]}
+        >
+          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
+            Retry
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Back to customers"
+          accessibilityRole="button"
+          onPress={onBack}
+          style={[styles.backButton, { borderColor: palette.border }]}
+        >
+          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
+            Back to customers
+          </Text>
         </Pressable>
       </View>
     );
@@ -134,7 +168,8 @@ export function PosCustomerDetailsScreen({
     >
       <View style={styles.header}>
         <Pressable
-          accessibilityLabel="Back to invoice"
+          accessibilityLabel="Back to customers"
+          accessibilityRole="button"
           onPress={onBack}
           style={styles.backIconButton}
         >

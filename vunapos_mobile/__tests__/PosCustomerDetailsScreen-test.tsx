@@ -12,6 +12,18 @@ jest.mock("@/features/pos/hooks/usePosCustomerDetails", () => ({
   usePosCustomerDetails: jest.fn(),
 }));
 
+jest.mock("@/theme/AppearanceProvider", () => ({
+  useAppearance: () => ({
+    palette: {
+      background: "#ffffff",
+      border: "#cccccc",
+      error: "#cc2929",
+      onSurface: "#111111",
+      onSurfaceMuted: "#666666",
+    },
+  }),
+}));
+
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
@@ -21,6 +33,8 @@ const mockUsePosCustomerDetails = jest.mocked(usePosCustomerDetails);
 const onBack = jest.fn();
 const onReceivePayment = jest.fn();
 const onStartSale = jest.fn();
+const reloadBootstrap = jest.fn();
+const reloadDetails = jest.fn();
 
 describe("PosCustomerDetailsScreen", () => {
   beforeEach(() => {
@@ -32,7 +46,7 @@ describe("PosCustomerDetailsScreen", () => {
       },
       error: null,
       isLoading: false,
-      reload: jest.fn(),
+      reload: reloadBootstrap,
     });
     mockUsePosCustomerDetails.mockReturnValue({
       data: {
@@ -59,7 +73,7 @@ describe("PosCustomerDetailsScreen", () => {
       },
       error: null,
       isLoading: false,
-      reload: jest.fn(),
+      reload: reloadDetails,
     });
   });
 
@@ -99,7 +113,7 @@ describe("PosCustomerDetailsScreen", () => {
     });
   });
 
-  it("returns to the invoice details screen", async () => {
+  it("returns to the customer directory", async () => {
     const screen = await render(
       <PosCustomerDetailsScreen
         customer="CUST-001"
@@ -108,9 +122,52 @@ describe("PosCustomerDetailsScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByLabelText("Back to invoice"));
+    await fireEvent.press(screen.getByLabelText("Back to customers"));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a retryable detail error and lets the cashier return to customers", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: null,
+      error: "You do not have access to this customer.",
+      isLoading: false,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("You do not have access to this customer.")).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Retry customer details" }),
+    );
+    expect(reloadBootstrap).toHaveBeenCalledTimes(1);
+    expect(reloadDetails).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByRole("button", { name: "Back to customers" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("explains when the selected customer is unavailable", async () => {
+    mockUsePosCustomerDetails.mockReturnValue({
+      data: null,
+      error: null,
+      isLoading: false,
+      reload: reloadDetails,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen
+        customer="CUST-001"
+        onBack={onBack}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Customer not found.")).toBeTruthy();
   });
 
   it("opens Receive with the current customer selected", async () => {

@@ -24,6 +24,23 @@ type UsePosCustomerDetailsArgs = {
   posProfile: string | undefined;
 };
 
+function isPosCustomerDetails(value: unknown): value is PosCustomerDetails {
+  if (!value || typeof value !== "object") return false;
+
+  const details = value as Record<string, unknown>;
+  const customer = details.customer;
+  if (!customer || typeof customer !== "object") return false;
+
+  const customerSummary = customer as Record<string, unknown>;
+  return (
+    typeof details.as_of === "string" &&
+    typeof details.balance === "number" &&
+    typeof customerSummary.customer === "string" &&
+    typeof customerSummary.customer_name === "string" &&
+    (details.loyalty === null || typeof details.loyalty === "object")
+  );
+}
+
 /** Fetches only the permission-filtered customer profile exposed by VunaPOS. */
 export function usePosCustomerDetails({
   customer,
@@ -61,7 +78,7 @@ export function usePosCustomerDetails({
 
     const controller = new AbortController();
 
-    void getVunaMethod<PosCustomerDetails>(
+    void getVunaMethod<unknown>(
       companyUrl,
       sessionId,
       "vunapos.api.customer.get_customer_details",
@@ -71,7 +88,12 @@ export function usePosCustomerDetails({
       },
       controller.signal,
     )
-      .then((data) => setState({ data, error: null, requestKey }))
+      .then((data) => {
+        if (!isPosCustomerDetails(data)) {
+          throw new Error("The server returned incomplete customer details.");
+        }
+        setState({ data, error: null, requestKey });
+      })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof FrappeClientError && error.code === "session") {
