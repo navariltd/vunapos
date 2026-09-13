@@ -53,7 +53,7 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   if (!fontsLoaded || isBootstrapping || !isAppearanceReady) {
     return (
       <AppLaunchScreen
-        message="Preparing workspace…"
+        message="Preparing your workspace…"
         onReady={hideNativeSplash}
       />
     );
