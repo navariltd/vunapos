@@ -1,13 +1,16 @@
 import { cleanup, fireEvent, render } from '@testing-library/react-native';
 
 jest.mock('@/features/shell/components/AppShell', () => ({
-  AppShell: ({ children, onTabChange }: { children: React.ReactNode; onTabChange: (tab: 'Home' | 'Invoices') => void }) => {
+  AppShell: ({ children, onTabChange }: { children: React.ReactNode; onTabChange: (tab: 'Home' | 'Invoices' | 'Customers') => void }) => {
     const { Pressable, Text, View } = require('react-native');
 
     return (
       <View>
         <Pressable accessibilityRole="button" onPress={() => onTabChange('Invoices')}>
           <Text>Open invoices</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={() => onTabChange('Customers')}>
+          <Text>Open customers</Text>
         </Pressable>
         {children}
       </View>
@@ -28,9 +31,16 @@ jest.mock('@/features/pos/components/SalespersonPinLock', () => ({
 }));
 
 jest.mock('@/features/pos/screens/PosHomeScreen', () => ({
-  PosHomeScreen: ({ onOpenCart, onPosProfileLoaded }: { onOpenCart: () => void; onPosProfileLoaded: (bootstrap: { payment_modes: []; pos_profile: { name: string }; pos_session?: { has_opening_entry: boolean; ready: boolean; status: 'OPENING_REQUIRED' } }) => void }) => {
+  PosHomeScreen: ({ onOpenCart, onPosProfileLoaded }: { onOpenCart: () => void; onPosProfileLoaded: (bootstrap: { payment_modes: []; pos_profile: { allow_customer_management?: boolean; name: string }; pos_session?: { has_opening_entry: boolean; ready: boolean; status: 'OPENING_REQUIRED' } }) => void }) => {
     const { Pressable, Text } = require('react-native');
-    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { name: 'POS-001' }, pos_session: { has_opening_entry: false, ready: false, status: 'OPENING_REQUIRED' } })}><Text>Set closed shift session</Text></Pressable></>;
+    return <><Text>POS home</Text><Pressable accessibilityRole="button" onPress={onOpenCart}><Text>Open cart</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { name: 'POS-001' }, pos_session: { has_opening_entry: false, ready: false, status: 'OPENING_REQUIRED' } })}><Text>Set closed shift session</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: true, name: 'POS-001' } })}><Text>Enable customer management</Text></Pressable><Pressable accessibilityRole="button" onPress={() => onPosProfileLoaded({ payment_modes: [], pos_profile: { allow_customer_management: false, name: 'POS-001' } })}><Text>Disable customer management</Text></Pressable></>;
+  },
+}));
+
+jest.mock('@/features/pos/screens/PosCustomersScreen', () => ({
+  PosCustomersScreen: ({ customerManagementEnabled }: { customerManagementEnabled: boolean }) => {
+    const { Text } = require('react-native');
+    return <Text>{customerManagementEnabled ? 'Customers enabled' : 'Customers disabled'}</Text>;
   },
 }));
 
@@ -130,5 +140,21 @@ describe('PosWorkspaceScreen', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Set closed shift session' }));
 
     expect(screen.getByText('A new POS shift is required')).toBeTruthy();
+  });
+
+  it('opens the Customer tab only after the POS Profile enables customer management', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Enable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    expect(screen.getByText('Customers enabled')).toBeTruthy();
+  });
+
+  it('keeps a reached Customer tab in its disabled state when the profile denies management', async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Disable customer management' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Open customers' }));
+    expect(screen.getByText('Customers disabled')).toBeTruthy();
   });
 });

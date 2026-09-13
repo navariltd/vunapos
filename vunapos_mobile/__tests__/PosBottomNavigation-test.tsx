@@ -65,4 +65,32 @@ describe("PosBottomNavigation", () => {
 
     expect(onTabChange).toHaveBeenCalledWith("Close Shift");
   });
+
+  it("keeps Customers unavailable until customer management is enabled", async () => {
+    const screen = await render(
+      <PosBottomNavigation
+        activeTab="Home"
+        customersEnabled={false}
+        onTabChange={onTabChange}
+      />,
+    );
+
+    expect(screen.getByLabelText("Customers").props.accessibilityState).toEqual({
+      disabled: true,
+    });
+  });
+
+  it("opens Customers when customer management is enabled", async () => {
+    const screen = await render(
+      <PosBottomNavigation
+        activeTab="Home"
+        customersEnabled
+        onTabChange={onTabChange}
+      />,
+    );
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Customers" }));
+
+    expect(onTabChange).toHaveBeenCalledWith("Customers");
+  });
 });

@@ -7,6 +7,7 @@ import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
 import { PosCloseShiftScreen } from "@/features/pos/screens/PosCloseShiftScreen";
+import { PosCustomersScreen } from "@/features/pos/screens/PosCustomersScreen";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
@@ -103,6 +104,9 @@ export function PosWorkspaceScreen() {
   );
   const allowsCustomerPayments =
     posProfileConfig?.allow_customer_payments !== false;
+  const allowsCustomerManagement = posProfileConfig
+    ? posProfileConfig.allow_customer_management !== false
+    : false;
 
   useEffect(() => {
     if (!selectedPriceList || !posProfileConfig) return;
@@ -154,7 +158,8 @@ export function PosWorkspaceScreen() {
 
   return (
     <AppShell
-      activeTab={activeTab}
+    activeTab={activeTab}
+      customersEnabled={allowsCustomerManagement}
       onOrderTypeChange={setOrderType}
       onTabChange={changeTab}
       orderType={orderType}
@@ -334,6 +339,12 @@ export function PosWorkspaceScreen() {
           initialReceiveInvoice={receivePaymentContext?.invoice}
           onBackToPos={() => changeTab("Home")}
           paymentModes={paymentModes}
+          posProfile={posProfile}
+        />
+      ) : activeTab === "Customers" ? (
+        <PosCustomersScreen
+          customerManagementEnabled={allowsCustomerManagement}
+          onBackToPos={() => changeTab("Home")}
           posProfile={posProfile}
         />
       ) : activeTab === "Close Shift" ? (

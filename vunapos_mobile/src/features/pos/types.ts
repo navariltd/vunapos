@@ -1,7 +1,12 @@
 export type PosOrderType = "Invoice" | "Order";
 
 /** Tabs enabled in the native increment. The remaining shell tabs are visual only. */
-export type PosNavigationTab = "Home" | "Invoices" | "Payments" | "Close Shift";
+export type PosNavigationTab =
+  | "Home"
+  | "Invoices"
+  | "Payments"
+  | "Customers"
+  | "Close Shift";
 
 export type PosCatalogueItem = {
   actual_qty?: number | null;
@@ -195,6 +200,7 @@ export type PosBootstrapData = {
   pos_profile: {
     allow_credit_sales?: boolean;
     allow_customer_creation?: boolean;
+    allow_customer_management?: boolean;
     allow_customer_payments?: boolean;
     allow_payment_history?: boolean;
     allow_payment_reconciliation?: boolean;
