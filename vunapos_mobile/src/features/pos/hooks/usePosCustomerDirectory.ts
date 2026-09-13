@@ -34,6 +34,7 @@ export function usePosCustomerDirectory(
   posProfile: string | undefined,
   query = "",
   filters: PosCustomerDirectoryFilters = initialFilters,
+  start = 0,
 ): PosCustomerDirectoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -53,6 +54,7 @@ export function usePosCustomerDirectory(
           query: debouncedQuery,
           reloadKey,
           sessionId,
+          start,
           territory: filters.territory,
         })
       : null;
@@ -82,7 +84,7 @@ export function usePosCustomerDirectory(
         customer_type: filters.customerType,
         pos_profile: posProfile,
         query: debouncedQuery,
-        start: 0,
+        start,
         territory: filters.territory,
       },
       controller.signal,
@@ -114,6 +116,7 @@ export function usePosCustomerDirectory(
     posProfile,
     requestKey,
     sessionId,
+    start,
     filters.territory,
   ]);
 

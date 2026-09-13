@@ -117,7 +117,7 @@ describe("PosCustomersScreen", () => {
         loyalty_visible: true,
         start: 0,
         territories: ["Nairobi"],
-        total_count: 2,
+        total_count: 50,
       },
       error: null,
       isLoading: false,
@@ -133,11 +133,12 @@ describe("PosCustomersScreen", () => {
     );
 
     expect(screen.getByText("Customers")).toBeTruthy();
-    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith("POS-001", "", {
-      customerGroup: "",
-      customerType: "",
-      territory: "",
-    });
+    expect(mockUsePosCustomerDirectory).toHaveBeenCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+      0,
+    );
     expect(screen.getByText("ABC Corp")).toBeTruthy();
     expect(screen.getByText("accounts@example.com")).toBeTruthy();
     expect(screen.getByText("KES 1,200")).toBeTruthy();
@@ -149,12 +150,62 @@ describe("PosCustomersScreen", () => {
     expect(screen.getByText("Restricted")).toBeTruthy();
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("No purchases")).toBeTruthy();
+    expect(screen.getByText("50 customers · Updated 13/09/2026 09:00:00")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Previous customer page" }).props
+        .accessibilityState?.disabled,
+    ).toBe(true);
 
     await fireEvent.changeText(screen.getByLabelText("Search customers"), "ABC");
     expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
       "POS-001",
       "ABC",
       { customerGroup: "", customerType: "", territory: "" },
+      0,
+    );
+  });
+
+  it("paginates server results and resets to the first page when the query changes", async () => {
+    mockUsePosCustomerDirectory.mockReturnValue({
+      data: {
+        as_of: "2026-09-13 09:00:00",
+        customer_groups: [],
+        customers: [{ customer: "CUST-001", customer_name: "ABC Corp" }],
+        financials_visible: true,
+        limit: 25,
+        loyalty_visible: true,
+        start: 0,
+        territories: [],
+        total_count: 50,
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCustomersScreen
+        customerManagementEnabled
+        onBackToPos={jest.fn()}
+        posProfile="POS-001"
+      />,
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Next customer page" }),
+    );
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+      25,
+    );
+
+    await fireEvent.changeText(screen.getByLabelText("Search customers"), "ABC");
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "ABC",
+      { customerGroup: "", customerType: "", territory: "" },
+      0,
     );
   });
 
@@ -203,6 +254,7 @@ describe("PosCustomersScreen", () => {
       "POS-001",
       "",
       { customerGroup: "", customerType: "", territory: "" },
+      0,
     );
 
     await fireEvent.press(screen.getByText("Apply filters"));
@@ -214,6 +266,7 @@ describe("PosCustomersScreen", () => {
         customerType: "Individual",
         territory: "Nairobi",
       },
+      0,
     );
     expect(screen.getByText("3 active filters")).toBeTruthy();
   });

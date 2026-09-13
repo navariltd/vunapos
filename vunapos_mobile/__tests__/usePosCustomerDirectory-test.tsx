@@ -82,6 +82,32 @@ describe("usePosCustomerDirectory", () => {
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
   });
 
+  it("requests the selected bounded directory page", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      as_of: "2026-09-13 09:00:00",
+      customer_groups: [],
+      customers: [],
+      financials_visible: true,
+      limit: 25,
+      loyalty_visible: true,
+      start: 25,
+      territories: [],
+      total_count: 26,
+    });
+
+    await renderHook(() => usePosCustomerDirectory("POS-001", "", undefined, 25));
+
+    await waitFor(() =>
+      expect(mockGetVunaMethod).toHaveBeenCalledWith(
+        "https://vuna.example.com",
+        "sid-1",
+        "vunapos.api.customer.get_customer_directory",
+        expect.objectContaining({ limit: 25, start: 25 }),
+        expect.any(AbortSignal),
+      ),
+    );
+  });
+
   it("debounces the server query instead of requesting on every keystroke", async () => {
     jest.useFakeTimers();
     mockGetVunaMethod.mockResolvedValue({

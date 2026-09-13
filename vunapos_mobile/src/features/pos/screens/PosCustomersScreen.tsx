@@ -49,10 +49,12 @@ export function PosCustomersScreen({
   const [draftFilters, setDraftFilters] =
     useState<PosCustomerDirectoryFilters>(initialFilters);
   const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [start, setStart] = useState(0);
   const directory = usePosCustomerDirectory(
     customerManagementEnabled ? posProfile : undefined,
     query,
     filters,
+    start,
   );
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
@@ -63,6 +65,7 @@ export function PosCustomersScreen({
 
   function applyFilters() {
     setFilters(draftFilters);
+    setStart(0);
     setFilterSheetVisible(false);
   }
 
@@ -75,6 +78,11 @@ export function PosCustomersScreen({
     value: PosCustomerDirectoryFilters[Key],
   ) {
     setDraftFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateQuery(value: string) {
+    setQuery(value);
+    setStart(0);
   }
 
   if (!posProfile) {
@@ -134,7 +142,7 @@ export function PosCustomersScreen({
       <TextInput
         accessibilityLabel="Search customers"
         autoCapitalize="none"
-        onChangeText={setQuery}
+        onChangeText={updateQuery}
         placeholder="Search name, mobile or email"
         placeholderTextColor={palette.onSurfaceMuted}
         style={[
@@ -197,21 +205,41 @@ export function PosCustomersScreen({
           </Pressable>
         </DirectoryStateCard>
       ) : directory.data?.customers.length ? (
-        <View style={styles.customerList}>
-          {directory.data.customers.map((customer) => (
-            <CustomerDirectoryCard
-              customer={customer}
-              currencyPrecision={currencyPrecision}
-              key={customer.customer}
-            />
-          ))}
-        </View>
+        <>
+          <View style={styles.customerList}>
+            {directory.data.customers.map((customer) => (
+              <CustomerDirectoryCard
+                customer={customer}
+                currencyPrecision={currencyPrecision}
+                key={customer.customer}
+              />
+            ))}
+          </View>
+          <DirectoryPagination
+            directory={directory.data}
+            start={start}
+            onNext={() => setStart((current) => current + directory.data!.limit)}
+            onPrevious={() =>
+              setStart((current) => Math.max(0, current - directory.data!.limit))
+            }
+          />
+        </>
       ) : directory.data ? (
-        <DirectoryStateCard
-          message="No customers match these filters."
-          palette={palette}
-          tone="neutral"
-        />
+        <>
+          <DirectoryStateCard
+            message="No customers match these filters."
+            palette={palette}
+            tone="neutral"
+          />
+          <DirectoryPagination
+            directory={directory.data}
+            start={start}
+            onNext={() => setStart((current) => current + directory.data!.limit)}
+            onPrevious={() =>
+              setStart((current) => Math.max(0, current - directory.data!.limit))
+            }
+          />
+        </>
       ) : null}
       </ScrollView>
       <PosCustomerFiltersSheet
@@ -225,6 +253,65 @@ export function PosCustomersScreen({
         visible={filterSheetVisible}
       />
     </>
+  );
+}
+
+function DirectoryPagination({
+  directory,
+  start,
+  onNext,
+  onPrevious,
+}: {
+  directory: { as_of: string; limit: number; start: number; total_count: number };
+  start: number;
+  onNext: () => void;
+  onPrevious: () => void;
+}) {
+  const { palette } = useAppearance();
+  const atFirstPage = start === 0;
+  const atLastPage = start + directory.limit >= directory.total_count;
+  const customerCountLabel = `${directory.total_count} customer${
+    directory.total_count === 1 ? "" : "s"
+  }`;
+
+  return (
+    <View style={styles.pagination}>
+      <Text style={[styles.paginationSummary, { color: palette.onSurfaceMuted }]}>
+        {customerCountLabel} · Updated {formatDirectoryDateTime(directory.as_of)}
+      </Text>
+      <View style={styles.paginationActions}>
+        <Pressable
+          accessibilityLabel="Previous customer page"
+          accessibilityRole="button"
+          disabled={atFirstPage}
+          onPress={onPrevious}
+          style={[
+            styles.paginationButton,
+            { borderColor: palette.border },
+            atFirstPage && styles.disabled,
+          ]}
+        >
+          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
+            Previous
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Next customer page"
+          accessibilityRole="button"
+          disabled={atLastPage}
+          onPress={onNext}
+          style={[
+            styles.paginationButton,
+            { borderColor: palette.border },
+            atLastPage && styles.disabled,
+          ]}
+        >
+          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
+            Next
+          </Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -361,6 +448,13 @@ function formatDirectoryDate(value: string) {
   return year && month && day ? `${day}/${month}/${year}` : value;
 }
 
+function formatDirectoryDateTime(value: string) {
+  const [date, time] = value.split(" ");
+  const formattedDate = formatDirectoryDate(date);
+  const formattedTime = time?.split(".")[0];
+  return formattedTime ? `${formattedDate} ${formattedTime}` : formattedDate;
+}
+
 const styles = StyleSheet.create({
   backButton: {
     alignItems: "center",
@@ -405,6 +499,7 @@ const styles = StyleSheet.create({
     lineHeight: typography.lineHeight.body,
   },
   directoryValue: { flexBasis: "46%", flexGrow: 1, gap: 2 },
+  disabled: { opacity: 0.5 },
   filterActionRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -432,6 +527,22 @@ const styles = StyleSheet.create({
   heading: { flex: 1, gap: 4 },
   loadingState: { alignItems: "center", gap: spacing.sm, padding: spacing.xxl },
   meta: { fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  pagination: { alignItems: "center", gap: spacing.sm },
+  paginationActions: { flexDirection: "row", gap: spacing.sm },
+  paginationButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    minWidth: 92,
+    paddingHorizontal: spacing.md,
+  },
+  paginationSummary: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    textAlign: "center",
+  },
   retryButton: {
     alignItems: "center",
     alignSelf: "flex-start",
