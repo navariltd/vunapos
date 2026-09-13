@@ -62,29 +62,6 @@ export const darkPalette: AppPalette = {
   surfaceContainerHigh: "#2a2a2a",
 };
 
-/** Legacy aliases kept while each existing screen is migrated to useAppearance(). */
-export const colors = {
-  action: { primary: lightPalette.primary },
-  border: { strong: lightPalette.border, subtle: lightPalette.borderSubtle },
-  ink: {
-    muted: "#737373",
-    primary: lightPalette.onSurface,
-    secondary: lightPalette.onSurfaceMuted,
-  },
-  status: {
-    danger: lightPalette.error,
-    dangerSurface: lightPalette.errorSurface,
-    dangerText: lightPalette.onError,
-    success: lightPalette.success,
-  },
-  surface: {
-    base: lightPalette.surface,
-    canvas: lightPalette.background,
-    elevated: lightPalette.surface,
-    subtle: lightPalette.surfaceContainer,
-  },
-} as const;
-
 export const spacing = {
   xs: 8,
   sm: 12,
@@ -120,10 +97,3 @@ export const typography = {
     tiny: 11,
   },
 } as const;
-
-/**
- * The POS surface intentionally follows the SPA's Desk-derived dark theme.
- * It is kept separate from the setup/authentication palette because POS is
- * designed for long-running, high-density selling sessions.
- */
-export const posDarkColors = darkPalette;

@@ -1,7 +1,8 @@
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type ClearCartConfirmationDialogProps = {
   isOffline?: boolean;
@@ -17,6 +18,8 @@ export function ClearCartConfirmationDialog({
   onDismiss,
   visible,
 }: ClearCartConfirmationDialogProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <Modal
       animationType="fade"
@@ -61,7 +64,8 @@ export function ClearCartConfirmationDialog({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -69,14 +73,14 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    backgroundColor: palette.scrim,
     flex: 1,
     justifyContent: "center",
     padding: spacing.lg,
   },
   cancelButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
@@ -85,13 +89,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   cancelLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   clearButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.error,
+    backgroundColor: palette.error,
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 44,
@@ -99,19 +103,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   clearLabel: {
-    color: posDarkColors.background,
+    color: palette.background,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   description: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   dialog: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.md,
@@ -119,8 +123,9 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

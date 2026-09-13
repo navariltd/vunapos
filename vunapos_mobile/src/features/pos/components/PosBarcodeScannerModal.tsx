@@ -12,7 +12,8 @@ import {
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosBarcodeScannerModalProps = {
   isResolving?: boolean;
@@ -39,6 +40,8 @@ export function PosBarcodeScannerModal({
   onScan,
   visible,
 }: PosBarcodeScannerModalProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -109,7 +112,7 @@ export function PosBarcodeScannerModal({
             style={styles.closeButton}
           >
             <MaterialCommunityIcons
-              color={posDarkColors.onSurface}
+              color={palette.onSurface}
               name="close"
               size={22}
             />
@@ -118,13 +121,13 @@ export function PosBarcodeScannerModal({
 
         {!permission ? (
           <View style={styles.permissionState}>
-            <ActivityIndicator color={posDarkColors.primary} />
+            <ActivityIndicator color={palette.primary} />
             <Text style={styles.subtitle}>Preparing camera…</Text>
           </View>
         ) : !permission.granted ? (
           <View style={styles.permissionState}>
             <MaterialCommunityIcons
-              color={posDarkColors.onSurfaceMuted}
+              color={palette.onSurfaceMuted}
               name="camera-off-outline"
               size={36}
             />
@@ -158,7 +161,7 @@ export function PosBarcodeScannerModal({
             </View>
             {isScanning || isResolving ? (
               <View style={styles.processing}>
-                <ActivityIndicator color={posDarkColors.primary} />
+                <ActivityIndicator color={palette.primary} />
                 <Text style={styles.processingLabel}>Looking up item…</Text>
               </View>
             ) : null}
@@ -191,11 +194,12 @@ export function PosBarcodeScannerModal({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   cameraArea: { backgroundColor: "#000000", flex: 1, overflow: "hidden" },
   closeButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
@@ -203,14 +207,14 @@ const styles = StyleSheet.create({
     width: 40,
   },
   errorMessage: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
   },
   errorPanel: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     bottom: spacing.xl,
     gap: spacing.md,
     left: spacing.md,
@@ -219,29 +223,29 @@ const styles = StyleSheet.create({
     right: spacing.md,
   },
   footer: {
-    backgroundColor: posDarkColors.background,
+    backgroundColor: palette.background,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
   },
   footerLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     textAlign: "center",
   },
   header: {
     alignItems: "center",
-    backgroundColor: posDarkColors.background,
-    borderBottomColor: posDarkColors.border,
+    backgroundColor: palette.background,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
   },
-  modal: { backgroundColor: posDarkColors.background, flex: 1 },
+  modal: { backgroundColor: palette.background, flex: 1 },
   permissionMessage: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
@@ -254,26 +258,26 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   permissionTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.heading,
     textAlign: "center",
   },
   primaryButton: {
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     marginTop: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
   primaryButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   processing: {
     alignItems: "center",
-    backgroundColor: "rgba(23, 23, 23, 0.88)",
+    backgroundColor: palette.scrim,
     bottom: 0,
     gap: spacing.sm,
     justifyContent: "center",
@@ -283,12 +287,12 @@ const styles = StyleSheet.create({
     top: 0,
   },
   processingLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   scanFrame: {
-    borderColor: posDarkColors.primary,
+    borderColor: palette.primary,
     borderRadius: radii.lg,
     borderWidth: 2,
     height: 190,
@@ -299,7 +303,7 @@ const styles = StyleSheet.create({
   },
   scanHint: {
     alignSelf: "center",
-    backgroundColor: "rgba(23, 23, 23, 0.78)",
+    backgroundColor: palette.scrim,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
@@ -307,30 +311,31 @@ const styles = StyleSheet.create({
     top: "60%",
   },
   scanHintLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   secondaryButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
   },
   secondaryButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.heading,
   },
-});
+  });
+}

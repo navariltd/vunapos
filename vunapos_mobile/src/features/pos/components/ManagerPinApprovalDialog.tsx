@@ -12,7 +12,8 @@ import { Text } from "react-native-paper";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type Props = {
   isOffline?: boolean;
@@ -32,6 +33,8 @@ export function ManagerPinApprovalDialog({
   posProfile,
   visible,
 }: Props) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [error, setError] = useState<string | null>(null);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -104,7 +107,7 @@ export function ManagerPinApprovalDialog({
               onChangeText={(value) => setPin(value.replace(/\D/g, ""))}
               onSubmitEditing={() => void verify()}
               placeholder="••••"
-              placeholderTextColor={posDarkColors.onSurfaceMuted}
+              placeholderTextColor={palette.onSurfaceMuted}
               secureTextEntry
               style={styles.pinInput}
               value={pin}
@@ -130,7 +133,7 @@ export function ManagerPinApprovalDialog({
               >
                 {isVerifying ? (
                   <ActivityIndicator
-                    color={posDarkColors.onPrimary}
+                    color={palette.onPrimary}
                     size="small"
                   />
                 ) : (
@@ -145,7 +148,8 @@ export function ManagerPinApprovalDialog({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -153,7 +157,7 @@ const styles = StyleSheet.create({
   },
   approveButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 44,
@@ -161,14 +165,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   approveLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
-  backdrop: { backgroundColor: "rgba(0, 0, 0, 0.72)", flex: 1 },
+  backdrop: { backgroundColor: palette.scrim, flex: 1 },
   cancelButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
@@ -177,14 +181,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   cancelLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   content: { flexGrow: 1, justifyContent: "center", padding: spacing.lg },
   dialog: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.md,
@@ -192,16 +196,16 @@ const styles = StyleSheet.create({
   },
   disabled: { opacity: 0.45 },
   error: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   pinInput: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 22,
     letterSpacing: 8,
@@ -210,14 +214,15 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

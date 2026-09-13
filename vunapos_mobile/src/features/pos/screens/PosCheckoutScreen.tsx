@@ -53,7 +53,8 @@ import {
   PosSaleCustomer,
   PosSalespersonSession,
 } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCheckoutScreenProps = {
   currency: string;
@@ -159,6 +160,8 @@ export function PosCheckoutScreen({
   sourceInvoice,
   subtotal,
 }: PosCheckoutScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus === "offline";
   const bootstrap = usePosBootstrap();
@@ -975,7 +978,7 @@ export function PosCheckoutScreen({
           style={styles.backButton}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="arrow-left"
             size={22}
           />
@@ -1092,7 +1095,7 @@ export function PosCheckoutScreen({
             style={styles.datePickerButton}
           >
             <MaterialCommunityIcons
-              color={posDarkColors.onSurfaceMuted}
+              color={palette.onSurfaceMuted}
               name="calendar-month-outline"
               size={20}
             />
@@ -1102,7 +1105,7 @@ export function PosCheckoutScreen({
           </Pressable>
           {isDeliveryDatePickerVisible ? (
             <DateTimePicker
-              accentColor={posDarkColors.primary}
+              accentColor={palette.primary}
               minimumDate={dateFromInput(today())}
               mode="date"
               negativeButton={{ label: "Cancel" }}
@@ -1143,8 +1146,8 @@ export function PosCheckoutScreen({
                   accessibilityRole="switch"
                   accessibilityState={{ checked: isCreditSale }}
                   onValueChange={setSaleType}
-                  thumbColor={posDarkColors.onSurface}
-                  trackColor={{ false: posDarkColors.border, true: "#39b976" }}
+                  thumbColor={palette.onSurface}
+                  trackColor={{ false: palette.border, true: palette.success }}
                   value={isCreditSale}
                 />
               </View>
@@ -1157,7 +1160,7 @@ export function PosCheckoutScreen({
                     style={styles.datePickerButton}
                   >
                     <MaterialCommunityIcons
-                      color={posDarkColors.onSurfaceMuted}
+                      color={palette.onSurfaceMuted}
                       name="calendar-month-outline"
                       size={20}
                     />
@@ -1167,7 +1170,7 @@ export function PosCheckoutScreen({
                   </Pressable>
                   {isDueDatePickerVisible ? (
                     <DateTimePicker
-                      accentColor={posDarkColors.primary}
+                      accentColor={palette.primary}
                       minimumDate={dateFromInput(postingDate)}
                       mode="date"
                       negativeButton={{ label: "Cancel" }}
@@ -1195,7 +1198,7 @@ export function PosCheckoutScreen({
         <View style={styles.card}>
           <View style={styles.loyaltyHeading}>
             <MaterialCommunityIcons
-              color={posDarkColors.primary}
+              color={palette.primary}
               name="star-circle-outline"
               size={22}
             />
@@ -1220,7 +1223,7 @@ export function PosCheckoutScreen({
               keyboardType="number-pad"
               onChangeText={setLoyaltyInput}
               placeholder="Enter points"
-              placeholderTextColor="#8f8f8f"
+              placeholderTextColor={palette.onSurfaceMuted}
               style={[styles.input, styles.loyaltyInput]}
               value={loyaltyInput}
             />
@@ -1256,7 +1259,7 @@ export function PosCheckoutScreen({
             >
               {isApplyingLoyalty ? (
                 <ActivityIndicator
-                  color={posDarkColors.onSurface}
+                  color={palette.onSurface}
                   size="small"
                 />
               ) : (
@@ -1310,7 +1313,7 @@ export function PosCheckoutScreen({
             maxLength={140}
             onChangeText={setCheckoutTaxId}
             placeholder={saleCustomer?.taxId || "PIN / Tax ID for this receipt"}
-            placeholderTextColor="#8f8f8f"
+            placeholderTextColor={palette.onSurfaceMuted}
             style={styles.input}
             value={checkoutTaxId}
           />
@@ -1334,7 +1337,7 @@ export function PosCheckoutScreen({
                 keyboardType="decimal-pad"
                 onChangeText={setDeliveryChargeAmount}
                 placeholder="Optional"
-                placeholderTextColor="#8f8f8f"
+                placeholderTextColor={palette.onSurfaceMuted}
                 style={styles.paymentAmountInput}
                 value={displayedDeliveryChargeAmount}
               />
@@ -1351,7 +1354,7 @@ export function PosCheckoutScreen({
             >
               {isApplyingDeliveryCharge ? (
                 <ActivityIndicator
-                  color={posDarkColors.onSurface}
+                  color={palette.onSurface}
                   size="small"
                 />
               ) : (
@@ -1399,7 +1402,7 @@ export function PosCheckoutScreen({
               ) : null}
             </View>
             <MaterialCommunityIcons
-              color={posDarkColors.onSurfaceMuted}
+              color={palette.onSurfaceMuted}
               name="chevron-right"
               size={22}
             />
@@ -1503,7 +1506,7 @@ export function PosCheckoutScreen({
                             setPaymentAmount(mode.mode_of_payment, amountInput)
                           }
                           placeholder={minorUnitsToInput(0, precision)}
-                          placeholderTextColor="#8f8f8f"
+                          placeholderTextColor={palette.onSurfaceMuted}
                           style={styles.paymentAmountInput}
                           value={amount}
                         />
@@ -1524,7 +1527,7 @@ export function PosCheckoutScreen({
                             )
                           }
                           placeholder="Receipt or transaction number"
-                          placeholderTextColor="#8f8f8f"
+                          placeholderTextColor={palette.onSurfaceMuted}
                           style={styles.input}
                           value={reference?.referenceNo ?? ""}
                         />
@@ -1537,7 +1540,7 @@ export function PosCheckoutScreen({
                           style={styles.datePickerButton}
                         >
                           <MaterialCommunityIcons
-                            color={posDarkColors.onSurfaceMuted}
+                            color={palette.onSurfaceMuted}
                             name="calendar-month-outline"
                             size={20}
                           />
@@ -1588,7 +1591,7 @@ export function PosCheckoutScreen({
                     </View>
                     <MaterialCommunityIcons
                       color={
-                        isVerified ? "#39b976" : posDarkColors.onSurfaceMuted
+                        isVerified ? palette.success : palette.onSurfaceMuted
                       }
                       name={isVerified ? "check-circle" : "cellphone-wireless"}
                       size={22}
@@ -1626,7 +1629,7 @@ export function PosCheckoutScreen({
           ) : null}
           {referenceDateMode ? (
             <DateTimePicker
-              accentColor={posDarkColors.primary}
+              accentColor={palette.primary}
               maximumDate={dateFromInput(today())}
               mode="date"
               negativeButton={{ label: "Cancel" }}
@@ -1713,7 +1716,7 @@ export function PosCheckoutScreen({
                 style={styles.backButton}
               >
                 <MaterialCommunityIcons
-                  color={posDarkColors.onSurface}
+                  color={palette.onSurface}
                   name="close"
                   size={22}
                 />
@@ -1779,7 +1782,7 @@ export function PosCheckoutScreen({
                     keyboardType="phone-pad"
                     onChangeText={setGatewayPhone}
                     placeholder="Phone number"
-                    placeholderTextColor="#8f8f8f"
+                    placeholderTextColor={palette.onSurfaceMuted}
                     style={styles.input}
                     value={gatewayPhone}
                   />
@@ -1798,7 +1801,7 @@ export function PosCheckoutScreen({
                         setHasC2bSearched(false);
                       }}
                       placeholder="Search incoming payment"
-                      placeholderTextColor="#8f8f8f"
+                      placeholderTextColor={palette.onSurfaceMuted}
                       style={[styles.input, styles.c2bSearchInput]}
                       value={c2bQuery}
                     />
@@ -1814,7 +1817,7 @@ export function PosCheckoutScreen({
                     >
                       {isC2bSearching ? (
                         <ActivityIndicator
-                          color={posDarkColors.onSurface}
+                          color={palette.onSurface}
                           size="small"
                         />
                       ) : (
@@ -1927,7 +1930,7 @@ export function PosCheckoutScreen({
                 >
                   {gatewayPayment.isWorking ? (
                     <ActivityIndicator
-                      color={posDarkColors.onPrimary}
+                      color={palette.onPrimary}
                       size="small"
                     />
                   ) : (
@@ -1999,7 +2002,7 @@ export function PosCheckoutScreen({
               style={styles.backButton}
             >
               <MaterialCommunityIcons
-                color={posDarkColors.onSurface}
+                color={palette.onSurface}
                 name="close"
                 size={22}
               />
@@ -2035,7 +2038,7 @@ export function PosCheckoutScreen({
                   </View>
                   {selected ? (
                     <MaterialCommunityIcons
-                      color={posDarkColors.primary}
+                      color={palette.primary}
                       name="check-circle"
                       size={22}
                     />
@@ -2072,8 +2075,8 @@ export function PosCheckoutScreen({
                   color={
                     completedResult.queue_status === "Queued" ||
                     completedResult.queue_status === "Processing"
-                      ? posDarkColors.primary
-                      : "#39b976"
+                      ? palette.primary
+                      : palette.success
                   }
                   name={
                     completedResult.queue_status === "Queued" ||
@@ -2114,7 +2117,7 @@ export function PosCheckoutScreen({
               </>
             ) : checkout.isSubmitting ? (
               <>
-                <ActivityIndicator color={posDarkColors.primary} size="small" />
+                <ActivityIndicator color={palette.primary} size="small" />
                 <Text style={styles.confirmationTitle}>
                   Submitting {submissionLabel}…
                 </Text>
@@ -2173,6 +2176,8 @@ export function PosCheckoutScreen({
 }
 
 function SummaryRow({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.summaryRow}>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -2182,6 +2187,8 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 }
 
 function PaymentSummary({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.paymentSummary}>
       <Text style={styles.paymentSummaryLabel}>{label}</Text>
@@ -2192,10 +2199,11 @@ function PaymentSummary({ label, value }: { label: string; value: string }) {
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
@@ -2203,40 +2211,40 @@ const styles = StyleSheet.create({
     width: 40,
   },
   backToCartButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   backToCartLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },
   cardHint: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     lineHeight: typography.lineHeight.body,
   },
   cardTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   c2bAmount: { alignItems: "flex-end", gap: 2 },
   c2bPayment: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2254,7 +2262,7 @@ const styles = StyleSheet.create({
   },
   cancelConfirmationButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -2263,13 +2271,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   cancelConfirmationLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   confirmConfirmationButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     flex: 1,
     justifyContent: "center",
@@ -2277,7 +2285,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   confirmConfirmationLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -2287,18 +2295,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   confirmationBackdrop: {
-    backgroundColor: "rgba(0, 0, 0, 0.68)",
+    backgroundColor: palette.scrim,
     ...StyleSheet.absoluteFill,
   },
   confirmationDescription: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
   confirmationDialog: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.md,
@@ -2307,7 +2315,7 @@ const styles = StyleSheet.create({
   },
   confirmationModalRoot: { flex: 1, justifyContent: "center" },
   confirmationTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 19,
     lineHeight: typography.lineHeight.body,
@@ -2322,8 +2330,8 @@ const styles = StyleSheet.create({
   creditSaleText: { flex: 1, gap: 3 },
   datePickerButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2332,7 +2340,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   datePickerButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
@@ -2342,13 +2350,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   fieldLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     marginTop: spacing.xs,
@@ -2356,8 +2364,8 @@ const styles = StyleSheet.create({
   gatewayActions: { flexDirection: "row", gap: spacing.sm },
   gatewayMethodButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -2366,21 +2374,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   gatewayMethodButtonActive: {
-    backgroundColor: posDarkColors.primary,
-    borderColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
   },
   gatewayMethodButtons: { flexDirection: "row", gap: spacing.sm },
   gatewayMethodLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     textAlign: "center",
   },
-  gatewayMethodLabelActive: { color: posDarkColors.onPrimary },
+  gatewayMethodLabelActive: { color: palette.onPrimary },
   gatewayModeButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2389,7 +2397,7 @@ const styles = StyleSheet.create({
     minHeight: 56,
     padding: spacing.sm,
   },
-  gatewayModeButtonVerified: { borderColor: "#39b976" },
+  gatewayModeButtonVerified: { borderColor: palette.success },
   gatewayModeText: { flex: 1, gap: 2 },
   gatewayModes: { gap: spacing.xs },
   gatewayModalContent: {
@@ -2398,18 +2406,18 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   gatewayVerifiedText: {
-    color: "#7ee2a8",
+    color: palette.success,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   input: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     paddingHorizontal: spacing.sm,
@@ -2432,17 +2440,17 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   loyaltyRemoveLabel: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   currencyPrefix: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   paymentAmountInput: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
@@ -2452,8 +2460,8 @@ const styles = StyleSheet.create({
   },
   paymentAmountWrap: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -2463,7 +2471,7 @@ const styles = StyleSheet.create({
   },
   paymentModeButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainerHigh,
+    backgroundColor: palette.surfaceContainerHigh,
     borderColor: "transparent",
     borderRadius: radii.md,
     borderWidth: 1,
@@ -2473,44 +2481,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   paymentModeButtonActive: {
-    backgroundColor: posDarkColors.primary,
-    borderColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
   },
   paymentModeLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     textAlign: "center",
   },
-  paymentModeLabelActive: { color: posDarkColors.onPrimary },
+  paymentModeLabelActive: { color: palette.onPrimary },
   paymentMode: { gap: spacing.sm },
   paymentModeRow: { flexDirection: "row", gap: spacing.sm },
   paymentModes: { gap: spacing.sm },
   paymentReference: { gap: spacing.xs },
   paymentSummary: { flex: 1, gap: 2 },
   paymentSummaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   paymentSummaryRow: {
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     borderRadius: radii.sm,
     flexDirection: "row",
     gap: spacing.xs,
     padding: spacing.sm,
   },
   paymentSummaryValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   restoredDraftHint: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
@@ -2519,7 +2527,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1 },
   secondaryButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -2529,7 +2537,7 @@ const styles = StyleSheet.create({
   },
   secondaryButtonDisabled: { opacity: 0.5 },
   secondaryButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -2540,8 +2548,8 @@ const styles = StyleSheet.create({
   },
   shippingAddressOption: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2550,12 +2558,12 @@ const styles = StyleSheet.create({
     minHeight: 64,
     padding: spacing.md,
   },
-  shippingAddressOptionSelected: { borderColor: posDarkColors.primary },
+  shippingAddressOptionSelected: { borderColor: palette.primary },
   shippingAddressOptions: { gap: spacing.sm },
   shippingAddressSelector: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2566,7 +2574,7 @@ const styles = StyleSheet.create({
   },
   shippingAddressText: { flex: 1, gap: 2 },
   shippingAddressTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.body,
   },
@@ -2578,14 +2586,14 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   stateText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
   },
   submitButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 50,
@@ -2593,57 +2601,58 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.45 },
   submitButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   summaryDivider: {
-    backgroundColor: posDarkColors.border,
+    backgroundColor: palette.border,
     height: StyleSheet.hairlineWidth,
     marginVertical: spacing.xs,
   },
   summaryItems: { gap: spacing.xs },
   summaryRow: { flexDirection: "row", justifyContent: "space-between" },
   summarySectionTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   summaryValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   totalLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   totalRow: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: spacing.sm,
   },
   totalValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

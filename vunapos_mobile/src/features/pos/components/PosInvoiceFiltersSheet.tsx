@@ -7,7 +7,8 @@ import { Text } from 'react-native-paper';
 
 import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormScroll';
 import { PosInvoiceHistoryFilters } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { useAppearance } from '@/theme/AppearanceProvider';
+import { AppPalette, radii, spacing, typography } from '@/theme/tokens';
 
 const statusOptions: { label: string; value: PosInvoiceHistoryFilters['status'] }[] = [
   { label: 'All statuses', value: '' },
@@ -83,6 +84,8 @@ type FilterSelectProps<Value extends string> = {
 };
 
 function FilterSelect<Value extends string>({ accessibilityLabel, label, onPress, options, value }: FilterSelectProps<Value>) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? label;
 
   return (
@@ -95,7 +98,7 @@ function FilterSelect<Value extends string>({ accessibilityLabel, label, onPress
         style={styles.selectButton}
       >
         <Text numberOfLines={1} style={styles.selectValue}>{selectedLabel}</Text>
-        <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-down" size={20} />
+        <MaterialCommunityIcons color={palette.onSurfaceMuted} name="chevron-down" size={20} />
       </Pressable>
     </View>
   );
@@ -108,6 +111,8 @@ type FilterSelectionDialogProps = {
 };
 
 function FilterSelectionDialog({ onDismiss, onSelect, selection }: FilterSelectionDialogProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   if (!selection) {
     return null;
   }
@@ -119,7 +124,7 @@ function FilterSelectionDialog({ onDismiss, onSelect, selection }: FilterSelecti
         <View style={styles.selectionHeader}>
           <Text style={styles.selectionTitle}>Select {selection.label.toLowerCase()}</Text>
           <Pressable accessibilityLabel="Close options" onPress={onDismiss} style={styles.selectionCloseButton}>
-            <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={20} />
+            <MaterialCommunityIcons color={palette.onSurface} name="close" size={20} />
           </Pressable>
         </View>
         <ScrollView contentContainerStyle={styles.selectionOptions} showsVerticalScrollIndicator={false}>
@@ -130,7 +135,7 @@ function FilterSelectionDialog({ onDismiss, onSelect, selection }: FilterSelecti
               style={[styles.selectionOption, option.value === selection.value && styles.selectionOptionActive]}
             >
               <Text style={styles.selectionOptionLabel}>{option.label}</Text>
-              {option.value === selection.value ? <MaterialCommunityIcons color={posDarkColors.onSurface} name="check" size={20} /> : null}
+              {option.value === selection.value ? <MaterialCommunityIcons color={palette.onSurface} name="check" size={20} /> : null}
             </Pressable>
           ))}
         </ScrollView>
@@ -147,10 +152,12 @@ type DatePickerFieldProps = {
 };
 
 function DatePickerField({ accessibilityLabel, onPress, placeholder, value }: DatePickerFieldProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <Pressable accessibilityLabel={accessibilityLabel} onPress={onPress} style={styles.datePickerField}>
       <Text numberOfLines={1} style={[styles.datePickerValue, !value && styles.datePickerPlaceholder]}>{formatDateLabel(value, placeholder)}</Text>
-      <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="calendar-month-outline" size={19} />
+      <MaterialCommunityIcons color={palette.onSurfaceMuted} name="calendar-month-outline" size={19} />
     </Pressable>
   );
 }
@@ -164,6 +171,8 @@ export function PosInvoiceFiltersSheet({
   paymentModes,
   visible,
 }: PosInvoiceFiltersSheetProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const insets = useSafeAreaInsets();
   const [datePickerField, setDatePickerField] = useState<DateFilterField | null>(null);
   const [selection, setSelection] = useState<FilterSelection | null>(null);
@@ -216,7 +225,7 @@ export function PosInvoiceFiltersSheet({
                 <Text style={styles.subtitle}>Choose criteria, then apply them to sales history.</Text>
               </View>
               <Pressable accessibilityLabel="Close filters" onPress={onDismiss} style={styles.closeButton}>
-                <MaterialCommunityIcons color={posDarkColors.onSurface} name="close" size={20} />
+                <MaterialCommunityIcons color={palette.onSurface} name="close" size={20} />
               </Pressable>
             </View>
 
@@ -227,7 +236,7 @@ export function PosInvoiceFiltersSheet({
                 autoCapitalize="characters"
                 onChangeText={(value) => onChange('invoice', value)}
                 placeholder="Invoice number"
-                placeholderTextColor="#8f8f8f"
+                placeholderTextColor={palette.onSurfaceMuted}
                 style={styles.input}
                 value={filters.invoice}
               />
@@ -238,7 +247,7 @@ export function PosInvoiceFiltersSheet({
                 autoCapitalize="none"
                 onChangeText={(value) => onChange('customer', value)}
                 placeholder="Customer ID"
-                placeholderTextColor="#8f8f8f"
+                placeholderTextColor={palette.onSurfaceMuted}
                 style={styles.input}
                 value={filters.customer}
               />
@@ -291,8 +300,8 @@ export function PosInvoiceFiltersSheet({
                     <Switch
                       accessibilityLabel="Current shift only"
                       onValueChange={(value) => onChange('currentShift', value)}
-                      thumbColor={filters.currentShift ? posDarkColors.primary : posDarkColors.onSurfaceMuted}
-                      trackColor={{ false: posDarkColors.surfaceContainerHigh, true: '#5f5f5f' }}
+                      thumbColor={filters.currentShift ? palette.primary : palette.onSurfaceMuted}
+                      trackColor={{ false: palette.surfaceContainerHigh, true: palette.primary }}
                       value={filters.currentShift}
                     />
                   </View>
@@ -327,22 +336,23 @@ export function PosInvoiceFiltersSheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   applyButton: {
     alignItems: 'center',
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     flex: 1,
     justifyContent: 'center',
     minHeight: 48,
   },
   applyButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   backdrop: {
-    backgroundColor: 'rgba(0, 0, 0, 0.62)',
+    backgroundColor: palette.scrim,
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -351,7 +361,7 @@ const styles = StyleSheet.create({
   },
   clearButton: {
     alignItems: 'center',
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -359,13 +369,13 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   clearButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   closeButton: {
     alignItems: 'center',
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 36,
@@ -379,8 +389,8 @@ const styles = StyleSheet.create({
   },
   currentShiftControl: {
     alignItems: 'center',
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -395,7 +405,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   currentShiftValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
@@ -405,8 +415,8 @@ const styles = StyleSheet.create({
   },
   datePickerField: {
     alignItems: 'center',
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flex: 1,
@@ -417,17 +427,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   datePickerPlaceholder: {
-    color: '#8f8f8f',
+    color: palette.onSurfaceMuted,
   },
   datePickerValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   footer: {
-    backgroundColor: posDarkColors.surface,
-    borderTopColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
@@ -438,18 +448,18 @@ const styles = StyleSheet.create({
   },
   handle: {
     alignSelf: 'center',
-    backgroundColor: posDarkColors.border,
+    backgroundColor: palette.border,
     borderRadius: radii.pill,
     height: 4,
     marginTop: spacing.sm,
     width: 40,
   },
   input: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     height: 44,
@@ -460,7 +470,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   label: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -468,8 +478,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sheet: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     borderTopWidth: 1,
@@ -486,8 +496,8 @@ const styles = StyleSheet.create({
   },
   selectButton: {
     alignItems: 'center',
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -498,7 +508,7 @@ const styles = StyleSheet.create({
   },
   selectionCloseButton: {
     alignItems: 'center',
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 36,
@@ -506,8 +516,8 @@ const styles = StyleSheet.create({
     width: 36,
   },
   selectionDialog: {
-    backgroundColor: posDarkColors.surfaceContainerHigh,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainerHigh,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     elevation: 24,
@@ -517,7 +527,7 @@ const styles = StyleSheet.create({
   },
   selectionHeader: {
     alignItems: 'center',
-    borderBottomColor: posDarkColors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -525,7 +535,7 @@ const styles = StyleSheet.create({
   },
   selectionOption: {
     alignItems: 'center',
-    borderBottomColor: posDarkColors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -533,10 +543,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   selectionOptionActive: {
-    backgroundColor: '#3a3a3a',
+    backgroundColor: palette.surfaceContainerHigh,
   },
   selectionOptionLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.body,
   },
@@ -555,7 +565,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   selectionScrim: {
-    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    backgroundColor: palette.scrim,
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -563,7 +573,7 @@ const styles = StyleSheet.create({
     top: 0,
   },
   selectionTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 18,
   },
@@ -572,7 +582,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   selectValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
@@ -584,7 +594,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
@@ -592,8 +602,9 @@ const styles = StyleSheet.create({
     maxWidth: 280,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 19,
   },
-});
+  });
+}

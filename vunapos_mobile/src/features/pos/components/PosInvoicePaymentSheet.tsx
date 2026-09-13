@@ -15,7 +15,8 @@ import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormSc
 import { formatPosCurrency } from "@/features/pos/currency";
 import { useReceiveInvoicePayment } from "@/features/pos/hooks/useReceiveInvoicePayment";
 import { PosBootstrapData } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosInvoicePaymentSheetProps = {
   currency: string;
@@ -46,6 +47,8 @@ export function PosInvoicePaymentSheet({
   posProfile,
   visible,
 }: PosInvoicePaymentSheetProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const formatCurrency = (amount: number) =>
     formatPosCurrency(amount, currency, currencyPrecision);
   const insets = useSafeAreaInsets();
@@ -181,7 +184,7 @@ export function PosInvoicePaymentSheet({
                   keyboardType="decimal-pad"
                   onChangeText={setAmount}
                   placeholder="0.00"
-                  placeholderTextColor="#8f8f8f"
+                  placeholderTextColor={palette.onSurfaceMuted}
                   style={styles.input}
                   value={amount}
                 />
@@ -225,7 +228,7 @@ export function PosInvoicePaymentSheet({
                       accessibilityLabel="Payment reference number"
                       onChangeText={setReferenceNo}
                       placeholder="Reference number"
-                      placeholderTextColor="#8f8f8f"
+                      placeholderTextColor={palette.onSurfaceMuted}
                       style={styles.input}
                       value={referenceNo}
                     />
@@ -235,7 +238,7 @@ export function PosInvoicePaymentSheet({
                       autoCapitalize="none"
                       onChangeText={setReferenceDate}
                       placeholder="YYYY-MM-DD"
-                      placeholderTextColor="#8f8f8f"
+                      placeholderTextColor={palette.onSurfaceMuted}
                       style={styles.input}
                       value={referenceDate}
                     />
@@ -270,26 +273,27 @@ export function PosInvoicePaymentSheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backdrop: {
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: palette.scrim,
     ...StyleSheet.absoluteFill,
   },
   closeButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   closeButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   content: { gap: spacing.sm, paddingTop: spacing.md },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
@@ -297,7 +301,7 @@ const styles = StyleSheet.create({
   formScroll: { flex: 1 },
   handle: {
     alignSelf: "center",
-    backgroundColor: "#555",
+    backgroundColor: palette.border,
     borderRadius: radii.pill,
     height: 4,
     marginTop: spacing.xs,
@@ -311,10 +315,10 @@ const styles = StyleSheet.create({
   },
   heading: { flex: 1, gap: 4 },
   input: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     paddingHorizontal: spacing.sm,
@@ -322,32 +326,32 @@ const styles = StyleSheet.create({
   },
   keyboardView: { justifyContent: "flex-end", maxHeight: "100%" },
   label: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     marginTop: spacing.xs,
   },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   modeOption: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   modeOptionActive: {
-    backgroundColor: posDarkColors.primary,
-    borderColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
   },
   modeOptionLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
-  modeOptionLabelActive: { color: posDarkColors.onPrimary },
+  modeOptionLabelActive: { color: palette.onPrimary },
   modeOptions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   sheet: {
-    backgroundColor: posDarkColors.surface,
+    backgroundColor: palette.surface,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     flexShrink: 1,
@@ -356,7 +360,7 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     justifyContent: "center",
     marginTop: spacing.md,
@@ -365,31 +369,32 @@ const styles = StyleSheet.create({
   },
   submitButtonDisabled: { opacity: 0.45 },
   submitButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   successState: { gap: spacing.md, paddingVertical: spacing.xl },
   successText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
   successTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

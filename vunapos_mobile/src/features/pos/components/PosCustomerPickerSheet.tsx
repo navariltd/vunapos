@@ -8,7 +8,8 @@ import { KeyboardAwareFormScroll } from '@/components/layout/KeyboardAwareFormSc
 import { useCreatePosCustomer } from '@/features/pos/hooks/useCreatePosCustomer';
 import { usePosCustomerSearch } from '@/features/pos/hooks/usePosCustomerSearch';
 import { PosCustomerSearchResult } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { useAppearance } from '@/theme/AppearanceProvider';
+import { AppPalette, radii, spacing, typography } from '@/theme/tokens';
 
 type PosCustomerPickerSheetProps = {
   allowCustomerCreation: boolean;
@@ -21,6 +22,8 @@ type PosCustomerPickerSheetProps = {
 
 /** Native customer selection is deliberately available from the cart before checkout. */
 export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = false, onDismiss, onSelect, posProfile, visible }: PosCustomerPickerSheetProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const insets = useSafeAreaInsets();
   const [customerName, setCustomerName] = useState('');
   const [query, setQuery] = useState('');
@@ -59,8 +62,8 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
               <Pressable accessibilityLabel="Close customer picker" onPress={onDismiss} style={styles.closeButton}><Text style={styles.closeButtonLabel}>Close</Text></Pressable>
             </View>
             <View style={styles.searchField}>
-              <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="magnify" size={20} />
-              <TextInput accessibilityLabel="Search customers" autoFocus editable={!isOffline} onChangeText={setQuery} placeholder="Search customers" placeholderTextColor="#8f8f8f" style={styles.searchInput} value={query} />
+              <MaterialCommunityIcons color={palette.onSurfaceMuted} name="magnify" size={20} />
+              <TextInput accessibilityLabel="Search customers" autoFocus editable={!isOffline} onChangeText={setQuery} placeholder="Search customers" placeholderTextColor={palette.onSurfaceMuted} style={styles.searchInput} value={query} />
             </View>
             <View style={styles.list}>
               {isOffline ? <Text style={styles.stateText}>Reconnect to search or change the customer.</Text> : null}
@@ -69,18 +72,18 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
               {!search.isLoading && !search.error && !search.rows.length ? <Text style={styles.stateText}>No customers found.</Text> : null}
               {search.rows.map((customer) => <Pressable accessibilityLabel={`Select customer ${customer.customerName}`} disabled={isOffline} key={customer.customer} onPress={() => select(customer)} style={styles.customerRow}>
                 <View style={styles.customerMain}><Text style={styles.customerName}>{customer.customerName}</Text><Text style={styles.customerMeta}>{customer.mobile || customer.email || customer.customer}</Text></View>
-                <MaterialCommunityIcons color={posDarkColors.onSurfaceMuted} name="chevron-right" size={20} />
+                <MaterialCommunityIcons color={palette.onSurfaceMuted} name="chevron-right" size={20} />
               </Pressable>)}
             </View>
             {allowCustomerCreation ? (
               <View style={styles.createSection}>
                 <Pressable accessibilityLabel="Create customer" disabled={isOffline || customerCreation.isCreating} onPress={() => setShowCreate((current) => !current)} style={styles.createToggle}>
-                  <MaterialCommunityIcons color={posDarkColors.primary} name="plus" size={19} />
+                  <MaterialCommunityIcons color={palette.primary} name="plus" size={19} />
                   <Text style={styles.createToggleLabel}>Create customer</Text>
                 </Pressable>
                 {showCreate ? (
                   <View style={styles.createForm}>
-                    <TextInput accessibilityLabel="New customer name" autoCapitalize="words" editable={!isOffline && !customerCreation.isCreating} onChangeText={setCustomerName} placeholder="Customer name" placeholderTextColor="#8f8f8f" style={styles.createInput} value={customerName} />
+                    <TextInput accessibilityLabel="New customer name" autoCapitalize="words" editable={!isOffline && !customerCreation.isCreating} onChangeText={setCustomerName} placeholder="Customer name" placeholderTextColor={palette.onSurfaceMuted} style={styles.createInput} value={customerName} />
                     {customerCreation.error ? <Text accessibilityRole="alert" style={styles.errorText}>{customerCreation.error}</Text> : null}
                     <Pressable accessibilityLabel="Save customer" disabled={isOffline || customerCreation.isCreating || !customerName.trim()} onPress={() => { void createCustomer(); }} style={[styles.saveButton, (isOffline || customerCreation.isCreating || !customerName.trim()) && styles.saveButtonDisabled]}>
                       <Text style={styles.saveButtonLabel}>{customerCreation.isCreating ? 'Creating…' : 'Save customer'}</Text>
@@ -96,34 +99,36 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.6)', ...StyleSheet.absoluteFill },
-  closeButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
-  closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
+  backdrop: { backgroundColor: palette.scrim, ...StyleSheet.absoluteFill },
+  closeButton: { borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  closeButtonLabel: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
   createForm: { gap: spacing.sm },
-  createInput: { backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
-  createSection: { borderTopColor: posDarkColors.border, borderTopWidth: 1, gap: spacing.sm, marginTop: spacing.sm, paddingTop: spacing.md },
+  createInput: { backgroundColor: palette.surfaceContainer, borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, color: palette.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm },
+  createSection: { borderTopColor: palette.border, borderTopWidth: 1, gap: spacing.sm, marginTop: spacing.sm, paddingTop: spacing.md },
   createToggle: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: spacing.xs, minHeight: 40, paddingHorizontal: spacing.xs },
-  createToggleLabel: { color: posDarkColors.primary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  createToggleLabel: { color: palette.primary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
   customerMain: { flex: 1, gap: 3 },
-  customerMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
-  customerName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
-  customerRow: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
-  errorText: { color: posDarkColors.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
-  handle: { alignSelf: 'center', backgroundColor: '#555', borderRadius: radii.pill, height: 4, marginTop: spacing.xs, width: 40 },
+  customerMeta: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  customerName: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  customerRow: { alignItems: 'center', borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.sm, padding: spacing.md },
+  errorText: { color: palette.error, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  handle: { alignSelf: 'center', backgroundColor: palette.border, borderRadius: radii.pill, height: 4, marginTop: spacing.xs, width: 40 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.md },
   heading: { flex: 1, gap: 3 },
   keyboardView: { justifyContent: 'flex-end', maxHeight: '100%' },
   list: { gap: spacing.sm, paddingBottom: spacing.md, paddingTop: spacing.md },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  searchField: { alignItems: 'center', backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.xs, marginTop: spacing.md, paddingHorizontal: spacing.sm },
-  searchInput: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingVertical: spacing.sm },
-  saveButton: { alignItems: 'center', backgroundColor: posDarkColors.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
-  saveButtonDisabled: { backgroundColor: posDarkColors.disabled, opacity: 0.5 },
-  saveButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
-  sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, flexShrink: 1, maxHeight: '88%' },
+  searchField: { alignItems: 'center', backgroundColor: palette.surfaceContainer, borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', gap: spacing.xs, marginTop: spacing.md, paddingHorizontal: spacing.sm },
+  searchInput: { color: palette.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body, paddingVertical: spacing.sm },
+  saveButton: { alignItems: 'center', backgroundColor: palette.primary, borderRadius: radii.md, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.md },
+  saveButtonDisabled: { backgroundColor: palette.disabled, opacity: 0.5 },
+  saveButtonLabel: { color: palette.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.small },
+  sheet: { backgroundColor: palette.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, flexShrink: 1, maxHeight: '88%' },
   sheetContent: { paddingHorizontal: spacing.md },
-  stateText: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, paddingVertical: spacing.sm, textAlign: 'center' },
-  subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
-  title: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
-});
+  stateText: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, paddingVertical: spacing.sm, textAlign: 'center' },
+  subtitle: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small },
+  title: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
+  });
+}

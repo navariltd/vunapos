@@ -5,7 +5,8 @@ import { Text } from "react-native-paper";
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { PosInvoicePaymentEntry } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosPaymentEntryDetailsScreenProps = {
   currency: string;
@@ -27,6 +28,8 @@ function formatDate(value?: string | null) {
 }
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.summaryValue}>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -38,6 +41,8 @@ function SummaryValue({ label, value }: { label: string; value: string }) {
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -55,6 +60,8 @@ export function PosPaymentEntryDetailsScreen({
   onBack,
   paymentEntry,
 }: PosPaymentEntryDetailsScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const formatCurrency = (amount: number) =>
     formatPosCurrency(amount, currency, currencyPrecision);
   const isCancelled = paymentEntry.docstatus === 2;
@@ -71,7 +78,7 @@ export function PosPaymentEntryDetailsScreen({
           style={styles.backButton}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="arrow-left"
             size={22}
           />
@@ -137,34 +144,35 @@ export function PosPaymentEntryDetailsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
     justifyContent: "center",
     width: 40,
   },
-  cancelledLabel: { color: posDarkColors.error },
-  cancelledStatus: { backgroundColor: "#3d1f1f" },
+  cancelledLabel: { color: palette.error },
+  cancelledStatus: { backgroundColor: palette.errorSurface },
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },
   cardTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   detailLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
@@ -174,7 +182,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   detailValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
@@ -182,7 +190,7 @@ const styles = StyleSheet.create({
   },
   details: { gap: spacing.sm },
   eyebrow: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
@@ -198,21 +206,21 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
-  submittedLabel: { color: "#86efac" },
-  submittedStatus: { backgroundColor: "#16452e" },
+  submittedLabel: { color: palette.success },
+  submittedStatus: { backgroundColor: palette.surfaceContainer },
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   summaryText: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   summaryValue: {
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     borderRadius: radii.md,
     flexBasis: "47%",
     flexGrow: 1,
@@ -220,8 +228,9 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

@@ -28,7 +28,10 @@ def get_global_checkout_fields(profile=None):
 	"""Return validated, safe checkout field definitions from POS Settings."""
 	settings = frappe.get_single("POS Settings")
 	result = []
-	for row in settings.get("vunapos_checkout_fields", []):
+	# Existing sites can have this newly added child-table field stored as NULL
+	# until someone opens and saves POS Settings. Treat that exactly like no
+	# configured fields so bootstrap remains available.
+	for row in settings.get("vunapos_checkout_fields") or []:
 		if not row.get("enabled"):
 			continue
 		doctype = row.get("target_doctype")
@@ -45,7 +48,7 @@ def get_global_checkout_fields(profile=None):
 	if profile:
 		overrides = {
 			(row.get("target_doctype"), (row.get("fieldname") or "").strip()): row
-			for row in profile.get("vunapos_checkout_fields", [])
+			for row in profile.get("vunapos_checkout_fields") or []
 		}
 		for index, definition in enumerate(result):
 			row = overrides.get((definition["doctype"], definition["fieldname"]))
@@ -70,7 +73,7 @@ def validate_global_checkout_fields(doc, method=None):
 		# duplicate rows (even when one is disabled) makes the profile ambiguous
 		# when the workflow metadata is evaluated.
 		seen_workflow_doctypes = set()
-		for row in doc.get("vunapos_workflow_configuration", []):
+		for row in doc.get("vunapos_workflow_configuration") or []:
 			doctype = (row.get("transaction_doctype") or "").strip()
 			if not doctype:
 				continue
@@ -82,7 +85,7 @@ def validate_global_checkout_fields(doc, method=None):
 				)
 			seen_workflow_doctypes.add(doctype)
 
-	for row in doc.get("vunapos_checkout_fields", []):
+	for row in doc.get("vunapos_checkout_fields") or []:
 		doctype = row.get("target_doctype")
 		fieldname = (row.get("fieldname") or "").strip()
 		if not row.get("enabled"):
@@ -99,7 +102,7 @@ def validate_global_checkout_fields(doc, method=None):
 		registered = {
 			(definition["doctype"], definition["fieldname"]) for definition in get_global_checkout_fields()
 		}
-		for row in doc.get("vunapos_checkout_fields", []):
+		for row in doc.get("vunapos_checkout_fields") or []:
 			if not row.get("enabled"):
 				continue
 			doctype = row.get("target_doctype")

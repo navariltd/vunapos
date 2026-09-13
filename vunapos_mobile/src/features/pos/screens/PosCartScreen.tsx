@@ -13,6 +13,7 @@ import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { useAppearance } from "@/theme/AppearanceProvider";
 import {
   PosBatchAllocation,
   PosCartItem,
@@ -25,7 +26,7 @@ import {
   PosSaleCustomer,
   PosSerialAllocation,
 } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
@@ -116,6 +117,8 @@ function PricingEditor({
   item: PosCartItem;
   onUpdate: (override?: PosPricingOverride) => void;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const [rate, setRate] = useState(String(item.rate));
   const [discountPercentage, setDiscountPercentage] = useState(
     String(item.discount_percentage || 0),
@@ -287,6 +290,8 @@ function BatchAllocationEditor({
   onSave: (allocations: PosBatchAllocation[]) => void;
   posProfile?: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const batches = usePosItemBatches({
     enabled: !disabled,
     itemCode: item.item_code,
@@ -364,7 +369,7 @@ function BatchAllocationEditor({
           ]}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="refresh"
             size={18}
           />
@@ -489,6 +494,8 @@ function SerialAllocationEditor({
   onSave: (allocations: PosSerialAllocation[]) => void;
   posProfile?: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const serialData = usePosItemBatches({
     enabled: !disabled,
     itemCode: item.item_code,
@@ -542,7 +549,7 @@ function SerialAllocationEditor({
           editable={!disabled}
           onChangeText={setQuery}
           placeholder="Scan or search serial number"
-          placeholderTextColor={posDarkColors.onSurfaceMuted}
+          placeholderTextColor={palette.onSurfaceMuted}
           style={styles.serialSearchInput}
           value={query}
         />
@@ -596,8 +603,8 @@ function SerialAllocationEditor({
                 <MaterialCommunityIcons
                   color={
                     isSelected
-                      ? posDarkColors.primary
-                      : posDarkColors.onSurfaceMuted
+                      ? palette.primary
+                      : palette.onSurfaceMuted
                   }
                   name={
                     isSelected ? "checkbox-marked" : "checkbox-blank-outline"
@@ -674,6 +681,8 @@ function CartLine({
   onUpdateSerialAllocations: (allocations: PosSerialAllocation[]) => void;
   posProfile?: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
   const [draftNote, setDraftNote] = useState(item.item_note || "");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
@@ -767,7 +776,7 @@ function CartLine({
                 {detailsExpanded ? "Hide details" : "View details"}
               </Text>
               <MaterialCommunityIcons
-                color={posDarkColors.onSurfaceMuted}
+                color={palette.onSurfaceMuted}
                 name={detailsExpanded ? "chevron-up" : "chevron-down"}
                 size={18}
               />
@@ -781,7 +790,7 @@ function CartLine({
           style={[styles.removeButton, itemDisabled && styles.controlDisabled]}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.error}
+            color={palette.error}
             name="trash-can-outline"
             size={19}
           />
@@ -833,7 +842,7 @@ function CartLine({
                   </Text>
                 </View>
                 <MaterialCommunityIcons
-                  color={posDarkColors.onSurfaceMuted}
+                  color={palette.onSurfaceMuted}
                   name={batchExpanded ? "chevron-up" : "chevron-down"}
                   size={20}
                 />
@@ -865,7 +874,7 @@ function CartLine({
                   </Text>
                 </View>
                 <MaterialCommunityIcons
-                  color={posDarkColors.onSurfaceMuted}
+                  color={palette.onSurfaceMuted}
                   name={serialExpanded ? "chevron-up" : "chevron-down"}
                   size={20}
                 />
@@ -893,7 +902,7 @@ function CartLine({
                 <Text style={styles.uomValue}>{item.uom || "Unit"}</Text>
               </View>
               <MaterialCommunityIcons
-                color={posDarkColors.onSurfaceMuted}
+                color={palette.onSurfaceMuted}
                 name="chevron-right"
                 size={20}
               />
@@ -912,7 +921,7 @@ function CartLine({
                 </Text>
               </View>
               <MaterialCommunityIcons
-                color={posDarkColors.onSurfaceMuted}
+                color={palette.onSurfaceMuted}
                 name={noteExpanded ? "chevron-up" : "chevron-down"}
                 size={20}
               />
@@ -927,7 +936,7 @@ function CartLine({
                   onBlur={saveNote}
                   onChangeText={setDraftNote}
                   placeholder="Add packing, handling, or cashier notes…"
-                  placeholderTextColor={posDarkColors.onSurfaceMuted}
+                  placeholderTextColor={palette.onSurfaceMuted}
                   style={styles.noteInput}
                   value={draftNote}
                 />
@@ -969,7 +978,7 @@ function CartLine({
             ]}
           >
             <MaterialCommunityIcons
-              color={posDarkColors.onSurface}
+              color={palette.onSurface}
               name="minus"
               size={18}
             />
@@ -997,7 +1006,7 @@ function CartLine({
             ]}
           >
             <MaterialCommunityIcons
-              color={posDarkColors.onSurface}
+              color={palette.onSurface}
               name="plus"
               size={18}
             />
@@ -1083,6 +1092,8 @@ export function PosCartScreen({
   taxes,
   totals,
 }: PosCartScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = isOfflineProp ?? connectionStatus === "offline";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
@@ -1132,7 +1143,7 @@ export function PosCartScreen({
           style={styles.backButton}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="arrow-left"
             size={22}
           />
@@ -1174,7 +1185,7 @@ export function PosCartScreen({
               </Text>
             </View>
             <MaterialCommunityIcons
-              color={posDarkColors.onSurfaceMuted}
+              color={palette.onSurfaceMuted}
               name="chevron-down"
               size={20}
             />
@@ -1209,7 +1220,7 @@ export function PosCartScreen({
               style={styles.loyaltyCard}
             >
               <MaterialCommunityIcons
-                color={posDarkColors.primary}
+                color={palette.primary}
                 name="star-circle-outline"
                 size={21}
               />
@@ -1250,7 +1261,7 @@ export function PosCartScreen({
                 </Text>
               </View>
               <MaterialCommunityIcons
-                color={posDarkColors.onSurfaceMuted}
+                color={palette.onSurfaceMuted}
                 name="chevron-down"
                 size={20}
               />
@@ -1400,7 +1411,7 @@ export function PosCartScreen({
                 ]}
               >
                 <MaterialCommunityIcons
-                  color={posDarkColors.onSurface}
+                  color={palette.onSurface}
                   name="pause"
                   size={18}
                 />
@@ -1429,7 +1440,7 @@ export function PosCartScreen({
       ) : (
         <View style={styles.emptyState}>
           <MaterialCommunityIcons
-            color={posDarkColors.onSurfaceMuted}
+            color={palette.onSurfaceMuted}
             name="cart-outline"
             size={42}
           />
@@ -1519,10 +1530,11 @@ export function PosCartScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   batchActions: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   batchEditor: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     gap: spacing.sm,
     padding: spacing.sm,
@@ -1534,27 +1546,27 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   batchEditorMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     lineHeight: typography.lineHeight.body,
   },
   batchEditorTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   batchError: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   batchHeading: { flex: 1, gap: 2 },
   batchInput: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
     height: 36,
@@ -1566,23 +1578,23 @@ const styles = StyleSheet.create({
     textAlignVertical: "center",
   },
   batchLoading: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   batchMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   batchName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   batchRefreshButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     height: 34,
@@ -1591,7 +1603,7 @@ const styles = StyleSheet.create({
   },
   batchRow: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
@@ -1602,20 +1614,20 @@ const styles = StyleSheet.create({
   batchRowContent: { flex: 1, gap: 2 },
   batchSaveButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.sm,
     justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: spacing.sm,
   },
   batchSaveLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   batchSecondaryButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     justifyContent: "center",
@@ -1623,12 +1635,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   batchSecondaryLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   batchSection: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     overflow: "hidden",
@@ -1642,37 +1654,37 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   batchSectionMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   batchSectionTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
     textTransform: "uppercase",
   },
   batchSummary: {
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     borderRadius: radii.sm,
     flexDirection: "row",
     justifyContent: "space-between",
     padding: spacing.sm,
   },
   batchSummaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   batchSummaryValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     marginTop: 2,
   },
   backButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
@@ -1680,23 +1692,23 @@ const styles = StyleSheet.create({
     width: 40,
   },
   browseButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   browseButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   bundleBadge: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 10,
     overflow: "hidden",
@@ -1706,19 +1718,19 @@ const styles = StyleSheet.create({
   },
   bundleComponents: { gap: spacing.xs },
   bundleComponentsTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
     textTransform: "uppercase",
   },
   bundleComponentName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   bundleComponentQuantity: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
@@ -1729,51 +1741,51 @@ const styles = StyleSheet.create({
   },
   checkoutButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 48,
   },
   checkoutButtonWithHold: { flex: 1 },
   checkoutButtonDisabled: {
-    backgroundColor: posDarkColors.disabled,
+    backgroundColor: palette.disabled,
     opacity: 0.5,
   },
   checkoutButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   checkoutNote: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     lineHeight: typography.lineHeight.body,
     textAlign: "center",
   },
   clearButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   clearButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   cartActions: { flexDirection: "row", gap: spacing.sm },
   clearCustomerButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   clearCustomerButtonLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
@@ -1781,8 +1793,8 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   customerSelector: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -1793,24 +1805,24 @@ const styles = StyleSheet.create({
   },
   customerSelectorMain: { flex: 1, gap: 1 },
   customerSelectorMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   customerSelectorValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   customerRequired: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     lineHeight: typography.lineHeight.body,
     textAlign: "center",
   },
   description: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
@@ -1821,13 +1833,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   detailsHintLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   detailsPanel: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     gap: spacing.sm,
@@ -1840,48 +1852,48 @@ const styles = StyleSheet.create({
   },
   errorState: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.error,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.error,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.sm,
   },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     textAlign: "center",
   },
   emptyText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
     textAlign: "center",
   },
   emptyTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   item: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },
   itemCode: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   itemContext: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
@@ -1907,8 +1919,8 @@ const styles = StyleSheet.create({
   },
   loyaltyCard: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -1917,41 +1929,41 @@ const styles = StyleSheet.create({
   },
   loyaltyContent: { flex: 1, gap: 2 },
   loyaltyLoading: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     textAlign: "center",
   },
   loyaltyError: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     marginTop: spacing.xs,
   },
   loyaltyMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   loyaltyTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   noteContent: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     gap: spacing.xs,
     padding: spacing.sm,
   },
   noteCount: {
     alignSelf: "flex-end",
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   noteEditor: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     overflow: "hidden",
@@ -1966,10 +1978,10 @@ const styles = StyleSheet.create({
   },
   noteHeaderContent: { flex: 1, gap: 2 },
   noteInput: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     minHeight: 84,
@@ -1977,25 +1989,25 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   noteLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
     textTransform: "uppercase",
   },
   notePreview: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   priceListLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   priceListSelector: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2004,15 +2016,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   priceListValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
     marginTop: 2,
   },
   pricingRule: {
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     borderRadius: radii.sm,
-    color: posDarkColors.primary,
+    color: palette.primary,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
     paddingHorizontal: spacing.xs,
@@ -2020,63 +2032,63 @@ const styles = StyleSheet.create({
   },
   pricingApplyButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.sm,
     justifyContent: "center",
     minHeight: 36,
     paddingHorizontal: spacing.sm,
   },
   pricingApplyLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   pricingAudit: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.primary,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.primary,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
     lineHeight: typography.lineHeight.body,
     padding: spacing.sm,
   },
   pricingEditor: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.sm,
   },
   pricingEditorMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   pricingEditorTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   pricingError: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   pricingField: { flex: 1, gap: spacing.xs },
   pricingFieldLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   pricingFields: { flexDirection: "row", gap: spacing.sm },
   pricingInput: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
@@ -2093,47 +2105,47 @@ const styles = StyleSheet.create({
   },
   pricingResetButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     minHeight: 36,
     paddingHorizontal: spacing.sm,
   },
   pricingResetLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   itemName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   itemRate: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   originalRate: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     textDecorationLine: "line-through",
   },
   lineTotal: { alignItems: "flex-end", gap: 2 },
   lineTotalAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   lineTotalLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   quantityButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     height: 34,
@@ -2147,23 +2159,23 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   retryButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   retryButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   quantityInput: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
     height: 34,
@@ -2177,7 +2189,7 @@ const styles = StyleSheet.create({
   },
   removeButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     height: 36,
@@ -2185,14 +2197,14 @@ const styles = StyleSheet.create({
     width: 36,
   },
   stockHint: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   freeBadge: {
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.pill,
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 10,
     overflow: "hidden",
@@ -2202,34 +2214,34 @@ const styles = StyleSheet.create({
   },
   scrollView: { flex: 1 },
   serialEditor: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     gap: spacing.sm,
     padding: spacing.sm,
   },
   serialEditorTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   serialError: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   serialMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   serialName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   serialRow: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
@@ -2237,25 +2249,25 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   serialRowContent: { flex: 1, gap: 2 },
-  serialRowSelected: { borderColor: posDarkColors.primary },
+  serialRowSelected: { borderColor: palette.primary },
   serialScanButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.sm,
     justifyContent: "center",
     minHeight: 38,
     paddingHorizontal: spacing.sm,
   },
   serialScanLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   serialSearchInput: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
@@ -2271,7 +2283,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   serialSection: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     overflow: "hidden",
@@ -2285,12 +2297,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   serialSectionMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   serialSectionTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
     textTransform: "uppercase",
@@ -2304,57 +2316,57 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   summary: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: spacing.md,
   },
   summaryAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
   summaryRow: { flexDirection: "row", justifyContent: "space-between" },
   summaryRowAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   summaryRowLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   updatingText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
     textAlign: "center",
   },
   uomLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   uomSelector: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
@@ -2363,32 +2375,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   uomValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     marginTop: 2,
   },
   grandTotal: {
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: spacing.sm,
   },
   grandTotalAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   grandTotalLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   holdButton: {
     alignItems: "center",
-    backgroundColor: posDarkColors.surfaceContainerHigh,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainerHigh,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -2399,15 +2411,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
   },
   holdButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   holdFeedback: {
-    color: posDarkColors.primary,
+    color: palette.primary,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
     textAlign: "center",
   },
-});
+  });
+}

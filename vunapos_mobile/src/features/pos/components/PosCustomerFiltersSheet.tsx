@@ -11,7 +11,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "react-native-paper";
 
 import { PosCustomerDirectoryFilters } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type FilterField = keyof PosCustomerDirectoryFilters;
 type FilterOption = { label: string; value: string };
@@ -49,6 +50,8 @@ function FilterSelect({
   options: FilterOption[];
   value: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? label;
   return (
     <View style={styles.selectWrapper}>
@@ -63,7 +66,7 @@ function FilterSelect({
           {selectedLabel}
         </Text>
         <MaterialCommunityIcons
-          color={posDarkColors.onSurfaceMuted}
+          color={palette.onSurfaceMuted}
           name="chevron-down"
           size={20}
         />
@@ -81,6 +84,8 @@ function FilterSelectionDialog({
   onSelect: (value: string) => void;
   selection: FilterSelection | null;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   if (!selection) return null;
   return (
     <View accessibilityViewIsModal style={styles.selectionOverlay}>
@@ -100,7 +105,7 @@ function FilterSelectionDialog({
             style={styles.closeButton}
           >
             <MaterialCommunityIcons
-              color={posDarkColors.onSurface}
+              color={palette.onSurface}
               name="close"
               size={20}
             />
@@ -122,7 +127,7 @@ function FilterSelectionDialog({
               <Text style={styles.selectionOptionLabel}>{option.label}</Text>
               {option.value === selection.value ? (
                 <MaterialCommunityIcons
-                  color={posDarkColors.onSurface}
+                  color={palette.onSurface}
                   name="check"
                   size={20}
                 />
@@ -146,6 +151,8 @@ export function PosCustomerFiltersSheet({
   territories,
   visible,
 }: PosCustomerFiltersSheetProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState<FilterSelection | null>(null);
   const groupOptions = [
@@ -213,7 +220,7 @@ export function PosCustomerFiltersSheet({
               style={styles.closeButton}
             >
               <MaterialCommunityIcons
-                color={posDarkColors.onSurface}
+                color={palette.onSurface}
                 name="close"
                 size={20}
               />
@@ -261,33 +268,35 @@ export function PosCustomerFiltersSheet({
   );
 }
 
-const styles = StyleSheet.create({
-  applyButton: { alignItems: "center", backgroundColor: posDarkColors.primary, borderRadius: radii.md, flex: 1, justifyContent: "center", minHeight: 48 },
-  applyButtonLabel: { color: posDarkColors.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
-  backdrop: { backgroundColor: "rgba(0, 0, 0, 0.62)", bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
-  clearButton: { alignItems: "center", borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 48 },
-  clearButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
-  closeButton: { alignItems: "center", borderColor: posDarkColors.border, borderRadius: radii.pill, borderWidth: 1, height: 36, justifyContent: "center", width: 36 },
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
+  applyButton: { alignItems: "center", backgroundColor: palette.primary, borderRadius: radii.md, flex: 1, justifyContent: "center", minHeight: 48 },
+  applyButtonLabel: { color: palette.onPrimary, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  backdrop: { backgroundColor: palette.scrim, bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
+  clearButton: { alignItems: "center", borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, flex: 1, justifyContent: "center", minHeight: 48 },
+  clearButtonLabel: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  closeButton: { alignItems: "center", borderColor: palette.border, borderRadius: radii.pill, borderWidth: 1, height: 36, justifyContent: "center", width: 36 },
   content: { gap: spacing.sm, padding: spacing.lg },
   footer: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  handle: { alignSelf: "center", backgroundColor: posDarkColors.border, borderRadius: radii.pill, height: 4, marginTop: spacing.sm, width: 48 },
-  label: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
+  handle: { alignSelf: "center", backgroundColor: palette.border, borderRadius: radii.pill, height: 4, marginTop: spacing.sm, width: 48 },
+  label: { color: palette.onSurface, fontFamily: typography.fontFamily.medium, fontSize: typography.size.small },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
-  selectButton: { alignItems: "center", backgroundColor: posDarkColors.surfaceContainer, borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: "row", gap: spacing.sm, height: 44, justifyContent: "space-between", paddingHorizontal: spacing.sm },
-  selectValue: { color: posDarkColors.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
+  selectButton: { alignItems: "center", backgroundColor: palette.surfaceContainer, borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, flexDirection: "row", gap: spacing.sm, height: 44, justifyContent: "space-between", paddingHorizontal: spacing.sm },
+  selectValue: { color: palette.onSurface, flex: 1, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   selectWrapper: { gap: spacing.xs },
-  selectionDialog: { backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderRadius: radii.lg, borderWidth: 1, margin: spacing.lg, maxHeight: "70%", padding: spacing.md },
+  selectionDialog: { backgroundColor: palette.surface, borderColor: palette.border, borderRadius: radii.lg, borderWidth: 1, margin: spacing.lg, maxHeight: "70%", padding: spacing.md },
   selectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   selectionOption: { alignItems: "center", borderRadius: radii.md, flexDirection: "row", justifyContent: "space-between", padding: spacing.sm },
-  selectionOptionActive: { backgroundColor: posDarkColors.surfaceContainer },
-  selectionOptionLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
+  selectionOptionActive: { backgroundColor: palette.surfaceContainer },
+  selectionOptionLabel: { color: palette.onSurface, fontFamily: typography.fontFamily.regular, fontSize: typography.size.body },
   selectionOptions: { gap: spacing.xs, paddingTop: spacing.sm },
   selectionOverlay: { alignItems: "center", bottom: 0, justifyContent: "center", left: 0, position: "absolute", right: 0, top: 0 },
-  selectionScrim: { backgroundColor: "rgba(0, 0, 0, 0.38)", bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
-  selectionTitle: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
-  sheet: { backgroundColor: posDarkColors.surface, borderColor: posDarkColors.border, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, borderWidth: 1, gap: spacing.md, maxHeight: "80%", paddingTop: spacing.sm },
+  selectionScrim: { backgroundColor: palette.scrim, bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
+  selectionTitle: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  sheet: { backgroundColor: palette.surface, borderColor: palette.border, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, borderWidth: 1, gap: spacing.md, maxHeight: "80%", paddingTop: spacing.sm },
   sheetHeader: { alignItems: "flex-start", flexDirection: "row", gap: spacing.md, justifyContent: "space-between", paddingHorizontal: spacing.lg },
   sheetHeading: { flex: 1, gap: 2 },
-  subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
-  title: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
-});
+  subtitle: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, lineHeight: typography.lineHeight.body },
+  title: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
+  });
+}

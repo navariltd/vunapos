@@ -3,7 +3,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Text } from "react-native-paper";
 
 import { PosItemUom } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type Props = {
   isOffline?: boolean;
@@ -25,6 +26,8 @@ export function PosUomPickerSheet({
   selectedUom,
   visible,
 }: Props) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const insets = useSafeAreaInsets();
 
   return (
@@ -90,26 +93,27 @@ export function PosUomPickerSheet({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backdrop: {
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: palette.scrim,
     ...StyleSheet.absoluteFill,
   },
   closeButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   closeButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   handle: {
     alignSelf: "center",
-    backgroundColor: "#555",
+    backgroundColor: palette.border,
     borderRadius: radii.pill,
     height: 4,
     marginBottom: spacing.md,
@@ -124,7 +128,7 @@ const styles = StyleSheet.create({
   heading: { flex: 1, gap: 2 },
   option: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -133,9 +137,9 @@ const styles = StyleSheet.create({
     minHeight: 56,
     paddingHorizontal: spacing.md,
   },
-  optionActive: { borderColor: posDarkColors.primary },
+  optionActive: { borderColor: palette.primary },
   optionCheck: {
-    color: posDarkColors.primary,
+    color: palette.primary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
     minWidth: 20,
@@ -143,31 +147,32 @@ const styles = StyleSheet.create({
   },
   optionContent: { flex: 1, gap: 2 },
   optionMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   optionName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   root: { flex: 1, justifyContent: "flex-end" },
   sheet: {
-    backgroundColor: posDarkColors.surface,
+    backgroundColor: palette.surface,
     borderTopLeftRadius: radii.lg,
     borderTopRightRadius: radii.lg,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
-});
+  });
+}

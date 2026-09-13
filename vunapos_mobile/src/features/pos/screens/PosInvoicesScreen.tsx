@@ -14,7 +14,8 @@ import {
   PosInvoiceHistoryRow,
   PosInvoiceListRow,
 } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 const initialFilters: PosInvoiceHistoryFilters = {
   currentShift: true,
@@ -68,6 +69,8 @@ type FilterChoiceProps = {
 };
 
 function FilterChoice({ active, label, onPress }: FilterChoiceProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <Pressable
       onPress={onPress}
@@ -91,6 +94,8 @@ type SummaryCardProps = {
 };
 
 function SummaryCard({ label, value }: SummaryCardProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.summaryCard}>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -126,6 +131,8 @@ export function PosInvoicesScreen({
   onOpenInvoice,
   onRestoreHeld,
 }: PosInvoicesScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const [activeTab, setActiveTab] = useState<"history" | "held">("history");
   const [filters, setFilters] =
     useState<PosInvoiceHistoryFilters>(initialFilters);
@@ -520,16 +527,17 @@ export function PosInvoicesScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backToPosButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   backToPosButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
@@ -542,43 +550,43 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
   },
   emptyState: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     paddingTop: spacing.xxl,
     textAlign: "center",
   },
   errorNotice: {
-    backgroundColor: "#3d1f1f",
-    borderColor: posDarkColors.error,
+    backgroundColor: palette.errorSurface,
+    borderColor: palette.error,
     borderRadius: radii.md,
     borderWidth: 1,
     padding: spacing.sm,
   },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   filterChoice: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   filterChoiceActive: {
-    backgroundColor: posDarkColors.primary,
-    borderColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
+    borderColor: palette.primary,
   },
   filterChoiceLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   filterChoiceLabelActive: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
   },
   filterActionRow: {
     alignItems: "center",
@@ -586,21 +594,21 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   filterSummary: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   filtersButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
     paddingHorizontal: spacing.sm,
   },
   filtersButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -613,8 +621,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   heldInvoiceCard: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -623,23 +631,23 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   heldInvoiceCustomer: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   heldInvoiceMain: { flex: 1, gap: 3 },
   heldInvoiceModified: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   heldInvoiceName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   heldInvoiceTotal: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -658,7 +666,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
   },
   paginationButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
@@ -668,23 +676,23 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   paginationLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   refreshingText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   restoreButton: {
-    backgroundColor: posDarkColors.primary,
+    backgroundColor: palette.primary,
     borderRadius: radii.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   restoreButtonLabel: {
-    color: posDarkColors.onPrimary,
+    color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
@@ -692,14 +700,14 @@ const styles = StyleSheet.create({
     height: spacing.sm,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
   },
   summaryCard: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexBasis: "48%",
@@ -713,17 +721,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   summaryValue: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 22,
@@ -733,4 +741,5 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
   },
-});
+  });
+}

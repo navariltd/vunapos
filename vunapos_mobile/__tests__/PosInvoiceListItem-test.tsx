@@ -7,6 +7,7 @@ jest.mock("react-native-paper", () => ({
 
 import { PosInvoiceListItem } from "@/features/pos/components/PosInvoiceListItem";
 import { PosInvoiceListRow, PosInvoiceStatus } from "@/features/pos/types";
+import { lightPalette } from "@/theme/tokens";
 
 const onPress = jest.fn();
 
@@ -39,12 +40,12 @@ describe("PosInvoiceListItem", () => {
   });
 
   it.each([
-    ["Paid", "#86efac"],
-    ["Partly Paid", "#f3c579"],
-    ["Unpaid", "#eb9091"],
-    ["Overdue", "#eb9091"],
-    ["Cancelled", "#eb9091"],
-    ["Credit Note", "#f3c579"],
+    ["Paid", lightPalette.success],
+    ["Partly Paid", lightPalette.onSurface],
+    ["Unpaid", lightPalette.error],
+    ["Overdue", lightPalette.error],
+    ["Cancelled", lightPalette.error],
+    ["Credit Note", lightPalette.onSurface],
   ] as [PosInvoiceStatus, string][])(
     "presents %s with its mapped status colour",
     async (status, color) => {

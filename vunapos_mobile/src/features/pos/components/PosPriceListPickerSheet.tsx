@@ -3,7 +3,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from 'react-native-paper';
 
 import { PosPriceList } from '@/features/pos/types';
-import { posDarkColors, radii, spacing, typography } from '@/theme/tokens';
+import { useAppearance } from '@/theme/AppearanceProvider';
+import { AppPalette, radii, spacing, typography } from '@/theme/tokens';
 
 type Props = {
   defaultPriceList?: string | null;
@@ -17,6 +18,8 @@ type Props = {
 
 /** Restricts choices to price lists supplied by the active POS profile. */
 export function PosPriceListPickerSheet({ defaultPriceList, isOffline = false, onDismiss, onSelect, options, selectedPriceList, visible }: Props) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const insets = useSafeAreaInsets();
   const priceLists = [...(defaultPriceList ? [{ name: defaultPriceList }] : []), ...options.filter((option) => option.name !== defaultPriceList)];
   const activePriceList = selectedPriceList || defaultPriceList;
@@ -42,20 +45,22 @@ export function PosPriceListPickerSheet({ defaultPriceList, isOffline = false, o
   </Modal>;
 }
 
-const styles = StyleSheet.create({
-  backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.6)', ...StyleSheet.absoluteFill },
-  closeButton: { borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
-  closeButtonLabel: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
-  handle: { alignSelf: 'center', backgroundColor: '#555', borderRadius: radii.pill, height: 4, marginBottom: spacing.md, width: 40 },
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
+  backdrop: { backgroundColor: palette.scrim, ...StyleSheet.absoluteFill },
+  closeButton: { borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, paddingHorizontal: spacing.sm, paddingVertical: 7 },
+  closeButtonLabel: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.tiny },
+  handle: { alignSelf: 'center', backgroundColor: palette.border, borderRadius: radii.pill, height: 4, marginBottom: spacing.md, width: 40 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  option: { alignItems: 'center', borderColor: posDarkColors.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm, minHeight: 56, paddingHorizontal: spacing.md },
-  optionActive: { borderColor: posDarkColors.primary },
-  optionCheck: { color: posDarkColors.primary, fontFamily: typography.fontFamily.semibold, fontSize: 20, minWidth: 20, textAlign: 'center' },
+  option: { alignItems: 'center', borderColor: palette.border, borderRadius: radii.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm, minHeight: 56, paddingHorizontal: spacing.md },
+  optionActive: { borderColor: palette.primary },
+  optionCheck: { color: palette.primary, fontFamily: typography.fontFamily.semibold, fontSize: 20, minWidth: 20, textAlign: 'center' },
   optionContent: { flex: 1, gap: 2 },
-  optionMeta: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
-  optionName: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
+  optionMeta: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.tiny },
+  optionName: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: typography.size.body },
   root: { flex: 1, justifyContent: 'flex-end' },
-  sheet: { backgroundColor: posDarkColors.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
-  subtitle: { color: posDarkColors.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, marginTop: spacing.sm },
-  title: { color: posDarkColors.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
-});
+  sheet: { backgroundColor: palette.surface, borderTopLeftRadius: radii.lg, borderTopRightRadius: radii.lg, paddingHorizontal: spacing.md, paddingTop: spacing.sm },
+  subtitle: { color: palette.onSurfaceMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.size.small, marginTop: spacing.sm },
+  title: { color: palette.onSurface, fontFamily: typography.fontFamily.semibold, fontSize: 20 },
+  });
+}

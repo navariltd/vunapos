@@ -18,7 +18,8 @@ import {
   PosInvoiceStatus,
   PosSaleCustomer,
 } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosInvoiceDetailsScreenProps = {
   invoiceDoctype?: string;
@@ -34,17 +35,19 @@ type PosInvoiceDetailsScreenProps = {
   onStartSale: (customer: PosSaleCustomer) => void;
 };
 
-const statusStyles: Record<
+function createStatusStyles(palette: AppPalette): Record<
   PosInvoiceStatus,
   { backgroundColor: string; color: string }
-> = {
-  "Credit Note": { backgroundColor: "#4a3010", color: "#f3c579" },
-  Cancelled: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-  Overdue: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-  Paid: { backgroundColor: "#16452e", color: "#86efac" },
-  "Partly Paid": { backgroundColor: "#4a3010", color: "#f3c579" },
-  Unpaid: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-};
+> {
+  return {
+    "Credit Note": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    Cancelled: { backgroundColor: palette.errorSurface, color: palette.error },
+    Overdue: { backgroundColor: palette.errorSurface, color: palette.error },
+    Paid: { backgroundColor: palette.surfaceContainer, color: palette.success },
+    "Partly Paid": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    Unpaid: { backgroundColor: palette.errorSurface, color: palette.error },
+  };
+}
 
 function formatDate(value?: string) {
   if (!value) return "-";
@@ -89,6 +92,8 @@ function DetailCard({
   children: React.ReactNode;
   title: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -98,6 +103,8 @@ function DetailCard({
 }
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.summaryValue}>
       <Text style={styles.summaryLabel}>{label}</Text>
@@ -109,6 +116,8 @@ function SummaryValue({ label, value }: { label: string; value: string }) {
 }
 
 function KeyValue({ label, value }: { label: string; value?: string }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View style={styles.keyValue}>
       <Text style={styles.keyLabel}>{label}</Text>
@@ -129,6 +138,8 @@ export function PosInvoiceDetailsScreen({
   onReceivePayment,
   onStartSale,
 }: PosInvoiceDetailsScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus === "offline";
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
@@ -166,7 +177,7 @@ export function PosInvoiceDetailsScreen({
   const formatCurrency = (amount: number, amountCurrency = currency) =>
     formatPosCurrency(amount, amountCurrency, precision);
   const total = invoice.totals.rounded_total || invoice.totals.grand_total || 0;
-  const statusStyle = statusStyles[invoice.status];
+  const statusStyle = createStatusStyles(palette)[invoice.status];
   const itemCount = invoice.items.reduce(
     (sum, item) => sum + Number(item.qty || 0),
     0,
@@ -199,7 +210,7 @@ export function PosInvoiceDetailsScreen({
           style={styles.backIconButton}
         >
           <MaterialCommunityIcons
-            color={posDarkColors.onSurface}
+            color={palette.onSurface}
             name="arrow-left"
             size={22}
           />
@@ -534,22 +545,23 @@ export function PosInvoiceDetailsScreen({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   backButton: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   backButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   backIconButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.pill,
     borderWidth: 1,
     height: 40,
@@ -557,55 +569,55 @@ const styles = StyleSheet.create({
     width: 40,
   },
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.md,
   },
   cardTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
   creditSale: {
-    color: "#f3c579",
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   customerId: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   customerButton: {
     alignSelf: "flex-start",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 7,
   },
   customerButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   customerActions: { flexDirection: "row", gap: spacing.sm },
   customerName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   emptyCardText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     textAlign: "center",
@@ -613,47 +625,47 @@ const styles = StyleSheet.create({
   header: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 4 },
   itemAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   itemBatch: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   itemCode: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   itemList: { gap: spacing.sm },
   itemMain: { flex: 1, gap: 2 },
   itemMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   itemName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   itemRow: {
     alignItems: "flex-start",
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
   keyLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   keyText: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
@@ -666,79 +678,79 @@ const styles = StyleSheet.create({
   },
   keyValues: { gap: spacing.xs },
   paymentEntryAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
     textAlign: "right",
   },
-  paymentEntryCancelled: { color: posDarkColors.error },
+  paymentEntryCancelled: { color: palette.error },
   paymentEntryList: { gap: spacing.sm },
   paymentEntryMain: { flex: 1, gap: 2 },
   paymentEntryMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   paymentEntryName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   paymentEntryRow: {
     alignItems: "flex-start",
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
   paymentEntryStatus: {
-    color: "#86efac",
+    color: palette.success,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   returnAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
     textAlign: "right",
   },
   returnButton: {
     alignSelf: "flex-start",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     paddingHorizontal: spacing.sm,
     paddingVertical: 9,
   },
   returnButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
-  returnCancelled: { color: posDarkColors.error },
+  returnCancelled: { color: palette.error },
   returnList: { gap: spacing.sm },
   returnMain: { flex: 1, gap: 2 },
   returnMeta: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   returnName: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   returnRow: {
     alignItems: "flex-start",
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
   returnStatus: {
-    color: "#86efac",
+    color: palette.success,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
@@ -750,7 +762,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   stateText: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
@@ -764,23 +776,23 @@ const styles = StyleSheet.create({
     fontSize: typography.size.tiny,
   },
   subtitle: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   summaryLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   summaryText: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   summaryValue: {
-    backgroundColor: posDarkColors.surfaceContainer,
+    backgroundColor: palette.surfaceContainer,
     borderRadius: radii.md,
     flexBasis: "47%",
     flexGrow: 1,
@@ -788,10 +800,11 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   title: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 20,
   },
   titleRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
-});
+  });
+}

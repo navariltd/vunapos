@@ -3,7 +3,8 @@ import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
 import { PosInvoiceListRow, PosInvoiceStatus } from "@/features/pos/types";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosInvoiceListItemProps = {
   currencyPrecision?: number;
@@ -11,17 +12,19 @@ type PosInvoiceListItemProps = {
   onPress: () => void;
 };
 
-const statusStyles: Record<
+function createStatusStyles(palette: AppPalette): Record<
   PosInvoiceStatus,
   { backgroundColor: string; color: string }
-> = {
-  "Credit Note": { backgroundColor: "#4a3010", color: "#f3c579" },
-  Cancelled: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-  Overdue: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-  Paid: { backgroundColor: "#16452e", color: "#86efac" },
-  "Partly Paid": { backgroundColor: "#4a3010", color: "#f3c579" },
-  Unpaid: { backgroundColor: "#3d1f1f", color: posDarkColors.error },
-};
+> {
+  return {
+    "Credit Note": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    Cancelled: { backgroundColor: palette.errorSurface, color: palette.error },
+    Overdue: { backgroundColor: palette.errorSurface, color: palette.error },
+    Paid: { backgroundColor: palette.surfaceContainer, color: palette.success },
+    "Partly Paid": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    Unpaid: { backgroundColor: palette.errorSurface, color: palette.error },
+  };
+}
 
 function paymentReference(
   transactionReference?: string,
@@ -47,7 +50,9 @@ export function PosInvoiceListItem({
   invoice,
   onPress,
 }: PosInvoiceListItemProps) {
-  const statusStyle = statusStyles[invoice.status];
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
+  const statusStyle = createStatusStyles(palette)[invoice.status];
   const formatCurrency = (amount: number, currency = invoice.currency) =>
     formatPosCurrency(amount, currency, currencyPrecision);
 
@@ -150,10 +155,11 @@ export function PosInvoiceListItem({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
@@ -169,44 +175,44 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   auditValue: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   customer: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
   customerId: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
   creditSaleBadge: {
-    backgroundColor: "#4a3010",
+    backgroundColor: palette.surfaceContainerHigh,
     borderRadius: radii.pill,
     paddingHorizontal: spacing.sm,
     paddingVertical: 4,
   },
   creditSaleLabel: {
-    color: "#f3c579",
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
   dueDate: {
-    color: "#f3c579",
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   invoiceNumber: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
   metadata: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
@@ -215,12 +221,12 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   paymentMode: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
   paymentAmount: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
   },
@@ -234,7 +240,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   outstanding: {
-    color: "#f3c579",
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
     marginTop: 2,
@@ -258,21 +264,22 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   total: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: 15,
   },
   totalLabel: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.tiny,
   },
   totalRow: {
     alignItems: "center",
-    borderTopColor: posDarkColors.border,
+    borderTopColor: palette.border,
     borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
     paddingTop: spacing.sm,
   },
-});
+  });
+}

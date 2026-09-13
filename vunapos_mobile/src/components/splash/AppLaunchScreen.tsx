@@ -1,7 +1,8 @@
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
-import { spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, spacing, typography } from "@/theme/tokens";
 
 type AppLaunchScreenProps = {
   message: string;
@@ -10,6 +11,8 @@ type AppLaunchScreenProps = {
 
 /** The brief, unbranded handoff from the native splash to application routing. */
 export function AppLaunchScreen({ message, onReady }: AppLaunchScreenProps) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   return (
     <View
       accessibilityLabel={message}
@@ -17,25 +20,27 @@ export function AppLaunchScreen({ message, onReady }: AppLaunchScreenProps) {
       onLayout={onReady}
       style={styles.screen}
     >
-      <ActivityIndicator color="#16794c" size="small" />
+      <ActivityIndicator color={palette.primary} size="small" />
       <Text style={styles.message}>{message}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   screen: {
     alignItems: "center",
-    backgroundColor: "#f8f8f8",
+    backgroundColor: palette.background,
     flex: 1,
     justifyContent: "center",
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
   },
   message: {
-    color: "#525252",
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     textAlign: "center",
   },
-});
+  });
+}

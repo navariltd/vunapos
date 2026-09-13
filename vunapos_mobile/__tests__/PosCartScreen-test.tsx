@@ -69,7 +69,7 @@ jest.mock("@/features/pos/hooks/usePosItemBatches", () => ({
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
-import { posDarkColors } from "@/theme/tokens";
+import { lightPalette } from "@/theme/tokens";
 
 const onBack = jest.fn();
 const onCheckout = jest.fn();
@@ -190,7 +190,7 @@ describe("PosCartScreen", () => {
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
     expect(onCheckout).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Proceed to checkout")).toHaveStyle({
-      backgroundColor: posDarkColors.primary,
+      backgroundColor: lightPalette.primary,
     });
 
     await fireEvent.press(screen.getByLabelText("Use default sale customer"));
@@ -428,7 +428,7 @@ describe("PosCartScreen", () => {
     const checkoutButton = screen.getByLabelText("Proceed to checkout");
     expect(checkoutButton.props.accessibilityState.disabled).toBe(true);
     expect(checkoutButton).toHaveStyle({
-      backgroundColor: posDarkColors.disabled,
+      backgroundColor: lightPalette.disabled,
       opacity: 0.5,
     });
   });

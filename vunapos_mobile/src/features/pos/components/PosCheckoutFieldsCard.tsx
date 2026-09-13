@@ -15,7 +15,8 @@ import { Text } from "react-native-paper";
 
 import { PosCheckoutFieldDefinition } from "@/features/pos/types";
 import { useCheckoutLinkOptions } from "@/features/pos/hooks/useCheckoutLinkOptions";
-import { posDarkColors, radii, spacing, typography } from "@/theme/tokens";
+import { useAppearance } from "@/theme/AppearanceProvider";
+import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 export type PosCheckoutFieldValues = Record<string, string>;
 
@@ -55,6 +56,8 @@ export function PosCheckoutFieldsCard({
   transactionDoctype,
   values,
 }: Props) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const configuredFields = useMemo(
     () =>
       (fields ?? [])
@@ -112,8 +115,8 @@ export function PosCheckoutFieldsCard({
                   onValueChange={(checked) =>
                     onChange(field.fieldname, checked ? "1" : "0")
                   }
-                  thumbColor={posDarkColors.onSurface}
-                  trackColor={{ false: posDarkColors.border, true: "#39b976" }}
+                  thumbColor={palette.onSurface}
+                  trackColor={{ false: palette.border, true: palette.success }}
                   value={value === "1" || value === "true"}
                 />
               </View>
@@ -131,7 +134,7 @@ export function PosCheckoutFieldsCard({
                     style={[styles.selectButton, disabled && styles.disabled]}
                   >
                     <MaterialCommunityIcons
-                      color={posDarkColors.onSurfaceMuted}
+                      color={palette.onSurfaceMuted}
                       name="calendar-month-outline"
                       size={20}
                     />
@@ -152,7 +155,7 @@ export function PosCheckoutFieldsCard({
                       {value || field.placeholder || `Select ${field.label}`}
                     </Text>
                     <MaterialCommunityIcons
-                      color={posDarkColors.onSurfaceMuted}
+                      color={palette.onSurfaceMuted}
                       name="chevron-down"
                       size={20}
                     />
@@ -174,7 +177,7 @@ export function PosCheckoutFieldsCard({
                       onChange(field.fieldname, nextValue)
                     }
                     placeholder={field.placeholder || `Enter ${field.label}`}
-                    placeholderTextColor="#8f8f8f"
+                    placeholderTextColor={palette.onSurfaceMuted}
                     style={[styles.input, isLongText && styles.longTextInput]}
                     value={value}
                   />
@@ -190,7 +193,7 @@ export function PosCheckoutFieldsCard({
 
       {dateField ? (
         <DateTimePicker
-          accentColor={posDarkColors.primary}
+          accentColor={palette.primary}
           mode="date"
           negativeButton={{ label: "Cancel" }}
           onDismiss={() => setDateField(undefined)}
@@ -252,6 +255,8 @@ function PosCheckoutLinkEditor({
   onChange: (fieldname: string, value: string) => void;
   value: string;
 }) {
+  const { palette } = useAppearance();
+  const styles = createStyles(palette);
   const [isFocused, setIsFocused] = useState(false);
   const linkSearch = useCheckoutLinkOptions(
     isFocused ? field : undefined,
@@ -266,7 +271,7 @@ function PosCheckoutLinkEditor({
         onChangeText={(nextValue) => onChange(field.fieldname, nextValue)}
         onFocus={() => setIsFocused(true)}
         placeholder={field.placeholder || `Search ${field.label}`}
-        placeholderTextColor="#8f8f8f"
+        placeholderTextColor={palette.onSurfaceMuted}
         style={styles.input}
         value={value}
       />
@@ -305,30 +310,31 @@ function PosCheckoutLinkEditor({
   );
 }
 
-const styles = StyleSheet.create({
+function createStyles(palette: AppPalette) {
+  return StyleSheet.create({
   card: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.sm,
     padding: spacing.lg,
   },
   cardHint: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.compact,
   },
   cardTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
   cancelButton: { alignItems: "center", padding: spacing.md },
   cancelButtonLabel: {
-    color: posDarkColors.primary,
+    color: palette.primary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
@@ -336,28 +342,28 @@ const styles = StyleSheet.create({
   checkText: { flex: 1, gap: spacing.xs },
   disabled: { opacity: 0.55 },
   errorText: {
-    color: posDarkColors.error,
+    color: palette.error,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.compact,
   },
   field: { gap: spacing.xs, marginTop: spacing.sm },
   fieldHelp: {
-    color: posDarkColors.onSurfaceMuted,
+    color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.compact,
   },
   fieldLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },
   input: {
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     minHeight: 48,
     paddingHorizontal: spacing.md,
     fontFamily: typography.fontFamily.regular,
@@ -370,14 +376,14 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
   },
   linkOption: {
-    borderBottomColor: posDarkColors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   linkResults: {
-    backgroundColor: posDarkColors.surfaceContainer,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     maxHeight: 192,
@@ -387,14 +393,14 @@ const styles = StyleSheet.create({
   linkResultsScroll: { maxHeight: 176 },
   modalBackdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.62)",
+    backgroundColor: palette.scrim,
     flex: 1,
     justifyContent: "center",
     padding: spacing.lg,
   },
   modalCard: {
-    backgroundColor: posDarkColors.surface,
-    borderColor: posDarkColors.border,
+    backgroundColor: palette.surface,
+    borderColor: palette.border,
     borderRadius: radii.lg,
     borderWidth: 1,
     maxHeight: "80%",
@@ -402,26 +408,26 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   modalTitle: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     marginBottom: spacing.sm,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
   option: {
-    borderBottomColor: posDarkColors.border,
+    borderBottomColor: palette.border,
     borderBottomWidth: 1,
     paddingVertical: spacing.md,
   },
   optionLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
   selectButton: {
     alignItems: "center",
-    borderColor: posDarkColors.border,
+    borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -431,10 +437,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   selectButtonLabel: {
-    color: posDarkColors.onSurface,
+    color: palette.onSurface,
     flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.body,
   },
-});
+  });
+}
