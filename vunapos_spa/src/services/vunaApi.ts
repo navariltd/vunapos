@@ -144,7 +144,7 @@ export function getBootstrapData(call: FrappeCall, posProfile?: string) {
 
 export function searchCheckoutLinkOptions(
 	call: FrappeCall,
-	params: { doctype: string; fieldname: string; query?: string },
+	params: { doctype: string; fieldname: string; query?: string; pos_profile?: string },
 ) {
 	return callAndUnwrap<Array<{ value: string; label: string }>>(
 		call,

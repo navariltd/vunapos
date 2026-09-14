@@ -61,7 +61,7 @@ type CheckoutDialogProps = {
   customerLoyalty?: CustomerLoyaltyDTO | null;
   checkoutFields?: CheckoutFieldDefinition[];
   workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
-  onSearchCheckoutLinkOptions?: (params: { doctype: string; fieldname: string; query?: string }) => Promise<Array<{ value: string; label: string }>>;
+  onSearchCheckoutLinkOptions?: (params: { doctype: string; fieldname: string; query?: string; pos_profile?: string }) => Promise<Array<{ value: string; label: string }>>;
   defaultSaleType?: "Cash Sale" | "Credit Sale";
   error?: string | null;
   isOpen: boolean;
@@ -323,7 +323,7 @@ function CheckoutDialogContent({
   const searchLinkField = useCallback((field: CheckoutFieldDefinition, query = "") => {
     if (!onSearchCheckoutLinkOptions) return;
     setLinkSearchLoading(field.fieldname);
-    void onSearchCheckoutLinkOptions({ doctype: field.doctype, fieldname: field.fieldname, query })
+	  void onSearchCheckoutLinkOptions({ doctype: field.doctype, fieldname: field.fieldname, query, pos_profile: posProfile })
       .then((options) => setLinkOptions((current) => ({ ...current, [field.fieldname]: options })))
       .catch(() => setLinkOptions((current) => ({ ...current, [field.fieldname]: [] })))
       .finally(() => setLinkSearchLoading((current) => current === field.fieldname ? null : current));
@@ -938,7 +938,7 @@ function CheckoutDialogContent({
                           className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
                         >
                           <option value="">Select {field.label}</option>
-                          {(field.options || "").split("\\n").filter(Boolean).map((option) => <option key={option} value={option}>{option}</option>)}
+                          {(field.options || "").split(/\r?\n/).map((option) => option.trim()).filter(Boolean).map((option) => <option key={option} value={option}>{option}</option>)}
                         </select>
                       ) : field.fieldtype === "Link" ? (
                         <div className="relative">
