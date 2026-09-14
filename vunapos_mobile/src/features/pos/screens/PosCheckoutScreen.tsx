@@ -46,12 +46,14 @@ import {
   PosCartItem,
   PosCartSource,
   PosCheckoutResult,
+  PosCustomerShippingAddress,
   PosGatewayPaymentLink,
   PosOrderType,
   PosPaymentMode,
   PosSaleCustomer,
   PosSalespersonSession,
 } from "@/features/pos/types";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
@@ -105,6 +107,21 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   }).format(dateFromInput(value));
+}
+
+function shippingAddressText(address?: PosCustomerShippingAddress) {
+  if (!address) return "";
+  if (address.formatted_address?.trim()) return address.formatted_address.trim();
+  return [
+    address.address_line1,
+    address.address_line2,
+    address.city,
+    address.state,
+    address.pincode,
+    address.country,
+  ]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .join(", ");
 }
 
 function taxLabel(
@@ -1382,13 +1399,12 @@ export function PosCheckoutScreen({
               <Text style={styles.shippingAddressTitle}>
                 {customerShippingAddresses.isLoading
                   ? "Loading shipping addresses…"
-                  : selectedShippingAddress?.address_title ||
-                    selectedShippingAddress?.name ||
+                  : shippingAddressText(selectedShippingAddress) ||
                     "Select shipping address"}
               </Text>
-              {selectedShippingAddress?.city ? (
+              {selectedShippingAddress?.address_title ? (
                 <Text style={styles.cardHint}>
-                  {selectedShippingAddress.city}
+                  {selectedShippingAddress.address_title}
                 </Text>
               ) : null}
             </View>
@@ -1398,11 +1414,6 @@ export function PosCheckoutScreen({
               size={22}
             />
           </Pressable>
-          {selectedShippingAddress?.formatted_address ? (
-            <Text style={styles.cardHint}>
-              {selectedShippingAddress.formatted_address}
-            </Text>
-          ) : null}
         </View>
       ) : null}
 
@@ -1971,71 +1982,78 @@ export function PosCheckoutScreen({
         presentationStyle="pageSheet"
         visible={isShippingAddressPickerVisible}
       >
-        <KeyboardAwareFormScroll
-          contentContainerStyle={styles.shippingAddressModalContent}
-          showsVerticalScrollIndicator={false}
-          style={styles.scrollView}
+        <SafeAreaView
+          edges={["top", "bottom"]}
+          style={styles.shippingAddressModalPage}
         >
-          <View style={styles.header}>
-            <View style={styles.heading}>
-              <Text style={styles.title}>Shipping address</Text>
-              <Text style={styles.subtitle}>
-                Choose a permitted address for this{" "}
-                {isInvoice ? "invoice" : "sales order"}.
-              </Text>
+          <KeyboardAwareFormScroll
+            contentContainerStyle={styles.shippingAddressModalContent}
+            showsVerticalScrollIndicator={false}
+            style={styles.scrollView}
+          >
+            <View style={styles.header}>
+              <Pressable
+                accessibilityLabel="Back to checkout"
+                onPress={() => setIsShippingAddressPickerVisible(false)}
+                style={styles.backButton}
+              >
+                <MaterialCommunityIcons
+                  color={palette.onSurface}
+                  name="arrow-left"
+                  size={22}
+                />
+              </Pressable>
+              <View style={styles.heading}>
+                <Text style={styles.title}>Shipping address</Text>
+                <Text style={styles.subtitle}>
+                  Choose a permitted address for this{" "}
+                  {isInvoice ? "invoice" : "sales order"}.
+                </Text>
+              </View>
             </View>
-            <Pressable
-              accessibilityLabel="Close shipping address picker"
-              onPress={() => setIsShippingAddressPickerVisible(false)}
-              style={styles.backButton}
-            >
-              <MaterialCommunityIcons
-                color={palette.onSurface}
-                name="close"
-                size={22}
-              />
-            </Pressable>
-          </View>
-          <View style={styles.shippingAddressOptions}>
-            {customerShippingAddresses.data?.map((address) => {
-              const selected = address.name === selectedShippingAddress?.name;
-              return (
-                <Pressable
-                  accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
-                  disabled={isOffline}
-                  accessibilityState={{ selected }}
-                  key={address.name}
-                  onPress={() => {
-                    setShippingAddressName(address.name);
-                    setIsShippingAddressPickerVisible(false);
-                  }}
-                  style={[
-                    styles.shippingAddressOption,
-                    selected && styles.shippingAddressOptionSelected,
-                  ]}
-                >
-                  <View style={styles.shippingAddressText}>
-                    <Text style={styles.shippingAddressTitle}>
-                      {address.address_title || address.name}
-                    </Text>
-                    {address.formatted_address ? (
-                      <Text style={styles.cardHint}>
-                        {address.formatted_address}
+            <View style={styles.shippingAddressOptions}>
+              {customerShippingAddresses.data?.map((address) => {
+                const selected = address.name === selectedShippingAddress?.name;
+                return (
+                  <Pressable
+                    accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                    disabled={isOffline}
+                    accessibilityState={{ selected }}
+                    key={address.name}
+                    onPress={() => {
+                      setShippingAddressName(address.name);
+                      setIsShippingAddressPickerVisible(false);
+                    }}
+                    style={[
+                      styles.shippingAddressOption,
+                      selected && styles.shippingAddressOptionSelected,
+                    ]}
+                  >
+                    <View style={styles.shippingAddressText}>
+                      <Text style={styles.shippingAddressTitle}>
+                        {shippingAddressText(address) ||
+                          address.address_title ||
+                          "Address details unavailable"}
                       </Text>
+                      {address.address_title ? (
+                        <Text style={styles.cardHint}>
+                          {address.address_title}
+                        </Text>
+                      ) : null}
+                    </View>
+                    {selected ? (
+                      <MaterialCommunityIcons
+                        color={palette.primary}
+                        name="check-circle"
+                        size={22}
+                      />
                     ) : null}
-                  </View>
-                  {selected ? (
-                    <MaterialCommunityIcons
-                      color={palette.primary}
-                      name="check-circle"
-                      size={22}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
-          </View>
-        </KeyboardAwareFormScroll>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </KeyboardAwareFormScroll>
+        </SafeAreaView>
       </Modal>
 
       <Modal
@@ -2534,6 +2552,10 @@ function createStyles(palette: AppPalette) {
     padding: spacing.md,
     paddingBottom: spacing.xxl,
   },
+  shippingAddressModalPage: {
+    backgroundColor: palette.background,
+    flex: 1,
+  },
   shippingAddressOption: {
     alignItems: "center",
     backgroundColor: palette.surface,
@@ -2546,7 +2568,10 @@ function createStyles(palette: AppPalette) {
     minHeight: 64,
     padding: spacing.md,
   },
-  shippingAddressOptionSelected: { borderColor: palette.primary },
+  shippingAddressOptionSelected: {
+    backgroundColor: palette.surfaceContainerHigh,
+    borderColor: palette.primary,
+  },
   shippingAddressOptions: { gap: spacing.sm },
   shippingAddressSelector: {
     alignItems: "center",

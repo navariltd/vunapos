@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { AppShell } from "@/features/shell/components/AppShell";
+import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
 import { useSalespersonPin } from "@/features/pos/hooks/useSalespersonPin";
+import { OpenPosShiftResult } from "@/features/pos/hooks/useOpenPosShift";
 import { PosHomeScreen } from "@/features/pos/screens/PosHomeScreen";
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
@@ -28,6 +30,7 @@ import {
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { posCache } from "@/services/posCache";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -43,6 +46,7 @@ type ReceivePaymentContext = {
 
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
+  const { companyUrl, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
@@ -107,6 +111,28 @@ export function PosWorkspaceScreen() {
         : null,
     );
   }, []);
+  const handleShiftOpened = useCallback(
+    async (result: OpenPosShiftResult) => {
+      if (companyUrl && sessionId) {
+        await posCache.clearResource(
+          {
+            companyUrl,
+            posProfile: "workspace",
+            userId: sessionId,
+          },
+          "workspace-configuration",
+        );
+      }
+      setPosSession({
+        has_opening_entry: true,
+        opening_entry: result.name,
+        ready: true,
+        status: "OPEN",
+      });
+      setPostSaleRefreshKey((current) => current + 1);
+    },
+    [companyUrl, sessionId],
+  );
   const salespersonLocked = Boolean(
     posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
   );
@@ -166,7 +192,7 @@ export function PosWorkspaceScreen() {
 
   return (
     <AppShell
-    activeTab={activeTab}
+      activeTab={activeTab}
       customersEnabled={allowsCustomerManagement}
       onOrderTypeChange={setOrderType}
       onTabChange={changeTab}
@@ -174,7 +200,13 @@ export function PosWorkspaceScreen() {
       paymentsEnabled={allowsCustomerPayments}
     >
       {posSession && !posSession.ready ? (
-        <PosSessionGateScreen session={posSession} />
+        <PosSessionGateScreen
+          currency={posProfileConfig?.currency}
+          onShiftOpened={handleShiftOpened}
+          paymentModes={paymentModes}
+          posProfile={posProfile}
+          session={posSession}
+        />
       ) : selectedPaymentEntry ? (
         <PosPaymentEntryDetailsScreen
           currency={selectedPaymentEntry.currency}

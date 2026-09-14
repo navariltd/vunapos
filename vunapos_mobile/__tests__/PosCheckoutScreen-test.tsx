@@ -611,12 +611,15 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
-    await waitFor(() => expect(screen.getByText("Main branch")).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByText("Kilimani, Nairobi, Kenya")).toBeTruthy(),
+    );
     await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    expect(screen.getByLabelText("Back to checkout")).toBeTruthy();
     await fireEvent.press(
       screen.getByLabelText("Select shipping address Warehouse"),
     );
-    expect(screen.getByText("Warehouse")).toBeTruthy();
+    expect(screen.getByText("Changamwe, Mombasa, Kenya")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
     await fireEvent.press(

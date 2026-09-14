@@ -1,4 +1,4 @@
-import { normalizeCompanyUrl } from '@/config/companyUrl';
+import { normalizeCompanyUrl } from "@/config/companyUrl";
 
 type FrappeMessage = {
   message?: {
@@ -12,12 +12,16 @@ type VunaEnvelope<T> = {
   ok: boolean;
 };
 
-type VunaMethodParams = Record<string, boolean | number | string | null | undefined>;
+type VunaMethodParams = Record<
+  string,
+  boolean | number | string | null | undefined
+>;
+type FrappeJsonMethodParams = Record<string, unknown>;
 
 export class FrappeClientError extends Error {
   constructor(
     message: string,
-    readonly code: 'api' | 'connection' | 'login' | 'session',
+    readonly code: "api" | "connection" | "login" | "session",
   ) {
     super(message);
   }
@@ -27,10 +31,14 @@ function requestUrl(companyUrl: string, path: string) {
   return `${companyUrl}${path}`;
 }
 
-function getMethodUrl(companyUrl: string, method: string, params: VunaMethodParams) {
+function getMethodUrl(
+  companyUrl: string,
+  method: string,
+  params: VunaMethodParams,
+) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== '') {
+    if (value !== undefined && value !== null && value !== "") {
       query.set(key, String(value));
     }
   }
@@ -41,8 +49,12 @@ function getMethodUrl(companyUrl: string, method: string, params: VunaMethodPara
 }
 
 function getSessionId(response: Response): string | undefined {
-  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
-  const setCookies = headers.getSetCookie?.() ?? [headers.get('set-cookie') ?? ''];
+  const headers = response.headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+  const setCookies = headers.getSetCookie?.() ?? [
+    headers.get("set-cookie") ?? "",
+  ];
 
   for (const setCookie of setCookies) {
     const match = /(?:^|,\s*)sid=([^;,\s]+)/.exec(setCookie);
@@ -61,49 +73,80 @@ function getSessionId(response: Response): string | undefined {
 
 export async function verifyVunaPosSite(companyUrl: string): Promise<void> {
   try {
-    const response = await fetch(requestUrl(companyUrl, '/api/method/vunapos.api.pos.ping'), {
-      headers: { Accept: 'application/json' },
-      method: 'GET',
-    });
+    const response = await fetch(
+      requestUrl(companyUrl, "/api/method/vunapos.api.pos.ping"),
+      {
+        headers: { Accept: "application/json" },
+        method: "GET",
+      },
+    );
     if (!response.ok) {
-      throw new FrappeClientError('That address did not respond as a VunaPOS site.', 'connection');
+      throw new FrappeClientError(
+        "That address did not respond as a VunaPOS site.",
+        "connection",
+      );
     }
 
-    const payload = await response.json() as FrappeMessage;
+    const payload = (await response.json()) as FrappeMessage;
     if (payload.message?.ok !== true) {
-      throw new FrappeClientError('That address did not respond as a VunaPOS site.', 'connection');
+      throw new FrappeClientError(
+        "That address did not respond as a VunaPOS site.",
+        "connection",
+      );
     }
   } catch (error) {
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    throw new FrappeClientError('Could not reach that address. Check the URL and your connection.', 'connection');
+    throw new FrappeClientError(
+      "Could not reach that address. Check the URL and your connection.",
+      "connection",
+    );
   }
 }
 
-export async function signInToFrappe(companyUrl: string, identifier: string, password: string): Promise<string> {
+export async function signInToFrappe(
+  companyUrl: string,
+  identifier: string,
+  password: string,
+): Promise<string> {
   const normalized = normalizeCompanyUrl(companyUrl);
   if (!normalized.ok) {
-    throw new FrappeClientError('Set a valid company URL before signing in.', 'connection');
+    throw new FrappeClientError(
+      "Set a valid company URL before signing in.",
+      "connection",
+    );
   }
 
   try {
-    const response = await fetch(requestUrl(normalized.url, '/api/method/login'), {
-      body: new URLSearchParams({ usr: identifier.trim(), pwd: password }).toString(),
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+    const response = await fetch(
+      requestUrl(normalized.url, "/api/method/login"),
+      {
+        body: new URLSearchParams({
+          usr: identifier.trim(),
+          pwd: password,
+        }).toString(),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        method: "POST",
       },
-      method: 'POST',
-    });
+    );
 
     if (!response.ok) {
-      throw new FrappeClientError('Sign-in failed. Check your details and try again.', 'login');
+      throw new FrappeClientError(
+        "Sign-in failed. Check your details and try again.",
+        "login",
+      );
     }
 
     const sessionId = getSessionId(response);
     if (!sessionId) {
-      throw new FrappeClientError('Frappe did not create a session. Complete any additional sign-in verification and try again.', 'login');
+      throw new FrappeClientError(
+        "Frappe did not create a session. Complete any additional sign-in verification and try again.",
+        "login",
+      );
     }
 
     return sessionId;
@@ -111,22 +154,34 @@ export async function signInToFrappe(companyUrl: string, identifier: string, pas
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
   }
 }
 
-export async function validateFrappeSession(companyUrl: string, sessionId: string): Promise<'valid' | 'expired' | 'unavailable'> {
+export async function validateFrappeSession(
+  companyUrl: string,
+  sessionId: string,
+): Promise<"valid" | "expired" | "unavailable"> {
   try {
-    const response = await fetch(requestUrl(companyUrl, '/api/method/vunapos.api.auth.get_csrf_token'), {
-      headers: { Accept: 'application/json', Cookie: `sid=${encodeURIComponent(sessionId)}` },
-      method: 'GET',
-    });
+    const response = await fetch(
+      requestUrl(companyUrl, "/api/method/vunapos.api.auth.get_csrf_token"),
+      {
+        headers: {
+          Accept: "application/json",
+          Cookie: `sid=${encodeURIComponent(sessionId)}`,
+        },
+        method: "GET",
+      },
+    );
     if (response.status === 401 || response.status === 403) {
-      return 'expired';
+      return "expired";
     }
-    return response.ok ? 'valid' : 'unavailable';
+    return response.ok ? "valid" : "unavailable";
   } catch {
-    return 'unavailable';
+    return "unavailable";
   }
 }
 
@@ -145,31 +200,39 @@ export async function getVunaMethod<T>(
   try {
     const response = await fetch(getMethodUrl(companyUrl, method, params), {
       headers: {
-        Accept: 'application/json',
+        Accept: "application/json",
         Cookie: `sid=${encodeURIComponent(sessionId)}`,
       },
-      method: 'GET',
+      method: "GET",
       signal,
     });
 
     if (response.status === 401 || response.status === 403) {
-      throw new FrappeClientError('Your session has expired. Sign in again to continue.', 'session');
+      throw new FrappeClientError(
+        "Your session has expired. Sign in again to continue.",
+        "session",
+      );
     }
 
     let payload: { message?: VunaEnvelope<T> } | undefined;
     try {
-      payload = await response.json() as { message?: VunaEnvelope<T> };
+      payload = (await response.json()) as { message?: VunaEnvelope<T> };
     } catch {
       // Preserve a useful status-based error when a proxy returns non-JSON.
     }
 
     if (!response.ok) {
-      throw new FrappeClientError(`The server could not complete this request (${response.status}).`, 'api');
+      throw new FrappeClientError(
+        `The server could not complete this request (${response.status}).`,
+        "api",
+      );
     }
 
     if (!payload?.message?.ok) {
-      const message = payload?.message?.errors?.[0]?.message ?? 'The server could not complete this request.';
-      throw new FrappeClientError(message, 'api');
+      const message =
+        payload?.message?.errors?.[0]?.message ??
+        "The server could not complete this request.";
+      throw new FrappeClientError(message, "api");
     }
 
     return payload.message.data;
@@ -177,10 +240,13 @@ export async function getVunaMethod<T>(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
     }
-    throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
   }
 }
 
@@ -199,46 +265,57 @@ export async function postVunaMethod<T>(
   const csrf = await getVunaMethod<{ csrf_token: string }>(
     companyUrl,
     sessionId,
-    'vunapos.api.auth.get_csrf_token',
+    "vunapos.api.auth.get_csrf_token",
     {},
     signal,
   );
 
   try {
-    const response = await fetch(requestUrl(companyUrl, `/api/method/${method}`), {
-      body: new URLSearchParams(
-        Object.entries(params)
-          .filter(([, value]) => value !== undefined && value !== null)
-          .map(([key, value]) => [key, String(value)]),
-      ).toString(),
-      headers: {
-        Accept: 'application/json',
-        Cookie: `sid=${encodeURIComponent(sessionId)}`,
-        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
-        'X-Frappe-CSRF-Token': csrf.csrf_token,
+    const response = await fetch(
+      requestUrl(companyUrl, `/api/method/${method}`),
+      {
+        body: new URLSearchParams(
+          Object.entries(params)
+            .filter(([, value]) => value !== undefined && value !== null)
+            .map(([key, value]) => [key, String(value)]),
+        ).toString(),
+        headers: {
+          Accept: "application/json",
+          Cookie: `sid=${encodeURIComponent(sessionId)}`,
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "X-Frappe-CSRF-Token": csrf.csrf_token,
+        },
+        method: "POST",
+        signal,
       },
-      method: 'POST',
-      signal,
-    });
+    );
 
     if (response.status === 401 || response.status === 403) {
-      throw new FrappeClientError('Your session has expired. Sign in again to continue.', 'session');
+      throw new FrappeClientError(
+        "Your session has expired. Sign in again to continue.",
+        "session",
+      );
     }
 
     let payload: { message?: VunaEnvelope<T> } | undefined;
     try {
-      payload = await response.json() as { message?: VunaEnvelope<T> };
+      payload = (await response.json()) as { message?: VunaEnvelope<T> };
     } catch {
       // Preserve a useful status-based error when a proxy returns non-JSON.
     }
 
     if (!response.ok) {
-      throw new FrappeClientError(`The server could not complete this request (${response.status}).`, 'api');
+      throw new FrappeClientError(
+        `The server could not complete this request (${response.status}).`,
+        "api",
+      );
     }
 
     if (!payload?.message?.ok) {
-      const message = payload?.message?.errors?.[0]?.message ?? 'The server could not complete this request.';
-      throw new FrappeClientError(message, 'api');
+      const message =
+        payload?.message?.errors?.[0]?.message ??
+        "The server could not complete this request.";
+      throw new FrappeClientError(message, "api");
     }
 
     return payload.message.data;
@@ -246,9 +323,92 @@ export async function postVunaMethod<T>(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
     }
-    throw new FrappeClientError('Could not reach your company site. Check your connection and try again.', 'connection');
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
+  }
+}
+
+/**
+ * Calls a Frappe method that explicitly accepts a JSON request body. This is
+ * deliberately separate from postVunaMethod: most VunaPOS APIs return the
+ * standard { ok, data } envelope and accept form values, while a small number
+ * of existing ERPNext-facing APIs return Frappe's raw `message` payload.
+ */
+export async function postFrappeJsonMethod<T>(
+  companyUrl: string,
+  sessionId: string,
+  method: string,
+  params: FrappeJsonMethodParams = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const csrf = await getVunaMethod<{ csrf_token: string }>(
+    companyUrl,
+    sessionId,
+    "vunapos.api.auth.get_csrf_token",
+    {},
+    signal,
+  );
+
+  try {
+    const response = await fetch(
+      requestUrl(companyUrl, `/api/method/${method}`),
+      {
+        body: JSON.stringify(params),
+        headers: {
+          Accept: "application/json",
+          Cookie: `sid=${encodeURIComponent(sessionId)}`,
+          "Content-Type": "application/json; charset=utf-8",
+          "X-Frappe-CSRF-Token": csrf.csrf_token,
+        },
+        method: "POST",
+        signal,
+      },
+    );
+
+    if (response.status === 401 || response.status === 403) {
+      throw new FrappeClientError(
+        "Your session has expired. Sign in again to continue.",
+        "session",
+      );
+    }
+
+    let payload: { message?: T } | undefined;
+    try {
+      payload = (await response.json()) as { message?: T };
+    } catch {
+      // Preserve a useful status-based error when a proxy returns non-JSON.
+    }
+
+    if (!response.ok) {
+      throw new FrappeClientError(
+        `The server could not complete this request (${response.status}).`,
+        "api",
+      );
+    }
+
+    if (payload?.message === undefined) {
+      throw new FrappeClientError(
+        "The server could not complete this request.",
+        "api",
+      );
+    }
+
+    return payload.message;
+  } catch (error) {
+    if (error instanceof FrappeClientError) {
+      throw error;
+    }
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
   }
 }
