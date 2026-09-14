@@ -4,6 +4,7 @@ import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerSearchResult } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
+import { invalidateCustomerDirectoryCache } from '@/services/posCacheInvalidation';
 
 type CustomerResponse = {
   customer: string;
@@ -44,6 +45,7 @@ export function useCreatePosCustomer() {
         customer_name: trimmedName,
         pos_profile: posProfile,
       });
+      await invalidateCustomerDirectoryCache({ companyUrl, posProfile, sessionId });
       return {
         customer: customer.customer,
         customerName: customer.customer_name,

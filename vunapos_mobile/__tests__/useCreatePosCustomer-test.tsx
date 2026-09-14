@@ -8,6 +8,11 @@ jest.mock('@/services/frappeClient', () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateCustomerDirectoryCache = jest.fn();
+jest.mock('@/services/posCacheInvalidation', () => ({
+  invalidateCustomerDirectoryCache: (...args: unknown[]) => mockInvalidateCustomerDirectoryCache(...args),
+}));
+
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { useCreatePosCustomer } from '@/features/pos/hooks/useCreatePosCustomer';
 import { postVunaMethod } from '@/services/frappeClient';
@@ -18,6 +23,7 @@ const mockUseAppSession = jest.mocked(useAppSession);
 describe('useCreatePosCustomer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateCustomerDirectoryCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
@@ -34,6 +40,11 @@ describe('useCreatePosCustomer', () => {
     expect(mockPostVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.customer.create_customer', {
       customer_name: 'Acme Stores',
       pos_profile: 'POS-001',
+    });
+    expect(mockInvalidateCustomerDirectoryCache).toHaveBeenCalledWith({
+      companyUrl: 'https://vuna.example.com',
+      posProfile: 'POS-001',
+      sessionId: 'sid-1',
     });
     expect(customer).toEqual({ customer: 'CUST-001', customerName: 'Acme Stores', email: null, mobile: null, taxId: undefined });
   });

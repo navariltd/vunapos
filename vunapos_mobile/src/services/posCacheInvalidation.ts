@@ -104,3 +104,17 @@ export async function invalidateCustomerPaymentCache({
     ].map((resource) => posCache.markResourceStale(scope, resource)),
   );
 }
+
+/** Customer writes change searchable and paginated customer records. */
+export async function invalidateCustomerDirectoryCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  await Promise.all(
+    ["customer-details", "customer-directory", "customer-search"].map(
+      (resource) => posCache.markResourceStale(scope, resource),
+    ),
+  );
+}
