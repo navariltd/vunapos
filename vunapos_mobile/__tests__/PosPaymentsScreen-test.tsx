@@ -103,6 +103,10 @@ describe("PosPaymentsScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: null,
+      reload: jest.fn(),
     });
     mockUsePosPaymentReconciliationCandidates.mockReturnValue({
       data: null,
@@ -214,6 +218,10 @@ describe("PosPaymentsScreen", () => {
       },
       error: null,
       isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: 1_789_999_200_000,
+      reload: jest.fn(),
     });
     const screen = await render(
       <PosPaymentsScreen

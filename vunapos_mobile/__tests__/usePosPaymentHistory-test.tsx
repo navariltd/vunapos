@@ -1,4 +1,4 @@
-import { cleanup, renderHook, waitFor } from "@testing-library/react-native";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react-native";
 
 jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: jest.fn(),
@@ -17,13 +17,19 @@ jest.mock("@/services/frappeClient", () => ({
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosPaymentHistory } from "@/features/pos/hooks/usePosPaymentHistory";
 import { getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
 
 describe("usePosPaymentHistory", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await posCache.clearNamespace({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    });
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
@@ -64,6 +70,18 @@ describe("usePosPaymentHistory", () => {
 
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it("refreshes payment history even while its saved result is still fresh", async () => {
+    mockGetVunaMethod.mockResolvedValue({ payments: [] });
+    const hook = await renderHook(() => usePosPaymentHistory("POS-001"));
+
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(false));
+    await act(async () => {
+      await hook.result.current.reload();
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
   });
 
   it("sends customer and inclusive date-range filters to the history endpoint", async () => {

@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -14,6 +15,7 @@ import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { formatPosCurrency } from "@/features/pos/currency";
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
 import { useErpNextRecord } from "@/features/pos/hooks/useErpNextRecord";
@@ -123,10 +125,23 @@ export function PosPaymentsScreen({
   const [selectedTab, setSelectedTab] = useState<PaymentWorkspaceTab>(
     availableTabs[0]?.value ?? "receive",
   );
+  const paymentHistoryRefresh = useRef<(() => void | Promise<void>) | null>(
+    null,
+  );
+  const [isHistoryRefreshing, setIsHistoryRefreshing] = useState(false);
 
   const activeTab = availableTabs.some(({ value }) => value === selectedTab)
     ? selectedTab
     : (availableTabs[0]?.value ?? "receive");
+  const refreshPaymentHistory = useCallback(async () => {
+    if (!paymentHistoryRefresh.current) return;
+    setIsHistoryRefreshing(true);
+    try {
+      await paymentHistoryRefresh.current();
+    } finally {
+      setIsHistoryRefreshing(false);
+    }
+  }, []);
 
   if (!availableTabs.length) {
     return (
@@ -147,6 +162,17 @@ export function PosPaymentsScreen({
   return (
     <ScrollView
       contentContainerStyle={styles.content}
+      refreshControl={
+        activeTab === "history" ? (
+          <RefreshControl
+            colors={[palette.primary]}
+            enabled={connectionStatus !== "offline"}
+            onRefresh={() => void refreshPaymentHistory()}
+            refreshing={isHistoryRefreshing}
+            tintColor={palette.primary}
+          />
+        ) : undefined
+      }
       style={{ backgroundColor: palette.background }}
     >
       <View style={styles.headerRow}>
@@ -238,6 +264,9 @@ export function PosPaymentsScreen({
           currencyPrecision={currencyPrecision}
           paymentModes={paymentModes}
           posProfile={posProfile}
+          onRefreshReady={(refresh) => {
+            paymentHistoryRefresh.current = refresh;
+          }}
         />
       )}
     </ScrollView>
@@ -249,11 +278,13 @@ function PaymentHistoryContext({
   currencyPrecision,
   paymentModes,
   posProfile,
+  onRefreshReady,
 }: {
   currency: string;
   currencyPrecision: number;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
+  onRefreshReady: (refresh: () => void | Promise<void>) => void;
 }) {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
@@ -277,6 +308,10 @@ function PaymentHistoryContext({
     !hasInvalidDateRange,
   );
   const isOffline = connectionStatus === "offline";
+
+  useEffect(() => {
+    onRefreshReady(history.reload);
+  }, [history.reload, onRefreshReady]);
 
   function selectDate(date: Date) {
     if (activeDatePicker === "from") setFromDate(dateInputValue(date));
@@ -590,6 +625,12 @@ function PaymentHistoryContext({
           </Text>
         )
       ) : null}
+      <PosCacheStatus
+        isOffline={isOffline}
+        isRefreshing={history.isRefreshing}
+        isStale={history.isStale}
+        lastUpdated={history.lastUpdated}
+      />
     </View>
   );
 }
