@@ -16,14 +16,20 @@ jest.mock("@/services/frappeClient", () => ({
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
 const invalidateSession = jest.fn();
 
 describe("usePosCustomerDetails", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
+    await posCache.clearNamespace({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    });
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",

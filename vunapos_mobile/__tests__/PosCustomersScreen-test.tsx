@@ -46,6 +46,9 @@ describe("PosCustomersScreen", () => {
       data: null,
       error: null,
       isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: null,
       reload: jest.fn(),
     });
   });
@@ -121,6 +124,9 @@ describe("PosCustomersScreen", () => {
       },
       error: null,
       isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: null,
       reload: jest.fn(),
     });
     const screen = await render(
@@ -150,7 +156,7 @@ describe("PosCustomersScreen", () => {
     expect(screen.getByText("Restricted")).toBeTruthy();
     expect(screen.getByText("Unavailable")).toBeTruthy();
     expect(screen.getByText("No purchases")).toBeTruthy();
-    expect(screen.getByText("50 customers · Updated 13/09/2026 09:00:00")).toBeTruthy();
+    expect(screen.getByText("50 customers")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Previous customer page" }).props
         .accessibilityState?.disabled,

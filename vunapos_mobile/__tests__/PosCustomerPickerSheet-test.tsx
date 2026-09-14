@@ -24,7 +24,15 @@ const onSelect = jest.fn();
 describe('PosCustomerPickerSheet', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUsePosCustomerSearch.mockReturnValue({ error: null, isLoading: false, rows: [] });
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: null,
+      reload: jest.fn(),
+      rows: [],
+    });
     mockUseCreatePosCustomer.mockReturnValue({ create, error: null, isCreating: false });
   });
 

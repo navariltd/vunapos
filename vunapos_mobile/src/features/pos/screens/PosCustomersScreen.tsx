@@ -1,6 +1,7 @@
 import {
   ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -10,6 +11,7 @@ import { useState } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosCustomerFiltersSheet } from "@/features/pos/components/PosCustomerFiltersSheet";
 import { usePosCustomerDirectory } from "@/features/pos/hooks/usePosCustomerDirectory";
 import {
@@ -154,9 +156,18 @@ export function PosCustomersScreen({
   return (
     <>
       <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: palette.background }}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[palette.primary]}
+            enabled={connectionStatus !== "offline"}
+            onRefresh={() => void directory.reload()}
+            refreshing={directory.isRefreshing}
+            tintColor={palette.primary}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        style={{ backgroundColor: palette.background }}
       >
       <View style={styles.header}>
         <View style={styles.heading}>
@@ -256,6 +267,12 @@ export function PosCustomersScreen({
             onNext={() => updatePage(start + directory.data!.limit)}
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
+          <PosCacheStatus
+            isOffline={connectionStatus === "offline"}
+            isRefreshing={directory.isRefreshing}
+            isStale={directory.isStale}
+            lastUpdated={directory.lastUpdated}
+          />
         </>
       ) : directory.data ? (
         <>
@@ -269,6 +286,12 @@ export function PosCustomersScreen({
             start={start}
             onNext={() => updatePage(start + directory.data!.limit)}
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
+          />
+          <PosCacheStatus
+            isOffline={connectionStatus === "offline"}
+            isRefreshing={directory.isRefreshing}
+            isStale={directory.isStale}
+            lastUpdated={directory.lastUpdated}
           />
         </>
       ) : null}
@@ -308,7 +331,7 @@ function DirectoryPagination({
   return (
     <View style={styles.pagination}>
       <Text style={[styles.paginationSummary, { color: palette.onSurfaceMuted }]}>
-        {customerCountLabel} · Updated {formatDirectoryDateTime(directory.as_of)}
+        {customerCountLabel}
       </Text>
       <View style={styles.paginationActions}>
         <Pressable
@@ -483,13 +506,6 @@ function DirectoryStateCard({
 function formatDirectoryDate(value: string) {
   const [year, month, day] = value.split(" ")[0].split("-");
   return year && month && day ? `${day}/${month}/${year}` : value;
-}
-
-function formatDirectoryDateTime(value: string) {
-  const [date, time] = value.split(" ");
-  const formattedDate = formatDirectoryDate(date);
-  const formattedTime = time?.split(".")[0];
-  return formattedTime ? `${formattedDate} ${formattedTime}` : formattedDate;
 }
 
 const styles = StyleSheet.create({

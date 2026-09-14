@@ -5,6 +5,7 @@ import {
   PosCustomerDirectory,
   PosCustomerDirectoryFilters,
 } from "@/features/pos/types";
+import { usePosCachedResource } from "@/hooks/usePosCachedResource";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
@@ -19,17 +20,13 @@ type PosCustomerDirectoryState = {
   data: PosCustomerDirectory | null;
   error: string | null;
   isLoading: boolean;
-  reload: () => void;
+  isRefreshing: boolean;
+  isStale: boolean;
+  lastUpdated: number | null;
+  reload: () => void | Promise<void>;
 };
 
-type PosCustomerDirectoryRequestState = Omit<
-  PosCustomerDirectoryState,
-  "isLoading" | "reload"
-> & {
-  requestKey: string | null;
-};
-
-/** Loads the first live, permission-filtered page of the POS customer directory. */
+/** Cached, permission-filtered customer pages. Customer writes remain live-only. */
 export function usePosCustomerDirectory(
   posProfile: string | undefined,
   query = "",
@@ -38,95 +35,68 @@ export function usePosCustomerDirectory(
 ): PosCustomerDirectoryState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const [reloadKey, setReloadKey] = useState(0);
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [sessionInvalid, setSessionInvalid] = useState(false);
+
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedQuery(query.trim()), 300);
     return () => clearTimeout(timeout);
   }, [query]);
-  const activeKey =
+
+  const cacheKey =
     companyUrl && sessionId && posProfile
-      ? JSON.stringify({
-          companyUrl,
-          customerGroup: filters.customerGroup,
-          customerType: filters.customerType,
-          posProfile,
-          query: debouncedQuery,
-          reloadKey,
-          sessionId,
-          start,
-          territory: filters.territory,
-        })
-      : null;
-  const requestKey = connectionStatus === "offline" ? null : activeKey;
-  const [state, setState] = useState<PosCustomerDirectoryRequestState>({
-    data: null,
-    error: null,
-    requestKey: null,
-  });
-  const reload = useCallback(() => {
-    if (connectionStatus !== "offline" && posProfile) {
-      setReloadKey((current) => current + 1);
-    }
-  }, [connectionStatus, posProfile]);
-
-  useEffect(() => {
-    if (!companyUrl || !sessionId || !posProfile || !requestKey) return;
-
-    const controller = new AbortController();
-    void getVunaMethod<PosCustomerDirectory>(
-      companyUrl,
-      sessionId,
-      "vunapos.api.customer.get_customer_directory",
-      {
-        limit: CUSTOMER_DIRECTORY_PAGE_SIZE,
-        customer_group: filters.customerGroup,
-        customer_type: filters.customerType,
-        pos_profile: posProfile,
-        query: debouncedQuery,
-        start,
-        territory: filters.territory,
-      },
-      controller.signal,
-    )
-      .then((data) => setState({ data, error: null, requestKey }))
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        if (error instanceof FrappeClientError && error.code === "session") {
-          void invalidateSession();
-          return;
+      ? {
+          query: {
+            customerGroup: filters.customerGroup,
+            customerType: filters.customerType,
+            query: debouncedQuery,
+            start,
+            territory: filters.territory,
+          },
+          resource: "customer-directory",
+          scope: { companyUrl, posProfile, userId: sessionId },
         }
-        setState((current) => ({
-          ...current,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Could not load customers.",
-          requestKey,
-        }));
-      });
-
-    return () => controller.abort();
-  }, [
-    companyUrl,
-    debouncedQuery,
-    filters.customerGroup,
-    filters.customerType,
-    invalidateSession,
-    posProfile,
-    requestKey,
-    sessionId,
-    start,
-    filters.territory,
-  ]);
-
-  if (!activeKey) return { data: null, error: null, isLoading: false, reload };
+      : null;
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!companyUrl || !sessionId || !posProfile) {
+        throw new Error("Your POS workspace is still loading.");
+      }
+      try {
+        return await getVunaMethod<PosCustomerDirectory>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.customer.get_customer_directory",
+          {
+            limit: CUSTOMER_DIRECTORY_PAGE_SIZE,
+            customer_group: filters.customerGroup,
+            customer_type: filters.customerType,
+            pos_profile: posProfile,
+            query: debouncedQuery,
+            start,
+            territory: filters.territory,
+          },
+          signal,
+        );
+      } catch (error) {
+        if (error instanceof FrappeClientError && error.code === "session") {
+          setSessionInvalid(true);
+          void invalidateSession();
+        }
+        throw error;
+      }
+    },
+    [companyUrl, debouncedQuery, filters, invalidateSession, posProfile, sessionId, start],
+  );
+  const resource = usePosCachedResource({ cacheKey, connectionStatus, load });
 
   return {
-    ...state,
-    data: state.requestKey === activeKey ? state.data : null,
-    error: state.requestKey === activeKey ? state.error : null,
-    isLoading: Boolean(requestKey) && state.requestKey !== activeKey,
-    reload,
+    data: resource.data,
+    error: sessionInvalid ? null : resource.error,
+    isLoading: resource.isLoading,
+    isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
+    lastUpdated: resource.lastUpdated,
+    reload: resource.refresh,
   };
 }

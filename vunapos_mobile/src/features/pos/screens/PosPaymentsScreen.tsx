@@ -1034,7 +1034,7 @@ function ReceivePaymentContext({
   const [isC2bSearching, setIsC2bSearching] = useState(false);
   const [hasC2bSearched, setHasC2bSearched] = useState(false);
   const gatewayIdempotencyKey = useRef<string | null>(null);
-  const customerSearch = usePosCustomerSearch(query, !isOffline);
+  const customerSearch = usePosCustomerSearch(query, !isOffline, posProfile);
   const customerDetails = usePosCustomerDetails({
     customer: selectedCustomer?.customer || "",
     posProfile,
@@ -2139,7 +2139,7 @@ function ReconcilePaymentContext({
     PosPaymentReconciliationAllocation[]
   >([]);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const customerSearch = usePosCustomerSearch(query, !isOffline);
+  const customerSearch = usePosCustomerSearch(query, !isOffline, posProfile);
   const allocation = usePosPaymentReconciliationAllocation();
   const reconciliation = usePosPaymentReconciliation();
   const candidates = usePosPaymentReconciliationCandidates(

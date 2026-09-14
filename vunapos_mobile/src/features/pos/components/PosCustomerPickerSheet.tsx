@@ -29,7 +29,7 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const customerCreation = useCreatePosCustomer();
-  const search = usePosCustomerSearch(query, visible && !isOffline);
+  const search = usePosCustomerSearch(query, visible && !isOffline, posProfile);
 
   function select(customer: PosCustomerSearchResult) {
     onSelect(customer);

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from "react";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { PosCustomerSearchResult } from '@/features/pos/types';
-import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { usePosCachedResource } from "@/hooks/usePosCachedResource";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type CustomerResponse = {
   customer: string;
@@ -14,12 +15,16 @@ type CustomerResponse = {
   tax_id?: string | null;
 };
 
-/** Searches only customers the signed-in Frappe user is permitted to use. */
-export function usePosCustomerSearch(query: string, enabled: boolean) {
+/** Cached customer lookups, scoped to the active POS workspace and user. */
+export function usePosCustomerSearch(
+  query: string,
+  enabled: boolean,
+  posProfile?: string,
+) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
   const [debouncedQuery, setDebouncedQuery] = useState(query);
-  const [state, setState] = useState<{ error: string | null; key: string | null; rows: PosCustomerSearchResult[] }>({ error: null, key: null, rows: [] });
-  const requestKey = enabled && companyUrl && sessionId ? `${companyUrl}:${sessionId}:${debouncedQuery}` : null;
+  const [sessionInvalid, setSessionInvalid] = useState(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -27,36 +32,60 @@ export function usePosCustomerSearch(query: string, enabled: boolean) {
     return () => clearTimeout(timer);
   }, [enabled, query]);
 
-  useEffect(() => {
-    if (!companyUrl || !sessionId || !requestKey) return;
-    const controller = new AbortController();
-    void getVunaMethod<CustomerResponse[]>(companyUrl, sessionId, 'vunapos.api.customer.search_customers', {
-      limit: 20,
-      query: debouncedQuery,
-    }, controller.signal)
-      .then((rows) => setState({ error: null, key: requestKey, rows: rows.map((row) => ({
-        customer: row.customer,
-        customerName: row.customer_name,
-        defaultPriceList: row.default_price_list,
-        email: row.email_id,
-        mobile: row.mobile_no,
-        ...(row.is_walkin ? { isWalkin: true } : {}),
-        ...(row.tax_id ? { taxId: row.tax_id } : {}),
-      })) }))
-      .catch((requestError: unknown) => {
-        if (controller.signal.aborted) return;
-        if (requestError instanceof FrappeClientError && requestError.code === 'session') {
-          void invalidateSession();
-          return;
+  const cacheKey =
+    companyUrl && sessionId && posProfile
+      ? {
+          query: { query: debouncedQuery },
+          resource: "customer-search",
+          scope: { companyUrl, posProfile, userId: sessionId },
         }
-        setState({ error: requestError instanceof Error ? requestError.message : 'Could not load customers.', key: requestKey, rows: [] });
-      });
-    return () => controller.abort();
-  }, [companyUrl, debouncedQuery, invalidateSession, requestKey, sessionId]);
+      : null;
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!companyUrl || !sessionId) {
+        throw new Error("Your POS workspace is still loading.");
+      }
+      try {
+        const rows = await getVunaMethod<CustomerResponse[]>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.customer.search_customers",
+          { limit: 20, query: debouncedQuery },
+          signal,
+        );
+        return rows.map((row) => ({
+          customer: row.customer,
+          customerName: row.customer_name,
+          defaultPriceList: row.default_price_list,
+          email: row.email_id,
+          mobile: row.mobile_no,
+          ...(row.is_walkin ? { isWalkin: true } : {}),
+          ...(row.tax_id ? { taxId: row.tax_id } : {}),
+        }));
+      } catch (error) {
+        if (error instanceof FrappeClientError && error.code === "session") {
+          setSessionInvalid(true);
+          void invalidateSession();
+        }
+        throw error;
+      }
+    },
+    [companyUrl, debouncedQuery, invalidateSession, sessionId],
+  );
+  const resource = usePosCachedResource({
+    cacheKey,
+    connectionStatus,
+    enabled,
+    load,
+  });
 
   return {
-    error: state.key === requestKey ? state.error : null,
-    isLoading: Boolean(requestKey && state.key !== requestKey),
-    rows: state.key === requestKey ? state.rows : [],
+    error: sessionInvalid ? null : resource.error,
+    isLoading: resource.isLoading,
+    isRefreshing: resource.isRefreshing,
+    isStale: resource.isStale,
+    lastUpdated: resource.lastUpdated,
+    reload: resource.refresh,
+    rows: resource.data ?? [],
   };
 }
