@@ -20,8 +20,13 @@ jest.mock('@/services/frappeClient', () => {
   };
 });
 
+jest.mock('@/services/posCache', () => ({
+  posCache: { clearAll: jest.fn() },
+}));
+
 import { AppSessionProvider, useAppSession } from '@/features/auth/AppSessionProvider';
 import { FrappeClientError, signInToFrappe, validateFrappeSession, verifyVunaPosSite } from '@/services/frappeClient';
+import { posCache } from '@/services/posCache';
 import {
   clearStoredCompanyUrl,
   clearStoredSession,
@@ -221,6 +226,25 @@ describe('AppSessionProvider', () => {
       authState: 'needsCompanyUrl',
       companyUrl: null,
       sessionId: null,
+    });
+  });
+
+  it('clears saved POS data without changing the workspace URL or session', async () => {
+    sessionStore.loadStoredCompanyUrl.mockResolvedValue('https://vuna.example.com');
+    sessionStore.loadStoredSessionId.mockResolvedValue('sid-1');
+    const session = await renderSession();
+
+    await act(async () => {
+      await session.result.current.clearLocalPosData();
+    });
+
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
+    expect(sessionStore.clearStoredCompanyUrl).not.toHaveBeenCalled();
+    expect(sessionStore.clearStoredSession).not.toHaveBeenCalled();
+    expect(session.result.current).toMatchObject({
+      authState: 'signedIn',
+      companyUrl: 'https://vuna.example.com',
+      sessionId: 'sid-1',
     });
   });
 });

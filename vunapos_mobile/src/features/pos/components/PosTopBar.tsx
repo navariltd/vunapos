@@ -4,22 +4,34 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { WorkspaceSettingsSheet } from "@/features/shell/components/WorkspaceSettingsSheet";
+import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosOrderType } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
 type PosTopBarProps = {
   orderType: PosOrderType;
+  onLocalDataCleared: () => void;
   onOrderTypeChange: (orderType: PosOrderType) => void;
 };
 
-export function PosTopBar({ orderType, onOrderTypeChange }: PosTopBarProps) {
+export function PosTopBar({
+  orderType,
+  onLocalDataCleared,
+  onOrderTypeChange,
+}: PosTopBarProps) {
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const { clearLocalPosData } = useAppSession();
   const { palette } = useAppearance();
 
   function selectOrderType(nextOrderType: PosOrderType) {
     onOrderTypeChange(nextOrderType);
     setSettingsVisible(false);
+  }
+
+  async function clearSavedPosData() {
+    await clearLocalPosData();
+    onLocalDataCleared();
   }
 
   return (
@@ -49,6 +61,7 @@ export function PosTopBar({ orderType, onOrderTypeChange }: PosTopBarProps) {
       </Pressable>
       <WorkspaceSettingsSheet
         onClose={() => setSettingsVisible(false)}
+        onClearLocalData={clearSavedPosData}
         onOrderTypeChange={selectOrderType}
         orderType={orderType}
         visible={settingsVisible}

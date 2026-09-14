@@ -18,6 +18,7 @@ type SignInResult = { ok: true } | { ok: false; message: string };
 
 type AppSessionContextValue = {
   authState: AuthState;
+  clearLocalPosData: () => Promise<void>;
   companyUrl: string | null;
   invalidateSession: () => Promise<void>;
   isBootstrapping: boolean;
@@ -93,6 +94,13 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
     setAuthState('needsCompanyUrl');
   }, []);
 
+  // This is intentionally narrower than signing out or changing company: it
+  // removes only cached POS records, so the workspace address and session stay
+  // available while the POS reloads its data.
+  const clearLocalPosData = useCallback(async () => {
+    await posCache.clearAll();
+  }, []);
+
   const saveCompanyUrl = useCallback(async (rawUrl: string): Promise<SaveCompanyUrlResult> => {
     const normalized = normalizeCompanyUrl(rawUrl);
     if (!normalized.ok) {
@@ -152,6 +160,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
   const value = useMemo(() => ({
     authState,
     clearCompanyUrl,
+    clearLocalPosData,
     companyUrl,
     invalidateSession,
     isBootstrapping,
@@ -159,7 +168,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
     sessionId,
     signIn,
     signOut,
-  }), [authState, clearCompanyUrl, companyUrl, invalidateSession, isBootstrapping, saveCompanyUrl, sessionId, signIn, signOut]);
+  }), [authState, clearCompanyUrl, clearLocalPosData, companyUrl, invalidateSession, isBootstrapping, saveCompanyUrl, sessionId, signIn, signOut]);
 
   return <AppSessionContext.Provider value={value}>{children}</AppSessionContext.Provider>;
 }

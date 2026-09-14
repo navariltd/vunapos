@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Pressable, Modal, StyleSheet, View } from "react-native";
+import { useState } from "react";
 import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -10,6 +11,7 @@ import { radii, spacing, typography } from "@/theme/tokens";
 
 type WorkspaceSettingsSheetProps = {
   onClose: () => void;
+  onClearLocalData: () => Promise<void>;
   onOrderTypeChange: (orderType: PosOrderType) => void;
   orderType: PosOrderType;
   visible: boolean;
@@ -28,12 +30,26 @@ const appearanceOptions: {
 /** One expandable home for workspace preferences without crowding the POS header. */
 export function WorkspaceSettingsSheet({
   onClose,
+  onClearLocalData,
   onOrderTypeChange,
   orderType,
   visible,
 }: WorkspaceSettingsSheetProps) {
   const { palette, preference, setPreference } = useAppearance();
   const insets = useSafeAreaInsets();
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
+
+  async function confirmClearLocalData() {
+    setIsClearing(true);
+    try {
+      await onClearLocalData();
+      setConfirmingClear(false);
+      onClose();
+    } finally {
+      setIsClearing(false);
+    }
+  }
 
   if (!visible) return null;
 
@@ -42,7 +58,7 @@ export function WorkspaceSettingsSheet({
       <View style={[styles.scrim, { backgroundColor: palette.scrim }]}>
         <Pressable
           accessibilityLabel="Close workspace menu"
-          onPress={onClose}
+          onPress={isClearing ? undefined : onClose}
           style={StyleSheet.absoluteFill}
         />
         <View
@@ -76,6 +92,7 @@ export function WorkspaceSettingsSheet({
             </View>
             <Pressable
               accessibilityLabel="Close workspace menu"
+              disabled={isClearing}
               onPress={onClose}
               style={[styles.close, { borderColor: palette.border }]}
             >
@@ -171,6 +188,91 @@ export function WorkspaceSettingsSheet({
               );
             })}
           </View>
+
+          <Text
+            style={[styles.sectionLabel, { color: palette.onSurfaceMuted }]}
+          >
+            LOCAL DATA
+          </Text>
+          <Text
+            style={[styles.localDataCopy, { color: palette.onSurfaceMuted }]}
+          >
+            Clears saved catalogue, invoices, payments, and customers from this
+            device. Your company URL and sign-in remain.
+          </Text>
+          {confirmingClear ? (
+            <View
+              style={[
+                styles.clearConfirmation,
+                {
+                  backgroundColor: palette.errorSurface,
+                  borderColor: palette.error,
+                },
+              ]}
+            >
+              <Text
+                style={[styles.confirmationTitle, { color: palette.onError }]}
+              >
+                Clear saved POS data?
+              </Text>
+              <Text
+                style={[styles.confirmationCopy, { color: palette.onError }]}
+              >
+                The POS will reload data from your workspace. This does not sign
+                you out.
+              </Text>
+              <View style={styles.confirmationActions}>
+                <Pressable
+                  accessibilityLabel="Cancel clearing saved POS data"
+                  disabled={isClearing}
+                  onPress={() => setConfirmingClear(false)}
+                  style={[styles.clearAction, { borderColor: palette.error }]}
+                >
+                  <Text
+                    style={[
+                      styles.clearActionLabel,
+                      { color: palette.onError },
+                    ]}
+                  >
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Confirm clearing saved POS data"
+                  disabled={isClearing}
+                  onPress={() => void confirmClearLocalData()}
+                  style={[
+                    styles.clearAction,
+                    { backgroundColor: palette.error },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.clearActionLabel,
+                      { color: palette.onPrimary },
+                    ]}
+                  >
+                    {isClearing ? "Clearing…" : "Clear data"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <Pressable
+              accessibilityLabel="Clear saved POS data"
+              onPress={() => setConfirmingClear(true)}
+              style={[styles.clearDataButton, { borderColor: palette.error }]}
+            >
+              <MaterialCommunityIcons
+                color={palette.error}
+                name="database-remove-outline"
+                size={18}
+              />
+              <Text style={[styles.clearDataLabel, { color: palette.error }]}>
+                Clear saved POS data
+              </Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </Modal>
@@ -203,6 +305,51 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 36,
   },
+  clearAction: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: spacing.sm,
+  },
+  clearActionLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  clearConfirmation: {
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    padding: spacing.sm,
+  },
+  clearDataButton: {
+    alignItems: "center",
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "center",
+    marginTop: spacing.sm,
+    minHeight: 46,
+    paddingHorizontal: spacing.sm,
+  },
+  clearDataLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  confirmationActions: { flexDirection: "row", gap: spacing.sm },
+  confirmationCopy: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.compact,
+  },
+  confirmationTitle: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
   handle: {
     alignSelf: "center",
     borderRadius: radii.pill,
@@ -212,6 +359,11 @@ const styles = StyleSheet.create({
   },
   header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   headerCopy: { flex: 1 },
+  localDataCopy: {
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.small,
+    lineHeight: typography.lineHeight.compact,
+  },
   option: {
     alignItems: "center",
     borderRadius: radii.md,

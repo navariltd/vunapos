@@ -1,6 +1,12 @@
-import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  waitFor,
+} from "@testing-library/react-native";
 
 const mockSetPreference = jest.fn();
+const onClearLocalData = jest.fn();
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 24, left: 0, right: 0, top: 0 }),
@@ -49,6 +55,7 @@ describe("WorkspaceSettingsSheet", () => {
     const screen = await render(
       <WorkspaceSettingsSheet
         onClose={onClose}
+        onClearLocalData={onClearLocalData}
         onOrderTypeChange={onOrderTypeChange}
         orderType="Invoice"
         visible
@@ -68,6 +75,7 @@ describe("WorkspaceSettingsSheet", () => {
     const screen = await render(
       <WorkspaceSettingsSheet
         onClose={onClose}
+        onClearLocalData={onClearLocalData}
         onOrderTypeChange={onOrderTypeChange}
         orderType="Invoice"
         visible
@@ -85,6 +93,7 @@ describe("WorkspaceSettingsSheet", () => {
     const screen = await render(
       <WorkspaceSettingsSheet
         onClose={onClose}
+        onClearLocalData={onClearLocalData}
         onOrderTypeChange={onOrderTypeChange}
         orderType="Invoice"
         visible={false}
@@ -92,5 +101,31 @@ describe("WorkspaceSettingsSheet", () => {
     );
 
     expect(screen.queryByText("Workspace")).toBeNull();
+  });
+
+  it("clears only saved POS data after an in-sheet confirmation", async () => {
+    const screen = await render(
+      <WorkspaceSettingsSheet
+        onClose={onClose}
+        onClearLocalData={onClearLocalData}
+        onOrderTypeChange={onOrderTypeChange}
+        orderType="Invoice"
+        visible
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "Clears saved catalogue, invoices, payments, and customers from this device. Your company URL and sign-in remain.",
+      ),
+    ).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText("Clear saved POS data"));
+    await fireEvent.press(
+      screen.getByLabelText("Confirm clearing saved POS data"),
+    );
+
+    await waitFor(() => expect(onClearLocalData).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

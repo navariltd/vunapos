@@ -1,4 +1,4 @@
-import { PropsWithChildren } from "react";
+import { PropsWithChildren, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/layout/Screen";
@@ -27,11 +27,18 @@ export function AppShell({
   paymentsEnabled,
 }: AppShellProps) {
   const { palette } = useAppearance();
+  const [localDataGeneration, setLocalDataGeneration] = useState(0);
   return (
     <Screen style={{ backgroundColor: palette.background }}>
-      <PosTopBar onOrderTypeChange={onOrderTypeChange} orderType={orderType} />
+      <PosTopBar
+        onLocalDataCleared={() => setLocalDataGeneration((value) => value + 1)}
+        onOrderTypeChange={onOrderTypeChange}
+        orderType={orderType}
+      />
       <NetworkStatusBanner />
-      <View style={styles.content}>{children}</View>
+      <View key={localDataGeneration} style={styles.content}>
+        {children}
+      </View>
       <PosBottomNavigation
         activeTab={activeTab}
         customersEnabled={customersEnabled}
