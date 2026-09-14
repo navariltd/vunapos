@@ -41,6 +41,7 @@ type CacheStorage = {
   clearResource(namespace: string, resource: string): Promise<void>;
   delete(cacheKey: string): Promise<void>;
   get(cacheKey: string): Promise<StoredCacheEntry | null>;
+  markResourceStale(namespace: string, resource: string): Promise<void>;
   prune(namespace: string, maximumEntries: number, now: number): Promise<void>;
   write(entry: StoredCacheEntry): Promise<void>;
 };
@@ -177,6 +178,15 @@ class ExpoSqliteCacheStorage implements CacheStorage {
     await database.runAsync(
       "DELETE FROM pos_cache_entries WHERE cache_key = ?",
       cacheKey,
+    );
+  }
+
+  async markResourceStale(namespace: string, resource: string) {
+    const database = await this.database();
+    await database.runAsync(
+      "UPDATE pos_cache_entries SET expires_at = 0 WHERE namespace = ? AND resource = ?",
+      namespace,
+      resource,
     );
   }
 
@@ -351,6 +361,25 @@ export class PosCache {
       await this.storage.clearResource(namespace, resource);
     } catch {
       // Invalidating browse data must never block a successful mutation.
+    }
+  }
+
+  /**
+   * Keeps saved browse data available offline while ensuring the next online
+   * reader revalidates it. Mutations must never erase a cashier's only
+   * fallback view merely because connectivity is intermittent.
+   */
+  async markResourceStale(scope: PosCacheScope, resource: string) {
+    const namespace = posCacheNamespace(scope);
+    for (const entry of this.memory.values()) {
+      if (entry.namespace === namespace && entry.resource === resource) {
+        entry.expiresAt = 0;
+      }
+    }
+    try {
+      await this.storage.markResourceStale(namespace, resource);
+    } catch {
+      // Cache invalidation must not turn a successful server mutation into an error.
     }
   }
 

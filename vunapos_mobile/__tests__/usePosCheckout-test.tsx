@@ -15,6 +15,11 @@ jest.mock("@/services/frappeClient", () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateSaleCache = jest.fn();
+jest.mock("@/services/posCacheInvalidation", () => ({
+  invalidateSaleCache: (...args: unknown[]) => mockInvalidateSaleCache(...args),
+}));
+
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
   usePosCheckoutPreview,
@@ -40,6 +45,7 @@ const item = {
 describe("POS checkout hooks", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateSaleCache.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -146,6 +152,12 @@ describe("POS checkout hooks", () => {
         pos_profile: "POS-001",
       },
     );
+    expect(mockInvalidateSaleCache).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+      sourceInvoice: undefined,
+    });
   });
 
   it("serializes configured checkout values only when the cashier supplied them", async () => {

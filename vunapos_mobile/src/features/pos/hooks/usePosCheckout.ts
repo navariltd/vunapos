@@ -15,6 +15,7 @@ import {
   getVunaMethod,
   postVunaMethod,
 } from "@/services/frappeClient";
+import { invalidateSaleCache } from "@/services/posCacheInvalidation";
 
 type PreviewInput = {
   customer?: string;
@@ -328,6 +329,12 @@ export function useSubmitPosCheckout() {
             : {}),
         },
       );
+      await invalidateSaleCache({
+        companyUrl,
+        posProfile: input.posProfile,
+        sessionId,
+        sourceInvoice: input.sourceInvoice,
+      });
       idempotencyKey.current = createIdempotencyKey();
       return result;
     } catch (requestError) {

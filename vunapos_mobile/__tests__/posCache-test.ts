@@ -45,6 +45,14 @@ class MemoryStorage {
     return this.entries.get(cacheKey) ?? null;
   }
 
+  async markResourceStale(namespace: string, resource: string) {
+    for (const entry of this.entries.values()) {
+      if (entry.namespace === namespace && entry.resource === resource) {
+        entry.expiresAt = 0;
+      }
+    }
+  }
+
   async prune(namespace: string, maximumEntries: number, now: number) {
     for (const [key, entry] of this.entries) {
       if (entry.expiresAt < now) this.entries.delete(key);
@@ -157,6 +165,23 @@ describe("PosCache", () => {
     await expect(cache.read({ ...key, query: "milk" })).resolves.toBeNull();
     await expect(cache.read({ ...key, query: "bread" })).resolves.toBeNull();
     await expect(cache.read(invoices)).resolves.toMatchObject({ data: ["SINV-1"] });
+  });
+
+  it("marks only the requested resource stale while keeping it readable offline", async () => {
+    await cache.write({ ...key, query: "milk" }, ["milk"], 1_000);
+    const invoices: PosCacheKey = { ...key, resource: "invoice-history" };
+    await cache.write(invoices, ["SINV-1"], 1_000);
+
+    await cache.markResourceStale(scope, "catalogue");
+
+    await expect(cache.read({ ...key, query: "milk" })).resolves.toMatchObject({
+      data: ["milk"],
+      isStale: true,
+    });
+    await expect(cache.read(invoices)).resolves.toMatchObject({
+      data: ["SINV-1"],
+      isStale: false,
+    });
   });
 
   it("clears memory and durable data on an account change", async () => {
