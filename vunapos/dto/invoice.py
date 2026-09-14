@@ -76,16 +76,17 @@ def invoice_to_dict(doc):
 		)
 		for row in doc.get("items", [])
 	}
-	uom_map = {
-		row.item_code: [
-			{"uom": frappe.get_cached_value("Item", row.item_code, "stock_uom"), "conversion_factor": 1.0},
-			*[
-				{"uom": uom.uom, "conversion_factor": uom.conversion_factor}
-				for uom in frappe.get_cached_doc("Item", row.item_code).get("uoms", [])
-			],
-		]
-		for row in doc.get("items", [])
-	}
+	uom_map = {}
+	for row in doc.get("items", []):
+		item = frappe.get_cached_doc("Item", row.item_code)
+		rows = [{"uom": item.stock_uom, "conversion_factor": 1.0}]
+		seen = {item.stock_uom}
+		for uom in item.get("uoms", []):
+			if not uom.uom or uom.uom in seen:
+				continue
+			seen.add(uom.uom)
+			rows.append({"uom": uom.uom, "conversion_factor": uom.conversion_factor})
+		uom_map[row.item_code] = rows
 	bundle_codes = [
 		row.item_code
 		for row in doc.get("items", [])

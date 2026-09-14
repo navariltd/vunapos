@@ -2,7 +2,7 @@ import frappe
 
 from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.profile_service import get_bootstrap_data as get_bootstrap_data_service
-from vunapos.services.profile_service import get_user_pos_profiles
+from vunapos.services.profile_service import get_user_pos_profiles, resolve_pos_profile
 from vunapos.services.workflow_service import apply_pos_workflow_action, get_pos_workflow_actions
 from vunapos.utils.response import failure, success
 
@@ -24,8 +24,14 @@ def get_pos_profiles_for_user():
 
 
 @frappe.whitelist()
-def search_checkout_link_options(doctype: str, fieldname: str, query: str | None = None):
-	allowed = {(field["doctype"], field["fieldname"]): field for field in get_global_checkout_fields()}
+def search_checkout_link_options(
+	doctype: str,
+	fieldname: str,
+	query: str | None = None,
+	pos_profile: str | None = None,
+):
+	profile = resolve_pos_profile(pos_profile)
+	allowed = {(field["doctype"], field["fieldname"]): field for field in get_global_checkout_fields(profile)}
 	definition = allowed.get((doctype, fieldname))
 	if not definition or definition.get("fieldtype") != "Link":
 		return failure("Link field is not configured for VunaPOS", code="InvalidCheckoutField")

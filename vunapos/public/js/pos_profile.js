@@ -18,29 +18,52 @@ const VUNAPOS_CHECKOUT_FIELD_TYPES = new Set([
 function refresh_checkout_field_options(frm, row) {
 	const grid = frm.fields_dict.vunapos_checkout_fields?.grid;
 	if (!grid || !row?.target_doctype) return;
+	const targetDoctype = row.target_doctype;
 
-	frappe.model.with_doctype(row.target_doctype, () => {
-		const fields = (frappe.get_meta(row.target_doctype)?.fields || []).filter(
+	frappe.model.with_doctype(targetDoctype, () => {
+		// A metadata request for the previous DocType may finish after the user
+		// has already selected a new one. Never let that stale response restore
+		// the old field list.
+		const currentRow = frappe.get_doc(row.doctype, row.name);
+		if (!currentRow || currentRow.target_doctype !== targetDoctype) return;
+		const fields = (frappe.get_meta(targetDoctype)?.fields || []).filter(
 			(field) =>
 				field.fieldname &&
 				!field.read_only &&
 				VUNAPOS_CHECKOUT_FIELD_TYPES.has(field.fieldtype)
 		);
 		const options = fields.map((field) => field.fieldname).join("\n");
-		grid.update_docfield_property("fieldname", "fieldtype", "Select");
-		grid.update_docfield_property("fieldname", "options", options);
-		frm.refresh_field("vunapos_checkout_fields");
+		const gridRow = grid.get_row(row.name);
+		const fieldDoc = gridRow?.docfields?.find((field) => field.fieldname === "fieldname");
+		if (fieldDoc) {
+			// Grid.update_docfield_property mutates every row. That makes the
+			// last asynchronous metadata response (often Sales Order) overwrite
+			// the options for all other rows. Keep the options on this row only.
+			fieldDoc.options = options;
+			const column = gridRow.columns_list?.find((item) => item.df.fieldname === "fieldname");
+			if (column?.field) {
+				column.field.df = fieldDoc;
+				column.field.set_data?.(options);
+			}
+			gridRow.refresh_field("fieldname");
+		}
 
-		const selected = fields.find((field) => field.fieldname === row.fieldname);
+		const selected = fields.find((field) => field.fieldname === currentRow.fieldname);
 		if (selected && !row.label) {
 			frappe.model.set_value(
 				row.doctype,
-				row.name,
+				currentRow.name,
 				"label",
 				selected.label || selected.fieldname
 			);
 		}
 	});
+}
+
+function reset_checkout_field_selection(frm, cdt, cdn) {
+	frappe.model.set_value(cdt, cdn, "fieldname", "");
+	frappe.model.set_value(cdt, cdn, "label", "");
+	refresh_checkout_field_options(frm, frappe.get_doc(cdt, cdn));
 }
 
 function setup_checkout_field_form(frm) {
@@ -92,33 +115,16 @@ frappe.ui.form.on("POS Profile", {
 	},
 });
 
-frappe.ui.form.on("POS Profile", {
-	vunapos_checkout_fields_target_doctype(frm, cdt, cdn) {
-		const row = frappe.get_doc(cdt, cdn);
-		row.fieldname = "";
-		row.label = "";
-		frm.refresh_field("vunapos_checkout_fields");
-		refresh_checkout_field_options(frm, row);
-	},
-});
+for (const doctype of ["POS Profile", "POS Settings"]) {
+	frappe.ui.form.on(doctype, {
+		vunapos_checkout_fields_target_doctype(frm, cdt, cdn) {
+			reset_checkout_field_selection(frm, cdt, cdn);
+		},
 
-frappe.ui.form.on("POS Settings", {
-	vunapos_checkout_fields_target_doctype(frm, cdt, cdn) {
-		const row = frappe.get_doc(cdt, cdn);
-		row.fieldname = "";
-		row.label = "";
-		frm.refresh_field("vunapos_checkout_fields");
-		refresh_checkout_field_options(frm, row);
-	},
-
-	vunapos_checkout_fields_fieldname(frm, cdt, cdn) {
-		const row = frappe.get_doc(cdt, cdn);
-		if (!row.target_doctype || !row.fieldname || row.label) return;
-		frappe.model.with_doctype(row.target_doctype, () => {
-			const field = frappe
-				.get_meta(row.target_doctype)
-				?.fields?.find((item) => item.fieldname === row.fieldname);
-			if (field) frappe.model.set_value(cdt, cdn, "label", field.label || field.fieldname);
-		});
-	},
-});
+		vunapos_checkout_fields_fieldname(frm, cdt, cdn) {
+			const row = frappe.get_doc(cdt, cdn);
+			if (!row.target_doctype || !row.fieldname) return;
+			frappe.model.set_value(cdt, cdn, "label", "");
+		},
+	});
+}
