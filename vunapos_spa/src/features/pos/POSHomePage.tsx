@@ -208,7 +208,8 @@ export function POSHomePage({
   const allowCustomerPayments =
     bootstrap.data?.allow_customer_payments !== false;
 
-  const items = useItemSearch(itemSearchQuery);
+  const selectedPriceList = useCartStore((s) => s.selectedPriceList);
+  const items = useItemSearch(itemSearchQuery, selectedPriceList);
   const cartInvoice = useCartStore((s) => s.invoice);
   // Drafts edited from history retain their original doctype. Prefer it over
   // the workspace selector so Sales Orders never enter the invoice checkout path.
@@ -219,7 +220,6 @@ export function POSHomePage({
       (total, item) => total + Number(item.qty || 0),
       0,
     ) || 0;
-  const selectedPriceList = useCartStore((s) => s.selectedPriceList);
   const activeCustomer = useCartStore(getActiveCustomer);
   const heldInvoicesView = useHeldInvoicesView();
   const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
@@ -507,7 +507,10 @@ export function POSHomePage({
       clearToast();
       setPendingItemCode(item.item_code);
       try {
-        await cartActions.addCartItem(item);
+        const uomNotice = await cartActions.addCartItem(item);
+        if (uomNotice) {
+          showToast({ type: "info", message: uomNotice });
+        }
       } catch (err) {
         showToast({
           type: "error",
