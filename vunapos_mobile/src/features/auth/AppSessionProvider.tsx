@@ -60,7 +60,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
         if (!isMounted) return;
 
         if (sessionStatus === 'expired') {
-          await clearStoredSession();
+          await Promise.all([clearStoredSession(), posCache.clearAll()]);
           setSessionId(null);
           setAuthState('sessionExpired');
           return;

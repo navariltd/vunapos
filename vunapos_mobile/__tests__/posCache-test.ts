@@ -111,6 +111,26 @@ describe("PosCache", () => {
     );
   });
 
+  it("never reads cached records from another user, company, or POS profile", async () => {
+    await cache.write(key, ["Main POS catalogue"], 1_000);
+    const otherUser = {
+      ...key,
+      scope: { ...scope, userId: "other-session" },
+    };
+    const otherCompany = {
+      ...key,
+      scope: { ...scope, companyUrl: "https://other.example.com" },
+    };
+    const otherProfile = {
+      ...key,
+      scope: { ...scope, posProfile: "Secondary POS" },
+    };
+
+    await expect(cache.read(otherUser)).resolves.toBeNull();
+    await expect(cache.read(otherCompany)).resolves.toBeNull();
+    await expect(cache.read(otherProfile)).resolves.toBeNull();
+  });
+
   it("returns a fresh entry without treating it as stale", async () => {
     await cache.write(key, { items: ["milk"] }, 3_600);
 

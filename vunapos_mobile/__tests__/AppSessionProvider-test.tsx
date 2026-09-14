@@ -121,6 +121,7 @@ describe('AppSessionProvider', () => {
     expect(session.result.current.authState).toBe('sessionExpired');
     expect(session.result.current.sessionId).toBeNull();
     expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
   });
 
   it('saves a verified company URL and clears a previous company session', async () => {
@@ -136,6 +137,7 @@ describe('AppSessionProvider', () => {
     expect(result).toEqual({ ok: true });
     expect(frappeClient.verifyVunaPosSite).toHaveBeenCalledWith('https://vuna.example.com');
     expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
     expect(sessionStore.persistCompanyUrl).toHaveBeenCalledWith('https://vuna.example.com');
     expect(session.result.current).toMatchObject({
       authState: 'signedOut',
@@ -196,6 +198,7 @@ describe('AppSessionProvider', () => {
     });
     expect(session.result.current.authState).toBe('sessionExpired');
     expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(2);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(2);
   });
 
   it('keeps the user signed out when Frappe rejects their sign-in', async () => {
@@ -222,6 +225,7 @@ describe('AppSessionProvider', () => {
     });
 
     expect(sessionStore.clearStoredCompanyUrl).toHaveBeenCalledTimes(1);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
     expect(session.result.current).toMatchObject({
       authState: 'needsCompanyUrl',
       companyUrl: null,
