@@ -30,6 +30,67 @@ function createCache<T>(entry: PosCacheEntry<T> | null, fetchResult: Promise<T>)
 }
 
 describe("usePosCachedResource", () => {
+  it("reports loading while its first asynchronous cache read hydrates", async () => {
+    let resolveRead: ((value: PosCacheEntry<string[]> | null) => void) | undefined;
+    const cache = {
+      fetch: jest.fn(),
+      read: jest.fn(
+        () =>
+          new Promise<PosCacheEntry<string[]> | null>((resolve) => {
+            resolveRead = resolve;
+          }),
+      ),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load: jest.fn() }),
+    );
+
+    expect(hook.result.current).toMatchObject({
+      data: null,
+      error: null,
+      isLoading: true,
+    });
+
+    resolveRead?.(cached(["milk"]));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+    expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it("does not expose data from an earlier query while the next key hydrates", async () => {
+    let resolveSecondRead: ((value: PosCacheEntry<string[]> | null) => void) | undefined;
+    const secondKey: PosCacheKey = { ...key, query: "bread" };
+    const cache = {
+      fetch: jest.fn(),
+      read: jest.fn((requestedKey: PosCacheKey) => {
+        if (requestedKey.query === "bread") {
+          return new Promise<PosCacheEntry<string[]> | null>((resolve) => {
+            resolveSecondRead = resolve;
+          });
+        }
+        return Promise.resolve(cached(["milk"]));
+      }),
+    } as PosCachedResourceClient;
+    const hook = await renderHook<
+      ReturnType<typeof usePosCachedResource<string[]>>,
+      { cacheKey: PosCacheKey }
+    >(
+      ({ cacheKey }) =>
+        usePosCachedResource({ cache, cacheKey, connectionStatus: "online", load: jest.fn() }),
+      { initialProps: { cacheKey: key } },
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+    await hook.rerender({ cacheKey: secondKey });
+    expect(hook.result.current).toMatchObject({
+      data: null,
+      error: null,
+      isLoading: true,
+    });
+
+    resolveSecondRead?.(cached(["bread"]));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["bread"]));
+  });
+
   it("uses a fresh cached value without making a server request", async () => {
     const cache = createCache(cached(["milk"]), Promise.resolve(["fresh milk"]));
     const load = jest.fn();

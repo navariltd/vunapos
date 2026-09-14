@@ -26,6 +26,7 @@ type PosCachedResourceState<T> = {
   isLoading: boolean;
   isRefreshing: boolean;
   isStale: boolean;
+  keyFingerprint: string | null;
   lastUpdated: number | null;
 };
 
@@ -35,6 +36,7 @@ const emptyState = {
   isLoading: false,
   isRefreshing: false,
   isStale: false,
+  keyFingerprint: null,
   lastUpdated: null,
 };
 
@@ -68,12 +70,24 @@ export function usePosCachedResource<T>({
     async (forceRefresh: boolean) => {
       const activeKey = cacheKeyRef.current;
       if (!activeKey) return;
+      const activeFingerprint = posCacheKey(activeKey);
+      const isActive = () => {
+        const currentKey = cacheKeyRef.current;
+        return Boolean(
+          currentKey && posCacheKey(currentKey) === activeFingerprint,
+        );
+      };
+      const setActiveState = (nextState: Omit<PosCachedResourceState<T>, "keyFingerprint">) => {
+        if (!isActive()) return;
+        setState({ ...nextState, keyFingerprint: activeFingerprint });
+      };
 
       const canRequest = enabled && connectionStatus !== "offline";
       const cached = await cache.read<T>(activeKey);
+      if (!isActive()) return;
 
       if (!forceRefresh && cached && !cached.isStale) {
-        setState({
+        setActiveState({
           data: cached.data,
           error: null,
           isLoading: false,
@@ -85,7 +99,7 @@ export function usePosCachedResource<T>({
       }
 
       if (cached) {
-        setState({
+        setActiveState({
           data: cached.data,
           error: null,
           isLoading: false,
@@ -94,13 +108,13 @@ export function usePosCachedResource<T>({
           lastUpdated: cached.fetchedAt,
         });
       } else if (!canRequest) {
-        setState({
+        setActiveState({
           ...emptyState,
           error: "You are offline. Connect to load this data.",
         });
         return;
       } else {
-        setState({
+        setActiveState({
           ...emptyState,
           isLoading: true,
         });
@@ -115,7 +129,7 @@ export function usePosCachedResource<T>({
           () => loadRef.current(controller.signal),
           ttlMs,
         );
-        setState({
+        setActiveState({
           data,
           error: null,
           isLoading: false,
@@ -124,6 +138,7 @@ export function usePosCachedResource<T>({
           lastUpdated: Date.now(),
         });
       } catch (error) {
+        if (!isActive()) return;
         setState((current) => ({
           ...current,
           error: errorMessage(error),
@@ -154,5 +169,13 @@ export function usePosCachedResource<T>({
     await loadResource(true);
   }, [loadResource]);
 
-  return { ...state, refresh };
+  const isCurrentKey = state.keyFingerprint === keyFingerprint;
+  const currentState = isCurrentKey ? state : emptyState;
+  const isHydrating = Boolean(keyFingerprint && !isCurrentKey);
+
+  return {
+    ...currentState,
+    isLoading: currentState.isLoading || isHydrating,
+    refresh,
+  };
 }
