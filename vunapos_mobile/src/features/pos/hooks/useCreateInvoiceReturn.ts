@@ -4,6 +4,7 @@ import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCreatedInvoiceReturn } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
+import { invalidateReturnCache } from '@/services/posCacheInvalidation';
 
 type CreateInvoiceReturnInput = {
   invoiceName: string;
@@ -49,6 +50,11 @@ export function useCreateInvoiceReturn() {
           reason: input.reason,
         },
       );
+      await invalidateReturnCache({
+        companyUrl,
+        posProfile: input.posProfile,
+        sessionId,
+      });
       idempotencyKey.current = createIdempotencyKey();
       return result;
     } catch (requestError) {

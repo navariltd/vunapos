@@ -2,7 +2,10 @@ jest.mock("@/services/posCache", () => ({
   posCache: { markResourceStale: jest.fn() },
 }));
 
-import { invalidateSaleCache } from "@/services/posCacheInvalidation";
+import {
+  invalidateReturnCache,
+  invalidateSaleCache,
+} from "@/services/posCacheInvalidation";
 import { posCache } from "@/services/posCache";
 
 describe("invalidateSaleCache", () => {
@@ -54,6 +57,27 @@ describe("invalidateSaleCache", () => {
         userId: "sid-1",
       },
       "held-invoices",
+    );
+  });
+
+  it("marks return-affected records stale without changing payment history", async () => {
+    await invalidateReturnCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
+
+    const scope = {
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    };
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "catalogue");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "invoice-history");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "customer-details");
+    expect(posCache.markResourceStale).not.toHaveBeenCalledWith(
+      scope,
+      "payment-history",
     );
   });
 });

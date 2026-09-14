@@ -9,6 +9,11 @@ jest.mock('@/services/frappeClient', () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateReturnCache = jest.fn();
+jest.mock('@/services/posCacheInvalidation', () => ({
+  invalidateReturnCache: (...args: unknown[]) => mockInvalidateReturnCache(...args),
+}));
+
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { useCreateInvoiceReturn } from '@/features/pos/hooks/useCreateInvoiceReturn';
 import { postVunaMethod } from '@/services/frappeClient';
@@ -20,6 +25,7 @@ const invalidateSession = jest.fn();
 describe('useCreateInvoiceReturn', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateReturnCache.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: 'https://vuna.example.com',
       invalidateSession,
@@ -53,6 +59,11 @@ describe('useCreateInvoiceReturn', () => {
       items: '[{"qty":1.5,"row_name":"row-1"}]',
       pos_profile: 'POS-001',
       reason: 'Damaged in transit',
+    });
+    expect(mockInvalidateReturnCache).toHaveBeenCalledWith({
+      companyUrl: 'https://vuna.example.com',
+      posProfile: 'POS-001',
+      sessionId: 'sid-1',
     });
   });
 

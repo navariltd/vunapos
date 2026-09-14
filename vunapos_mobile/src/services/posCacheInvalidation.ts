@@ -10,6 +10,14 @@ const saleResources = [
   "payment-history",
 ] as const;
 
+const returnResources = [
+  "catalogue",
+  "customer-details",
+  "customer-directory",
+  "customer-search",
+  "invoice-history",
+] as const;
+
 type InvalidateSaleCacheArgs = {
   companyUrl: string;
   posProfile: string;
@@ -41,6 +49,27 @@ export async function invalidateSaleCache({
 
   await Promise.all([
     ...resources.map((resource) => posCache.markResourceStale(scope, resource)),
+    posCache.markResourceStale(workspaceScope, "workspace-configuration"),
+  ]);
+}
+
+/** A credit note changes stock and customer balances, but not payment entries. */
+export async function invalidateReturnCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  const workspaceScope: PosCacheScope = {
+    companyUrl,
+    posProfile: "workspace",
+    userId: sessionId,
+  };
+
+  await Promise.all([
+    ...returnResources.map((resource) =>
+      posCache.markResourceStale(scope, resource),
+    ),
     posCache.markResourceStale(workspaceScope, "workspace-configuration"),
   ]);
 }
