@@ -43,6 +43,7 @@ describe("invalidateSaleCache", () => {
       scope,
       "held-invoices",
     );
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(7);
   });
 
   it("also marks held drafts stale when their checkout completes", async () => {
@@ -61,6 +62,7 @@ describe("invalidateSaleCache", () => {
       },
       "held-invoices",
     );
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(8);
   });
 
   it("marks return-affected records stale without changing payment history", async () => {
@@ -82,6 +84,7 @@ describe("invalidateSaleCache", () => {
       scope,
       "payment-history",
     );
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(6);
   });
 
   it("marks held drafts and sales history stale when draft visibility changes", async () => {

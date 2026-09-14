@@ -184,6 +184,42 @@ describe("PosCache", () => {
     });
   });
 
+  it("never marks matching resource queries stale outside the active company, profile, and user", async () => {
+    cache = new PosCache(storage, { now: () => now, maximumEntriesPerNamespace: 10 });
+    const activeCatalogue: PosCacheKey = { ...key, query: "milk" };
+    const activeOtherQuery: PosCacheKey = { ...key, query: "bread" };
+    const otherProfile: PosCacheKey = {
+      ...key,
+      query: "milk",
+      scope: { ...scope, posProfile: "Secondary POS" },
+    };
+    const otherCompany: PosCacheKey = {
+      ...key,
+      query: "milk",
+      scope: { ...scope, companyUrl: "https://other.example.com" },
+    };
+    const otherUser: PosCacheKey = {
+      ...key,
+      query: "milk",
+      scope: { ...scope, userId: "other@example.com" },
+    };
+    await Promise.all([
+      cache.write(activeCatalogue, ["milk"], 1_000),
+      cache.write(activeOtherQuery, ["bread"], 1_000),
+      cache.write(otherProfile, ["profile milk"], 1_000),
+      cache.write(otherCompany, ["company milk"], 1_000),
+      cache.write(otherUser, ["user milk"], 1_000),
+    ]);
+
+    await cache.markResourceStale(scope, "catalogue");
+
+    await expect(cache.read(activeCatalogue)).resolves.toMatchObject({ isStale: true });
+    await expect(cache.read(activeOtherQuery)).resolves.toMatchObject({ isStale: true });
+    await expect(cache.read(otherProfile)).resolves.toMatchObject({ isStale: false });
+    await expect(cache.read(otherCompany)).resolves.toMatchObject({ isStale: false });
+    await expect(cache.read(otherUser)).resolves.toMatchObject({ isStale: false });
+  });
+
   it("clears memory and durable data on an account change", async () => {
     await cache.write(key, ["milk"], 1_000);
 
