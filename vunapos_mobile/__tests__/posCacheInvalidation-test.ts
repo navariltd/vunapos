@@ -3,6 +3,7 @@ jest.mock("@/services/posCache", () => ({
 }));
 
 import {
+  invalidateHeldInvoiceCache,
   invalidateReturnCache,
   invalidateSaleCache,
 } from "@/services/posCacheInvalidation";
@@ -79,5 +80,22 @@ describe("invalidateSaleCache", () => {
       scope,
       "payment-history",
     );
+  });
+
+  it("marks held drafts and sales history stale when draft visibility changes", async () => {
+    await invalidateHeldInvoiceCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
+
+    const scope = {
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    };
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "held-invoices");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "invoice-history");
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(2);
   });
 });

@@ -21,6 +21,12 @@ jest.mock("@/services/frappeClient", () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateHeldInvoiceCache = jest.fn();
+jest.mock("@/services/posCacheInvalidation", () => ({
+  invalidateHeldInvoiceCache: (...args: unknown[]) =>
+    mockInvalidateHeldInvoiceCache(...args),
+}));
+
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { PosSaleCustomer } from "@/features/pos/types";
@@ -42,6 +48,7 @@ const item = {
 describe("usePosCart", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateHeldInvoiceCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
@@ -294,6 +301,11 @@ describe("usePosCart", () => {
       doctype: "Sales Invoice",
       name: "SINV-0001",
     });
+    expect(mockInvalidateHeldInvoiceCache).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
     expect(hook.result.current.items).toEqual([]);
   });
 
@@ -368,6 +380,11 @@ describe("usePosCart", () => {
       "vunapos.api.sales.restore_invoice",
       { invoice_doctype: "Sales Invoice", invoice_name: "SINV-HELD-001" },
     );
+    expect(mockInvalidateHeldInvoiceCache).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
     expect(hook.result.current.sourceInvoice).toEqual({
       doctype: "Sales Invoice",
       name: "SINV-HELD-001",

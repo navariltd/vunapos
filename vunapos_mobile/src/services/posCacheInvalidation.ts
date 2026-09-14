@@ -73,3 +73,17 @@ export async function invalidateReturnCache({
     posCache.markResourceStale(workspaceScope, "workspace-configuration"),
   ]);
 }
+
+/** Draft visibility changes only affect held-draft and sale-history lists. */
+export async function invalidateHeldInvoiceCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  await Promise.all(
+    ["held-invoices", "invoice-history"].map((resource) =>
+      posCache.markResourceStale(scope, resource),
+    ),
+  );
+}

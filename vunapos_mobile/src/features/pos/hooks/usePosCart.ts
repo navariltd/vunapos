@@ -20,6 +20,7 @@ import {
   getVunaMethod,
   postVunaMethod,
 } from "@/services/frappeClient";
+import { invalidateHeldInvoiceCache } from "@/services/posCacheInvalidation";
 
 function toCartItem(item: PosCatalogueItem): PosCartItem {
   return {
@@ -321,6 +322,7 @@ export function usePosCart({
       sourceInvoiceRef.current = source;
       setData(nextData);
       setSourceInvoice(source);
+      await invalidateHeldInvoiceCache({ companyUrl, posProfile, sessionId });
       return {
         ...nextData,
         customer: restored.customer,
@@ -402,6 +404,7 @@ export function usePosCart({
           invoice_name: draft.name,
         },
       );
+      await invalidateHeldInvoiceCache({ companyUrl, posProfile, sessionId });
       clear();
       return heldInvoice;
     } catch (requestError) {
