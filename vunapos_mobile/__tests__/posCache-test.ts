@@ -84,6 +84,31 @@ class MemoryStorage {
   }
 }
 
+class FailingStorage extends MemoryStorage {
+  failReads = false;
+  failWrites = false;
+
+  override async get(cacheKey: string) {
+    if (this.failReads) throw new Error("Cache database unavailable");
+    return super.get(cacheKey);
+  }
+
+  override async prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
+    if (this.failWrites) throw new Error("Cache database unavailable");
+    return super.prune(namespace, maximumEntries, maximumBytes, now);
+  }
+
+  override async write(entry: StoredEntry) {
+    if (this.failWrites) throw new Error("Cache database unavailable");
+    return super.write(entry);
+  }
+}
+
 const scope: PosCacheScope = {
   companyUrl: "https://acme.example.com",
   posProfile: "Main POS",
@@ -167,6 +192,45 @@ describe("PosCache", () => {
 
     await expect(cache.read(key)).resolves.toBeNull();
     expect(storage.entries.has(cacheKey)).toBe(false);
+  });
+
+  it("discards incompatible cached schema data before replacing it with live data", async () => {
+    const cacheKey = posCacheKey(key);
+    storage.entries.set(cacheKey, {
+      accessedAt: now,
+      cacheKey,
+      expiresAt: now + 1_000,
+      fetchedAt: now,
+      namespace: JSON.stringify(scope),
+      payload: JSON.stringify(["old catalogue"]),
+      resource: "catalogue",
+      schemaVersion: 1,
+    });
+    cache = new PosCache(storage, { now: () => now, schemaVersion: 2 });
+
+    await expect(cache.read(key)).resolves.toBeNull();
+    expect(storage.entries.has(cacheKey)).toBe(false);
+
+    await expect(
+      cache.fetch(key, async () => ["live catalogue"], 1_000),
+    ).resolves.toEqual(["live catalogue"]);
+    await expect(cache.read(key)).resolves.toMatchObject({
+      data: ["live catalogue"],
+    });
+  });
+
+  it("continues with live data when cache storage cannot be read or written", async () => {
+    const failingStorage = new FailingStorage();
+    failingStorage.failReads = true;
+    failingStorage.failWrites = true;
+    const resilientCache = new PosCache(failingStorage, { now: () => now });
+    const loader = jest.fn(async () => ["live catalogue"]);
+
+    await expect(resilientCache.read(key)).resolves.toBeNull();
+    await expect(resilientCache.fetch(key, loader, 1_000)).resolves.toEqual([
+      "live catalogue",
+    ]);
+    expect(loader).toHaveBeenCalledTimes(1);
   });
 
   it("bounds durable records and clears only the requested namespace", async () => {

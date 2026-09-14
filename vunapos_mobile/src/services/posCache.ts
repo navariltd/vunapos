@@ -103,8 +103,8 @@ class ExpoSqliteCacheStorage implements CacheStorage {
 
   private async database() {
     if (!this.databasePromise) {
-      this.databasePromise = SQLite.openDatabaseAsync(CACHE_DATABASE_NAME).then(
-        async (database) => {
+      this.databasePromise = SQLite.openDatabaseAsync(CACHE_DATABASE_NAME)
+        .then(async (database) => {
           const version = await database.getFirstAsync<{ user_version: number }>(
             "PRAGMA user_version",
           );
@@ -134,8 +134,14 @@ class ExpoSqliteCacheStorage implements CacheStorage {
             `PRAGMA user_version = ${CACHE_DATABASE_SCHEMA_VERSION}`,
           );
           return database;
-        },
-      );
+        })
+        .catch((error: unknown) => {
+          // A failed migration/open must not poison future attempts. PosCache
+          // catches this request; a later live request can retry once storage
+          // is available again.
+          this.databasePromise = null;
+          throw error;
+        });
     }
     return this.databasePromise;
   }
