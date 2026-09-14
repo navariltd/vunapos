@@ -3,6 +3,7 @@ import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
+import { formatAvailableStock } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 
 type ItemCardProps = {
@@ -79,7 +80,7 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, item, onAdd
                       : "text-xs text-on-surface-variant"
                   }
                 >
-                  {outOfStock ? "Out of stock" : `Qty ${item.actual_qty}`}
+                  {outOfStock ? "Out of stock" : formatAvailableStock(item)}
                 </p>
               ) : null}
             </div>
