@@ -53,15 +53,29 @@ class MemoryStorage {
     }
   }
 
-  async prune(namespace: string, maximumEntries: number, now: number) {
+  async prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
     for (const [key, entry] of this.entries) {
-      if (entry.expiresAt < now) this.entries.delete(key);
+      if (entry.expiresAt <= now) this.entries.delete(key);
     }
     const candidates = [...this.entries.values()]
       .filter((entry) => entry.namespace === namespace)
-      .sort((left, right) => right.accessedAt - left.accessedAt);
-    for (const entry of candidates.slice(maximumEntries)) {
-      this.entries.delete(entry.cacheKey);
+      .sort((left, right) => {
+        if (left.accessedAt !== right.accessedAt) {
+          return right.accessedAt - left.accessedAt;
+        }
+        return right.cacheKey.localeCompare(left.cacheKey);
+      });
+    let retainedBytes = 0;
+    for (const [index, entry] of candidates.entries()) {
+      retainedBytes += new TextEncoder().encode(entry.payload).byteLength;
+      if (index >= maximumEntries || retainedBytes > maximumBytes) {
+        this.entries.delete(entry.cacheKey);
+      }
     }
   }
 
@@ -152,6 +166,51 @@ describe("PosCache", () => {
 
     await expect(cache.read(key)).resolves.toBeNull();
     await expect(cache.read(otherKey)).resolves.toMatchObject({ data: 4 });
+  });
+
+  it("prunes expired records at their exact expiry time before retaining newer data", async () => {
+    await cache.write({ ...key, query: "expired" }, ["old"], 10);
+    now += 10;
+    await cache.write({ ...key, query: "fresh" }, ["new"], 1_000);
+
+    await expect(cache.read({ ...key, query: "expired" })).resolves.toBeNull();
+    await expect(cache.read({ ...key, query: "fresh" })).resolves.toMatchObject({
+      data: ["new"],
+    });
+  });
+
+  it("does not cache one oversized catalogue payload in memory or durable storage", async () => {
+    cache = new PosCache(storage, {
+      maximumEntryBytes: 12,
+      maximumEntriesPerNamespace: 10,
+      now: () => now,
+    });
+
+    await cache.write(key, { items: ["this catalogue row is too large"] }, 1_000);
+
+    expect(storage.entries.size).toBe(0);
+    await expect(cache.read(key)).resolves.toBeNull();
+  });
+
+  it("evicts least-recently-written entries when a namespace exceeds its byte limit", async () => {
+    cache = new PosCache(storage, {
+      maximumBytesPerNamespace: 25,
+      maximumEntriesPerNamespace: 10,
+      now: () => now,
+    });
+    await cache.write({ ...key, query: "first" }, "1234567890", 1_000);
+    now += 1;
+    await cache.write({ ...key, query: "second" }, "abcdefghij", 1_000);
+    now += 1;
+    await cache.write({ ...key, query: "third" }, "klmnopqrst", 1_000);
+
+    await expect(cache.read({ ...key, query: "first" })).resolves.toBeNull();
+    await expect(cache.read({ ...key, query: "second" })).resolves.toMatchObject({
+      data: "abcdefghij",
+    });
+    await expect(cache.read({ ...key, query: "third" })).resolves.toMatchObject({
+      data: "klmnopqrst",
+    });
   });
 
   it("clears all query variants for only the requested resource", async () => {

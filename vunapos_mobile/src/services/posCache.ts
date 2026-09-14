@@ -42,11 +42,18 @@ type CacheStorage = {
   delete(cacheKey: string): Promise<void>;
   get(cacheKey: string): Promise<StoredCacheEntry | null>;
   markResourceStale(namespace: string, resource: string): Promise<void>;
-  prune(namespace: string, maximumEntries: number, now: number): Promise<void>;
+  prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ): Promise<void>;
   write(entry: StoredCacheEntry): Promise<void>;
 };
 
 export type PosCacheOptions = {
+  maximumBytesPerNamespace?: number;
+  maximumEntryBytes?: number;
   maximumEntriesPerNamespace?: number;
   now?: () => number;
   schemaVersion?: number;
@@ -55,6 +62,8 @@ export type PosCacheOptions = {
 const CACHE_DATABASE_NAME = "vunapos-cache.db";
 const CACHE_SCHEMA_VERSION = 1;
 const CACHE_DATABASE_SCHEMA_VERSION = 1;
+const DEFAULT_MAXIMUM_BYTES_PER_NAMESPACE = 5_000_000;
+const DEFAULT_MAXIMUM_ENTRY_BYTES = 2_000_000;
 const DEFAULT_MAXIMUM_ENTRIES_PER_NAMESPACE = 80;
 
 function stableJson(value: unknown): string {
@@ -67,6 +76,10 @@ function stableJson(value: unknown): string {
     .sort()
     .map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`)
     .join(",")}}`;
+}
+
+function utf8ByteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 export function posCacheNamespace(scope: PosCacheScope) {
@@ -212,10 +225,15 @@ class ExpoSqliteCacheStorage implements CacheStorage {
     );
   }
 
-  async prune(namespace: string, maximumEntries: number, now: number) {
+  async prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
     const database = await this.database();
     await database.runAsync(
-      "DELETE FROM pos_cache_entries WHERE expires_at < ?",
+      "DELETE FROM pos_cache_entries WHERE expires_at <= ?",
       now,
     );
     await database.runAsync(
@@ -229,6 +247,24 @@ class ExpoSqliteCacheStorage implements CacheStorage {
       namespace,
       maximumEntries,
     );
+    await database.runAsync(
+      `DELETE FROM pos_cache_entries
+       WHERE cache_key IN (
+         SELECT cache_key FROM (
+           SELECT
+             cache_key,
+             SUM(LENGTH(CAST(payload AS BLOB))) OVER (
+               ORDER BY accessed_at DESC, cache_key DESC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+             ) AS cumulative_payload_bytes
+           FROM pos_cache_entries
+           WHERE namespace = ?
+         )
+         WHERE cumulative_payload_bytes > ?
+       )`,
+      namespace,
+      maximumBytes,
+    );
   }
 }
 
@@ -239,6 +275,8 @@ class ExpoSqliteCacheStorage implements CacheStorage {
 export class PosCache {
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly memory = new Map<string, StoredCacheEntry>();
+  private readonly maximumBytesPerNamespace: number;
+  private readonly maximumEntryBytes: number;
   private readonly maximumEntriesPerNamespace: number;
   private readonly now: () => number;
   private readonly schemaVersion: number;
@@ -247,6 +285,10 @@ export class PosCache {
     private readonly storage: CacheStorage,
     options: PosCacheOptions = {},
   ) {
+    this.maximumBytesPerNamespace =
+      options.maximumBytesPerNamespace ?? DEFAULT_MAXIMUM_BYTES_PER_NAMESPACE;
+    this.maximumEntryBytes =
+      options.maximumEntryBytes ?? DEFAULT_MAXIMUM_ENTRY_BYTES;
     this.maximumEntriesPerNamespace =
       options.maximumEntriesPerNamespace ??
       DEFAULT_MAXIMUM_ENTRIES_PER_NAMESPACE;
@@ -288,23 +330,29 @@ export class PosCache {
 
   async write<T>(key: PosCacheKey, data: T, ttlMs: number) {
     const now = this.now();
+    const payload = JSON.stringify(data);
+    if (utf8ByteLength(payload) > this.maximumEntryBytes) {
+      return;
+    }
     const entry: StoredCacheEntry = {
       accessedAt: now,
       cacheKey: posCacheKey(key),
       expiresAt: now + ttlMs,
       fetchedAt: now,
       namespace: posCacheNamespace(key.scope),
-      payload: JSON.stringify(data),
+      payload,
       resource: key.resource,
       schemaVersion: this.schemaVersion,
     };
     this.memory.set(entry.cacheKey, entry);
+    this.pruneMemory(entry.namespace, now);
 
     try {
       await this.storage.write(entry);
       await this.storage.prune(
         entry.namespace,
         this.maximumEntriesPerNamespace,
+        this.maximumBytesPerNamespace,
         now,
       );
     } catch {
@@ -389,6 +437,31 @@ export class PosCache {
       await this.storage.delete(cacheKey);
     } catch {
       // A corrupt durable entry should not stop a live read.
+    }
+  }
+
+  private pruneMemory(namespace: string, now: number) {
+    for (const [cacheKey, entry] of this.memory) {
+      if (entry.expiresAt <= now) this.memory.delete(cacheKey);
+    }
+
+    const namespaceEntries = [...this.memory.values()]
+      .filter((entry) => entry.namespace === namespace)
+      .sort((left, right) => {
+        if (left.accessedAt !== right.accessedAt) {
+          return right.accessedAt - left.accessedAt;
+        }
+        return right.cacheKey.localeCompare(left.cacheKey);
+      });
+    let retainedBytes = 0;
+    for (const [index, entry] of namespaceEntries.entries()) {
+      retainedBytes += utf8ByteLength(entry.payload);
+      if (
+        retainedBytes > this.maximumBytesPerNamespace ||
+        index >= this.maximumEntriesPerNamespace
+      ) {
+        this.memory.delete(entry.cacheKey);
+      }
     }
   }
 }
