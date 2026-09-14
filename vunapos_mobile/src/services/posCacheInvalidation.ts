@@ -87,3 +87,20 @@ export async function invalidateHeldInvoiceCache({
     ),
   );
 }
+
+/** Payment receipt and reconciliation change allocations and customer balances. */
+export async function invalidateCustomerPaymentCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  await Promise.all(
+    [
+      "customer-details",
+      "customer-directory",
+      "invoice-history",
+      "payment-history",
+    ].map((resource) => posCache.markResourceStale(scope, resource)),
+  );
+}

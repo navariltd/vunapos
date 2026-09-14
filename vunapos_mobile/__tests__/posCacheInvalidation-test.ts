@@ -3,6 +3,7 @@ jest.mock("@/services/posCache", () => ({
 }));
 
 import {
+  invalidateCustomerPaymentCache,
   invalidateHeldInvoiceCache,
   invalidateReturnCache,
   invalidateSaleCache,
@@ -97,5 +98,24 @@ describe("invalidateSaleCache", () => {
     expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "held-invoices");
     expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "invoice-history");
     expect(posCache.markResourceStale).toHaveBeenCalledTimes(2);
+  });
+
+  it("marks payment and balance views stale after a received or reconciled payment", async () => {
+    await invalidateCustomerPaymentCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
+
+    const scope = {
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    };
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "payment-history");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "invoice-history");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "customer-details");
+    expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, "customer-directory");
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(4);
   });
 });

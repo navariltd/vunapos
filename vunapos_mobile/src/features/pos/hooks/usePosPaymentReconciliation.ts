@@ -4,6 +4,7 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosPaymentReconciliationAllocation } from "@/features/pos/types";
 import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { invalidateCustomerPaymentCache } from "@/services/posCacheInvalidation";
 
 type ReconcileInput = {
   customer: string;
@@ -47,7 +48,7 @@ export function usePosPaymentReconciliation() {
     setError(null);
     setIsReconciling(true);
     try {
-      return await postVunaMethod<PosPaymentReconciliationResult>(
+      const result = await postVunaMethod<PosPaymentReconciliationResult>(
         companyUrl,
         sessionId,
         "vunapos.api.payment.reconcile_customer_payment",
@@ -58,6 +59,12 @@ export function usePosPaymentReconciliation() {
           pos_profile: input.posProfile,
         },
       );
+      await invalidateCustomerPaymentCache({
+        companyUrl,
+        posProfile: input.posProfile,
+        sessionId,
+      });
+      return result;
     } catch (requestError) {
       if (
         requestError instanceof FrappeClientError &&

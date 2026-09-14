@@ -4,6 +4,7 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { PosReceivedPayment } from "@/features/pos/types";
 import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
+import { invalidateCustomerPaymentCache } from "@/services/posCacheInvalidation";
 
 export type ReceiveCustomerPaymentInput = {
   amount: number;
@@ -70,6 +71,11 @@ export function useReceiveCustomerPayment() {
             : {}),
         },
       );
+      await invalidateCustomerPaymentCache({
+        companyUrl,
+        posProfile: input.posProfile,
+        sessionId,
+      });
       idempotencyKey.current = createIdempotencyKey();
       return payment;
     } catch (requestError) {

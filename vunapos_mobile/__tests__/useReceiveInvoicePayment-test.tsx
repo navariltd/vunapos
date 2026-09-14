@@ -18,6 +18,12 @@ jest.mock("@/services/frappeClient", () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateCustomerPaymentCache = jest.fn();
+jest.mock("@/services/posCacheInvalidation", () => ({
+  invalidateCustomerPaymentCache: (...args: unknown[]) =>
+    mockInvalidateCustomerPaymentCache(...args),
+}));
+
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
   useReceiveCustomerPayment,
@@ -32,6 +38,7 @@ const invalidateSession = jest.fn();
 describe("useReceiveInvoicePayment", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateCustomerPaymentCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
@@ -80,6 +87,11 @@ describe("useReceiveInvoicePayment", () => {
     expect(hook.result.current).toMatchObject({
       error: null,
       isSubmitting: false,
+    });
+    expect(mockInvalidateCustomerPaymentCache).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
     });
   });
 

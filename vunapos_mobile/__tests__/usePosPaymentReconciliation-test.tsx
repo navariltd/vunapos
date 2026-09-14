@@ -14,6 +14,12 @@ jest.mock("@/services/frappeClient", () => ({
   postVunaMethod: jest.fn(),
 }));
 
+const mockInvalidateCustomerPaymentCache = jest.fn();
+jest.mock("@/services/posCacheInvalidation", () => ({
+  invalidateCustomerPaymentCache: (...args: unknown[]) =>
+    mockInvalidateCustomerPaymentCache(...args),
+}));
+
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosPaymentReconciliation } from "@/features/pos/hooks/usePosPaymentReconciliation";
 import { postVunaMethod } from "@/services/frappeClient";
@@ -24,6 +30,7 @@ const mockPostVunaMethod = jest.mocked(postVunaMethod);
 describe("usePosPaymentReconciliation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInvalidateCustomerPaymentCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
@@ -64,6 +71,11 @@ describe("usePosPaymentReconciliation", () => {
         pos_profile: "POS-001",
       },
     );
+    expect(mockInvalidateCustomerPaymentCache).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
   });
 
   it("does not reconcile while offline", async () => {
