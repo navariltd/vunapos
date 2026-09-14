@@ -82,7 +82,27 @@ export function usePosCachedResource<T>({
         setState({ ...nextState, keyFingerprint: activeFingerprint });
       };
 
-      const canRequest = enabled && connectionStatus !== "offline";
+      if (!enabled) {
+        const cached = await cache.read<T>(activeKey);
+        if (!isActive()) return;
+        setActiveState(
+          cached
+            ? {
+                data: cached.data,
+                error: null,
+                isLoading: false,
+                isRefreshing: false,
+                isStale: cached.isStale,
+                lastUpdated: cached.fetchedAt,
+              }
+            : emptyState,
+        );
+        return;
+      }
+
+      // At cold launch reachability is briefly unknown. Browsing may hydrate
+      // from local cache then, but no request may start until it is confirmed.
+      const canRequest = connectionStatus === "online";
       const cached = await cache.read<T>(activeKey);
       if (!isActive()) return;
 
@@ -107,11 +127,14 @@ export function usePosCachedResource<T>({
           isStale: cached.isStale,
           lastUpdated: cached.fetchedAt,
         });
-      } else if (!canRequest) {
+      } else if (connectionStatus === "offline") {
         setActiveState({
           ...emptyState,
           error: "You are offline. Connect to load this data.",
         });
+        return;
+      } else if (!canRequest) {
+        setActiveState({ ...emptyState, isLoading: true });
         return;
       } else {
         setActiveState({

@@ -49,7 +49,7 @@ describe("usePosCart", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockInvalidateHeldInvoiceCache.mockResolvedValue(undefined);
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,

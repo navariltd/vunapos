@@ -1095,7 +1095,7 @@ export function PosCartScreen({
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = isOfflineProp ?? connectionStatus === "offline";
+  const isOffline = isOfflineProp ?? connectionStatus !== "online";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =

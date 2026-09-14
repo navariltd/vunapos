@@ -166,7 +166,7 @@ export function PosInvoicesScreen({
   );
   const [restoreError, setRestoreError] = useState<string | null>(null);
   const [restoringName, setRestoringName] = useState<string | null>(null);
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const reloadHeld = held.reload;
   const reloadHistory = history.reload;
   const refreshActiveTab = useCallback(async () => {

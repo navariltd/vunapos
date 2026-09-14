@@ -39,7 +39,7 @@ export function useSalespersonPin() {
   }
 
   async function verify(posProfile: string, salesperson: string, pin: string): Promise<boolean> {
-    if (connectionStatus === 'offline') {
+    if (connectionStatus !== 'online') {
       setState((current) => ({ ...current, error: 'Connection unavailable. Reconnect before verifying a salesperson PIN.' }));
       return false;
     }

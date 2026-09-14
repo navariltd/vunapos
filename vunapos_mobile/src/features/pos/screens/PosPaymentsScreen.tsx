@@ -166,7 +166,7 @@ export function PosPaymentsScreen({
         activeTab === "history" ? (
           <RefreshControl
             colors={[palette.primary]}
-            enabled={connectionStatus !== "offline"}
+            enabled={connectionStatus === "online"}
             onRefresh={() => void refreshPaymentHistory()}
             refreshing={isHistoryRefreshing}
             tintColor={palette.primary}
@@ -307,7 +307,7 @@ function PaymentHistoryContext({
     { cashier, customer, fromDate, modeOfPayment, reference, status, toDate },
     !hasInvalidDateRange,
   );
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
 
   useEffect(() => {
     onRefreshReady(history.reload);
@@ -1004,7 +1004,7 @@ function ReceivePaymentContext({
 }) {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(initialCustomer ?? null);
@@ -2129,7 +2129,7 @@ function ReconcilePaymentContext({
 }) {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(null);

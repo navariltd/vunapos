@@ -24,6 +24,10 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
   usePosBootstrap: jest.fn(),
 }));
 
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => ({ connectionStatus: "online" }),
+}));
+
 jest.mock("@/features/pos/hooks/usePosCheckout", () => ({
   usePosCheckoutPreview: jest.fn(),
   useSubmitPosCheckout: jest.fn(),

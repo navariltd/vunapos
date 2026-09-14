@@ -4,6 +4,10 @@ jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => ({ connectionStatus: "online" }),
+}));
+
 jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
   PosCustomerPickerSheet: () => null,
 }));

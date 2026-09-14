@@ -24,7 +24,7 @@ export function useGatewayPaymentRealtime(onChange: (payment: PosGatewayPaymentL
   const { connectionStatus } = useNetworkStatus();
 
   useEffect(() => {
-    if (connectionStatus === 'offline' || !companyUrl || !sessionId) return;
+    if (connectionStatus !== 'online' || !companyUrl || !sessionId) return;
     const connection = getGatewayRealtimeConnection(companyUrl);
     const socket = io(connection.url, {
       extraHeaders: {

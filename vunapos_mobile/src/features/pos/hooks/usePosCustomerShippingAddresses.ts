@@ -25,7 +25,7 @@ export function usePosCustomerShippingAddresses(
   const activeKey = companyUrl && sessionId && customer && posProfile
     ? `${companyUrl}:${sessionId}:${posProfile}:${customer}`
     : null;
-  const requestKey = connectionStatus === 'offline' ? null : activeKey;
+  const requestKey = connectionStatus === 'online' ? activeKey : null;
   const [state, setState] = useState<PosCustomerShippingAddressesRequestState>({
     data: null,
     error: null,

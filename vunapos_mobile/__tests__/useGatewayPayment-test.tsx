@@ -4,6 +4,11 @@ jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
 
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),
@@ -21,6 +26,7 @@ const mockPostVunaMethod = jest.mocked(postVunaMethod);
 describe('gateway payment hook', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'online' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
 

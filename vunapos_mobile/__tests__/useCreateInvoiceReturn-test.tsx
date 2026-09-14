@@ -4,6 +4,11 @@ jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
 
+const mockUseNetworkStatus = jest.fn();
+jest.mock('@/services/NetworkStatusProvider', () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   postVunaMethod: jest.fn(),
@@ -25,6 +30,7 @@ const invalidateSession = jest.fn();
 describe('useCreateInvoiceReturn', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'online' });
     mockInvalidateReturnCache.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: 'https://vuna.example.com',
@@ -76,5 +82,16 @@ describe('useCreateInvoiceReturn', () => {
     });
 
     await waitFor(() => expect(hook.result.current.error).toBe('No active POS shift.'));
+  });
+
+  it('does not submit a return until reachability is confirmed', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
+    const hook = await renderHook(() => useCreateInvoiceReturn());
+
+    await act(async () => {
+      await hook.result.current.create({ invoiceName: 'POS-INV-0001', items: [{ qty: 1, row_name: 'row-1' }], posProfile: 'POS-001', reason: 'Damaged' });
+    });
+
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
   });
 });

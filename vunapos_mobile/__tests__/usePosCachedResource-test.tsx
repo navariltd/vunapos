@@ -131,6 +131,27 @@ describe("usePosCachedResource", () => {
     expect(cache.fetch).not.toHaveBeenCalled();
   });
 
+  it("hydrates cached data while reachability is unknown without starting a request", async () => {
+    const cache = createCache(cached(["milk"], true), Promise.resolve(["fresh milk"]));
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "unknown", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+    expect(cache.fetch).not.toHaveBeenCalled();
+  });
+
+  it("waits for reachability instead of requesting uncached data while status is unknown", async () => {
+    const cache = createCache<string[]>(null, Promise.resolve(["milk"]));
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "unknown", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.isLoading).toBe(true));
+    expect(hook.result.current.error).toBeNull();
+    expect(cache.fetch).not.toHaveBeenCalled();
+  });
+
   it("reports a useful offline state when no cached record exists", async () => {
     const cache = createCache<string[]>(null, Promise.resolve(["milk"]));
     const hook = await renderHook(() =>

@@ -21,7 +21,7 @@ type ReturnPreviewState = {
 export function useInvoiceReturnPreview({ enabled, invoiceName, posProfile }: UseInvoiceReturnPreviewArgs): ReturnPreviewState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const requestKey = enabled && connectionStatus !== 'offline' && companyUrl && sessionId && posProfile && invoiceName
+  const requestKey = enabled && connectionStatus === 'online' && companyUrl && sessionId && posProfile && invoiceName
     ? JSON.stringify({ companyUrl, invoiceName, posProfile, sessionId })
     : null;
   const [state, setState] = useState<{ data: PosInvoiceReturnPreview | null; error: string | null; requestKey: string | null }>({ data: null, error: null, requestKey: null });

@@ -197,7 +197,7 @@ const onPosProfileLoaded = jest.fn();
 describe("PosHomeScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockResolveBarcode.mockResolvedValue({
       message: "Barcode not found.",
       ok: false,

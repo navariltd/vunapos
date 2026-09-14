@@ -31,14 +31,14 @@ export function usePosPaymentReconciliationCandidates(
     companyUrl && sessionId && customer && posProfile
       ? `${companyUrl}:${sessionId}:${posProfile}:${customer}:${reloadKey}`
       : null;
-  const requestKey = connectionStatus === "offline" ? null : activeKey;
+  const requestKey = connectionStatus === "online" ? activeKey : null;
   const [state, setState] = useState<RequestState>({
     data: null,
     error: null,
     requestKey: null,
   });
   const reload = useCallback(() => {
-    if (connectionStatus !== "offline" && customer && posProfile) {
+    if (connectionStatus === "online" && customer && posProfile) {
       setReloadKey((current) => current + 1);
     }
   }, [connectionStatus, customer, posProfile]);

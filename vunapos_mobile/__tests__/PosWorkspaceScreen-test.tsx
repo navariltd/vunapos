@@ -1,5 +1,9 @@
 import { cleanup, fireEvent, render } from '@testing-library/react-native';
 
+jest.mock('@/services/NetworkStatusProvider', () => ({
+  useNetworkStatus: () => ({ connectionStatus: 'online' }),
+}));
+
 jest.mock('@/features/shell/components/AppShell', () => ({
   AppShell: ({ children, onTabChange }: { children: React.ReactNode; onTabChange: (tab: 'Home' | 'Invoices' | 'Customers') => void }) => {
     const { Pressable, Text, View } = require('react-native');

@@ -160,7 +160,7 @@ export function PosCustomersScreen({
         refreshControl={
           <RefreshControl
             colors={[palette.primary]}
-            enabled={connectionStatus !== "offline"}
+            enabled={connectionStatus === "online"}
             onRefresh={() => void directory.reload()}
             refreshing={directory.isRefreshing}
             tintColor={palette.primary}
@@ -268,7 +268,7 @@ export function PosCustomersScreen({
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
           <PosCacheStatus
-            isOffline={connectionStatus === "offline"}
+            isOffline={connectionStatus !== "online"}
             isRefreshing={directory.isRefreshing}
             isStale={directory.isStale}
             lastUpdated={directory.lastUpdated}
@@ -288,7 +288,7 @@ export function PosCustomersScreen({
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
           <PosCacheStatus
-            isOffline={connectionStatus === "offline"}
+            isOffline={connectionStatus !== "online"}
             isRefreshing={directory.isRefreshing}
             isStale={directory.isStale}
             lastUpdated={directory.lastUpdated}

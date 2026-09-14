@@ -39,7 +39,7 @@ describe("useReceiveInvoicePayment", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockInvalidateCustomerPaymentCache.mockResolvedValue(undefined);
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -113,6 +113,23 @@ describe("useReceiveInvoicePayment", () => {
     expect(hook.result.current.error).toBe(
       "Connection unavailable. Reconnect before receiving a payment.",
     );
+  });
+
+  it("waits for confirmed reachability before submitting a customer payment", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    const hook = await renderHook(() => useReceiveInvoicePayment());
+
+    await act(async () => {
+      await hook.result.current.receive({
+        amount: 150,
+        customer: "CUST-001",
+        invoice: "SINV-0001",
+        modeOfPayment: "Cash",
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
   });
 
   it("submits an unallocated customer advance without invoice-only fields", async () => {

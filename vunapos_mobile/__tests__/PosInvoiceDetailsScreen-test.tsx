@@ -8,6 +8,10 @@ jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 0 }),
 }));
 
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => ({ connectionStatus: "online" }),
+}));
+
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
   usePosBootstrap: jest.fn(),
 }));

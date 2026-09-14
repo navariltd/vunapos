@@ -26,7 +26,7 @@ export function useCreateInvoiceReturn() {
   const idempotencyKey = useRef(createIdempotencyKey());
 
   async function create(input: CreateInvoiceReturnInput): Promise<PosCreatedInvoiceReturn | null> {
-    if (connectionStatus === 'offline') {
+    if (connectionStatus !== 'online') {
       setError('Connection unavailable. Reconnect before submitting this return.');
       return null;
     }

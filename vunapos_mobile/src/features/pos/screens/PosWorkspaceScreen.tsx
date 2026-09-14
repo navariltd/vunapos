@@ -44,7 +44,7 @@ type ReceivePaymentContext = {
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);

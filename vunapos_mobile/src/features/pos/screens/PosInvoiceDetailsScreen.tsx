@@ -141,7 +141,7 @@ export function PosInvoiceDetailsScreen({
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const bootstrap = usePosBootstrap();
   const details = usePosInvoiceDetails({

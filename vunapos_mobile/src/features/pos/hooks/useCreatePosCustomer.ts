@@ -24,7 +24,7 @@ export function useCreatePosCustomer() {
   const [isCreating, setIsCreating] = useState(false);
 
   async function create(customerName: string, posProfile?: string): Promise<PosCustomerSearchResult | null> {
-    if (connectionStatus === 'offline') {
+    if (connectionStatus !== 'online') {
       setError('Connection unavailable. Reconnect before creating a customer.');
       return null;
     }

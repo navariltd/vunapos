@@ -81,7 +81,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
           sessionId,
         })
       : null;
-  const requestKey = connectionStatus === "offline" ? null : activeKey;
+  const requestKey = connectionStatus === "online" ? activeKey : null;
   const [state, setState] = useState<{
     data: PosCheckoutPreview | null;
     error: string | null;
@@ -90,7 +90,7 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
 
   const previewLoyalty = useCallback(
     async (points: number): Promise<PosCheckoutPreview> => {
-      if (connectionStatus === "offline")
+      if (connectionStatus !== "online")
         throw new Error(
           "Connection unavailable. Reconnect before updating loyalty points.",
         );
@@ -237,7 +237,7 @@ export function useSubmitPosCheckout() {
   }
 
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
-    if (connectionStatus === "offline") {
+    if (connectionStatus !== "online") {
       setError(
         "Connection unavailable. Reconnect before submitting this sale.",
       );

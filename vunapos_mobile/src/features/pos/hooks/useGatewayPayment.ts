@@ -23,7 +23,7 @@ export function useGatewayPayment() {
   const [isWorking, setIsWorking] = useState(false);
 
   async function request<T>(method: string, payload: Record<string, string | number | undefined>, isGet = false): Promise<T | null> {
-    if (connectionStatus === 'offline') {
+    if (connectionStatus !== 'online') {
       setError('Connection unavailable. Reconnect before contacting the payment gateway.');
       return null;
     }

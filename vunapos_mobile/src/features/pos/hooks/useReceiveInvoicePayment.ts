@@ -33,7 +33,7 @@ export function useReceiveCustomerPayment() {
   async function receive(
     input: ReceiveCustomerPaymentInput,
   ): Promise<PosReceivedPayment | null> {
-    if (connectionStatus === "offline") {
+    if (connectionStatus !== "online") {
       setError("Connection unavailable. Reconnect before receiving a payment.");
       return null;
     }

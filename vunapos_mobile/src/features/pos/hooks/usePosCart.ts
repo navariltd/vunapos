@@ -113,7 +113,7 @@ export function usePosCart({
 }: UsePosCartArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [data, setData] = useState<PosCartData>({
     items: [],
     taxes: [],

@@ -9,6 +9,11 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: jest.fn(),
 }));
 
+const mockUseNetworkStatus = jest.fn();
+jest.mock("@/services/NetworkStatusProvider", () => ({
+  useNetworkStatus: () => mockUseNetworkStatus(),
+}));
+
 jest.mock("@/services/frappeClient", () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),
@@ -45,6 +50,7 @@ const item = {
 describe("POS checkout hooks", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockInvalidateSaleCache.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
@@ -158,6 +164,24 @@ describe("POS checkout hooks", () => {
       sessionId: "sid-1",
       sourceInvoice: undefined,
     });
+  });
+
+  it("waits for confirmed reachability before submitting a sale", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(mockPostVunaMethod).not.toHaveBeenCalled();
   });
 
   it("serializes configured checkout values only when the cashier supplied them", async () => {

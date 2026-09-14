@@ -32,7 +32,7 @@ export function usePosPaymentReconciliation() {
   async function reconcile(
     input: ReconcileInput,
   ): Promise<PosPaymentReconciliationResult | null> {
-    if (connectionStatus === "offline") {
+    if (connectionStatus !== "online") {
       setError(
         "Connection unavailable. Reconnect before reconciling payments.",
       );

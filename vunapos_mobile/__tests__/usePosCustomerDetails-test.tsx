@@ -30,7 +30,7 @@ describe("usePosCustomerDetails", () => {
       posProfile: "POS-001",
       userId: "sid-1",
     });
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,

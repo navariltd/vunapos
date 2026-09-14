@@ -20,7 +20,7 @@ export function usePosCustomerLoyalty(customer: string | undefined, posProfile: 
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const activeKey = companyUrl && sessionId && customer && posProfile ? `${companyUrl}:${sessionId}:${posProfile}:${customer}` : null;
-  const requestKey = enabled && connectionStatus !== 'offline' ? activeKey : null;
+  const requestKey = enabled && connectionStatus === 'online' ? activeKey : null;
   const [state, setState] = useState<PosCustomerLoyaltyRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {

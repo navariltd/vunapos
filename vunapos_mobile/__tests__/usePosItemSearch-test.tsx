@@ -4,6 +4,10 @@ jest.mock('@/features/auth/AppSessionProvider', () => ({
   useAppSession: jest.fn(),
 }));
 
+jest.mock('@/services/NetworkStatusProvider', () => ({
+  useNetworkStatus: () => ({ connectionStatus: 'online' }),
+}));
+
 jest.mock('@/services/frappeClient', () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),

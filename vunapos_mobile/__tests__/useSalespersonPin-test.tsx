@@ -21,7 +21,7 @@ const mockUseAppSession = jest.mocked(useAppSession);
 describe('salesperson PIN session', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'online' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
 

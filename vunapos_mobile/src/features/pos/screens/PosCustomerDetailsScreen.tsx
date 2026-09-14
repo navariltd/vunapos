@@ -263,7 +263,7 @@ export function PosCustomerDetailsScreen({
 }: PosCustomerDetailsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
   const details = usePosCustomerDetails({
     customer,

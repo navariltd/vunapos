@@ -78,7 +78,7 @@ export function PosHomeScreen({
   const { palette } = useAppearance();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);

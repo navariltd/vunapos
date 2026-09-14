@@ -24,7 +24,7 @@ describe('useCreatePosCustomer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockInvalidateCustomerDirectoryCache.mockResolvedValue(undefined);
-    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'online' });
     mockUseAppSession.mockReturnValue({ companyUrl: 'https://vuna.example.com', invalidateSession: jest.fn(), sessionId: 'sid-1' } as unknown as ReturnType<typeof useAppSession>);
   });
 

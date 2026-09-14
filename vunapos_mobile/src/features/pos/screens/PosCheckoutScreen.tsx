@@ -162,7 +162,7 @@ export function PosCheckoutScreen({
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus === "offline";
+  const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
