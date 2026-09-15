@@ -1,8 +1,11 @@
 import { META_KEYS, metaRepository } from "./repositories/metaRepository";
 
 // §11.2 / ADR-007: TTL is a refresh trigger, never an expiry. STALE never blocks
-// selling (§8.5) - this is a status for the UI indicator, not a gate.
-export const DEFAULT_FRESHNESS_TTL_MS = 5 * 60 * 60 * 1000;
+// selling (§8.5) - this is a status for the UI indicator, not a gate. Keep the
+// background delta reasonably short so Item Price edits become visible even when
+// the realtime socket is unavailable; applyDelta is single-flight and only asks
+// the server for rows changed since the last watermark.
+export const DEFAULT_FRESHNESS_TTL_MS = 60 * 1000;
 
 export type FreshnessStatus = "empty" | "fresh" | "stale";
 

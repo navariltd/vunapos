@@ -25,12 +25,13 @@ def _field_definition(row, doctype, fieldname, required=None, label=None):
 
 
 def get_global_checkout_fields(profile=None):
-	"""Return validated, safe checkout field definitions from POS Settings."""
+	"""Return global defaults merged with independent POS Profile fields."""
 	settings = frappe.get_single("POS Settings")
 	result = []
 	# Existing sites can have this newly added child-table field stored as NULL
 	# until someone opens and saves POS Settings. Treat that exactly like no
 	# configured fields so bootstrap remains available.
+	seen_global = set()
 	for row in settings.get("vunapos_checkout_fields") or []:
 		if not row.get("enabled"):
 			continue
@@ -38,6 +39,10 @@ def get_global_checkout_fields(profile=None):
 		fieldname = (row.get("fieldname") or "").strip()
 		if doctype not in SUPPORTED_TRANSACTION_DOCTYPES or not fieldname:
 			continue
+		key = (doctype, fieldname)
+		if key in seen_global:
+			continue
+		seen_global.add(key)
 		meta = frappe.get_meta(doctype)
 		field = meta.get_field(fieldname)
 		if not field or field.fieldtype in DISALLOWED_FIELD_TYPES or field.read_only:
@@ -63,6 +68,16 @@ def get_global_checkout_fields(profile=None):
 				"required": bool(row.get("required")),
 				"order": int(row.get("order") or definition["order"] or 0),
 			}
+		registered = {(definition["doctype"], definition["fieldname"]) for definition in result if definition}
+		for key, row in overrides.items():
+			if key in registered or not row.get("enabled"):
+				continue
+			doctype, fieldname = key
+			if doctype not in SUPPORTED_TRANSACTION_DOCTYPES or not fieldname:
+				continue
+			definition = _field_definition(row, doctype, fieldname)
+			if definition:
+				result.append(definition)
 		result = [definition for definition in result if definition]
 	return sorted(result, key=lambda value: (value["doctype"], value["order"], value["label"]))
 
@@ -85,9 +100,18 @@ def validate_global_checkout_fields(doc, method=None):
 				)
 			seen_workflow_doctypes.add(doctype)
 
+	seen_checkout_fields = set()
 	for row in doc.get("vunapos_checkout_fields") or []:
 		doctype = row.get("target_doctype")
 		fieldname = (row.get("fieldname") or "").strip()
+		key = (doctype, fieldname)
+		if key in seen_checkout_fields:
+			frappe.throw(
+				_("Checkout field {0} on {1} can only be configured once.").format(
+					fieldname or _("(unnamed)"), doctype or _("(unknown DocType)")
+				)
+			)
+		seen_checkout_fields.add(key)
 		if not row.get("enabled"):
 			continue
 		if doctype not in SUPPORTED_TRANSACTION_DOCTYPES:
@@ -97,23 +121,6 @@ def validate_global_checkout_fields(doc, method=None):
 			frappe.throw(_("Field {0} does not exist on {1}.").format(fieldname, doctype))
 		if field.read_only or field.fieldtype in DISALLOWED_FIELD_TYPES:
 			frappe.throw(_("Field {0} cannot be edited from VunaPOS.").format(fieldname))
-
-	if doc.doctype == "POS Profile":
-		registered = {
-			(definition["doctype"], definition["fieldname"]) for definition in get_global_checkout_fields()
-		}
-		for row in doc.get("vunapos_checkout_fields") or []:
-			if not row.get("enabled"):
-				continue
-			doctype = row.get("target_doctype")
-			fieldname = (row.get("fieldname") or "").strip()
-			if (doctype, fieldname) not in registered:
-				frappe.throw(
-					_("Checkout field {0} must first be enabled in POS Settings.").format(
-						fieldname or _("(unnamed)")
-					)
-				)
-
 
 def apply_checkout_field_values(doc, values=None, profile=None):
 	"""Apply whitelisted POS checkout values to a transaction document."""

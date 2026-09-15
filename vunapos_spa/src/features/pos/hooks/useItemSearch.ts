@@ -9,7 +9,7 @@ import { searchItems } from "../../../services/vunaApi";
 
 // Search the current server-hydrated in-memory catalogue without a request per keypress.
 // Reloading the application starts empty and requires a fresh server bootstrap.
-export function useItemSearch(query: string) {
+export function useItemSearch(query: string, priceList?: string) {
 	const searchCall = useFrappePostCall("vunapos.api.item.search_items");
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
 	const [items, setItems] = useState<ItemDTO[]>();
@@ -38,6 +38,7 @@ export function useItemSearch(query: string) {
 				const serverRows = await searchItems(searchCall.call, {
 					query: debouncedQuery,
 					pos_profile: profile.name,
+					price_list: priceList,
 					limit: 60,
 				});
 				const visibleServerRows = profile.hide_unavailable_items
@@ -59,7 +60,7 @@ export function useItemSearch(query: string) {
 			if (!cancelled) setItems(rows as ItemDTO[]);
 		});
 		return () => { cancelled = true; };
-	}, [debouncedQuery, revision, searchCall.call]);
+	}, [debouncedQuery, priceList, revision, searchCall.call]);
 
 	return {
 		error: null as string | null,

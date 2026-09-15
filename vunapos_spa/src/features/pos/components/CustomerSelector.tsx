@@ -21,6 +21,7 @@ export function CustomerSelector({
   selectedCustomer,
 }: CustomerSelectorProps) {
   const selectorRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -39,6 +40,16 @@ export function CustomerSelector({
     };
     document.addEventListener("pointerdown", closeWhenOutside);
     return () => document.removeEventListener("pointerdown", closeWhenOutside);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    // The input mounts with the popover. Defer focus until it is present so a
+    // cashier can start typing immediately after opening the customer picker.
+    const frame = window.requestAnimationFrame(() =>
+      searchInputRef.current?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
   }, [isOpen]);
 
   const toggleDropdown = () => {
@@ -113,6 +124,7 @@ export function CustomerSelector({
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
             <input
+              ref={searchInputRef}
               className="h-touch w-full rounded-md border border-outline-variant bg-surface pl-9 pr-3 text-sm outline-none focus:border-primary"
               placeholder="Search customers"
               value={query}

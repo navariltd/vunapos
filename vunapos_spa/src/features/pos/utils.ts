@@ -1,4 +1,4 @@
-import type { BootstrapData, CustomerDTO, InvoiceDTO } from "./types";
+import type { BootstrapData, CustomerDTO, InvoiceDTO, ItemDTO } from "./types";
 
 export function formatCurrency(value?: number | null, currency?: string, precision = 2) {
 	const amount = Number(value || 0);
@@ -34,4 +34,17 @@ export function normalizeDefaultCustomer(bootstrap?: BootstrapData | null): Cust
 
 export function getPaymentModes(bootstrap?: BootstrapData | null) {
 	return bootstrap?.modes_of_payment || bootstrap?.mode_of_payments || [];
+}
+
+export function formatAvailableStock(item: Pick<ItemDTO, "actual_qty" | "stock_uom" | "sales_uom" | "uom" | "conversion_factor">) {
+	if (item.actual_qty === undefined || item.actual_qty === null) return "";
+	const stockQty = Number(item.actual_qty || 0);
+	const stockUom = item.stock_uom || "units";
+	const salesUom = item.sales_uom || item.uom;
+	const conversionFactor = Number(item.conversion_factor || 1);
+	if (!salesUom || salesUom === stockUom || conversionFactor <= 1) {
+		return `${stockQty} ${stockUom}`;
+	}
+	const salesQty = Number((stockQty / conversionFactor).toFixed(3));
+	return `${stockQty} ${stockUom} · ${salesQty} ${salesUom}`;
 }

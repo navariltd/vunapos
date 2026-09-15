@@ -3,11 +3,13 @@ import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
+import { formatAvailableStock } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 
 type ItemListRowProps = {
   currency?: string;
   disabled?: boolean;
+  ignoreStock?: boolean;
   pending?: boolean;
   item: ItemDTO;
   onAdd: (item: ItemDTO) => void;
@@ -16,6 +18,7 @@ type ItemListRowProps = {
 export const ItemListRow = memo(function ItemListRow({
   currency,
   disabled,
+  ignoreStock,
   item,
   onAdd,
   pending,
@@ -27,7 +30,7 @@ export const ItemListRow = memo(function ItemListRow({
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&
     Number(item.actual_qty || 0) <= 0;
-  const isDisabled = disabled || outOfStock;
+  const isDisabled = disabled || (outOfStock && !ignoreStock);
 
   return (
     <div
@@ -73,7 +76,7 @@ export const ItemListRow = memo(function ItemListRow({
             ? "Out of stock"
             : item.actual_qty === undefined
               ? ""
-              : `Qty ${item.actual_qty}`}
+            : formatAvailableStock(item)}
         </p>
       </div>
       <p
@@ -87,7 +90,7 @@ export const ItemListRow = memo(function ItemListRow({
           ? "Out of stock"
           : item.actual_qty === undefined
             ? "—"
-            : `${item.actual_qty} ${item.stock_uom || ""}`}
+            : formatAvailableStock(item)}
       </p>
       <Button
         size="sm"

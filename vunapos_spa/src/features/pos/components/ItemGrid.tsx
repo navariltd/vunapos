@@ -7,6 +7,7 @@ import type { CatalogueView } from "./ItemSearch";
 type ItemGridProps = {
   currency?: string;
   hideImages?: boolean;
+  ignoreStock?: boolean;
   isLoading?: boolean;
   items?: ItemDTO[];
   pendingItemCode?: string | null;
@@ -17,6 +18,7 @@ type ItemGridProps = {
 export function ItemGrid({
   currency,
   hideImages,
+  ignoreStock,
   isLoading,
   items,
   pendingItemCode,
@@ -48,6 +50,7 @@ export function ItemGrid({
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}
+          ignoreStock={ignoreStock}
           pending={pendingItemCode === item.item_code}
           item={item}
           onAdd={onAddItem}
@@ -61,6 +64,7 @@ export function ItemGrid({
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}
+          ignoreStock={ignoreStock}
           pending={pendingItemCode === item.item_code}
           item={item}
           onAdd={onAddItem}

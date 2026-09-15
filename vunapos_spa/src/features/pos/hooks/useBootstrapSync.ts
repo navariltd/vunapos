@@ -87,9 +87,20 @@ export function useBootstrapSync() {
 			if (recovered) refresh();
 		});
 		const refreshInterval = window.setInterval(refresh, DEFAULT_FRESHNESS_TTL_MS);
+		// A cashier often leaves the POS open while an administrator edits Item
+		// Prices in another tab. Refresh as soon as the terminal becomes active
+		// again instead of waiting for the periodic delta timer.
+		const refreshOnFocus = () => refresh();
+		const refreshOnVisibility = () => {
+			if (document.visibilityState === "visible") refresh();
+		};
+		window.addEventListener("focus", refreshOnFocus);
+		document.addEventListener("visibilitychange", refreshOnVisibility);
 		return () => {
 			unsubscribe();
 			window.clearInterval(refreshInterval);
+			window.removeEventListener("focus", refreshOnFocus);
+			document.removeEventListener("visibilitychange", refreshOnVisibility);
 		};
 	}, []);
 

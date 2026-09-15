@@ -389,6 +389,19 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(qualified["data"]["items"][0]["rate"], 80)
 		self.assertEqual(qualified["data"]["items"][0]["discount_percentage"], 20)
 
+	def test_preview_sales_order_uses_sales_order_doctype(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+
+		response = preview_invoice(
+			pos_profile=profile,
+			invoice_doctype="Sales Order",
+			items=[{"item_code": item_code, "qty": 1}],
+		)
+
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["doctype"], "Sales Order")
+
 	def test_preview_pricing_rule_sees_customer_group_defaults(self):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)

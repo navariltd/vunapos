@@ -154,10 +154,19 @@ def _apply_item_tax_inclusivity(doc):
 			tax.included_in_print_rate = prices_include_tax
 
 
-def _recalculate(doc):
+def _recalculate(doc, profile=None, requested_price_list=None):
+	"""Recalculate without allowing customer defaults to replace a POS override.
+
+	ERPNext's ``set_missing_values`` is needed for taxes and document defaults,
+	but it also reapplies the customer's default Price List.  The POS-selected
+	Price List is already validated by ``resolve_price_list`` and must remain the
+	price list for the current transaction through every recalculation.
+	"""
 	_ensure_controller_item_attrs(doc)
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
+	if profile:
+		_sync_profile_pricing_fields(doc, profile, requested_price_list)
 	if hasattr(doc, "append_taxes_from_item_tax_template"):
 		doc.append_taxes_from_item_tax_template()
 	_apply_item_tax_inclusivity(doc)
@@ -215,11 +224,15 @@ def _sync_invoice_item_pricing(doc, profile):
 
 def _save_invoice(doc):
 	if doc.get("items"):
-		if doc.get("pos_profile"):
-			profile = resolve_pos_profile(doc.get("pos_profile"))
-			_sync_profile_pricing_fields(doc, profile, doc.get("selling_price_list"))
+		profile_name = doc.get("pos_profile") or doc.get("vunapos_pos_profile")
+		if profile_name:
+			profile = resolve_pos_profile(profile_name)
+			selected_price_list = doc.get("selling_price_list")
+			_sync_profile_pricing_fields(doc, profile, selected_price_list)
 			_sync_invoice_item_pricing(doc, profile)
-		_recalculate(doc)
+			_recalculate(doc, profile, selected_price_list)
+		else:
+			_recalculate(doc)
 	doc.flags.ignore_mandatory = not bool(doc.get("items"))
 	doc.save()
 	if doc.get("items"):
@@ -246,8 +259,12 @@ def _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
 	return doc
 
 
-def _load_checkout_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+def _load_checkout_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
+	if allow_sales_order:
+		if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+			_throw("UNSUPPORTED_INVOICE_DOCTYPE", _("Unsupported transaction type"))
+	else:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus == 0:
@@ -1104,6 +1121,10 @@ def _build_invoice_doc(pos_profile=None, customer=None, invoice_doctype=None, pr
 	# context) before item pricing rules are evaluated for the first cart row.
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
+	# ERPNext applies the customer's default Price List in set_missing_values().
+	# Reapply the validated cashier override afterwards so a transaction-level
+	# selection is not silently replaced by the customer's default.
+	_sync_profile_pricing_fields(doc, profile, price_list)
 	_populate_customer_pricing_context(doc, customer)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 0)
@@ -1142,6 +1163,9 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	_sync_profile_pricing_fields(doc, profile, price_list)
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
+	# See _build_invoice_doc(): customer defaults must not override a validated
+	# transaction-level Price List selection.
+	_sync_profile_pricing_fields(doc, profile, price_list)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, IDEMPOTENCY_FIELD, None)
 	_reset_invoice_totals(doc)
@@ -1306,19 +1330,28 @@ def preview_invoice(
 	price_list=None,
 	loyalty_points=None,
 ):
-	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
-	require_create(invoice_doctype)
-	doc, profile = _build_invoice_doc(
-		pos_profile=pos_profile,
-		customer=customer,
-		invoice_doctype=invoice_doctype,
-		price_list=price_list,
-	)
+	invoice_doctype = invoice_doctype or _resolve_invoice_doctype()
+	if invoice_doctype == "Sales Order":
+		require_create(invoice_doctype)
+		doc, profile = _build_sales_order_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			price_list=price_list,
+		)
+	else:
+		invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
+		require_create(invoice_doctype)
+		doc, profile = _build_invoice_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			invoice_doctype=invoice_doctype,
+			price_list=price_list,
+		)
 	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
-	validate_cart_items(cart_items, profile)
+	validate_cart_items(cart_items, profile, validate_stock=invoice_doctype != "Sales Order")
 	_append_cart_items(doc, profile, cart_items)
-	_recalculate(doc)
+	_recalculate(doc, profile, price_list)
 	_apply_loyalty_redemption(doc, loyalty_points)
 	return invoice_to_dict(doc)
 
@@ -1341,8 +1374,8 @@ def hold_invoice(invoice_doctype, invoice_name):
 
 
 def restore_invoice(invoice_doctype, invoice_name):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
-	require_open_pos_session(doc.get("pos_profile"))
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
+	require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
 	return invoice_to_dict(doc)
@@ -1371,10 +1404,10 @@ def update_invoice_from_cart(
 	loyalty_points=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	assert_pos_workflow_editable(doc, profile)
 	cart_items = _cart_item_rows(items)
-	validate_cart_items(cart_items, profile)
+	validate_cart_items(cart_items, profile, validate_stock=doc.doctype != "Sales Order")
 
 	if customer:
 		doc.customer = customer
@@ -1384,7 +1417,7 @@ def update_invoice_from_cart(
 		doc.set("taxes", [])
 
 	_append_cart_items(doc, profile, cart_items)
-	_recalculate(doc)
+	_recalculate(doc, profile, price_list)
 	_apply_loyalty_redemption(doc, loyalty_points)
 
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
@@ -1456,7 +1489,7 @@ def add_item(invoice_doctype, invoice_name, item_code, qty=1):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile"))
 	assert_pos_workflow_editable(doc, profile)
-	_sync_profile_pricing_fields(doc, profile)
+	_sync_profile_pricing_fields(doc, profile, doc.get("selling_price_list"))
 	validate_cart_items([{"item_code": item_code, "qty": qty}], profile)
 	_append_cart_items(doc, profile, [{"item_code": item_code, "qty": qty}])
 	if profile.get("vunapos_new_item_position") == "Top" and len(doc.get("items")) > 1:
@@ -1474,7 +1507,7 @@ def update_item(invoice_doctype, invoice_name, row_name, qty):
 	row = next((item for item in doc.get("items", []) if item.name == row_name), None)
 	if not row:
 		frappe.throw(_("Invoice item row {0} was not found").format(row_name))
-	_sync_profile_pricing_fields(doc, profile)
+	_sync_profile_pricing_fields(doc, profile, doc.get("selling_price_list"))
 	validate_cart_items([{"item_code": row.item_code, "qty": qty}], profile)
 	flags = get_item_tracking_flags(row.item_code)
 	if flags["requires_serial"]:
@@ -1605,9 +1638,10 @@ def submit_invoice(
 		profile,
 	)
 	_validate_existing_pricing_permissions(doc, profile)
-	_recalculate(doc)
+	_recalculate(doc, profile, doc.get("selling_price_list"))
 	_apply_loyalty_redemption(doc, loyalty_points)
-	validate_invoice_batch_allocations(doc)
+	if doc.doctype != "Sales Order":
+		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
 		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
 	)
@@ -1625,7 +1659,10 @@ def submit_invoice(
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	_apply_shipping_address(doc, shipping_address_name, persist=True)
-	if workflow_enabled_for(resolve_pos_profile(doc.get("pos_profile")), doc.doctype):
+	if workflow_enabled_for(
+		resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile")),
+		doc.doctype,
+	):
 		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(gateway_links, doc)
@@ -1650,7 +1687,7 @@ def checkout_invoice(
 	if existing:
 		return invoice_to_dict(existing)
 
-	doc = _load_checkout_invoice(invoice_doctype, invoice_name)
+	doc = _load_checkout_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	if doc.docstatus == 1:
 		return invoice_to_dict(doc)
 	if doc.docstatus != 0:
@@ -1673,7 +1710,7 @@ def checkout_invoice(
 		salesperson_token=salesperson_token,
 		checkout_fields=checkout_fields,
 	)
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	if workflow_enabled_for(profile, doc.doctype):
 		return invoice_to_dict(doc)
 	doc.submit()
@@ -1695,17 +1732,19 @@ def _prepare_invoice_for_checkout(
 	salesperson_token=None,
 	checkout_fields=None,
 ):
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
 		profile,
+		validate_stock=doc.doctype != "Sales Order",
 	)
 	_validate_existing_pricing_permissions(doc, profile)
-	_recalculate(doc)
+	_recalculate(doc, profile, doc.get("selling_price_list"))
 	_apply_loyalty_redemption(doc, loyalty_points)
-	validate_invoice_batch_allocations(doc)
+	if doc.doctype != "Sales Order":
+		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
 		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
 	)
@@ -1757,7 +1796,7 @@ def create_invoice_from_cart(
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 
 		_append_cart_items(doc, profile, cart_items)
-		_recalculate(doc)
+		_recalculate(doc, profile, price_list)
 		_apply_loyalty_redemption(doc, loyalty_points)
 
 		_save_invoice(doc)
@@ -1944,10 +1983,9 @@ def create_and_submit_sales_order(
 		)
 		_append_cart_items(doc, profile, cart_items)
 		_apply_sales_order_delivery_date(doc, delivery_date)
-		_recalculate(doc)
+		_recalculate(doc, profile, price_list)
 		# ERPNext may populate child dates during recalculation; restore the cashier's date.
 		_apply_sales_order_delivery_date(doc, delivery_date)
-		validate_invoice_batch_allocations(doc)
 		payment_rows = validate_payment_rows(
 			doc,
 			payments,

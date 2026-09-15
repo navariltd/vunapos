@@ -619,6 +619,74 @@ describe("refreshCustomerPricing", () => {
 });
 
 describe("refreshPriceListPricing", () => {
+	it("keeps the selected list on a subsequent optimistic cart addition", async () => {
+		useCartStore.setState({ selectedPriceList: "Retail" });
+		await useCartStore.getState().addCartItem(
+			makeItem({ rate: 80, price_list_rate: 80 }),
+			makeApi(),
+		);
+
+		expect(useCartStore.getState().invoice).toMatchObject({
+			selling_price_list: "Retail",
+			items: [{ rate: 80, price_list_rate: 80 }],
+		});
+	});
+
+	it("delegates customer-default resolution to ERPNext when no manual override is active", async () => {
+		useCartStore.setState({
+			defaultCustomer: { ...CUSTOMER, default_price_list: "Retail" },
+			selectedPriceList: undefined,
+		});
+		await useCartStore.getState().addCartItem(
+			makeItem({ rate: 3000, price_list_rate: 3000 }),
+			makeApi(),
+		);
+
+		const previewInvoice = vi.fn().mockResolvedValue(useCartStore.getState().invoice);
+		await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			customer: "CUST-1",
+			price_list: undefined,
+		}));
+		expect(useCartStore.getState().invoice?.items).toMatchObject([
+			{ rate: 3000, price_list_rate: 3000 },
+		]);
+	});
+
+	it("sends the cart override instead of a customer default", async () => {
+		useCartStore.setState({
+			defaultCustomer: { ...CUSTOMER, default_price_list: "Retail" },
+			selectedPriceList: "Standard Selling",
+		});
+		await useCartStore.getState().addCartItem(
+			makeItem({ rate: 5430, price_list_rate: 5430 }),
+			makeApi(),
+		);
+		const previewInvoice = vi.fn().mockResolvedValue(useCartStore.getState().invoice);
+		await useCartStore.getState().validateCart(makeApi({ previewInvoice }));
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			customer: "CUST-1",
+			price_list: "Standard Selling",
+		}));
+	});
+
+	it("uses Sales Order for checkout validation when selected in the workspace", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const previewInvoice = vi.fn().mockResolvedValue(useCartStore.getState().invoice);
+
+		await useCartStore.getState().validateCart(
+			makeApi({ previewInvoice }),
+			"Sales Order",
+		);
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			invoice_doctype: "Sales Order",
+		}));
+	});
+
 	it("reprices the catalogue and current cart using the manually selected list", async () => {
 		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
 		const searchItems = vi.fn().mockResolvedValue([makeItem({ rate: 80, price_list_rate: 80 })]);
@@ -645,13 +713,19 @@ describe("refreshPriceListPricing", () => {
 		expect((await db.items.get("ITEM-1"))?.rate).toBe(80);
 	});
 
-	it("customer repricing clears a manual price-list selection", async () => {
+	it("customer repricing preserves a manual price-list selection", async () => {
 		useCartStore.setState({ selectedPriceList: "Wholesale" });
 		const searchItems = vi.fn().mockResolvedValue([]);
 
 		await useCartStore.getState().refreshCustomerPricing(null, makeApi({ searchItems }));
 
-		expect(useCartStore.getState().selectedPriceList).toBeUndefined();
+		expect(searchItems).toHaveBeenCalledWith({
+			pos_profile: "Profile-1",
+			customer: undefined,
+			price_list: "Wholesale",
+			limit: 500,
+		});
+		expect(useCartStore.getState().selectedPriceList).toBe("Wholesale");
 	});
 });
 

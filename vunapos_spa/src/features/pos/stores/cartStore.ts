@@ -476,6 +476,41 @@ function allowsNegativeStock(item: ItemDTO | InvoiceItemDTO) {
 	return Boolean(item.allow_negative_stock);
 }
 
+function selectAvailableInitialUom(item: ItemDTO): { item: ItemDTO; notice?: string } {
+	const requestedUom = item.uom || item.stock_uom;
+	const requestedFactor = Number(item.conversion_factor || 1);
+	const available = Number(item.actual_qty);
+	if (
+		!isStockControlled(item)
+		|| allowsNegativeStock(item)
+		|| !Number.isFinite(available)
+		|| !item.stock_uom
+		|| !requestedUom
+		|| requestedUom === item.stock_uom
+		|| requestedFactor <= 1
+		|| available >= requestedFactor
+		|| available < 1
+	) {
+		return { item };
+	}
+
+	const stockUomRate = item.uoms?.find((row) => row.uom === item.stock_uom)?.rate;
+	const rate = stockUomRate == null
+		? Number(item.rate || 0) / requestedFactor
+		: Number(stockUomRate);
+	const priceListRate = item.uoms?.find((row) => row.uom === item.stock_uom)?.rate ?? rate;
+	return {
+		item: {
+			...item,
+			uom: item.stock_uom,
+			conversion_factor: 1,
+			rate,
+			price_list_rate: Number(priceListRate),
+		},
+		notice: `Only ${available} ${item.stock_uom} available; 1 ${requestedUom} requires ${requestedFactor} ${item.stock_uom}. Added as ${item.stock_uom}.`,
+	};
+}
+
 function isStockControlled(item: ItemDTO) {
 	return item.is_stock_item === undefined || Boolean(item.is_stock_item);
 }
@@ -493,6 +528,26 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number, stock
 	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
 	}
+}
+
+function itemRateForUom(
+	item: {
+		uoms?: Array<{ uom: string; rate?: number | null }>;
+		rate?: number | null;
+		price_list_rate?: number | null;
+		stock_uom?: string;
+	},
+	uom?: string,
+	conversionFactor = 1,
+): number {
+	const configured = uom && item.uoms?.find((row) => row.uom === uom)?.rate;
+	if (configured != null) return Number(configured);
+	const rate = Number(item.rate ?? item.price_list_rate ?? 0);
+	return uom && uom !== item.stock_uom ? rate * conversionFactor : rate;
+}
+
+function hasPricingOverride(item: InvoiceItemDTO): boolean {
+	return Boolean(item.pricing_override || pricingOverrideFromSavedItem(item));
 }
 
 async function refreshAndValidateStock(
@@ -529,6 +584,10 @@ async function refreshAndValidateStock(
 			return fresh
 				? {
 					...item,
+					...(hasPricingOverride(item) ? {} : {
+						rate: itemRateForUom(fresh, item.uom, Number(item.conversion_factor || 1)),
+						price_list_rate: itemRateForUom(fresh, item.uom, Number(item.conversion_factor || 1)),
+					}),
 					actual_qty: fresh.actual_qty,
 					allow_negative_stock: fresh.allow_negative_stock,
 					is_stock_item: fresh.is_stock_item,
@@ -578,6 +637,7 @@ export type CartState = {
 	// preserved exactly from the old POSHomePage-local tri-state (not redesigned).
 	selectedCustomerOverride: CustomerDTO | null | undefined;
 	selectedPriceList: string | undefined;
+	transactionOrderType: "Sales Invoice" | "Sales Order";
 	newItemPosition: "Top" | "Bottom";
 };
 
@@ -594,7 +654,8 @@ type CartActions = {
 	setNewItemPosition: (position: "Top" | "Bottom" | undefined) => void;
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
-	addCartItem: (item: ItemDTO, api: CartApi) => Promise<void>;
+	setTransactionOrderType: (orderType: "Sales Invoice" | "Sales Order") => void;
+	addCartItem: (item: ItemDTO, api: CartApi) => Promise<string | undefined>;
 	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
@@ -617,7 +678,10 @@ type CartActions = {
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
-	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	validateCart: (
+		api: CartApi,
+		invoiceDoctype?: "Sales Invoice" | "Sales Order",
+	) => Promise<InvoiceDTO | null>;
 	previewLoyaltyRedemption: (loyaltyPoints: number, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
@@ -649,6 +713,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 	let localAddQueue = Promise.resolve();
 	let localCartRevision = 0;
 	let localPreviewTimer: ReturnType<typeof setTimeout> | undefined;
+	let pricingRefreshRevision = 0;
 	const pricingPreviewCache = new Map<string, { expiresAt: number; invoice: InvoiceDTO }>();
 	const previewApiIds = new WeakMap<object, number>();
 	let nextPreviewApiId = 1;
@@ -688,7 +753,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 		// Local Invoice Engine, not a server round trip (I3/G3) - pricing/tax feedback
 		// while building a cart is instant and works with zero network availability.
 		const assembled = await assembleLocalCart(items);
-		const preview = assembledToInvoiceDTO(assembled, items, sourceInvoice);
+		const preview = {
+			...assembledToInvoiceDTO(assembled, items, sourceInvoice),
+			// The local invoice engine does not resolve price lists itself. Preserve
+			// the selected list so the next add/preview cannot fall back to the POS
+			// profile default.
+			selling_price_list: currentInvoice?.selling_price_list,
+		};
 		return localizePreviewInvoice(preview, items, getActiveCustomer(get()), sourceInvoice);
 	}
 
@@ -703,11 +774,15 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return previewLocalCart(items, currentInvoice);
 		}
 		const sourceInvoice = getLocalCartSource(currentInvoice);
+		// Undefined deliberately asks ERPNext to resolve its normal hierarchy:
+		// Customer → Customer Group → POS Profile → Selling Settings. A value here
+		// exists only when the cashier explicitly chose a list for this cart.
+		const priceList = get().selectedPriceList;
 		const authoritative = await previewInvoice(api.previewInvoice, {
 			pos_profile: get().posProfile,
 			customer,
 			invoice_doctype: sourceInvoice?.doctype || currentInvoice?.doctype,
-			price_list: get().selectedPriceList || currentInvoice?.selling_price_list,
+			price_list: priceList,
 			items: cartItemsPayload(items),
 			loyalty_points: currentInvoice?.loyalty_points || undefined,
 		});
@@ -755,15 +830,26 @@ export const useCartStore = create<CartStore>((set, get) => {
 		currentInvoice: InvoiceDTO | null,
 		api: CartApi,
 	) {
+		// `selectedPriceList` is the explicit transaction override. Do not derive a
+		// fallback here: ERPNext is the authority for the default hierarchy.
+		const selectedPriceList = get().selectedPriceList;
 		// Publish the changed rows before the asynchronous local tax/total pass so
 		// serial and batch selections are immediately visible to Hold and Checkout.
 		const pendingInvoice: InvoiceDTO = currentInvoice
-			? { ...currentInvoice, items: nextItems }
+			? {
+				...currentInvoice,
+				items: nextItems,
+				// Keep local previews on the cashier's explicitly selected list. This
+				// prevents a restored/default invoice price list from winning over a
+				// newly selected list when the next item is added.
+				selling_price_list: selectedPriceList,
+			}
 			: {
 				doctype: "Sales Invoice",
 				name: "Not invoiced yet",
 				docstatus: 0,
 				items: nextItems,
+				selling_price_list: selectedPriceList,
 				totals: {},
 			};
 		set({ invoice: pendingInvoice, error: null });
@@ -789,7 +875,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			invoice_doctype: cart.source_invoice_doctype,
 			invoice_name: cart.source_invoice_name,
 			customer: selectedCustomer?.customer || cart.customer,
-			price_list: get().selectedPriceList || cart.selling_price_list,
+			price_list: get().selectedPriceList,
 			items: cartItemsPayload(cart.items),
 			loyalty_points: cart.loyalty_points || undefined,
 		});
@@ -820,17 +906,21 @@ export const useCartStore = create<CartStore>((set, get) => {
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
 		selectedPriceList: undefined,
+		transactionOrderType: "Sales Invoice",
 		newItemPosition: "Bottom",
 
 		setPosProfile: (posProfile) => set({ posProfile }),
 		setNewItemPosition: (position) => set({ newItemPosition: position === "Top" ? "Top" : "Bottom" }),
 		setDefaultCustomer: (defaultCustomer) => set({ defaultCustomer }),
 		setSelectedCustomer: (selectedCustomerOverride) => set({ selectedCustomerOverride }),
+		setTransactionOrderType: (transactionOrderType) => set({ transactionOrderType }),
 
-		addCartItem: async (item, api) => {
+	addCartItem: async (item, api) => {
 			const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-			if (isStockControlled(item)) {
-				validateAvailableQty(item, 1);
+			const initialUom = selectAvailableInitialUom(item);
+			const itemForCart = initialUom.item;
+			if (isStockControlled(itemForCart) && get().transactionOrderType !== "Sales Order") {
+				validateAvailableQty(itemForCart, 1);
 			}
 
 			const invoice = get().invoice;
@@ -842,28 +932,30 @@ export const useCartStore = create<CartStore>((set, get) => {
 					const currentItems = currentInvoice && isLocalCart(currentInvoice) && currentInvoice.docstatus === 0
 						? currentInvoice.items
 						: [];
-					const itemUom = item.uom || item.stock_uom;
-					const itemConversionFactor = Number(item.conversion_factor || 1);
+					const itemUom = itemForCart.uom || itemForCart.stock_uom;
+					const itemConversionFactor = Number(itemForCart.conversion_factor || 1);
 					const existingItem = currentItems.find((row) =>
-						row.item_code === item.item_code
+						row.item_code === itemForCart.item_code
 						&& (row.uom || row.stock_uom) === itemUom
 						&& Number(row.conversion_factor || 1) === itemConversionFactor,
 					);
 					const nextItems = existingItem
 						? currentItems.map((row) => {
 							if (
-								row.item_code === item.item_code
+								row.item_code === itemForCart.item_code
 								&& (row.uom || row.stock_uom) === itemUom
 								&& Number(row.conversion_factor || 1) === itemConversionFactor
 							) {
-								validateAvailableQty(row, row.qty + 1);
-								return mergeScannedTracking(row, item);
+								if (get().transactionOrderType !== "Sales Order") {
+									validateAvailableQty(row, row.qty + 1);
+								}
+								return mergeScannedTracking(row, itemForCart);
 							}
 							return row;
 						})
 						: get().newItemPosition === "Top"
-							? [itemToCartRow(item), ...currentItems]
-							: [...currentItems, itemToCartRow(item)];
+							? [itemToCartRow(itemForCart), ...currentItems]
+							: [...currentItems, itemToCartRow(itemForCart)];
 
 					await applyOptimisticLocalCart(nextItems, currentInvoice, api);
 				}).catch((error) => {
@@ -877,18 +969,19 @@ export const useCartStore = create<CartStore>((set, get) => {
 						milliseconds: Math.round(performance.now() - startedAt),
 					});
 				}
-				return;
+				return initialUom.notice;
 			}
 
 			const updatedInvoice = await runMutation(() =>
 				addItem(api.addItem, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
-					item_code: item.item_code,
+					item_code: itemForCart.item_code,
 					qty: 1,
 				}),
 			);
 			set({ invoice: updatedInvoice });
+			return initialUom.notice;
 		},
 
 		scanBarcode: async (barcode, api) => {
@@ -918,7 +1011,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 						? invoice.items.filter((row) => row.row_name !== rowName)
 						: invoice.items.map((row) => {
 							if (row.row_name === rowName) {
-								validateAvailableQty(row, qty);
+								if (get().transactionOrderType !== "Sales Order") {
+									validateAvailableQty(row, qty);
+								}
 								return updateLocalQty(row, qty);
 							}
 							return row;
@@ -982,7 +1077,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					price_list: get().selectedPriceList || invoice.selling_price_list,
+					price_list: get().selectedPriceList,
 					items: cartItemsPayload(nextItems),
 				}),
 			);
@@ -1005,7 +1100,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					price_list: get().selectedPriceList || invoice.selling_price_list,
+					price_list: get().selectedPriceList,
 					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: preservePricingOverrides(updated, nextItems) });
@@ -1031,7 +1126,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 					invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
-					price_list: get().selectedPriceList || invoice.selling_price_list,
+					price_list: get().selectedPriceList,
 					items: cartItemsPayload(nextItems),
 				}));
 			set({ invoice: updated });
@@ -1051,7 +1146,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			}
 			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
 				invoice_doctype: invoice.doctype, invoice_name: invoice.name, customer: invoice.customer,
-				price_list: get().selectedPriceList || invoice.selling_price_list,
+				price_list: get().selectedPriceList,
 				items: cartItemsPayload(nextItems),
 			}));
 			set({ invoice: updated });
@@ -1073,7 +1168,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
 					customer: invoice.customer,
-					price_list: get().selectedPriceList || invoice.selling_price_list,
+					price_list: get().selectedPriceList,
 					items: cartItemsPayload(nextItems),
 				}),
 			);
@@ -1170,17 +1265,18 @@ export const useCartStore = create<CartStore>((set, get) => {
 			await restoreDefaultCataloguePricing(api);
 		},
 
-		validateCart: async (api) => {
+		validateCart: async (api, invoiceDoctype) => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) return null;
 			const items = invoice.items.map(clearIncompleteSerialAllocation);
 			const selectedCustomer = getActiveCustomer(get());
 			const sourceInvoice = getLocalCartSource(invoice);
+			const priceList = get().selectedPriceList;
 			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
 				pos_profile: get().posProfile,
 				customer: selectedCustomer?.customer || invoice.customer,
-				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
-				price_list: get().selectedPriceList,
+			invoice_doctype: sourceInvoice?.doctype || invoiceDoctype || invoice.doctype,
+				price_list: priceList,
 				items: cartItemsPayload(items),
 			}));
 			const validated = localizePreviewInvoice(
@@ -1215,21 +1311,33 @@ export const useCartStore = create<CartStore>((set, get) => {
 		refreshCartConfiguration: async (api) => {
 			const invoice = get().invoice;
 			if (!invoice?.items.length) return null;
-			const catalogueItems = await Promise.all(
-				invoice.items.map((item) => itemRepository.getByCode(item.item_code)),
-			);
+			const selectedCustomer = getActiveCustomer(get());
+			const customer = selectedCustomer?.customer || invoice.customer;
+			const priceList = get().selectedPriceList;
+			// The local row is useful for offline rendering, but it can contain an old
+			// Item Price. Ask ERPNext for the current rate when a refresh is requested;
+			// retain the local row if the request is temporarily unavailable.
+			const catalogueItems = await Promise.all(invoice.items.map(async (item) => {
+				const cached = await itemRepository.getByCode(item.item_code);
+				try {
+					return await getItemDetails(api.getItemDetails, {
+						item_code: item.item_code,
+						pos_profile: get().posProfile,
+						customer,
+						price_list: priceList,
+					});
+				} catch {
+					return cached;
+				}
+			}));
 			const refreshedItems = invoice.items.map((item, index) => {
 				const catalogueItem = catalogueItems[index];
 				if (!catalogueItem) return item;
 				const conversionFactor = Number(item.conversion_factor || 1);
-				const configuredUomRate = catalogueItem.uoms?.find((row) => row.uom === item.uom)?.rate;
-				const stockRate = Number(catalogueItem.price_list_rate ?? catalogueItem.rate ?? item.price_list_rate ?? item.rate);
-				const priceListRate = configuredUomRate == null
-					? stockRate * conversionFactor
-					: Number(configuredUomRate);
+				const priceListRate = itemRateForUom(catalogueItem, item.uom, conversionFactor);
 				return {
 					...item,
-					rate: priceListRate,
+					...(hasPricingOverride(item) ? {} : { rate: priceListRate }),
 					price_list_rate: priceListRate,
 					actual_qty: catalogueItem.actual_qty ?? undefined,
 					allow_negative_stock: catalogueItem.allow_negative_stock,
@@ -1241,8 +1349,6 @@ export const useCartStore = create<CartStore>((set, get) => {
 					catalogue_pricing_rule: catalogueItem.pricing_rule,
 				};
 			});
-			const selectedCustomer = getActiveCustomer(get());
-			const customer = selectedCustomer?.customer || invoice.customer;
 			if (!customer) {
 				// A cashier may build a cart before choosing a customer. Configuration
 				// refreshes must still work, so recalculate that cart from the freshly
@@ -1276,32 +1382,78 @@ export const useCartStore = create<CartStore>((set, get) => {
 		},
 
 		refreshCustomerPricing: async (customer, api) => {
-			set({ selectedPriceList: undefined });
+			const refreshRevision = ++pricingRefreshRevision;
+			// An explicit cart price-list choice is stronger than customer defaults.
+			// Keep it while the customer catalogue is refreshed; ERPNext will resolve
+			// customer/group/profile/Selling Settings only when no override exists.
+			const selectedPriceList = get().selectedPriceList;
 			const requestedCustomer = (customer === undefined ? get().defaultCustomer : customer)?.customer;
 			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
 				pos_profile: get().posProfile,
 				customer: requestedCustomer,
+				...(selectedPriceList ? { price_list: selectedPriceList } : {}),
 				limit: 500,
 			}));
 			// Ignore a response that completed after the cashier selected another customer.
-			if (getActiveCustomer(get())?.customer !== requestedCustomer) return get().invoice;
+			// A manual price-list selection may complete while this customer refresh
+			// is in flight. Never let the older response replace the newer list.
+			if (
+				refreshRevision !== pricingRefreshRevision
+				|| getActiveCustomer(get())?.customer !== requestedCustomer
+				|| get().selectedPriceList !== selectedPriceList
+			) return get().invoice;
 			await itemRepository.replaceAll(pricedItems);
 			useRuntimeCacheStore.getState().touch();
+			const currentInvoice = get().invoice;
+			if (currentInvoice) {
+				set({
+					invoice: {
+						...currentInvoice,
+						// Keep only an explicit cart override locally. With no override,
+						// the next preview re-resolves the backend default hierarchy.
+						selling_price_list: selectedPriceList,
+					},
+				});
+			}
 			if (!get().invoice?.items.length) return null;
 			return get().validateCart(api);
 		},
 
 		refreshPriceListPricing: async (priceList, api) => {
-			const requestedCustomer = getActiveCustomer(get())?.customer;
-			const pricedItems = await runMutation(() => searchItems(api.searchItems, {
-				pos_profile: get().posProfile,
-				customer: requestedCustomer,
-				price_list: priceList,
-				limit: 500,
-			}));
+			const refreshRevision = ++pricingRefreshRevision;
+			const previousPriceList = get().selectedPriceList;
 			set({ selectedPriceList: priceList });
+			const requestedCustomer = getActiveCustomer(get())?.customer;
+			let pricedItems: ItemDTO[];
+			try {
+				pricedItems = await runMutation(() => searchItems(api.searchItems, {
+					pos_profile: get().posProfile,
+					customer: requestedCustomer,
+					price_list: priceList,
+					limit: 500,
+				}));
+			} catch (error) {
+				if (get().selectedPriceList === priceList) set({ selectedPriceList: previousPriceList });
+				throw error;
+			}
+			// Ignore a slower response from an earlier selection.
+			if (refreshRevision !== pricingRefreshRevision || get().selectedPriceList !== priceList) {
+				return get().invoice;
+			}
 			await itemRepository.replaceAll(pricedItems);
 			useRuntimeCacheStore.getState().touch();
+			// Clear a previously selected list when returning to the customer's/profile
+			// default. Otherwise a subsequent optimistic add can still inherit the old
+			// list from the invoice even though the selector shows the default.
+			const currentInvoice = get().invoice;
+			if (currentInvoice) {
+				set({
+					invoice: {
+						...currentInvoice,
+						selling_price_list: priceList || undefined,
+					},
+				});
+			}
 			if (!get().invoice?.items.length) return null;
 			return get().validateCart(api);
 		},
@@ -1336,30 +1488,62 @@ export const useCartStore = create<CartStore>((set, get) => {
 				invoice.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
 
 			const selectedCustomer = getActiveCustomer(get());
+			const activePriceList = get().selectedPriceList;
 			if (isOnline && isUnsyncedLocalCart(invoice)) {
 				invoice = await runMutation(() =>
 					refreshAndValidateStock(
 						invoice as InvoiceDTO,
 						get().posProfile,
 						selectedCustomer?.customer,
-						get().selectedPriceList,
+						activePriceList,
 						api,
 					),
 				);
 				set({ invoice });
 			}
 
-			for (const item of invoice.items) {
-				validateAvailableQty(item, item.qty);
+			if (effectiveOrderType !== "Sales Order") {
+				for (const item of invoice.items) {
+					validateAvailableQty(item, item.qty);
+				}
+				validateManualBatchAllocations(invoice.items);
 			}
-			validateManualBatchAllocations(invoice.items);
 
 			if (effectiveOrderType === "Sales Order") {
 				if (invoice.source_invoice_doctype === "Sales Order" && invoice.source_invoice_name) {
 					const updated = await runMutation(() => syncLocalCartToSource(invoice, api));
 					if (updated) {
-						set({ invoice: updated });
-						return { invoice: updated, queued: false, printPayload: null };
+						const submitted = await runMutation(() =>
+							checkoutInvoice(api.checkoutInvoice, {
+								invoice_doctype: "Sales Order",
+								invoice_name: updated.name || invoice.source_invoice_name || "",
+								payments,
+								idempotency_key: idempotencyKey,
+								is_credit_sale: isCreditSale,
+								due_date: dueDate,
+								loyalty_points: loyaltyPoints,
+								tax_id: taxId,
+								shipping_address_name: shippingAddressName,
+								checkout_fields: checkoutFields,
+								salesperson,
+								salesperson_token: salespersonToken,
+							}),
+						);
+						try {
+							const receipt = await renderInvoice(api.renderInvoice, {
+								invoice_doctype: submitted.doctype,
+								invoice_name: submitted.name,
+								print_format: printFormat || undefined,
+							});
+							set({ invoice: null, selectedPriceList: undefined });
+							await restoreDefaultCataloguePricing(api);
+							return { invoice: submitted, printPayload: receipt };
+						} catch (err) {
+							console.error(err);
+							set({ invoice: null, selectedPriceList: undefined });
+							await restoreDefaultCataloguePricing(api);
+							return { invoice: submitted, printPayload: null };
+						}
 					}
 				}
 				if (!isUnsyncedLocalCart(invoice)) {
@@ -1504,10 +1688,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 				return null;
 			}
 
-			for (const item of invoice.items) {
-				validateAvailableQty(item, item.qty);
+			if (get().transactionOrderType !== "Sales Order" && invoice.source_invoice_doctype !== "Sales Order") {
+				for (const item of invoice.items) {
+					validateAvailableQty(item, item.qty);
+				}
+				validateManualBatchAllocations(invoice.items);
 			}
-			validateManualBatchAllocations(invoice.items);
 
 			const selectedCustomer = getActiveCustomer(get());
 			const posProfile = get().posProfile;

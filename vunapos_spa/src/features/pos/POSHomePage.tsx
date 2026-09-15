@@ -208,7 +208,8 @@ export function POSHomePage({
   const allowCustomerPayments =
     bootstrap.data?.allow_customer_payments !== false;
 
-  const items = useItemSearch(itemSearchQuery);
+  const selectedPriceList = useCartStore((s) => s.selectedPriceList);
+  const items = useItemSearch(itemSearchQuery, selectedPriceList);
   const cartInvoice = useCartStore((s) => s.invoice);
   // Drafts edited from history retain their original doctype. Prefer it over
   // the workspace selector so Sales Orders never enter the invoice checkout path.
@@ -219,7 +220,6 @@ export function POSHomePage({
       (total, item) => total + Number(item.qty || 0),
       0,
     ) || 0;
-  const selectedPriceList = useCartStore((s) => s.selectedPriceList);
   const activeCustomer = useCartStore(getActiveCustomer);
   const heldInvoicesView = useHeldInvoicesView();
   const cartIsHeldLoading = useCartStore((s) => s.isHeldLoading);
@@ -228,6 +228,11 @@ export function POSHomePage({
   const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+  const setTransactionOrderType = useCartStore((s) => s.setTransactionOrderType);
+
+  useEffect(() => {
+    setTransactionOrderType(effectiveOrderType);
+  }, [effectiveOrderType, setTransactionOrderType]);
 
   useEffect(() => {
     window.localStorage.setItem("vunapos.catalogue-view", catalogueView);
@@ -507,7 +512,10 @@ export function POSHomePage({
       clearToast();
       setPendingItemCode(item.item_code);
       try {
-        await cartActions.addCartItem(item);
+        const uomNotice = await cartActions.addCartItem(item);
+        if (uomNotice) {
+          showToast({ type: "info", message: uomNotice });
+        }
       } catch (err) {
         showToast({
           type: "error",
@@ -692,7 +700,7 @@ export function POSHomePage({
       return;
     }
     try {
-      const validated = await cartActions.validateCart();
+      const validated = await cartActions.validateCart(effectiveOrderType);
       if (!validated) {
         showToast({
           type: "error",
@@ -950,10 +958,17 @@ export function POSHomePage({
             }}
             onEdit={async () => {
               try {
-                await cartActions.editDraftInvoice(
+                const editedInvoice = await cartActions.editDraftInvoice(
                   getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
                   getInvoiceFromPath(currentPath) || "",
                 );
+                if (editedInvoice.customer) {
+                  setSelectedCustomer({
+                    customer: editedInvoice.customer,
+                    customer_name: editedInvoice.customer_name || editedInvoice.customer,
+                    tax_id: editedInvoice.tax_id,
+                  });
+                }
                 navigateToPosPage("Home");
                 setIsCartOpen(true);
               } catch (err) {
@@ -1050,6 +1065,7 @@ export function POSHomePage({
               <ItemGrid
                 currency={bootstrap.data?.currency}
                 hideImages={bootstrap.data?.hide_images}
+                ignoreStock={effectiveOrderType === "Sales Order"}
                 isLoading={items.isLoading}
                 items={items.items}
                 pendingItemCode={pendingItemCode}
