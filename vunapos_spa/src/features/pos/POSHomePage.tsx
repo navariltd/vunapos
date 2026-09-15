@@ -228,6 +228,11 @@ export function POSHomePage({
   const setCartNewItemPosition = useCartStore((s) => s.setNewItemPosition);
   const setCartDefaultCustomer = useCartStore((s) => s.setDefaultCustomer);
   const setSelectedCustomer = useCartStore((s) => s.setSelectedCustomer);
+  const setTransactionOrderType = useCartStore((s) => s.setTransactionOrderType);
+
+  useEffect(() => {
+    setTransactionOrderType(effectiveOrderType);
+  }, [effectiveOrderType, setTransactionOrderType]);
 
   useEffect(() => {
     window.localStorage.setItem("vunapos.catalogue-view", catalogueView);
@@ -695,7 +700,7 @@ export function POSHomePage({
       return;
     }
     try {
-      const validated = await cartActions.validateCart();
+      const validated = await cartActions.validateCart(effectiveOrderType);
       if (!validated) {
         showToast({
           type: "error",
@@ -953,10 +958,17 @@ export function POSHomePage({
             }}
             onEdit={async () => {
               try {
-                await cartActions.editDraftInvoice(
+                const editedInvoice = await cartActions.editDraftInvoice(
                   getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
                   getInvoiceFromPath(currentPath) || "",
                 );
+                if (editedInvoice.customer) {
+                  setSelectedCustomer({
+                    customer: editedInvoice.customer,
+                    customer_name: editedInvoice.customer_name || editedInvoice.customer,
+                    tax_id: editedInvoice.tax_id,
+                  });
+                }
                 navigateToPosPage("Home");
                 setIsCartOpen(true);
               } catch (err) {
@@ -1053,6 +1065,7 @@ export function POSHomePage({
               <ItemGrid
                 currency={bootstrap.data?.currency}
                 hideImages={bootstrap.data?.hide_images}
+                ignoreStock={effectiveOrderType === "Sales Order"}
                 isLoading={items.isLoading}
                 items={items.items}
                 pendingItemCode={pendingItemCode}
