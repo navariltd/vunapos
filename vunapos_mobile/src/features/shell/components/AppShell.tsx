@@ -14,6 +14,7 @@ type AppShellProps = PropsWithChildren<{
   onTabChange: (tab: PosNavigationTab) => void;
   orderType: PosOrderType;
   customersEnabled?: boolean;
+  allowOrderTypeChange?: boolean;
   paymentsEnabled?: boolean;
 }>;
 
@@ -24,6 +25,7 @@ export function AppShell({
   onTabChange,
   orderType,
   customersEnabled,
+  allowOrderTypeChange,
   paymentsEnabled,
 }: AppShellProps) {
   const { palette } = useAppearance();
@@ -32,6 +34,7 @@ export function AppShell({
     <Screen style={{ backgroundColor: palette.background }}>
       <PosTopBar
         onLocalDataCleared={() => setLocalDataGeneration((value) => value + 1)}
+        allowOrderTypeChange={allowOrderTypeChange}
         onOrderTypeChange={onOrderTypeChange}
         orderType={orderType}
       />

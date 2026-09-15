@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
@@ -73,22 +73,30 @@ jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
   SalespersonPinLock: () => null,
 }));
 
+let mockSetBootstrapData: ((data: unknown) => void) | undefined;
+jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
+  usePosBootstrap: () => {
+    const { useState } = require("react");
+    const [data, setData] = useState(null);
+    mockSetBootstrapData = setData;
+    return {
+      data,
+      error: null,
+      isLoading: false,
+      isRefreshing: false,
+      isStale: false,
+      lastUpdated: null,
+      reload: jest.fn(),
+    };
+  },
+}));
+
 jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
   PosHomeScreen: ({
     onOpenCart,
-    onPosProfileLoaded,
     pricingContext,
   }: {
     onOpenCart: () => void;
-    onPosProfileLoaded: (bootstrap: {
-      payment_modes: [];
-      pos_profile: { allow_customer_management?: boolean; name: string };
-      pos_session?: {
-        has_opening_entry: boolean;
-        ready: boolean;
-        status: "OPENING_REQUIRED";
-      };
-    }) => void;
     pricingContext?: { customer?: string };
   }) => {
     const { Pressable, Text } = require("react-native");
@@ -102,7 +110,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            onPosProfileLoaded({
+            mockSetBootstrapData?.({
               payment_modes: [],
               pos_profile: { name: "POS-001" },
               pos_session: {
@@ -118,7 +126,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            onPosProfileLoaded({
+            mockSetBootstrapData?.({
               payment_modes: [],
               pos_profile: { allow_customer_management: true, name: "POS-001" },
             })
@@ -129,7 +137,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            onPosProfileLoaded({
+            mockSetBootstrapData?.({
               payment_modes: [],
               pos_profile: {
                 allow_customer_management: false,
@@ -492,7 +500,9 @@ describe("PosWorkspaceScreen", () => {
       screen.getByRole("button", { name: "Set closed shift session" }),
     );
 
-    expect(screen.getAllByText("Start POS shift")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getAllByText("Start POS shift")).toHaveLength(2),
+    );
   });
 
   it("opens the Customer tab only after the POS Profile enables customer management", async () => {

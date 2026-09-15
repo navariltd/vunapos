@@ -29,6 +29,7 @@ import {
   PosSession,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
 
@@ -48,6 +49,7 @@ type ReceivePaymentContext = {
 export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const workspaceBootstrap = usePosBootstrap();
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
@@ -92,25 +94,46 @@ export function PosWorkspaceScreen() {
     priceList: selectedPriceList,
   });
   const salespersonPin = useSalespersonPin();
-  const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
-    const defaultCustomer = bootstrap.default_customer;
-    setPosProfile(bootstrap.pos_profile.name);
-    setPosProfileConfig(bootstrap.pos_profile);
-    setPosSession(bootstrap.pos_session ?? null);
-    setPaymentModes(bootstrap.payment_modes);
-    setDefaultSaleCustomer(
-      defaultCustomer
-        ? {
-            customer: defaultCustomer.customer,
-            customerName: defaultCustomer.customer_name,
-            defaultPriceList: defaultCustomer.default_price_list,
-            isWalkin: Boolean(defaultCustomer.is_walkin),
-            mobile: defaultCustomer.mobile_no || undefined,
-            taxId: defaultCustomer.tax_id || undefined,
-          }
-        : null,
+  const receivePosProfile = useCallback(
+    (bootstrap: PosBootstrapData) => {
+      const defaultCustomer = bootstrap.default_customer;
+      const configuredOrderType =
+        bootstrap.pos_profile.default_order_type === "Sales Order"
+          ? "Order"
+          : "Invoice";
+      setPosProfile(bootstrap.pos_profile.name);
+      setPosProfileConfig(bootstrap.pos_profile);
+      setPosSession(bootstrap.pos_session ?? null);
+      setPaymentModes(bootstrap.payment_modes);
+      setOrderType((current) =>
+        posProfile === undefined ||
+        bootstrap.pos_profile.allow_order_type_change === false
+          ? configuredOrderType
+          : current,
+      );
+      setDefaultSaleCustomer(
+        defaultCustomer
+          ? {
+              customer: defaultCustomer.customer,
+              customerName: defaultCustomer.customer_name,
+              defaultPriceList: defaultCustomer.default_price_list,
+              isWalkin: Boolean(defaultCustomer.is_walkin),
+              mobile: defaultCustomer.mobile_no || undefined,
+              taxId: defaultCustomer.tax_id || undefined,
+            }
+          : null,
+      );
+    },
+    [posProfile],
+  );
+  useEffect(() => {
+    if (!workspaceBootstrap.data) return;
+    const sync = setTimeout(
+      () => receivePosProfile(workspaceBootstrap.data!),
+      0,
     );
-  }, []);
+    return () => clearTimeout(sync);
+  }, [receivePosProfile, workspaceBootstrap.data]);
   const handleShiftOpened = useCallback(
     async (result: OpenPosShiftResult) => {
       if (companyUrl && sessionId) {
@@ -193,6 +216,7 @@ export function PosWorkspaceScreen() {
   return (
     <AppShell
       activeTab={activeTab}
+      allowOrderTypeChange={posProfileConfig?.allow_order_type_change !== false}
       customersEnabled={allowsCustomerManagement}
       onOrderTypeChange={setOrderType}
       onTabChange={changeTab}
@@ -401,7 +425,6 @@ export function PosWorkspaceScreen() {
             return cart.add(item);
           }}
           onOpenCart={() => setCartVisible(true)}
-          onPosProfileLoaded={receivePosProfile}
           pricingContext={{
             customer: saleCustomer?.customer,
             priceList: selectedPriceList,

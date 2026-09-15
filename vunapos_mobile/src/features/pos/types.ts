@@ -202,6 +202,7 @@ export type PosBootstrapData = {
     allow_payment_reconciliation?: boolean;
     allow_delivery_charge_change?: boolean;
     allow_delivery_charges?: boolean;
+    allow_order_type_change?: boolean;
     allow_partial_payment?: boolean;
     allow_price_list_switching?: boolean;
     allow_discount_change?: boolean;
@@ -214,6 +215,7 @@ export type PosBootstrapData = {
     currency_precision?: number;
     delivery_charge_item?: string | null;
     default_sale_type?: "Cash Sale" | "Credit Sale";
+    default_order_type?: "Sales Invoice" | "Sales Order";
     modes_of_payment?: PosPaymentMode[];
     name: string;
     price_list?: string | null;

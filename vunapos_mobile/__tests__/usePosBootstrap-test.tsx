@@ -13,6 +13,14 @@ jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
 }));
 
+const mockRegisterRealtimeRefresh = jest.fn(
+  (_resource: unknown, _callback: unknown) => jest.fn(),
+);
+jest.mock("@/sync/realtimeInvalidation", () => ({
+  registerRealtimeRefresh: (resource: unknown, callback: unknown) =>
+    mockRegisterRealtimeRefresh(resource, callback),
+}));
+
 jest.mock("@/services/frappeClient", () => ({
   FrappeClientError: class FrappeClientError extends Error {},
   getVunaMethod: jest.fn(),
@@ -74,6 +82,23 @@ describe("usePosBootstrap", () => {
     );
 
     await act(async () => hook.result.current.reload());
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+  });
+
+  it("refreshes bootstrap data when desk-side POS configuration changes", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    });
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(hook.result.current.data).not.toBeNull());
+
+    const refresh = mockRegisterRealtimeRefresh.mock.calls.at(-1)?.[1] as
+      (() => Promise<void>) | undefined;
+    expect(refresh).toBeDefined();
+    await act(async () => refresh?.());
+
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
   });
 

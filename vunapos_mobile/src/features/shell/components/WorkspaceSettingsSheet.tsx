@@ -14,6 +14,7 @@ type WorkspaceSettingsSheetProps = {
   onClearLocalData: () => Promise<void>;
   onOrderTypeChange: (orderType: PosOrderType) => void;
   orderType: PosOrderType;
+  allowOrderTypeChange?: boolean;
   visible: boolean;
 };
 
@@ -33,6 +34,7 @@ export function WorkspaceSettingsSheet({
   onClearLocalData,
   onOrderTypeChange,
   orderType,
+  allowOrderTypeChange = true,
   visible,
 }: WorkspaceSettingsSheetProps) {
   const { palette, preference, setPreference } = useAppearance();
@@ -110,15 +112,27 @@ export function WorkspaceSettingsSheet({
             SALE MODE
           </Text>
           <View style={styles.optionRow}>
-            {(["Invoice", "Order"] as PosOrderType[]).map((option) => {
+            {(allowOrderTypeChange
+              ? (["Invoice", "Order"] as PosOrderType[])
+              : [orderType]
+            ).map((option) => {
               const selected = option === orderType;
               return (
                 <Pressable
                   accessibilityLabel={option}
                   accessibilityRole="radio"
-                  accessibilityState={{ selected }}
+                  accessibilityState={
+                    allowOrderTypeChange
+                      ? { selected }
+                      : { disabled: true, selected }
+                  }
+                  disabled={allowOrderTypeChange ? undefined : true}
                   key={option}
-                  onPress={() => onOrderTypeChange(option)}
+                  onPress={
+                    allowOrderTypeChange
+                      ? () => onOrderTypeChange(option)
+                      : undefined
+                  }
                   style={[
                     styles.option,
                     {

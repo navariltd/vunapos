@@ -1,39 +1,34 @@
-import { useEffect } from 'react';
-import { io } from 'socket.io-client';
+import { useEffect } from "react";
+import { io } from "socket.io-client";
 
-import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
-import { PosGatewayPaymentLink } from '@/features/pos/types';
+import { useAppSession } from "@/features/auth/AppSessionProvider";
+import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { getFrappeRealtimeConnection } from "@/sync/frappeRealtimeClient";
+import { PosGatewayPaymentLink } from "@/features/pos/types";
 
-export const GATEWAY_PAYMENT_EVENT = 'vunapos_gateway_payment_changed';
+export const GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed";
 
-export function getGatewayRealtimeConnection(companyUrl: string) {
-  const url = new URL(companyUrl);
-  const siteName = process.env.EXPO_PUBLIC_FRAPPE_SITE_NAME?.trim() || url.hostname;
-
-  // `bench start` exposes Socket.IO directly on 9000; production proxies it
-  // through the same origin as Frappe.
-  if (url.port === '8000') url.port = '9000';
-
-  return { siteName, url: `${url.origin}/${siteName}` };
-}
+// Kept as a compatibility alias for existing gateway-payment callers and tests.
+export const getGatewayRealtimeConnection = getFrappeRealtimeConnection;
 
 /** Listens only for gateway-link changes delivered to the signed-in cashier. */
-export function useGatewayPaymentRealtime(onChange: (payment: PosGatewayPaymentLink) => void) {
+export function useGatewayPaymentRealtime(
+  onChange: (payment: PosGatewayPaymentLink) => void,
+) {
   const { companyUrl, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
 
   useEffect(() => {
-    if (connectionStatus !== 'online' || !companyUrl || !sessionId) return;
-    const connection = getGatewayRealtimeConnection(companyUrl);
+    if (connectionStatus !== "online" || !companyUrl || !sessionId) return;
+    const connection = getFrappeRealtimeConnection(companyUrl);
     const socket = io(connection.url, {
       extraHeaders: {
         Cookie: `sid=${encodeURIComponent(sessionId)}`,
         Origin: companyUrl,
-        'X-Frappe-Site-Name': connection.siteName,
+        "X-Frappe-Site-Name": connection.siteName,
       },
       reconnectionAttempts: 3,
-      transports: ['websocket'],
+      transports: ["websocket", "polling"],
     });
     socket.on(GATEWAY_PAYMENT_EVENT, onChange);
 

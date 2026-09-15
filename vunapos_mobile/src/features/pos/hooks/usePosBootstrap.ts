@@ -1,8 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCachedResource } from "@/hooks/usePosCachedResource";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
+import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
 import {
   PosBootstrapData,
   PosCheckoutFieldDefinition,
@@ -113,31 +114,41 @@ export function usePosBootstrap(): PosBootstrapState {
           },
         }
       : null;
-  const load = useCallback(async (signal: AbortSignal) => {
-    if (!companyUrl || !sessionId) {
-      throw new Error("Your session is no longer available. Sign in again to continue.");
-    }
-    try {
-      const data = await getVunaMethod<PosBootstrapData>(
-        companyUrl,
-        sessionId,
-        "vunapos.api.pos.get_pos_bootstrap",
-        {},
-        signal,
-      );
-      return normalizeBootstrap(data);
-    } catch (error) {
-      if (error instanceof FrappeClientError && error.code === "session") {
-        void invalidateSession();
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!companyUrl || !sessionId) {
+        throw new Error(
+          "Your session is no longer available. Sign in again to continue.",
+        );
       }
-      throw error;
-    }
-  }, [companyUrl, invalidateSession, sessionId]);
+      try {
+        const data = await getVunaMethod<PosBootstrapData>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.pos.get_pos_bootstrap",
+          {},
+          signal,
+        );
+        return normalizeBootstrap(data);
+      } catch (error) {
+        if (error instanceof FrappeClientError && error.code === "session") {
+          void invalidateSession();
+        }
+        throw error;
+      }
+    },
+    [companyUrl, invalidateSession, sessionId],
+  );
   const resource = usePosCachedResource({
     cacheKey,
     connectionStatus,
     load,
   });
+  useEffect(
+    () =>
+      registerRealtimeRefresh("workspace-configuration", resource.refresh),
+    [resource.refresh],
+  );
 
   if (!cacheKey)
     return {

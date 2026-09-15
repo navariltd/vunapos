@@ -16,6 +16,7 @@ import {
   useAppSession,
 } from "@/features/auth/AppSessionProvider";
 import { NetworkStatusProvider } from "@/services/NetworkStatusProvider";
+import { useFrappeRealtime } from "@/sync/useFrappeRealtime";
 import { AppearanceProvider, useAppearance } from "@/theme/AppearanceProvider";
 
 SplashScreen.preventAutoHideAsync();
@@ -44,6 +45,7 @@ export default function RootLayout() {
 }
 
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  useFrappeRealtime();
   const { isBootstrapping } = useAppSession();
   const { isReady: isAppearanceReady } = useAppearance();
   const hideNativeSplash = useCallback(() => {

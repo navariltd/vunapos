@@ -89,6 +89,24 @@ describe("WorkspaceSettingsSheet", () => {
     expect(mockSetPreference).toHaveBeenCalledWith("dark");
   });
 
+  it("shows only the configured sale type when profile changes lock it", async () => {
+    const screen = await render(
+      <WorkspaceSettingsSheet
+        allowOrderTypeChange={false}
+        onClose={onClose}
+        onClearLocalData={onClearLocalData}
+        onOrderTypeChange={onOrderTypeChange}
+        orderType="Order"
+        visible
+      />,
+    );
+
+    expect(screen.queryByRole("radio", { name: "Invoice" })).toBeNull();
+    expect(
+      screen.getByRole("radio", { name: "Order" }).props.accessibilityState,
+    ).toEqual(expect.objectContaining({ disabled: true, selected: true }));
+  });
+
   it("does not render its modal content when closed", async () => {
     const screen = await render(
       <WorkspaceSettingsSheet

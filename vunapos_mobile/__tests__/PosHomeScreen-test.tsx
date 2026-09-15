@@ -192,7 +192,6 @@ const mockUsePosItemSearch = jest.mocked(usePosItemSearch);
 const mockUsePosTemplateVariants = jest.mocked(usePosTemplateVariants);
 const mockUsePosProductBundle = jest.mocked(usePosProductBundle);
 const onAddToCart = jest.fn();
-const onPosProfileLoaded = jest.fn();
 
 describe("PosHomeScreen", () => {
   beforeEach(() => {
@@ -264,18 +263,11 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
     expect(screen.getByText("Card: Live catalogue item")).toBeTruthy();
     expect(screen.getByText("Image: none")).toBeTruthy();
-    expect(onPosProfileLoaded).toHaveBeenCalledWith(
-      expect.objectContaining({
-        default_customer: null,
-        pos_profile: expect.objectContaining({ name: "POS-001" }),
-      }),
-    );
     expect(mockUsePosItemSearch).toHaveBeenCalledWith(
       expect.objectContaining({ loadAll: true, posProfile: "POS-001" }),
     );
@@ -308,7 +300,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
@@ -348,7 +339,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
@@ -381,7 +371,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={async () => false}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
@@ -434,7 +423,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
     await act(async () => {
@@ -485,7 +473,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
         pricingContext={{ customer: "CUST-001", priceList: "Retail" }}
       />,
     );
@@ -528,7 +515,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
     await fireEvent.press(screen.getByText("Card: Starter pack"));
@@ -568,7 +554,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
@@ -592,7 +577,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
       />,
     );
 
@@ -619,7 +603,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
         refreshKey={0}
       />,
     );
@@ -630,7 +613,6 @@ describe("PosHomeScreen", () => {
         cartItemCount={0}
         onAddToCart={onAddToCart}
         onOpenCart={jest.fn()}
-        onPosProfileLoaded={onPosProfileLoaded}
         refreshKey={1}
       />,
     );

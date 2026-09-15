@@ -25,7 +25,6 @@ import { usePosTemplateVariants } from "@/features/pos/hooks/usePosTemplateVaria
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
-  PosBootstrapData,
   PosCatalogueItem,
   PosTemplateVariant,
 } from "@/features/pos/types";
@@ -60,7 +59,6 @@ type PosHomeScreenProps = {
     currency: string,
   ) => Promise<boolean | void> | boolean | void;
   onOpenCart: () => void;
-  onPosProfileLoaded: (bootstrap: PosBootstrapData) => void;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
   workspaceNotice?: string | null;
@@ -70,7 +68,6 @@ export function PosHomeScreen({
   cartItemCount,
   onAddToCart,
   onOpenCart,
-  onPosProfileLoaded,
   pricingContext,
   refreshKey = 0,
   workspaceNotice,
@@ -152,10 +149,6 @@ export function PosHomeScreen({
       itemSearch.reload(),
     ]);
   }, [bootstrap, connectionStatus, itemSearch]);
-
-  useEffect(() => {
-    if (bootstrap.data) onPosProfileLoaded(bootstrap.data);
-  }, [bootstrap.data, onPosProfileLoaded]);
 
   useEffect(() => {
     if (handledRefreshKey.current === refreshKey) return;

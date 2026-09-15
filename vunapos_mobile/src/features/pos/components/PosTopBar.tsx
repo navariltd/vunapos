@@ -13,12 +13,14 @@ type PosTopBarProps = {
   orderType: PosOrderType;
   onLocalDataCleared: () => void;
   onOrderTypeChange: (orderType: PosOrderType) => void;
+  allowOrderTypeChange?: boolean;
 };
 
 export function PosTopBar({
   orderType,
   onLocalDataCleared,
   onOrderTypeChange,
+  allowOrderTypeChange,
 }: PosTopBarProps) {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const { clearLocalPosData } = useAppSession();
@@ -63,6 +65,7 @@ export function PosTopBar({
         onClose={() => setSettingsVisible(false)}
         onClearLocalData={clearSavedPosData}
         onOrderTypeChange={selectOrderType}
+        allowOrderTypeChange={allowOrderTypeChange}
         orderType={orderType}
         visible={settingsVisible}
       />
