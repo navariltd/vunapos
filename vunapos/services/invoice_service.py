@@ -224,8 +224,9 @@ def _sync_invoice_item_pricing(doc, profile):
 
 def _save_invoice(doc):
 	if doc.get("items"):
-		if doc.get("pos_profile"):
-			profile = resolve_pos_profile(doc.get("pos_profile"))
+		profile_name = doc.get("pos_profile") or doc.get("vunapos_pos_profile")
+		if profile_name:
+			profile = resolve_pos_profile(profile_name)
 			selected_price_list = doc.get("selling_price_list")
 			_sync_profile_pricing_fields(doc, profile, selected_price_list)
 			_sync_invoice_item_pricing(doc, profile)
@@ -258,8 +259,12 @@ def _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
 	return doc
 
 
-def _load_checkout_invoice(invoice_doctype, invoice_name):
-	_validate_invoice_doctype(invoice_doctype)
+def _load_checkout_invoice(invoice_doctype, invoice_name, allow_sales_order=False):
+	if allow_sales_order:
+		if invoice_doctype not in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+			_throw("UNSUPPORTED_INVOICE_DOCTYPE", _("Unsupported transaction type"))
+	else:
+		_validate_invoice_doctype(invoice_doctype)
 	require_read(invoice_doctype, invoice_name)
 	doc = frappe.get_doc(invoice_doctype, invoice_name)
 	if doc.docstatus == 0:
@@ -1277,17 +1282,26 @@ def preview_invoice(
 	price_list=None,
 	loyalty_points=None,
 ):
-	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
-	require_create(invoice_doctype)
-	doc, profile = _build_invoice_doc(
-		pos_profile=pos_profile,
-		customer=customer,
-		invoice_doctype=invoice_doctype,
-		price_list=price_list,
-	)
+	invoice_doctype = invoice_doctype or _resolve_invoice_doctype()
+	if invoice_doctype == "Sales Order":
+		require_create(invoice_doctype)
+		doc, profile = _build_sales_order_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			price_list=price_list,
+		)
+	else:
+		invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
+		require_create(invoice_doctype)
+		doc, profile = _build_invoice_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			invoice_doctype=invoice_doctype,
+			price_list=price_list,
+		)
 	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
-	validate_cart_items(cart_items, profile)
+	validate_cart_items(cart_items, profile, validate_stock=invoice_doctype != "Sales Order")
 	_append_cart_items(doc, profile, cart_items)
 	_recalculate(doc, profile, price_list)
 	_apply_loyalty_redemption(doc, loyalty_points)
@@ -1312,8 +1326,8 @@ def hold_invoice(invoice_doctype, invoice_name):
 
 
 def restore_invoice(invoice_doctype, invoice_name):
-	doc = _load_draft_invoice(invoice_doctype, invoice_name)
-	require_open_pos_session(doc.get("pos_profile"))
+	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
+	require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
 	return invoice_to_dict(doc)
@@ -1342,10 +1356,10 @@ def update_invoice_from_cart(
 	loyalty_points=None,
 ):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	assert_pos_workflow_editable(doc, profile)
 	cart_items = _cart_item_rows(items)
-	validate_cart_items(cart_items, profile)
+	validate_cart_items(cart_items, profile, validate_stock=doc.doctype != "Sales Order")
 
 	if customer:
 		doc.customer = customer
@@ -1576,7 +1590,8 @@ def submit_invoice(
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc, profile, doc.get("selling_price_list"))
 	_apply_loyalty_redemption(doc, loyalty_points)
-	validate_invoice_batch_allocations(doc)
+	if doc.doctype != "Sales Order":
+		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
 		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
 	)
@@ -1594,7 +1609,10 @@ def submit_invoice(
 	doc.save()
 	_apply_checkout_tax_id(doc, tax_id, persist=True)
 	_apply_shipping_address(doc, shipping_address_name, persist=True)
-	if workflow_enabled_for(resolve_pos_profile(doc.get("pos_profile")), doc.doctype):
+	if workflow_enabled_for(
+		resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile")),
+		doc.doctype,
+	):
 		return invoice_to_dict(doc)
 	doc.submit()
 	consume_gateway_payment_links(gateway_links, doc)
@@ -1619,7 +1637,7 @@ def checkout_invoice(
 	if existing:
 		return invoice_to_dict(existing)
 
-	doc = _load_checkout_invoice(invoice_doctype, invoice_name)
+	doc = _load_checkout_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	if doc.docstatus == 1:
 		return invoice_to_dict(doc)
 	if doc.docstatus != 0:
@@ -1642,7 +1660,7 @@ def checkout_invoice(
 		salesperson_token=salesperson_token,
 		checkout_fields=checkout_fields,
 	)
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	if workflow_enabled_for(profile, doc.doctype):
 		return invoice_to_dict(doc)
 	doc.submit()
@@ -1664,17 +1682,19 @@ def _prepare_invoice_for_checkout(
 	salesperson_token=None,
 	checkout_fields=None,
 ):
-	profile = resolve_pos_profile(doc.get("pos_profile"))
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
 		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
 		profile,
+		validate_stock=doc.doctype != "Sales Order",
 	)
 	_validate_existing_pricing_permissions(doc, profile)
 	_recalculate(doc, profile, doc.get("selling_price_list"))
 	_apply_loyalty_redemption(doc, loyalty_points)
-	validate_invoice_batch_allocations(doc)
+	if doc.doctype != "Sales Order":
+		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
 		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
 	)
@@ -1914,7 +1934,6 @@ def create_and_submit_sales_order(
 		_recalculate(doc, profile, price_list)
 		# ERPNext may populate child dates during recalculation; restore the cashier's date.
 		_apply_sales_order_delivery_date(doc, delivery_date)
-		validate_invoice_batch_allocations(doc)
 		payment_rows = validate_payment_rows(
 			doc,
 			payments,
