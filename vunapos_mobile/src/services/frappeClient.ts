@@ -262,6 +262,48 @@ export async function postVunaMethod<T>(
   params: VunaMethodParams = {},
   signal?: AbortSignal,
 ): Promise<T> {
+  const body = new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
+
+  return postVunaEnvelopeMethod(
+    companyUrl,
+    sessionId,
+    method,
+    body,
+    "application/x-www-form-urlencoded;charset=UTF-8",
+    signal,
+  );
+}
+
+/** Calls a VunaPOS envelope endpoint whose existing API expects JSON. */
+export async function postVunaJsonMethod<T>(
+  companyUrl: string,
+  sessionId: string,
+  method: string,
+  params: FrappeJsonMethodParams = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  return postVunaEnvelopeMethod(
+    companyUrl,
+    sessionId,
+    method,
+    JSON.stringify(params),
+    "application/json; charset=utf-8",
+    signal,
+  );
+}
+
+async function postVunaEnvelopeMethod<T>(
+  companyUrl: string,
+  sessionId: string,
+  method: string,
+  body: string,
+  contentType: string,
+  signal?: AbortSignal,
+): Promise<T> {
   const csrf = await getVunaMethod<{ csrf_token: string }>(
     companyUrl,
     sessionId,
@@ -274,15 +316,11 @@ export async function postVunaMethod<T>(
     const response = await fetch(
       requestUrl(companyUrl, `/api/method/${method}`),
       {
-        body: new URLSearchParams(
-          Object.entries(params)
-            .filter(([, value]) => value !== undefined && value !== null)
-            .map(([key, value]) => [key, String(value)]),
-        ).toString(),
+        body,
         headers: {
           Accept: "application/json",
           Cookie: `sid=${encodeURIComponent(sessionId)}`,
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "Content-Type": contentType,
           "X-Frappe-CSRF-Token": csrf.csrf_token,
         },
         method: "POST",

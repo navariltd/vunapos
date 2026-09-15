@@ -16,14 +16,14 @@ jest.mock("@/services/NetworkStatusProvider", () => ({
 
 jest.mock("@/services/frappeClient", () => ({
   FrappeClientError: class FrappeClientError extends Error {},
-  postVunaMethod: jest.fn(),
+  postVunaJsonMethod: jest.fn(),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
-import { postVunaMethod } from "@/services/frappeClient";
+import { postVunaJsonMethod } from "@/services/frappeClient";
 
-const mockPostVunaMethod = jest.mocked(postVunaMethod);
+const mockPostVunaJsonMethod = jest.mocked(postVunaJsonMethod);
 const mockUseAppSession = jest.mocked(useAppSession);
 const invalidateSession = jest.fn();
 
@@ -41,7 +41,7 @@ describe("useClosePosShift", () => {
   afterEach(async () => cleanup());
 
   it("submits only the confirmed payment-mode balances", async () => {
-    mockPostVunaMethod.mockResolvedValue({
+    mockPostVunaJsonMethod.mockResolvedValue({
       name: "POS-CLOSE-001",
       session: {
         has_opening_entry: false,
@@ -61,21 +61,19 @@ describe("useClosePosShift", () => {
     });
 
     expect(result).toMatchObject({ name: "POS-CLOSE-001" });
-    expect(mockPostVunaMethod).toHaveBeenCalledWith(
+    expect(mockPostVunaJsonMethod).toHaveBeenCalledWith(
       "https://vuna.example.com",
       "sid-1",
       "vunapos.api.pos_closing.close_session",
       {
-        closing_balances: JSON.stringify([
-          { closing_amount: 80.5, mode_of_payment: "Cash" },
-        ]),
+        closing_balances: [{ closing_amount: 80.5, mode_of_payment: "Cash" }],
         pos_profile: "POS-001",
       },
     );
   });
 
   it("keeps a server failure available to the confirmation dialog", async () => {
-    mockPostVunaMethod.mockRejectedValue(
+    mockPostVunaJsonMethod.mockRejectedValue(
       new Error("Closing balances are missing for: Card"),
     );
     const hook = await renderHook(() => useClosePosShift());

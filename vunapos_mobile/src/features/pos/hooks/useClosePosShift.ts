@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosCloseShiftResult } from "@/features/pos/types";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
+import { FrappeClientError, postVunaJsonMethod } from "@/services/frappeClient";
 
 type ClosePosShiftInput = {
   closingBalances: { closing_amount: number; mode_of_payment: string }[];
@@ -38,12 +38,12 @@ export function useClosePosShift() {
     setError(null);
     setIsClosing(true);
     try {
-      return await postVunaMethod<PosCloseShiftResult>(
+      return await postVunaJsonMethod<PosCloseShiftResult>(
         companyUrl,
         sessionId,
         "vunapos.api.pos_closing.close_session",
         {
-          closing_balances: JSON.stringify(input.closingBalances),
+          closing_balances: input.closingBalances,
           pos_profile: input.posProfile,
         },
       );

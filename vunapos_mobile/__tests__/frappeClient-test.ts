@@ -2,6 +2,7 @@ import {
   FrappeClientError,
   getVunaMethod,
   postFrappeJsonMethod,
+  postVunaJsonMethod,
   postVunaMethod,
   signInToFrappe,
   validateFrappeSession,
@@ -307,6 +308,53 @@ describe("frappeClient", () => {
           method: "POST",
           signal: undefined,
         },
+      );
+    });
+  });
+
+  describe("postVunaJsonMethod", () => {
+    it("posts a JSON body while retaining the VunaPOS response envelope", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: { message: { data: { csrf_token: "csrf-1" }, ok: true } },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: { message: { data: { name: "POS-CLOSE-0001" }, ok: true } },
+          }),
+        );
+
+      await expect(
+        postVunaJsonMethod<{ name: string }>(
+          "https://vuna.example.com",
+          "session id",
+          "vunapos.api.pos_closing.close_session",
+          {
+            closing_balances: [
+              { closing_amount: 100, mode_of_payment: "Cash" },
+            ],
+            pos_profile: "POS-001",
+          },
+        ),
+      ).resolves.toEqual({ name: "POS-CLOSE-0001" });
+
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        "https://vuna.example.com/api/method/vunapos.api.pos_closing.close_session",
+        expect.objectContaining({
+          body: JSON.stringify({
+            closing_balances: [
+              { closing_amount: 100, mode_of_payment: "Cash" },
+            ],
+            pos_profile: "POS-001",
+          }),
+          headers: expect.objectContaining({
+            "Content-Type": "application/json; charset=utf-8",
+          }),
+          method: "POST",
+        }),
       );
     });
   });
