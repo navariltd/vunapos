@@ -637,6 +637,7 @@ export type CartState = {
 	// preserved exactly from the old POSHomePage-local tri-state (not redesigned).
 	selectedCustomerOverride: CustomerDTO | null | undefined;
 	selectedPriceList: string | undefined;
+	transactionOrderType: "Sales Invoice" | "Sales Order";
 	newItemPosition: "Top" | "Bottom";
 };
 
@@ -653,6 +654,7 @@ type CartActions = {
 	setNewItemPosition: (position: "Top" | "Bottom" | undefined) => void;
 	setDefaultCustomer: (customer: CustomerDTO | null) => void;
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
+	setTransactionOrderType: (orderType: "Sales Invoice" | "Sales Order") => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<string | undefined>;
 	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
@@ -904,18 +906,20 @@ export const useCartStore = create<CartStore>((set, get) => {
 		defaultCustomer: null,
 		selectedCustomerOverride: undefined,
 		selectedPriceList: undefined,
+		transactionOrderType: "Sales Invoice",
 		newItemPosition: "Bottom",
 
 		setPosProfile: (posProfile) => set({ posProfile }),
 		setNewItemPosition: (position) => set({ newItemPosition: position === "Top" ? "Top" : "Bottom" }),
 		setDefaultCustomer: (defaultCustomer) => set({ defaultCustomer }),
 		setSelectedCustomer: (selectedCustomerOverride) => set({ selectedCustomerOverride }),
+		setTransactionOrderType: (transactionOrderType) => set({ transactionOrderType }),
 
 	addCartItem: async (item, api) => {
 			const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
 			const initialUom = selectAvailableInitialUom(item);
 			const itemForCart = initialUom.item;
-			if (isStockControlled(itemForCart)) {
+			if (isStockControlled(itemForCart) && get().transactionOrderType !== "Sales Order") {
 				validateAvailableQty(itemForCart, 1);
 			}
 
@@ -942,7 +946,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 								&& (row.uom || row.stock_uom) === itemUom
 								&& Number(row.conversion_factor || 1) === itemConversionFactor
 							) {
-								validateAvailableQty(row, row.qty + 1);
+								if (get().transactionOrderType !== "Sales Order") {
+									validateAvailableQty(row, row.qty + 1);
+								}
 								return mergeScannedTracking(row, itemForCart);
 							}
 							return row;
@@ -1005,7 +1011,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 						? invoice.items.filter((row) => row.row_name !== rowName)
 						: invoice.items.map((row) => {
 							if (row.row_name === rowName) {
-								validateAvailableQty(row, qty);
+								if (get().transactionOrderType !== "Sales Order") {
+									validateAvailableQty(row, qty);
+								}
 								return updateLocalQty(row, qty);
 							}
 							return row;
@@ -1494,17 +1502,48 @@ export const useCartStore = create<CartStore>((set, get) => {
 				set({ invoice });
 			}
 
-			for (const item of invoice.items) {
-				validateAvailableQty(item, item.qty);
+			if (effectiveOrderType !== "Sales Order") {
+				for (const item of invoice.items) {
+					validateAvailableQty(item, item.qty);
+				}
+				validateManualBatchAllocations(invoice.items);
 			}
-			validateManualBatchAllocations(invoice.items);
 
 			if (effectiveOrderType === "Sales Order") {
 				if (invoice.source_invoice_doctype === "Sales Order" && invoice.source_invoice_name) {
 					const updated = await runMutation(() => syncLocalCartToSource(invoice, api));
 					if (updated) {
-						set({ invoice: updated });
-						return { invoice: updated, queued: false, printPayload: null };
+						const submitted = await runMutation(() =>
+							checkoutInvoice(api.checkoutInvoice, {
+								invoice_doctype: "Sales Order",
+								invoice_name: updated.name || invoice.source_invoice_name || "",
+								payments,
+								idempotency_key: idempotencyKey,
+								is_credit_sale: isCreditSale,
+								due_date: dueDate,
+								loyalty_points: loyaltyPoints,
+								tax_id: taxId,
+								shipping_address_name: shippingAddressName,
+								checkout_fields: checkoutFields,
+								salesperson,
+								salesperson_token: salespersonToken,
+							}),
+						);
+						try {
+							const receipt = await renderInvoice(api.renderInvoice, {
+								invoice_doctype: submitted.doctype,
+								invoice_name: submitted.name,
+								print_format: printFormat || undefined,
+							});
+							set({ invoice: null, selectedPriceList: undefined });
+							await restoreDefaultCataloguePricing(api);
+							return { invoice: submitted, printPayload: receipt };
+						} catch (err) {
+							console.error(err);
+							set({ invoice: null, selectedPriceList: undefined });
+							await restoreDefaultCataloguePricing(api);
+							return { invoice: submitted, printPayload: null };
+						}
 					}
 				}
 				if (!isUnsyncedLocalCart(invoice)) {
@@ -1649,10 +1688,12 @@ export const useCartStore = create<CartStore>((set, get) => {
 				return null;
 			}
 
-			for (const item of invoice.items) {
-				validateAvailableQty(item, item.qty);
+			if (get().transactionOrderType !== "Sales Order" && invoice.source_invoice_doctype !== "Sales Order") {
+				for (const item of invoice.items) {
+					validateAvailableQty(item, item.qty);
+				}
+				validateManualBatchAllocations(invoice.items);
 			}
-			validateManualBatchAllocations(invoice.items);
 
 			const selectedCustomer = getActiveCustomer(get());
 			const posProfile = get().posProfile;

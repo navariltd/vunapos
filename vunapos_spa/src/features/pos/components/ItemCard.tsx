@@ -9,12 +9,13 @@ import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 type ItemCardProps = {
   currency?: string;
   disabled?: boolean;
+  ignoreStock?: boolean;
   pending?: boolean;
   item: ItemDTO;
   onAdd: (item: ItemDTO) => void;
 };
 
-export const ItemCard = memo(function ItemCard({ currency, disabled, item, onAdd, pending }: ItemCardProps) {
+export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock, item, onAdd, pending }: ItemCardProps) {
   const outOfStock =
     !item.has_variants &&
     !item.is_product_bundle &&
@@ -22,7 +23,7 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, item, onAdd
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&
     Number(item.actual_qty || 0) <= 0;
-  const isDisabled = disabled || outOfStock;
+  const isDisabled = disabled || (outOfStock && !ignoreStock);
 
   return (
     <div className={`relative flex min-h-40 flex-col overflow-hidden rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}>
