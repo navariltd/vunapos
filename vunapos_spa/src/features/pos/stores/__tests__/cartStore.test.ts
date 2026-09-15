@@ -672,6 +672,21 @@ describe("refreshPriceListPricing", () => {
 		}));
 	});
 
+	it("uses Sales Order for checkout validation when selected in the workspace", async () => {
+		useCartStore.setState({ defaultCustomer: CUSTOMER });
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const previewInvoice = vi.fn().mockResolvedValue(useCartStore.getState().invoice);
+
+		await useCartStore.getState().validateCart(
+			makeApi({ previewInvoice }),
+			"Sales Order",
+		);
+
+		expect(previewInvoice).toHaveBeenCalledWith(expect.objectContaining({
+			invoice_doctype: "Sales Order",
+		}));
+	});
+
 	it("reprices the catalogue and current cart using the manually selected list", async () => {
 		await useCartStore.getState().addCartItem(makeItem({ rate: 100 }), makeApi());
 		const searchItems = vi.fn().mockResolvedValue([makeItem({ rate: 80, price_list_rate: 80 })]);

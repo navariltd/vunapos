@@ -1277,17 +1277,26 @@ def preview_invoice(
 	price_list=None,
 	loyalty_points=None,
 ):
-	invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
-	require_create(invoice_doctype)
-	doc, profile = _build_invoice_doc(
-		pos_profile=pos_profile,
-		customer=customer,
-		invoice_doctype=invoice_doctype,
-		price_list=price_list,
-	)
+	invoice_doctype = invoice_doctype or _resolve_invoice_doctype()
+	if invoice_doctype == "Sales Order":
+		require_create(invoice_doctype)
+		doc, profile = _build_sales_order_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			price_list=price_list,
+		)
+	else:
+		invoice_doctype = _resolve_invoice_doctype(invoice_doctype)
+		require_create(invoice_doctype)
+		doc, profile = _build_invoice_doc(
+			pos_profile=pos_profile,
+			customer=customer,
+			invoice_doctype=invoice_doctype,
+			price_list=price_list,
+		)
 	require_open_pos_session(profile.name)
 	cart_items = _cart_item_rows(items)
-	validate_cart_items(cart_items, profile)
+	validate_cart_items(cart_items, profile, validate_stock=invoice_doctype != "Sales Order")
 	_append_cart_items(doc, profile, cart_items)
 	_recalculate(doc, profile, price_list)
 	_apply_loyalty_redemption(doc, loyalty_points)

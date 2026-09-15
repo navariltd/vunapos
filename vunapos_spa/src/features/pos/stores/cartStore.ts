@@ -676,7 +676,10 @@ type CartActions = {
 	/** Unconditional - the confirm-before-clearing dialog is a UI concern that lives
 	 * at the call site (POSHomePage), not here (no Node equivalent to window.confirm). */
 	clearCart: (api: CartApi) => Promise<void>;
-	validateCart: (api: CartApi) => Promise<InvoiceDTO | null>;
+	validateCart: (
+		api: CartApi,
+		invoiceDoctype?: "Sales Invoice" | "Sales Order",
+	) => Promise<InvoiceDTO | null>;
 	previewLoyaltyRedemption: (loyaltyPoints: number, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
@@ -1254,7 +1257,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			await restoreDefaultCataloguePricing(api);
 		},
 
-		validateCart: async (api) => {
+		validateCart: async (api, invoiceDoctype) => {
 			const invoice = get().invoice;
 			if (!invoice?.items?.length) return null;
 			const items = invoice.items.map(clearIncompleteSerialAllocation);
@@ -1264,7 +1267,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const authoritative = await runMutation(() => previewInvoice(api.previewInvoice, {
 				pos_profile: get().posProfile,
 				customer: selectedCustomer?.customer || invoice.customer,
-				invoice_doctype: sourceInvoice?.doctype || invoice.doctype,
+			invoice_doctype: sourceInvoice?.doctype || invoiceDoctype || invoice.doctype,
 				price_list: priceList,
 				items: cartItemsPayload(items),
 			}));

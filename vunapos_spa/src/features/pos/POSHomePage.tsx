@@ -695,7 +695,7 @@ export function POSHomePage({
       return;
     }
     try {
-      const validated = await cartActions.validateCart();
+      const validated = await cartActions.validateCart(effectiveOrderType);
       if (!validated) {
         showToast({
           type: "error",

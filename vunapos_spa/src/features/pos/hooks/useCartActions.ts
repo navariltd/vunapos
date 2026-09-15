@@ -50,7 +50,8 @@ export function useCartActions() {
 			removeCartItem: (rowName: string, managerPinToken?: string) => removeCartItemAction(rowName, api, managerPinToken),
 			listHeld: () => listHeldAction(api),
 			clearCart: () => clearCartAction(api),
-			validateCart: () => validateCartAction(api),
+				validateCart: (invoiceDoctype?: "Sales Invoice" | "Sales Order") =>
+					validateCartAction(api, invoiceDoctype),
 			previewLoyaltyRedemption: (loyaltyPoints: number) => previewLoyaltyRedemptionAction(loyaltyPoints, api),
 			refreshCartConfiguration: () => refreshCartConfigurationAction(api),
 			refreshCustomerPricing: (customer: CustomerDTO | null | undefined) =>
