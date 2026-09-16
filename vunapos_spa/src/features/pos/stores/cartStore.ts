@@ -1489,7 +1489,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 			const selectedCustomer = getActiveCustomer(get());
 			const activePriceList = get().selectedPriceList;
-			if (isOnline && isUnsyncedLocalCart(invoice)) {
+			if (isOnline && isUnsyncedLocalCart(invoice) && effectiveOrderType !== "Sales Order") {
 				invoice = await runMutation(() =>
 					refreshAndValidateStock(
 						invoice as InvoiceDTO,
