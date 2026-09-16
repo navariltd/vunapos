@@ -38,6 +38,8 @@ export function SignInScreen() {
       const result = await signIn(email, password);
       if (result.ok) {
         router.replace("/(app)");
+      } else if ("requiresPasswordReset" in result) {
+        router.replace("/(auth)/reset-password");
       } else {
         setSubmitError(result.message);
       }
@@ -171,6 +173,13 @@ export function SignInScreen() {
           </Button>
           <Button
             mode="text"
+            onPress={() => router.push("/(auth)/forgot-password")}
+            style={styles.forgotPasswordButton}
+          >
+            Forgot password?
+          </Button>
+          <Button
+            mode="text"
             onPress={() => router.push("/(auth)/company-url")}
             style={styles.changeCompanyButton}
           >
@@ -246,5 +255,9 @@ const styles = StyleSheet.create({
   },
   changeCompanyButton: {
     alignSelf: "center",
+  },
+  forgotPasswordButton: {
+    alignSelf: "center",
+    marginTop: -spacing.sm,
   },
 });

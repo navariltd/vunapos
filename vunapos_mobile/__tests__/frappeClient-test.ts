@@ -4,7 +4,9 @@ import {
   postFrappeJsonMethod,
   postVunaJsonMethod,
   postVunaMethod,
+  requestFrappePasswordReset,
   signInToFrappe,
+  updateFrappePassword,
   validateFrappeSession,
   verifyVunaPosSite,
 } from "@/services/frappeClient";
@@ -141,6 +143,96 @@ describe("frappeClient", () => {
       await expect(
         signInToFrappe("https://vuna.example.com/path", "cashier", "secret"),
       ).rejects.toMatchObject({ code: "connection" });
+    });
+
+    it("recognises Frappe's password-expired response without treating it as a failed credential check", async () => {
+      fetchMock.mockResolvedValue(
+        mockResponse({
+          json: {
+            message: "Password Reset",
+            redirect_to:
+              "/update-password?key=one-time-key&password_expired=true",
+          },
+        }),
+      );
+
+      await expect(
+        signInToFrappe("https://vuna.example.com", "cashier", "secret"),
+      ).rejects.toMatchObject({
+        code: "login",
+        message: "Your password has expired. Set a new password to continue.",
+        resetKey: "one-time-key",
+      });
+    });
+  });
+
+  describe("password reset", () => {
+    it("requests Frappe's generic reset-email flow", async () => {
+      fetchMock.mockResolvedValue(mockResponse());
+
+      await expect(
+        requestFrappePasswordReset(
+          "https://vuna.example.com",
+          " cashier@example.com ",
+        ),
+      ).resolves.toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://vuna.example.com/api/method/frappe.core.doctype.user.user.reset_password",
+        {
+          body: "user=cashier%40example.com",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          },
+          method: "POST",
+        },
+      );
+    });
+
+    it("updates a password with Frappe's one-time key and returns its fresh session", async () => {
+      fetchMock.mockResolvedValue(
+        mockResponse({ setCookies: ["sid=fresh-session; Path=/; HttpOnly"] }),
+      );
+
+      await expect(
+        updateFrappePassword(
+          "https://vuna.example.com",
+          "one-time-key",
+          "new-secret",
+        ),
+      ).resolves.toBe("fresh-session");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://vuna.example.com/api/method/frappe.core.doctype.user.user.update_password",
+        {
+          body: "key=one-time-key&logout_all_sessions=1&new_password=new-secret",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          },
+          method: "POST",
+        },
+      );
+    });
+
+    it("surfaces Frappe's expired-link response and never accepts it as a session", async () => {
+      fetchMock.mockResolvedValue(
+        mockResponse({
+          json: { message: "This password reset link has expired." },
+          ok: false,
+          status: 410,
+        }),
+      );
+
+      await expect(
+        updateFrappePassword(
+          "https://vuna.example.com",
+          "expired-key",
+          "new-secret",
+        ),
+      ).rejects.toMatchObject({
+        code: "login",
+        message: "This password reset link has expired.",
+      });
     });
   });
 

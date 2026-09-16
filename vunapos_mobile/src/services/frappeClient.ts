@@ -6,6 +6,16 @@ type FrappeMessage = {
   };
 };
 
+type FrappeLoginResponse = {
+  message?: string;
+  redirect_to?: string;
+};
+
+type FrappeErrorResponse = {
+  _server_messages?: string;
+  message?: string;
+};
+
 type VunaEnvelope<T> = {
   data: T;
   errors?: { message?: string }[];
@@ -24,6 +34,20 @@ export class FrappeClientError extends Error {
     readonly code: "api" | "connection" | "login" | "session",
   ) {
     super(message);
+  }
+}
+
+/**
+ * Frappe has verified the supplied credentials, but requires a password
+ * change before it will create a session. The reset key is a short-lived
+ * bearer credential and must remain in memory only.
+ */
+export class FrappePasswordResetRequiredError extends FrappeClientError {
+  constructor(readonly resetKey: string) {
+    super(
+      "Your password has expired. Set a new password to continue.",
+      "login",
+    );
   }
 }
 
@@ -68,6 +92,46 @@ function getSessionId(response: Response): string | undefined {
         // Ignore a malformed cookie value rather than putting it in a request header.
       }
     }
+  }
+}
+
+function getResetKey(redirectTo: unknown): string | undefined {
+  if (typeof redirectTo !== "string") return;
+
+  try {
+    const url = new URL(redirectTo, "https://vunapos.invalid");
+    if (url.pathname !== "/update-password") return;
+
+    const key = url.searchParams.get("key");
+    if (!key || key.length > 1024 || /[\r\n]/.test(key)) return;
+    return key;
+  } catch {
+    return;
+  }
+}
+
+async function readJson<T>(response: Response): Promise<T | undefined> {
+  try {
+    return (await response.json()) as T;
+  } catch {
+    return;
+  }
+}
+
+function getFrappeErrorMessage(payload: FrappeErrorResponse | undefined) {
+  if (typeof payload?.message === "string" && payload.message.trim()) {
+    return payload.message;
+  }
+
+  if (!payload?._server_messages) return;
+
+  try {
+    const messages = JSON.parse(payload._server_messages) as unknown;
+    if (!Array.isArray(messages) || typeof messages[0] !== "string") return;
+    const first = JSON.parse(messages[0]) as { message?: unknown };
+    return typeof first.message === "string" ? first.message : undefined;
+  } catch {
+    return;
   }
 }
 
@@ -141,6 +205,18 @@ export async function signInToFrappe(
       );
     }
 
+    const payload = await readJson<FrappeLoginResponse>(response);
+    if (payload?.message === "Password Reset") {
+      const resetKey = getResetKey(payload.redirect_to);
+      if (resetKey) {
+        throw new FrappePasswordResetRequiredError(resetKey);
+      }
+      throw new FrappeClientError(
+        "Your password has expired. Reset it from the company sign-in page, then try again.",
+        "login",
+      );
+    }
+
     const sessionId = getSessionId(response);
     if (!sessionId) {
       throw new FrappeClientError(
@@ -154,6 +230,109 @@ export async function signInToFrappe(
     if (error instanceof FrappeClientError) {
       throw error;
     }
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
+  }
+}
+
+export async function requestFrappePasswordReset(
+  companyUrl: string,
+  email: string,
+): Promise<void> {
+  const normalized = normalizeCompanyUrl(companyUrl);
+  if (!normalized.ok) {
+    throw new FrappeClientError(
+      "Set a valid company URL before resetting your password.",
+      "connection",
+    );
+  }
+
+  try {
+    const response = await fetch(
+      requestUrl(
+        normalized.url,
+        "/api/method/frappe.core.doctype.user.user.reset_password",
+      ),
+      {
+        body: new URLSearchParams({ user: email.trim() }).toString(),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        method: "POST",
+      },
+    );
+
+    if (!response.ok) {
+      throw new FrappeClientError(
+        "Could not request a password reset. Check your connection and try again.",
+        "login",
+      );
+    }
+  } catch (error) {
+    if (error instanceof FrappeClientError) throw error;
+    throw new FrappeClientError(
+      "Could not reach your company site. Check your connection and try again.",
+      "connection",
+    );
+  }
+}
+
+export async function updateFrappePassword(
+  companyUrl: string,
+  resetKey: string,
+  newPassword: string,
+): Promise<string> {
+  const normalized = normalizeCompanyUrl(companyUrl);
+  if (!normalized.ok) {
+    throw new FrappeClientError(
+      "Set a valid company URL before updating your password.",
+      "connection",
+    );
+  }
+
+  try {
+    const response = await fetch(
+      requestUrl(
+        normalized.url,
+        "/api/method/frappe.core.doctype.user.user.update_password",
+      ),
+      {
+        body: new URLSearchParams({
+          key: resetKey,
+          logout_all_sessions: "1",
+          new_password: newPassword,
+        }).toString(),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+        },
+        method: "POST",
+      },
+    );
+    const payload = await readJson<FrappeErrorResponse>(response);
+
+    if (!response.ok) {
+      throw new FrappeClientError(
+        getFrappeErrorMessage(payload) ??
+          "Could not update your password. Request another reset link and try again.",
+        "login",
+      );
+    }
+
+    const sessionId = getSessionId(response);
+    if (!sessionId) {
+      throw new FrappeClientError(
+        "Your password was updated, but Frappe did not create a session. Sign in with your new password.",
+        "login",
+      );
+    }
+
+    return sessionId;
+  } catch (error) {
+    if (error instanceof FrappeClientError) throw error;
     throw new FrappeClientError(
       "Could not reach your company site. Check your connection and try again.",
       "connection",
