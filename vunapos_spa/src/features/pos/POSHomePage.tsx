@@ -1383,6 +1383,7 @@ export function POSHomePage({
         currency={bootstrap.data?.currency}
         error={variantError}
         isLoading={templateVariantsCall.loading}
+        ignoreStock={effectiveOrderType === "Sales Order"}
         isOpen={Boolean(variantPickerItem)}
         template={variantPickerItem}
         variants={variantOptions}
