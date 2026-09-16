@@ -5,6 +5,7 @@ import { Text } from "react-native-paper";
 
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
+import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
 import { PosUomPickerSheet } from "@/features/pos/components/PosUomPickerSheet";
@@ -1131,12 +1132,9 @@ export function PosCartScreen({
   }
 
   return (
-    <KeyboardAwareFormScroll
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      style={styles.scrollView}
-    >
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <PosFixedPageHeader>
+        <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to items"
           onPress={onBack}
@@ -1162,7 +1160,13 @@ export function PosCartScreen({
             <Text style={styles.clearButtonLabel}>Clear</Text>
           </Pressable>
         ) : null}
-      </View>
+        </View>
+      </PosFixedPageHeader>
+      <KeyboardAwareFormScroll
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
+      >
 
       {items.length ? (
         <>
@@ -1526,7 +1530,8 @@ export function PosCartScreen({
         onDismiss={() => setClearConfirmationVisible(false)}
         visible={clearConfirmationVisible}
       />
-    </KeyboardAwareFormScroll>
+      </KeyboardAwareFormScroll>
+    </View>
   );
 }
 
@@ -2213,6 +2218,7 @@ function createStyles(palette: AppPalette) {
     textTransform: "uppercase",
   },
   scrollView: { flex: 1 },
+  screen: { flex: 1 },
   serialEditor: {
     borderTopColor: palette.border,
     borderTopWidth: 1,

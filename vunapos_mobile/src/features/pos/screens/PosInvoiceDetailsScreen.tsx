@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
+import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoiceReturnPreviewSheet";
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -199,11 +200,9 @@ export function PosInvoiceDetailsScreen({
   );
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <PosFixedPageHeader>
+        <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to invoices"
           onPress={onBack}
@@ -236,7 +235,12 @@ export function PosInvoiceDetailsScreen({
             <Text style={styles.creditSale}>Credit sale</Text>
           ) : null}
         </View>
-      </View>
+        </View>
+      </PosFixedPageHeader>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
 
       <View style={styles.summaryGrid}>
         <SummaryValue
@@ -541,7 +545,8 @@ export function PosInvoiceDetailsScreen({
           visible={returnPreviewVisible}
         />
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -728,6 +733,7 @@ function createStyles(palette: AppPalette) {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.tiny,
   },
+  screen: { flex: 1 },
   returnCancelled: { color: palette.error },
   returnList: { gap: spacing.sm },
   returnMain: { flex: 1, gap: 2 },

@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
+import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { PosInvoicePaymentEntry } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -67,11 +68,9 @@ export function PosPaymentEntryDetailsScreen({
   const isCancelled = paymentEntry.docstatus === 2;
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <PosFixedPageHeader>
+        <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to invoice"
           onPress={onBack}
@@ -104,7 +103,12 @@ export function PosPaymentEntryDetailsScreen({
             </Text>
           </View>
         </View>
-      </View>
+        </View>
+      </PosFixedPageHeader>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
 
       <View style={styles.summaryGrid}>
         <SummaryValue
@@ -140,7 +144,8 @@ export function PosPaymentEntryDetailsScreen({
       </View>
 
       <PosErpNextRecordLink doctype="Payment Entry" name={paymentEntry.name} />
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -227,6 +232,7 @@ function createStyles(palette: AppPalette) {
     gap: 4,
     padding: spacing.sm,
   },
+  screen: { flex: 1 },
   title: {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,

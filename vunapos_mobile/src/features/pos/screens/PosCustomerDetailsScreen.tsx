@@ -4,6 +4,7 @@ import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
+import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { formatPosCurrency } from "@/features/pos/currency";
 import {
   PosCustomerAddress,
@@ -344,12 +345,9 @@ export function PosCustomerDetailsScreen({
     bootstrap.data?.pos_profile.allow_customer_payments !== false;
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      style={{ backgroundColor: palette.background }}
-    >
-      <View style={styles.header}>
+    <View style={[styles.screen, { backgroundColor: palette.background }]}>
+      <PosFixedPageHeader>
+        <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to customers"
           accessibilityRole="button"
@@ -373,7 +371,12 @@ export function PosCustomerDetailsScreen({
             {profile.customer} · {profile.customer_group || "Uncategorized"}
           </Text>
         </View>
-      </View>
+        </View>
+      </PosFixedPageHeader>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
 
       <View style={styles.summaryGrid}>
         <SummaryValue
@@ -511,7 +514,8 @@ export function PosCustomerDetailsScreen({
           Reconnect to the server to start a sale or receive payment for this customer.
         </Text>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -634,6 +638,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
+  screen: { flex: 1 },
   subtitle: {
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,

@@ -17,6 +17,7 @@ import {
   PosCheckoutFieldsCard,
   PosCheckoutFieldValues,
 } from "@/features/pos/components/PosCheckoutFieldsCard";
+import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -981,12 +982,9 @@ export function PosCheckoutScreen({
   }
 
   return (
-    <KeyboardAwareFormScroll
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-      style={styles.scrollView}
-    >
-      <View style={styles.header}>
+    <View style={styles.screen}>
+      <PosFixedPageHeader>
+        <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back to cart"
           disabled={checkout.isSubmitting}
@@ -1011,7 +1009,13 @@ export function PosCheckoutScreen({
             {customerName} · {items.length} item{items.length === 1 ? "" : "s"}
           </Text>
         </View>
-      </View>
+        </View>
+      </PosFixedPageHeader>
+      <KeyboardAwareFormScroll
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        style={styles.scrollView}
+      >
       {sourceInvoice ? (
         <Text style={styles.restoredDraftHint}>
           Continuing held invoice {sourceInvoice.name}. Your current cart will
@@ -1986,11 +1990,7 @@ export function PosCheckoutScreen({
           edges={["top", "bottom"]}
           style={styles.shippingAddressModalPage}
         >
-          <KeyboardAwareFormScroll
-            contentContainerStyle={styles.shippingAddressModalContent}
-            showsVerticalScrollIndicator={false}
-            style={styles.scrollView}
-          >
+          <PosFixedPageHeader>
             <View style={styles.header}>
               <Pressable
                 accessibilityLabel="Back to checkout"
@@ -2006,11 +2006,17 @@ export function PosCheckoutScreen({
               <View style={styles.heading}>
                 <Text style={styles.title}>Shipping address</Text>
                 <Text style={styles.subtitle}>
-                  Choose a permitted address for this{" "}
+                  Choose a permitted address for this {" "}
                   {isInvoice ? "invoice" : "sales order"}.
                 </Text>
               </View>
             </View>
+          </PosFixedPageHeader>
+          <KeyboardAwareFormScroll
+            contentContainerStyle={styles.shippingAddressModalContent}
+            showsVerticalScrollIndicator={false}
+            style={styles.scrollView}
+          >
             <View style={styles.shippingAddressOptions}>
               {customerShippingAddresses.data?.map((address) => {
                 const selected = address.name === selectedShippingAddress?.name;
@@ -2177,7 +2183,8 @@ export function PosCheckoutScreen({
           </View>
         </View>
       </Modal>
-    </KeyboardAwareFormScroll>
+      </KeyboardAwareFormScroll>
+    </View>
   );
 }
 
@@ -2531,6 +2538,7 @@ function createStyles(palette: AppPalette) {
     padding: spacing.sm,
   },
   scrollView: { flex: 1 },
+  screen: { flex: 1 },
   secondaryButton: {
     alignItems: "center",
     borderColor: palette.border,
