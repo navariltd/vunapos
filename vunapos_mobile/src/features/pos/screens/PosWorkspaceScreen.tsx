@@ -45,6 +45,12 @@ type ReceivePaymentContext = {
   invoice?: string;
 };
 
+function configuredOrderType(
+  profile?: PosBootstrapData["pos_profile"],
+): PosOrderType {
+  return profile?.default_order_type === "Sales Order" ? "Order" : "Invoice";
+}
+
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
@@ -99,10 +105,7 @@ export function PosWorkspaceScreen() {
   const receivePosProfile = useCallback(
     (bootstrap: PosBootstrapData) => {
       const defaultCustomer = bootstrap.default_customer;
-      const configuredOrderType =
-        bootstrap.pos_profile.default_order_type === "Sales Order"
-          ? "Order"
-          : "Invoice";
+      const profileOrderType = configuredOrderType(bootstrap.pos_profile);
       setPosProfile(bootstrap.pos_profile.name);
       setPosProfileConfig(bootstrap.pos_profile);
       setPosSession(bootstrap.pos_session ?? null);
@@ -110,7 +113,7 @@ export function PosWorkspaceScreen() {
       setOrderType((current) =>
         posProfile === undefined ||
         bootstrap.pos_profile.allow_order_type_change === false
-          ? configuredOrderType
+          ? profileOrderType
           : current,
       );
       setDefaultSaleCustomer(
@@ -322,6 +325,9 @@ export function PosWorkspaceScreen() {
           onComplete={(result) => {
             cart.clear();
             setSelectedSaleCustomer(null);
+            // A user override applies only to the sale that was just
+            // submitted. Start the next sale from the POS Profile default.
+            setOrderType(configuredOrderType(posProfileConfig));
             setPostSaleRefreshKey((current) => current + 1);
             setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)

@@ -14,15 +14,28 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 jest.mock("@/features/shell/components/AppShell", () => ({
   AppShell: ({
     children,
+    onOrderTypeChange,
     onTabChange,
+    orderType,
   }: {
     children: React.ReactNode;
+    onOrderTypeChange: (orderType: "Invoice" | "Order") => void;
     onTabChange: (tab: "Home" | "Invoices" | "Customers") => void;
+    orderType: "Invoice" | "Order";
   }) => {
     const { Pressable, Text, View } = require("react-native");
 
     return (
       <View>
+        <Text>{`Current order type: ${orderType}`}</Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onOrderTypeChange(orderType === "Invoice" ? "Order" : "Invoice")
+          }
+        >
+          <Text>Switch order type</Text>
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => onTabChange("Invoices")}
@@ -140,6 +153,34 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
           }
         >
           <Text>Set profile default customer</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            mockSetBootstrapData?.({
+              payment_modes: [],
+              pos_profile: {
+                default_order_type: "Sales Invoice",
+                name: "POS-001",
+              },
+            })
+          }
+        >
+          <Text>Set Invoice as POS default</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            mockSetBootstrapData?.({
+              payment_modes: [],
+              pos_profile: {
+                default_order_type: "Sales Order",
+                name: "POS-001",
+              },
+            })
+          }
+        >
+          <Text>Set Order as POS default</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -597,6 +638,54 @@ describe("PosWorkspaceScreen", () => {
     );
 
     expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+  });
+
+  it("resets an Order override to the Invoice POS default after submission", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Set Invoice as POS default" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Current order type: Invoice")).toBeTruthy(),
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Switch order type" }),
+    );
+    expect(screen.getByText("Current order type: Order")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open checkout" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Complete test sale" }),
+    );
+
+    expect(screen.getByText("Current order type: Invoice")).toBeTruthy();
+  });
+
+  it("resets an Invoice override to the Order POS default after submission", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Set Order as POS default" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Current order type: Order")).toBeTruthy(),
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Switch order type" }),
+    );
+    expect(screen.getByText("Current order type: Invoice")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open checkout" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Complete test sale" }),
+    );
+
+    expect(screen.getByText("Current order type: Order")).toBeTruthy();
   });
 
   it("opens a linked payment and returns to the invoice", async () => {
