@@ -65,7 +65,15 @@ describe("usePosBootstrap", () => {
         },
       ],
       payment_modes: [],
-      pos_profile: { currency: "KES", name: "POS-001" },
+      pos_profile: {
+        currency: "KES",
+        default_customer: {
+          customer: "WALK-IN",
+          customer_name: "Walk-in customer",
+          default_price_list: "Standard Selling",
+        },
+        name: "POS-001",
+      },
     });
     const hook = await renderHook(() => usePosBootstrap());
 
@@ -73,6 +81,11 @@ describe("usePosBootstrap", () => {
       expect(hook.result.current.data?.pos_profile.name).toBe("POS-001"),
     );
     expect(hook.result.current.data?.items).toHaveLength(1);
+    expect(hook.result.current.data?.default_customer).toEqual({
+      customer: "WALK-IN",
+      customer_name: "Walk-in customer",
+      default_price_list: "Standard Selling",
+    });
     expect(mockGetVunaMethod).toHaveBeenCalledWith(
       "https://vuna.example.com",
       "sid-1",
@@ -100,6 +113,41 @@ describe("usePosBootstrap", () => {
     await act(async () => refresh?.());
 
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+  });
+
+  it("maps the profile default customer from a cached server payload", async () => {
+    await posCache.write(
+      {
+        resource: "workspace-configuration",
+        scope: {
+          companyUrl: "https://vuna.example.com",
+          posProfile: "workspace",
+          userId: "sid-1",
+        },
+      },
+      {
+        items: [],
+        payment_modes: [],
+        pos_profile: {
+          default_customer: {
+            customer: "WALK-IN",
+            customer_name: "Walk-in customer",
+          },
+          name: "POS-001",
+        },
+      },
+      60 * 60 * 1000,
+    );
+
+    const hook = await renderHook(() => usePosBootstrap());
+
+    await waitFor(() =>
+      expect(hook.result.current.data?.default_customer).toEqual({
+        customer: "WALK-IN",
+        customer_name: "Walk-in customer",
+      }),
+    );
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
   });
 
   it("keeps only complete, supported profile checkout-field definitions from bootstrap", async () => {

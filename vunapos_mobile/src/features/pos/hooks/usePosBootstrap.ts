@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCachedResource } from "@/hooks/usePosCachedResource";
@@ -7,6 +7,7 @@ import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
 import {
   PosBootstrapData,
   PosCheckoutFieldDefinition,
+  PosDefaultCustomer,
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
@@ -86,9 +87,25 @@ export function normalizeCheckoutFields(
   });
 }
 
+function normalizeDefaultCustomer(
+  value: PosDefaultCustomer | string | null | undefined,
+): PosDefaultCustomer | null | undefined {
+  if (typeof value === "string") {
+    return { customer: value, customer_name: value };
+  }
+  return value;
+}
+
 function normalizeBootstrap(data: PosBootstrapData): PosBootstrapData {
+  // The Frappe bootstrap contract carries this on the POS Profile. Keep a
+  // normalized top-level copy because the mobile workspace consumes one
+  // bootstrap shape, including previously cached payloads.
+  const defaultCustomer = normalizeDefaultCustomer(
+    data.pos_profile?.default_customer ?? data.default_customer,
+  );
   return {
     ...data,
+    default_customer: defaultCustomer,
     pos_profile: {
       ...data.pos_profile,
       checkout_fields: normalizeCheckoutFields(
@@ -144,6 +161,13 @@ export function usePosBootstrap(): PosBootstrapState {
     connectionStatus,
     load,
   });
+  // Older cached bootstrap responses predate the normalized top-level field.
+  // Normalize after reading the cache as well as inside `load`, so a valid
+  // cached workspace immediately receives its configured default customer.
+  const data = useMemo(
+    () => (resource.data ? normalizeBootstrap(resource.data) : null),
+    [resource.data],
+  );
   useEffect(
     () =>
       registerRealtimeRefresh("workspace-configuration", resource.refresh),
@@ -159,7 +183,7 @@ export function usePosBootstrap(): PosBootstrapState {
     };
 
   return {
-    data: resource.data,
+    data,
     error: resource.error,
     isLoading: resource.isLoading,
     isRefreshing: resource.isRefreshing,

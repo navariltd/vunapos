@@ -41,22 +41,24 @@ jest.mock("@/features/shell/components/AppShell", () => ({
   },
 }));
 
+const mockCart = {
+  add: jest.fn(),
+  clear: jest.fn(() => true),
+  error: null,
+  isUpdating: false,
+  itemCount: 0,
+  items: [],
+  refresh: jest.fn(),
+  remove: jest.fn(async () => true),
+  retry: jest.fn(),
+  subtotal: 0,
+  taxes: [],
+  totals: {},
+  updateQuantity: jest.fn(),
+};
+
 jest.mock("@/features/pos/hooks/usePosCart", () => ({
-  usePosCart: () => ({
-    add: jest.fn(),
-    clear: () => true,
-    error: null,
-    isUpdating: false,
-    itemCount: 0,
-    items: [],
-    refresh: jest.fn(),
-    remove: jest.fn(),
-    retry: jest.fn(),
-    subtotal: 0,
-    taxes: [],
-    totals: {},
-    updateQuantity: jest.fn(),
-  }),
+  usePosCart: () => mockCart,
 }));
 
 jest.mock("@/features/pos/hooks/useSalespersonPin", () => ({
@@ -122,6 +124,22 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
           }
         >
           <Text>Set closed shift session</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            mockSetBootstrapData?.({
+              default_customer: {
+                customer: "WALK-IN",
+                customer_name: "Walk-in customer",
+                is_walkin: true,
+              },
+              payment_modes: [],
+              pos_profile: { name: "POS-001" },
+            })
+          }
+        >
+          <Text>Set profile default customer</Text>
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -301,17 +319,57 @@ jest.mock("@/features/pos/screens/PosPaymentsScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosCartScreen", () => ({
   PosCartScreen: ({
+    onCheckout,
+    onClear,
+    onRemove,
     saleCustomer,
   }: {
+    onCheckout: () => void;
+    onClear: () => boolean;
+    onRemove: (itemCode: string) => Promise<void>;
     saleCustomer: { customerName: string } | null;
   }) => {
-    const { Text } = require("react-native");
+    const { Pressable, Text } = require("react-native");
     return (
-      <Text>
-        {saleCustomer
-          ? `Cart customer: ${saleCustomer.customerName}`
-          : "Cart has no customer"}
-      </Text>
+      <>
+        <Text>
+          {saleCustomer
+            ? `Cart customer: ${saleCustomer.customerName}`
+            : "Cart has no customer"}
+        </Text>
+        <Pressable accessibilityRole="button" onPress={onClear}>
+          <Text>Clear cart</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void onRemove("ITEM-001")}
+        >
+          <Text>Remove last cart item</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" onPress={onCheckout}>
+          <Text>Open checkout</Text>
+        </Pressable>
+      </>
+    );
+  },
+}));
+
+jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
+  PosCheckoutScreen: ({
+    onComplete,
+  }: {
+    onComplete: (result: { doctype: string; name: string }) => void;
+  }) => {
+    const { Pressable, Text } = require("react-native");
+    return (
+      <Pressable
+        accessibilityRole="button"
+        onPress={() =>
+          onComplete({ doctype: "Sales Order", name: "SO-TEST-0001" })
+        }
+      >
+        <Text>Complete test sale</Text>
+      </Pressable>
     );
   },
 }));
@@ -430,6 +488,13 @@ jest.mock("@/features/pos/screens/PosPaymentEntryDetailsScreen", () => ({
 import { PosWorkspaceScreen } from "@/features/pos/screens/PosWorkspaceScreen";
 
 describe("PosWorkspaceScreen", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockCart.itemCount = 0;
+    mockCart.clear.mockReturnValue(true);
+    mockCart.remove.mockResolvedValue(true);
+  });
+
   afterEach(async () => {
     await cleanup();
   });
@@ -462,6 +527,76 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByText("POS home")).toBeTruthy();
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
+  });
+
+  it("returns to the POS Profile default customer when a cart is cleared", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Set profile default customer" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy(),
+    );
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open invoices" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Start new sale" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Clear cart" }));
+    expect(screen.getByText("Cart customer: Walk-in customer")).toBeTruthy();
+  });
+
+  it("returns to the POS Profile default customer after the last cart item is removed", async () => {
+    mockCart.itemCount = 1;
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Set profile default customer" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open invoices" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Start new sale" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Remove last cart item" }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Cart customer: Walk-in customer")).toBeTruthy(),
+    );
+  });
+
+  it("returns to the POS Profile default customer after completing a sale", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Set profile default customer" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open invoices" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Start new sale" }),
+    );
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Complete test sale" }),
+    );
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Back to previous invoice" }),
+    );
+
+    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
   });
 
   it("opens a linked payment and returns to the invoice", async () => {

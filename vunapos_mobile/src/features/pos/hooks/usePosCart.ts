@@ -458,8 +458,10 @@ export function usePosCart({
   }
 
   async function remove(itemCode: string) {
-    await refresh(
+    return (
+      (await refresh(
       itemsRef.current.filter((item) => item.item_code !== itemCode),
+      )) !== null
     );
   }
 

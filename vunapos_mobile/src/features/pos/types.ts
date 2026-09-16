@@ -189,15 +189,22 @@ export type PosInvoiceListRow = {
   total: number;
 };
 
-export type PosBootstrapData = {
-  default_customer?: {
+export type PosDefaultCustomer = {
     customer: string;
     customer_name: string;
     default_price_list?: string | null;
     is_walkin?: boolean | number;
     mobile_no?: string | null;
     tax_id?: string | null;
-  } | null;
+};
+
+export type PosBootstrapData = {
+  /**
+   * Normalized client field. The Frappe response nests this under
+   * `pos_profile.default_customer`; `usePosBootstrap` lifts it here so the
+   * workspace has one stable shape, including old cached responses.
+   */
+  default_customer?: PosDefaultCustomer | null;
   items?: PosCatalogueItem[];
   payment_modes: PosPaymentMode[];
   pos_session?: PosSession;
@@ -224,6 +231,7 @@ export type PosBootstrapData = {
     delivery_charge_item?: string | null;
     default_sale_type?: "Cash Sale" | "Credit Sale";
     default_order_type?: "Sales Invoice" | "Sales Order";
+    default_customer?: PosDefaultCustomer | string | null;
     modes_of_payment?: PosPaymentMode[];
     name: string;
     price_list?: string | null;

@@ -69,15 +69,17 @@ export function PosWorkspaceScreen() {
     paymentEntry: PosInvoicePaymentEntry;
     returnToCustomer?: string;
   } | null>(null);
-  const [saleCustomer, setSaleCustomer] = useState<PosSaleCustomer | null>(
-    null,
-  );
+  const [selectedSaleCustomer, setSelectedSaleCustomer] =
+    useState<PosSaleCustomer | null>(null);
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
   const [priceListFallbackNotice, setPriceListFallbackNotice] = useState<
     string | null
   >(null);
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
+  // A selected customer belongs to the active cart only. The POS Profile
+  // default is the fallback for every new cart.
+  const saleCustomer = selectedSaleCustomer ?? defaultSaleCustomer;
   const [posProfile, setPosProfile] = useState<string>();
   const [paymentModes, setPaymentModes] = useState<
     PosBootstrapData["payment_modes"]
@@ -193,7 +195,7 @@ export function PosWorkspaceScreen() {
     if (isOffline) return;
     if (!cart.clear()) return;
     setSelectedPriceList(undefined);
-    setSaleCustomer(customer);
+    setSelectedSaleCustomer(customer);
     setSelectedCustomer(null);
     setSelectedInvoice(null);
     setSelectedPaymentEntry(null);
@@ -319,7 +321,7 @@ export function PosWorkspaceScreen() {
           onBack={() => setCheckoutVisible(false)}
           onComplete={(result) => {
             cart.clear();
-            setSaleCustomer(null);
+            setSelectedSaleCustomer(null);
             setPostSaleRefreshKey((current) => current + 1);
             setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)
@@ -354,12 +356,18 @@ export function PosWorkspaceScreen() {
             if (!cart.requiresCustomer && !cart.isUpdating && !cart.error)
               setCheckoutVisible(true);
           }}
-          onClear={cart.clear}
+          onClear={() => {
+            if (!cart.clear()) return false;
+            setPriceListFallbackNotice(null);
+            setSelectedPriceList(undefined);
+            setSelectedSaleCustomer(null);
+            return true;
+          }}
           onHold={async () => {
             const heldInvoice = await cart.hold();
             if (heldInvoice) {
               setSelectedPriceList(undefined);
-              setSaleCustomer(defaultSaleCustomer);
+              setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
               setWorkspaceNotice(
@@ -373,13 +381,20 @@ export function PosWorkspaceScreen() {
           onClearSaleCustomer={() => {
             if (isOffline) return;
             setSelectedPriceList(undefined);
-            setSaleCustomer(defaultSaleCustomer);
+            setSelectedSaleCustomer(null);
           }}
-          onRemove={cart.remove}
+          onRemove={async (itemCode) => {
+            const isRemovingLastItem = cart.itemCount === 1;
+            const wasRemoved = await cart.remove(itemCode);
+            if (!wasRemoved || !isRemovingLastItem) return;
+            setPriceListFallbackNotice(null);
+            setSelectedPriceList(undefined);
+            setSelectedSaleCustomer(null);
+          }}
           onSelectSaleCustomer={(customer) => {
             if (isOffline) return;
             setSelectedPriceList(undefined);
-            setSaleCustomer(customer);
+            setSelectedSaleCustomer(customer);
           }}
           onSelectPriceList={(priceList) => {
             if (isOffline) return;
@@ -473,13 +488,13 @@ export function PosWorkspaceScreen() {
           onRestoreHeld={async (invoice) => {
             const restored = await cart.restoreHeldInvoice(invoice);
             setSelectedPriceList(restored.selling_price_list);
-            setSaleCustomer(
+            setSelectedSaleCustomer(
               restored.customer
                 ? {
                     customer: restored.customer,
                     customerName: restored.customer_name || restored.customer,
                   }
-                : defaultSaleCustomer,
+                : null,
             );
             setCheckoutVisible(false);
             setCartVisible(true);
