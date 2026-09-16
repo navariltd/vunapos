@@ -12,16 +12,25 @@ type PosInvoiceListItemProps = {
   onPress: () => void;
 };
 
-function createStatusStyles(palette: AppPalette): Record<
-  PosInvoiceStatus,
-  { backgroundColor: string; color: string }
-> {
+function createStatusStyles(
+  palette: AppPalette,
+): Record<PosInvoiceStatus, { backgroundColor: string; color: string }> {
   return {
-    "Credit Note": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    "Credit Note": {
+      backgroundColor: palette.surfaceContainerHigh,
+      color: palette.onSurface,
+    },
+    Draft: {
+      backgroundColor: palette.surfaceContainerHigh,
+      color: palette.onSurface,
+    },
     Cancelled: { backgroundColor: palette.errorSurface, color: palette.error },
     Overdue: { backgroundColor: palette.errorSurface, color: palette.error },
     Paid: { backgroundColor: palette.surfaceContainer, color: palette.success },
-    "Partly Paid": { backgroundColor: palette.surfaceContainerHigh, color: palette.onSurface },
+    "Partly Paid": {
+      backgroundColor: palette.surfaceContainerHigh,
+      color: palette.onSurface,
+    },
     Unpaid: { backgroundColor: palette.errorSurface, color: palette.error },
   };
 }
@@ -157,129 +166,129 @@ export function PosInvoiceListItem({
 
 function createStyles(palette: AppPalette) {
   return StyleSheet.create({
-  card: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  auditRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  badges: {
-    alignItems: "flex-end",
-    gap: 4,
-  },
-  auditValue: {
-    color: palette.onSurfaceMuted,
-    flex: 1,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  customer: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-  },
-  customerId: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  creditSaleBadge: {
-    backgroundColor: palette.surfaceContainerHigh,
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  creditSaleLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
-  },
-  dueDate: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
-  },
-  invoiceNumber: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.body,
-  },
-  metadata: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  metadataRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  paymentMode: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  paymentAmount: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  paymentLine: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  paymentLines: {
-    gap: 4,
-  },
-  outstanding: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
-    marginTop: 2,
-  },
-  status: {
-    borderRadius: radii.pill,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-  },
-  statusLabel: {
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
-  },
-  titleGroup: {
-    flex: 1,
-    gap: 2,
-  },
-  titleRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  total: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 15,
-  },
-  totalLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
-  },
-  totalRow: {
-    alignItems: "center",
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
-  },
+    card: {
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    auditRow: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+    },
+    badges: {
+      alignItems: "flex-end",
+      gap: 4,
+    },
+    auditValue: {
+      color: palette.onSurfaceMuted,
+      flex: 1,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    customer: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    customerId: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    creditSaleBadge: {
+      backgroundColor: palette.surfaceContainerHigh,
+      borderRadius: radii.pill,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+    },
+    creditSaleLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
+    },
+    dueDate: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.tiny,
+    },
+    invoiceNumber: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    metadata: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    metadataRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+    },
+    paymentMode: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.small,
+    },
+    paymentAmount: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.small,
+    },
+    paymentLine: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+    },
+    paymentLines: {
+      gap: 4,
+    },
+    outstanding: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.tiny,
+      marginTop: 2,
+    },
+    status: {
+      borderRadius: radii.pill,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+    },
+    statusLabel: {
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
+    },
+    titleGroup: {
+      flex: 1,
+      gap: 2,
+    },
+    titleRow: {
+      alignItems: "flex-start",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    total: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 15,
+    },
+    totalLabel: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.tiny,
+    },
+    totalRow: {
+      alignItems: "center",
+      borderTopColor: palette.border,
+      borderTopWidth: 1,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingTop: spacing.sm,
+    },
   });
 }

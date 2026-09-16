@@ -38,6 +38,8 @@ type SubmitInput = PreviewInput & {
   shippingAddressName?: string;
   sourceInvoice?: PosCartSource | null;
   taxId?: string;
+  /** The profile-configured first workflow action, if this checkout creates a draft. */
+  workflowAction?: string;
 };
 
 function cartPayload(items: PosCartItem[]) {
@@ -204,12 +206,14 @@ export function useSubmitPosCheckout() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [salespersonTokenExpired, setSalespersonTokenExpired] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
   function clearError() {
     setError(null);
+    setWorkflowError(null);
     setSalespersonTokenExpired(false);
   }
 
@@ -304,7 +308,7 @@ export function useSubmitPosCheckout() {
           },
         );
       }
-      const result = await postVunaMethod<PosCheckoutResult>(
+      let result = await postVunaMethod<PosCheckoutResult>(
         companyUrl,
         sessionId,
         input.sourceInvoice
@@ -329,6 +333,35 @@ export function useSubmitPosCheckout() {
             : {}),
         },
       );
+      // Workflow-enabled transactions are deliberately created as drafts. The
+      // profile metadata supplies the first transition, but ERPNext remains
+      // authoritative when we ask it to apply that action.
+      if (input.workflowAction && result.docstatus === 0) {
+        try {
+          result = await postVunaMethod<PosCheckoutResult>(
+            companyUrl,
+            sessionId,
+            "vunapos.api.profile.apply_workflow_action",
+            {
+              action: input.workflowAction,
+              doctype: result.doctype,
+              docname: result.name,
+              pos_profile: input.posProfile,
+            },
+          );
+        } catch (workflowRequestError) {
+          if (
+            workflowRequestError instanceof FrappeClientError &&
+            workflowRequestError.code === "session"
+          )
+            void invalidateSession();
+          setWorkflowError(
+            workflowRequestError instanceof Error
+              ? workflowRequestError.message
+              : "The transaction was created, but its workflow action could not be applied.",
+          );
+        }
+      }
       await invalidateSaleCache({
         companyUrl,
         posProfile: input.posProfile,
@@ -358,5 +391,12 @@ export function useSubmitPosCheckout() {
     }
   }
 
-  return { clearError, error, isSubmitting, salespersonTokenExpired, submit };
+  return {
+    clearError,
+    error,
+    isSubmitting,
+    salespersonTokenExpired,
+    submit,
+    workflowError,
+  };
 }

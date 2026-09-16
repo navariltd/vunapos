@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
+import {
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
@@ -254,6 +260,16 @@ export function PosInvoicesScreen({
         }}
       />
       <DocumentTab
+        active={
+          activeTab === "history" && filters.documentType === "Draft Order"
+        }
+        label="Draft orders"
+        onPress={() => {
+          setActiveTab("history");
+          updateFilter("documentType", "Draft Order");
+        }}
+      />
+      <DocumentTab
         active={activeTab === "held"}
         label="Held invoices"
         onPress={() => setActiveTab("held")}
@@ -405,7 +421,7 @@ export function PosInvoicesScreen({
             </Text>
           ) : historyError ? null : (
             <Text style={styles.emptyState}>
-              No {filters.documentType === "Order" ? "orders" : "invoices"}{" "}
+              No {filters.documentType === "Invoice" ? "invoices" : "orders"}{" "}
               match these filters.
             </Text>
           )
@@ -416,7 +432,9 @@ export function PosInvoicesScreen({
               <View style={styles.pagination}>
                 <Pressable
                   disabled={start === 0}
-                  onPress={() => setStart((current) => Math.max(0, current - 25))}
+                  onPress={() =>
+                    setStart((current) => Math.max(0, current - 25))
+                  }
                   style={[
                     styles.paginationButton,
                     start === 0 && styles.paginationButtonDisabled,
@@ -458,7 +476,9 @@ export function PosInvoicesScreen({
                 </Pressable>
               </View>
               <Text style={styles.subtitle}>
-                Review completed sales from this POS workspace.
+                {filters.documentType === "Draft Order"
+                  ? "Review Sales Orders awaiting workflow approval."
+                  : "Review completed sales from this POS workspace."}
               </Text>
             </View>
 
@@ -498,7 +518,7 @@ export function PosInvoicesScreen({
               <View style={styles.summaryGrid}>
                 <SummaryCard
                   label={
-                    filters.documentType === "Order" ? "Orders" : "Invoices"
+                    filters.documentType === "Invoice" ? "Invoices" : "Orders"
                   }
                   value={String(history.data.summary.invoice_count)}
                 />
@@ -576,211 +596,211 @@ export function PosInvoicesScreen({
 
 function createStyles(palette: AppPalette) {
   return StyleSheet.create({
-  backToPosButton: {
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-  },
-  backToPosButtonLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
-  },
-  content: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  documentTabs: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-  },
-  emptyState: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    paddingTop: spacing.xxl,
-    textAlign: "center",
-  },
-  errorNotice: {
-    backgroundColor: palette.errorSurface,
-    borderColor: palette.error,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    padding: spacing.sm,
-  },
-  errorText: {
-    color: palette.error,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-  },
-  documentTab: {
-    borderBottomWidth: 2,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  documentTabActive: {
-    borderBottomColor: palette.primary,
-  },
-  documentTabLabel: {
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  filterActionRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  filterSummary: {
-    color: palette.onSurfaceMuted,
-    flex: 1,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-  },
-  filtersButton: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    justifyContent: "center",
-    paddingHorizontal: spacing.sm,
-  },
-  filtersButtonLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  header: {
-    gap: spacing.md,
-    paddingBottom: spacing.lg,
-  },
-  heldInvoiceAside: {
-    alignItems: "flex-end",
-    gap: spacing.sm,
-  },
-  heldInvoiceCard: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    padding: spacing.md,
-  },
-  heldInvoiceCustomer: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-  },
-  heldInvoiceMain: { flex: 1, gap: 3 },
-  heldInvoiceModified: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  heldInvoiceName: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  heldInvoiceTotal: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  heldSummaryRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  heading: {
-    gap: 4,
-  },
-  pagination: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "flex-end",
-    paddingTop: spacing.lg,
-  },
-  paginationButton: {
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  paginationButtonDisabled: {
-    opacity: 0.4,
-  },
-  paginationLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  refreshingText: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  restoreButton: {
-    backgroundColor: palette.primary,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  restoreButtonLabel: {
-    color: palette.onPrimary,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
-  },
-  separator: {
-    height: spacing.sm,
-  },
-  subtitle: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-  },
-  summaryCard: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexBasis: "48%",
-    flexGrow: 1,
-    gap: 2,
-    padding: spacing.sm,
-  },
-  summaryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  summaryLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  summaryValue: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.body,
-  },
-  title: {
-    color: palette.onSurface,
-    flex: 1,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 22,
-  },
-  titleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
+    backToPosButton: {
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 7,
+    },
+    backToPosButtonLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
+    },
+    content: {
+      padding: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    documentTabs: {
+      borderBottomColor: palette.border,
+      borderBottomWidth: 1,
+      flexDirection: "row",
+    },
+    emptyState: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      paddingTop: spacing.xxl,
+      textAlign: "center",
+    },
+    errorNotice: {
+      backgroundColor: palette.errorSurface,
+      borderColor: palette.error,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      padding: spacing.sm,
+    },
+    errorText: {
+      color: palette.error,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+      lineHeight: typography.lineHeight.body,
+    },
+    documentTab: {
+      borderBottomWidth: 2,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
+    },
+    documentTabActive: {
+      borderBottomColor: palette.primary,
+    },
+    documentTabLabel: {
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.small,
+    },
+    filterActionRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    filterSummary: {
+      color: palette.onSurfaceMuted,
+      flex: 1,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    filtersButton: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      justifyContent: "center",
+      paddingHorizontal: spacing.sm,
+    },
+    filtersButtonLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    header: {
+      gap: spacing.md,
+      paddingBottom: spacing.lg,
+    },
+    heldInvoiceAside: {
+      alignItems: "flex-end",
+      gap: spacing.sm,
+    },
+    heldInvoiceCard: {
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+      padding: spacing.md,
+    },
+    heldInvoiceCustomer: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    heldInvoiceMain: { flex: 1, gap: 3 },
+    heldInvoiceModified: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    heldInvoiceName: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    heldInvoiceTotal: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    heldSummaryRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    heading: {
+      gap: 4,
+    },
+    pagination: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "flex-end",
+      paddingTop: spacing.lg,
+    },
+    paginationButton: {
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    paginationButtonDisabled: {
+      opacity: 0.4,
+    },
+    paginationLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    refreshingText: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    restoreButton: {
+      backgroundColor: palette.primary,
+      borderRadius: radii.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    restoreButtonLabel: {
+      color: palette.onPrimary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
+    },
+    separator: {
+      height: spacing.sm,
+    },
+    subtitle: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+      lineHeight: typography.lineHeight.body,
+    },
+    summaryCard: {
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexBasis: "48%",
+      flexGrow: 1,
+      gap: 2,
+      padding: spacing.sm,
+    },
+    summaryGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
+    summaryLabel: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    summaryValue: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    title: {
+      color: palette.onSurface,
+      flex: 1,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 22,
+    },
+    titleRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
   });
 }

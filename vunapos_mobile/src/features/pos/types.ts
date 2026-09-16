@@ -168,7 +168,13 @@ export type PosHeldInvoice = {
 };
 
 export type PosInvoiceStatus =
-  "Cancelled" | "Credit Note" | "Overdue" | "Paid" | "Partly Paid" | "Unpaid";
+  | "Cancelled"
+  | "Credit Note"
+  | "Draft"
+  | "Overdue"
+  | "Paid"
+  | "Partly Paid"
+  | "Unpaid";
 
 export type PosInvoiceListRow = {
   cashier?: string;
@@ -190,12 +196,12 @@ export type PosInvoiceListRow = {
 };
 
 export type PosDefaultCustomer = {
-    customer: string;
-    customer_name: string;
-    default_price_list?: string | null;
-    is_walkin?: boolean | number;
-    mobile_no?: string | null;
-    tax_id?: string | null;
+  customer: string;
+  customer_name: string;
+  default_price_list?: string | null;
+  is_walkin?: boolean | number;
+  mobile_no?: string | null;
+  tax_id?: string | null;
 };
 
 export type PosBootstrapData = {
@@ -244,7 +250,27 @@ export type PosBootstrapData = {
     require_pin_before_every_sale?: boolean;
     require_manager_pin_item_removal?: boolean;
     salesperson_pin_session_minutes?: number;
+    workflow?: PosWorkflowMetadata;
   };
+};
+
+export type PosWorkflowTransition = {
+  action: string;
+  allowed?: string;
+  next_state: string;
+  state?: string;
+};
+
+export type PosWorkflowMetadata = {
+  enabled: boolean;
+  workflows: Record<
+    string,
+    {
+      name: string;
+      state_field: string;
+      transitions: PosWorkflowTransition[];
+    }
+  >;
 };
 
 /** A server-approved transaction field that VunaPOS may collect at checkout. */
@@ -352,7 +378,7 @@ export type PosCheckoutResult = {
 export type PosInvoiceHistoryFilters = {
   currentShift: boolean;
   customer: string;
-  documentType: "Invoice" | "Order";
+  documentType: "Invoice" | "Order" | "Draft Order";
   fromDate: string;
   invoice: string;
   paymentMode: string;
@@ -421,6 +447,8 @@ export type PosInvoiceDetail = {
     rounded_total?: number;
   };
   warehouse?: string;
+  workflow_state?: string | null;
+  can_edit?: boolean;
 };
 
 export type PosInvoiceReturn = {

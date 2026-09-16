@@ -114,6 +114,7 @@ describe("PosCheckoutScreen", () => {
       isSubmitting: false,
       salespersonTokenExpired: false,
       submit,
+      workflowError: null,
     });
     mockUseInvoiceReceipt.mockReturnValue({
       error: null,
@@ -235,7 +236,9 @@ describe("PosCheckoutScreen", () => {
       screen.getByLabelText("Confirm sales invoice submission"),
     );
     await waitFor(() =>
-      expect(screen.getByText("Sales invoice SINV-0001 submitted.")).toBeTruthy(),
+      expect(
+        screen.getByText("Sales invoice SINV-0001 submitted."),
+      ).toBeTruthy(),
     );
 
     const confirmationDialog = screen.getByText(
@@ -504,13 +507,11 @@ describe("PosCheckoutScreen", () => {
   });
 
   it("allows a permitted delivery charge to be applied through the parent cart", async () => {
-    const applyDeliveryCharge = jest
-      .fn()
-      .mockResolvedValue({
-        items: [],
-        taxes: [],
-        totals: { grand_total: 141, net_total: 125 },
-      });
+    const applyDeliveryCharge = jest.fn().mockResolvedValue({
+      items: [],
+      taxes: [],
+      totals: { grand_total: 141, net_total: 125 },
+    });
     mockUsePosBootstrap.mockReturnValue({
       data: {
         payment_modes: [{ default: true, mode_of_payment: "Cash" }],
@@ -712,6 +713,7 @@ describe("PosCheckoutScreen", () => {
       isSubmitting: true,
       salespersonTokenExpired: false,
       submit,
+      workflowError: null,
     });
     await screen.rerender(<PosCheckoutScreen {...props} />);
 
@@ -1161,22 +1163,18 @@ describe("PosCheckoutScreen", () => {
   });
 
   it("blocks gateway checkout until the server confirms the gateway payment", async () => {
-    const initiate = jest
-      .fn()
-      .mockResolvedValue({
-        amount: 116,
-        mode_of_payment: "M-Pesa STK",
-        name: "GPL-001",
-        status: "Pending",
-      });
-    const getStatus = jest
-      .fn()
-      .mockResolvedValue({
-        amount: 116,
-        mode_of_payment: "M-Pesa STK",
-        name: "GPL-001",
-        status: "Paid",
-      });
+    const initiate = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-001",
+      status: "Pending",
+    });
+    const getStatus = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-001",
+      status: "Paid",
+    });
     mockUseGatewayPayment.mockReturnValue({
       attachC2B: jest.fn(),
       cancel: jest.fn(),
@@ -1266,14 +1264,12 @@ describe("PosCheckoutScreen", () => {
   });
 
   it("unlocks checkout immediately when the matching gateway link is confirmed in realtime", async () => {
-    const initiate = jest
-      .fn()
-      .mockResolvedValue({
-        amount: 116,
-        mode_of_payment: "M-Pesa STK",
-        name: "GPL-001",
-        status: "Pending",
-      });
+    const initiate = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-001",
+      status: "Pending",
+    });
     let onGatewayChange:
       | ((payment: {
           amount: number;
@@ -1365,14 +1361,12 @@ describe("PosCheckoutScreen", () => {
   });
 
   it("searches for and attaches an exact matching C2B payment before enabling checkout", async () => {
-    const attachC2B = jest
-      .fn()
-      .mockResolvedValue({
-        amount: 116,
-        mode_of_payment: "M-Pesa STK",
-        name: "GPL-C2B-001",
-        status: "Paid",
-      });
+    const attachC2B = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-C2B-001",
+      status: "Paid",
+    });
     const searchC2B = jest.fn().mockResolvedValue([
       {
         amount: 116,

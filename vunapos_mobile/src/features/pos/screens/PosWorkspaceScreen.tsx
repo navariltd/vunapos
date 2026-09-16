@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppShell } from "@/features/shell/components/AppShell";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
@@ -62,6 +62,8 @@ export function PosWorkspaceScreen() {
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [cartCurrency, setCartCurrency] = useState("KES");
   const [orderType, setOrderType] = useState<PosOrderType>("Invoice");
+  const configuredProfileRef = useRef<string | undefined>(undefined);
+  const orderTypeOverrideRef = useRef(false);
   const [selectedInvoice, setSelectedInvoice] =
     useState<SelectedInvoice | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
@@ -102,35 +104,39 @@ export function PosWorkspaceScreen() {
     priceList: selectedPriceList,
   });
   const salespersonPin = useSalespersonPin();
-  const receivePosProfile = useCallback(
-    (bootstrap: PosBootstrapData) => {
-      const defaultCustomer = bootstrap.default_customer;
-      const profileOrderType = configuredOrderType(bootstrap.pos_profile);
-      setPosProfile(bootstrap.pos_profile.name);
-      setPosProfileConfig(bootstrap.pos_profile);
-      setPosSession(bootstrap.pos_session ?? null);
-      setPaymentModes(bootstrap.payment_modes);
-      setOrderType((current) =>
-        posProfile === undefined ||
-        bootstrap.pos_profile.allow_order_type_change === false
-          ? profileOrderType
-          : current,
-      );
-      setDefaultSaleCustomer(
-        defaultCustomer
-          ? {
-              customer: defaultCustomer.customer,
-              customerName: defaultCustomer.customer_name,
-              defaultPriceList: defaultCustomer.default_price_list,
-              isWalkin: Boolean(defaultCustomer.is_walkin),
-              mobile: defaultCustomer.mobile_no || undefined,
-              taxId: defaultCustomer.tax_id || undefined,
-            }
-          : null,
-      );
-    },
-    [posProfile],
-  );
+  const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
+    const defaultCustomer = bootstrap.default_customer;
+    const profileOrderType = configuredOrderType(bootstrap.pos_profile);
+    const isNewProfile =
+      configuredProfileRef.current !== undefined &&
+      configuredProfileRef.current !== bootstrap.pos_profile.name;
+    if (isNewProfile) orderTypeOverrideRef.current = false;
+    configuredProfileRef.current = bootstrap.pos_profile.name;
+    setPosProfile(bootstrap.pos_profile.name);
+    setPosProfileConfig(bootstrap.pos_profile);
+    setPosSession(bootstrap.pos_session ?? null);
+    setPaymentModes(bootstrap.payment_modes);
+    setOrderType((current) =>
+      (!orderTypeOverrideRef.current &&
+        (configuredProfileRef.current === bootstrap.pos_profile.name ||
+          isNewProfile)) ||
+      bootstrap.pos_profile.allow_order_type_change === false
+        ? profileOrderType
+        : current,
+    );
+    setDefaultSaleCustomer(
+      defaultCustomer
+        ? {
+            customer: defaultCustomer.customer,
+            customerName: defaultCustomer.customer_name,
+            defaultPriceList: defaultCustomer.default_price_list,
+            isWalkin: Boolean(defaultCustomer.is_walkin),
+            mobile: defaultCustomer.mobile_no || undefined,
+            taxId: defaultCustomer.tax_id || undefined,
+          }
+        : null,
+    );
+  }, []);
   useEffect(() => {
     if (!workspaceBootstrap.data) return;
     const sync = setTimeout(
@@ -223,7 +229,10 @@ export function PosWorkspaceScreen() {
       activeTab={activeTab}
       allowOrderTypeChange={posProfileConfig?.allow_order_type_change !== false}
       customersEnabled={allowsCustomerManagement}
-      onOrderTypeChange={setOrderType}
+      onOrderTypeChange={(nextOrderType) => {
+        orderTypeOverrideRef.current = true;
+        setOrderType(nextOrderType);
+      }}
       onTabChange={changeTab}
       orderType={orderType}
       paymentsEnabled={allowsCustomerPayments}
@@ -298,6 +307,22 @@ export function PosWorkspaceScreen() {
             }
             setSelectedInvoice(null);
           }}
+          onEditDraft={async (source) => {
+            const restored = await cart.restoreHeldInvoice(source);
+            setSelectedPriceList(restored.selling_price_list);
+            setSelectedSaleCustomer(
+              restored.customer
+                ? {
+                    customer: restored.customer,
+                    customerName: restored.customer_name || restored.customer,
+                  }
+                : null,
+            );
+            setSelectedInvoice(null);
+            setCheckoutVisible(false);
+            setCartVisible(true);
+            setActiveTab("Home");
+          }}
           onOpenCustomer={setSelectedCustomer}
           onOpenPaymentEntry={(paymentEntry, currency) =>
             setSelectedPaymentEntry({
@@ -327,6 +352,7 @@ export function PosWorkspaceScreen() {
             setSelectedSaleCustomer(null);
             // A user override applies only to the sale that was just
             // submitted. Start the next sale from the POS Profile default.
+            orderTypeOverrideRef.current = false;
             setOrderType(configuredOrderType(posProfileConfig));
             setPostSaleRefreshKey((current) => current + 1);
             setHeldRefreshKey((current) => current + 1);

@@ -267,6 +267,33 @@ describe("PosInvoicesScreen", () => {
     expect(screen.getByText("Orders")).toBeTruthy();
   });
 
+  it("loads draft sales orders from the dedicated draft orders tab", async () => {
+    const screen = await renderScreen();
+
+    expect(
+      screen.getByRole("tab", { name: "Draft orders" }).props
+        .accessibilityState,
+    ).toEqual({ selected: false });
+
+    fireEvent.press(screen.getByRole("tab", { name: "Draft orders" }));
+
+    await waitFor(() =>
+      expect(mockUsePosInvoiceHistory).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          filters: expect.objectContaining({ documentType: "Draft Order" }),
+          start: 0,
+        }),
+      ),
+    );
+    expect(
+      screen.getByRole("tab", { name: "Draft orders" }).props
+        .accessibilityState,
+    ).toEqual({ selected: true });
+    expect(
+      screen.getByText("Review Sales Orders awaiting workflow approval."),
+    ).toBeTruthy();
+  });
+
   it("applies draft filters, resets pagination, and clears them without losing the document type", async () => {
     const screen = await renderScreen();
 

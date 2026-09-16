@@ -166,6 +166,80 @@ describe("POS checkout hooks", () => {
     });
   });
 
+  it("applies the configured first workflow action only after the server creates a draft", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({
+        docstatus: 0,
+        doctype: "Sales Invoice",
+        name: "SINV-WORKFLOW-001",
+      })
+      .mockResolvedValueOnce({
+        docstatus: 1,
+        doctype: "Sales Invoice",
+        name: "SINV-WORKFLOW-001",
+      });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+        workflowAction: "Approve",
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.profile.apply_workflow_action",
+      {
+        action: "Approve",
+        doctype: "Sales Invoice",
+        docname: "SINV-WORKFLOW-001",
+        pos_profile: "POS-001",
+      },
+    );
+    expect(hook.result.current.workflowError).toBeNull();
+  });
+
+  it("keeps a created workflow draft visible when ERPNext rejects its action", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({
+        docstatus: 0,
+        doctype: "Sales Invoice",
+        name: "SINV-WORKFLOW-002",
+      })
+      .mockRejectedValueOnce(new Error("Action is not allowed for this user."));
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    let result: Awaited<ReturnType<typeof hook.result.current.submit>> = null;
+
+    await act(async () => {
+      result = await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+        workflowAction: "Approve",
+      });
+    });
+
+    expect(result).toEqual({
+      docstatus: 0,
+      doctype: "Sales Invoice",
+      name: "SINV-WORKFLOW-002",
+    });
+    expect(hook.result.current.workflowError).toBe(
+      "Action is not allowed for this user.",
+    );
+  });
+
   it("waits for confirmed reachability before submitting a sale", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     const hook = await renderHook(() => useSubmitPosCheckout());

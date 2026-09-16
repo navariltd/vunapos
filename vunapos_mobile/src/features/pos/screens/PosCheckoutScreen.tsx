@@ -112,7 +112,8 @@ function formatDate(value: string) {
 
 function shippingAddressText(address?: PosCustomerShippingAddress) {
   if (!address) return "";
-  if (address.formatted_address?.trim()) return address.formatted_address.trim();
+  if (address.formatted_address?.trim())
+    return address.formatted_address.trim();
   return [
     address.address_line1,
     address.address_line2,
@@ -273,6 +274,10 @@ export function PosCheckoutScreen({
   const transactionDoctype = isInvoice
     ? profile?.invoice_mode || "Sales Invoice"
     : "Sales Order";
+  const activeWorkflow = profile?.workflow?.enabled
+    ? profile.workflow.workflows[transactionDoctype]
+    : undefined;
+  const initialWorkflowAction = activeWorkflow?.transitions?.[0]?.action;
   const requiredCheckoutField = profile?.checkout_fields
     ?.filter((field) => field.doctype === transactionDoctype)
     .find(
@@ -939,12 +944,14 @@ export function PosCheckoutScreen({
       shippingAddressName: selectedShippingAddress?.name,
       sourceInvoice,
       taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
+      workflowAction: initialWorkflowAction,
     });
     if (!result) return;
     setCompletedResult(result);
     if (
       result.queue_status !== "Queued" &&
-      result.queue_status !== "Processing"
+      result.queue_status !== "Processing" &&
+      result.docstatus !== 0
     ) {
       void receipt.printReceipt({
         invoiceDoctype: result.doctype,
@@ -985,30 +992,31 @@ export function PosCheckoutScreen({
     <View style={styles.screen}>
       <PosFixedPageHeader>
         <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="Back to cart"
-          disabled={checkout.isSubmitting}
-          onPress={onBack}
-          style={styles.backButton}
-        >
-          <MaterialCommunityIcons
-            color={palette.onSurface}
-            name="arrow-left"
-            size={22}
-          />
-        </Pressable>
-        <View style={styles.heading}>
-          <Text style={styles.title}>
-            {sourceInvoice
-              ? "Continue checkout"
-              : isInvoice
-                ? "Checkout"
-                : "Submit order"}
-          </Text>
-          <Text style={styles.subtitle}>
-            {customerName} · {items.length} item{items.length === 1 ? "" : "s"}
-          </Text>
-        </View>
+          <Pressable
+            accessibilityLabel="Back to cart"
+            disabled={checkout.isSubmitting}
+            onPress={onBack}
+            style={styles.backButton}
+          >
+            <MaterialCommunityIcons
+              color={palette.onSurface}
+              name="arrow-left"
+              size={22}
+            />
+          </Pressable>
+          <View style={styles.heading}>
+            <Text style={styles.title}>
+              {sourceInvoice
+                ? "Continue checkout"
+                : isInvoice
+                  ? "Checkout"
+                  : "Submit order"}
+            </Text>
+            <Text style={styles.subtitle}>
+              {customerName} · {items.length} item
+              {items.length === 1 ? "" : "s"}
+            </Text>
+          </View>
         </View>
       </PosFixedPageHeader>
       <KeyboardAwareFormScroll
@@ -1016,1173 +1024,1235 @@ export function PosCheckoutScreen({
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
-      {sourceInvoice ? (
-        <Text style={styles.restoredDraftHint}>
-          Continuing held invoice {sourceInvoice.name}. Your current cart will
-          be saved to this invoice before it is submitted.
-        </Text>
-      ) : null}
-
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Checkout summary</Text>
-        {isInvoice && preview.data ? (
-          <>
-            <SummaryRow label="Customer" value={customerName} />
-            <View style={styles.summaryDivider} />
-            <Text style={styles.summarySectionTitle}>Items</Text>
-            <View style={styles.summaryItems}>
-              {preview.data.items.map((item) => (
-                <SummaryRow
-                  key={item.row_name || item.item_code}
-                  label={`${item.qty} × ${item.item_name}`}
-                  value={formatCurrency(item.amount, currency, precision)}
-                />
-              ))}
-            </View>
-            <View style={styles.summaryDivider} />
-            <SummaryRow
-              label="Subtotal"
-              value={formatCurrency(netTotal, currency, precision)}
-            />
-            {(preview.data.taxes ?? []).map((tax, index) => (
-              <SummaryRow
-                key={`${tax.account_head || tax.description || "tax"}-${index}`}
-                label={taxLabel(
-                  tax.description,
-                  tax.account_head,
-                  tax.rate,
-                  tax.included_in_print_rate,
-                )}
-                value={formatCurrency(tax.tax_amount ?? 0, currency, precision)}
-              />
-            ))}
-            <SummaryRow
-              label="Total taxes and charges"
-              value={formatCurrency(taxTotal, currency, precision)}
-            />
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Grand total</Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(grandTotal, currency, precision)}
-              </Text>
-            </View>
-            {roundedTotal !== undefined && roundedTotal !== grandTotal ? (
-              <SummaryRow
-                label="Rounded total"
-                value={formatCurrency(roundedTotal, currency, precision)}
-              />
-            ) : null}
-            {loyaltyAmount ? (
-              <>
-                <SummaryRow
-                  label="Loyalty redemption"
-                  value={`−${formatCurrency(loyaltyAmount, currency, precision)}`}
-                />
-                <SummaryRow
-                  label="Amount payable"
-                  value={formatCurrency(total, currency, precision)}
-                />
-              </>
-            ) : null}
-            <View style={styles.summaryDivider} />
-            <SummaryRow
-              label="Paid amount"
-              value={formatCurrency(paidAmount, currency, precision)}
-            />
-            <SummaryRow
-              label={checkoutBalanceLabel}
-              value={formatCurrency(checkoutBalanceAmount, currency, precision)}
-            />
-          </>
-        ) : (
-          <Text style={styles.cardHint}>
-            Frappe will calculate final tax and totals when this Sales Order is
-            submitted.
+        {sourceInvoice ? (
+          <Text style={styles.restoredDraftHint}>
+            Continuing held invoice {sourceInvoice.name}. Your current cart will
+            be saved to this invoice before it is submitted.
           </Text>
-        )}
-      </View>
+        ) : null}
 
-      {!isInvoice ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Sales Order</Text>
-          <Text style={styles.cardHint}>
-            Choose when this order should be delivered.
-          </Text>
-          <Text style={styles.fieldLabel}>Delivery date</Text>
-          <Pressable
-            accessibilityLabel="Choose Sales Order delivery date"
-            onPress={() => setIsDeliveryDatePickerVisible(true)}
-            style={styles.datePickerButton}
-          >
-            <MaterialCommunityIcons
-              color={palette.onSurfaceMuted}
-              name="calendar-month-outline"
-              size={20}
-            />
-            <Text style={styles.datePickerButtonLabel}>
-              {formatDate(deliveryDate)}
-            </Text>
-          </Pressable>
-          {isDeliveryDatePickerVisible ? (
-            <DateTimePicker
-              minimumDate={dateFromInput(today())}
-              mode="date"
-              negativeButton={{ label: "Cancel" }}
-              onDismiss={() => setIsDeliveryDatePickerVisible(false)}
-              onValueChange={(_event, selectedDate) => {
-                setDeliveryDate(dateInputValue(selectedDate));
-                setIsDeliveryDatePickerVisible(false);
-              }}
-              positiveButton={{ label: "Select" }}
-              testID="sales-order-delivery-date-picker"
-              value={dateFromInput(deliveryDate)}
-            />
-          ) : null}
-          {!allowsSalesOrderAdvancePayments ? (
-            <Text style={styles.cardHint}>
-              This POS profile does not allow an advance payment for Sales
-              Orders.
-            </Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isInvoice && (
-        <>
-          {canUseCredit ? (
-            <View style={styles.card}>
-              <View style={styles.creditSaleRow}>
-                <View style={styles.creditSaleText}>
-                  <Text style={styles.cardTitle}>Credit sale</Text>
-                  <Text style={styles.cardHint}>
-                    Record an outstanding balance with a payment due date.
-                  </Text>
-                </View>
-                <Switch
-                  accessibilityLabel="Enable credit sale"
-                  accessibilityRole="switch"
-                  accessibilityState={{ checked: isCreditSale }}
-                  onValueChange={setSaleType}
-                  thumbColor={palette.onSurface}
-                  trackColor={{ false: palette.border, true: palette.success }}
-                  value={isCreditSale}
-                />
+          <Text style={styles.cardTitle}>Checkout summary</Text>
+          {isInvoice && preview.data ? (
+            <>
+              <SummaryRow label="Customer" value={customerName} />
+              <View style={styles.summaryDivider} />
+              <Text style={styles.summarySectionTitle}>Items</Text>
+              <View style={styles.summaryItems}>
+                {preview.data.items.map((item) => (
+                  <SummaryRow
+                    key={item.row_name || item.item_code}
+                    label={`${item.qty} × ${item.item_name}`}
+                    value={formatCurrency(item.amount, currency, precision)}
+                  />
+                ))}
               </View>
-              {isCreditSale ? (
-                <>
-                  <Text style={styles.fieldLabel}>Payment due date</Text>
-                  <Pressable
-                    accessibilityLabel="Choose credit sale due date"
-                    onPress={() => setIsDueDatePickerVisible(true)}
-                    style={styles.datePickerButton}
-                  >
-                    <MaterialCommunityIcons
-                      color={palette.onSurfaceMuted}
-                      name="calendar-month-outline"
-                      size={20}
-                    />
-                    <Text style={styles.datePickerButtonLabel}>
-                      {formatDate(dueDate)}
-                    </Text>
-                  </Pressable>
-                  {isDueDatePickerVisible ? (
-                    <DateTimePicker
-                      minimumDate={dateFromInput(postingDate)}
-                      mode="date"
-                      negativeButton={{ label: "Cancel" }}
-                      onDismiss={() => setIsDueDatePickerVisible(false)}
-                      onValueChange={(_event, selectedDate) => {
-                        setDueDate(dateInputValue(selectedDate));
-                        setIsDueDatePickerVisible(false);
-                      }}
-                      positiveButton={{ label: "Select" }}
-                      value={dateFromInput(dueDate)}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-            </View>
-          ) : null}
-        </>
-      )}
-
-      {isInvoice && customerLoyalty.data?.enrolled ? (
-        <View style={styles.card}>
-          <View style={styles.loyaltyHeading}>
-            <MaterialCommunityIcons
-              color={palette.primary}
-              name="star-circle-outline"
-              size={22}
-            />
-            <View style={styles.heading}>
-              <Text style={styles.cardTitle}>Loyalty redemption</Text>
-              <Text style={styles.cardHint}>
-                {availableLoyaltyPoints.toLocaleString()} points available ·{" "}
-                {formatCurrency(
-                  customerLoyalty.data.redemption_value ?? 0,
-                  customerLoyalty.data.currency || currency,
-                  precision,
-                )}
-              </Text>
-            </View>
-          </View>
-          <Text style={styles.fieldLabel}>Points to redeem</Text>
-          <View style={styles.loyaltyInputRow}>
-            <TextInput
-              accessibilityLabel="Loyalty points to redeem"
-              editable={!isOffline}
-              inputMode="numeric"
-              keyboardType="number-pad"
-              onChangeText={setLoyaltyInput}
-              placeholder="Enter points"
-              placeholderTextColor={palette.onSurfaceMuted}
-              style={[styles.input, styles.loyaltyInput]}
-              value={loyaltyInput}
-            />
-            <Pressable
-              accessibilityLabel="Redeem maximum loyalty points"
-              disabled={isOffline || !maximumLoyaltyPoints || isApplyingLoyalty}
-              onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
-              style={[
-                styles.secondaryButton,
-                (isOffline || !maximumLoyaltyPoints || isApplyingLoyalty) &&
-                  styles.secondaryButtonDisabled,
-              ]}
-            >
-              <Text style={styles.secondaryButtonLabel}>Maximum</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="Apply loyalty points"
-              disabled={
-                Boolean(loyaltyInputError) ||
-                !loyaltyInputPoints ||
-                isApplyingLoyalty ||
-                isOffline
-              }
-              onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
-              style={[
-                styles.secondaryButton,
-                (Boolean(loyaltyInputError) ||
-                  !loyaltyInputPoints ||
-                  isApplyingLoyalty ||
-                  isOffline) &&
-                  styles.secondaryButtonDisabled,
-              ]}
-            >
-              {isApplyingLoyalty ? (
-                <ActivityIndicator
-                  color={palette.onSurface}
-                  size="small"
-                />
-              ) : (
-                <Text style={styles.secondaryButtonLabel}>Apply</Text>
-              )}
-            </Pressable>
-          </View>
-          {loyaltyInputError ? (
-            <Text style={styles.errorText}>
-              Enter between 1 and {maximumLoyaltyPoints.toLocaleString()}{" "}
-              points.
-            </Text>
-          ) : null}
-          {loyaltyError ? (
-            <Text style={styles.errorText}>{loyaltyError}</Text>
-          ) : null}
-          {!isLoyaltySelectionValid ? (
-            <Text style={styles.errorText}>
-              The available balance changed. Apply a valid number of points
-              again.
-            </Text>
-          ) : null}
-          {appliedLoyaltyPoints ? (
-            <View style={styles.loyaltyAppliedRow}>
-              <Text style={styles.cardHint}>
-                Applied: {appliedLoyaltyPoints.toLocaleString()} points ·{" "}
-                {formatCurrency(loyaltyAmount, currency, precision)}
-              </Text>
-              <Pressable
-                accessibilityLabel="Remove loyalty redemption"
-                disabled={isOffline || isApplyingLoyalty}
-                onPress={() => void applyLoyaltyPoints(0)}
-              >
-                <Text style={styles.loyaltyRemoveLabel}>Remove</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isInvoice && isWalkinCustomer ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Receipt Tax ID</Text>
-          <Text style={styles.cardHint}>
-            Optionally add the walk-in customer’s PIN or Tax ID to this receipt.
-          </Text>
-          <Text style={styles.fieldLabel}>Customer Tax ID</Text>
-          <TextInput
-            accessibilityLabel="Customer Tax ID"
-            autoCapitalize="characters"
-            maxLength={140}
-            onChangeText={setCheckoutTaxId}
-            placeholder={saleCustomer?.taxId || "PIN / Tax ID for this receipt"}
-            placeholderTextColor={palette.onSurfaceMuted}
-            style={styles.input}
-            value={checkoutTaxId}
-          />
-        </View>
-      ) : null}
-
-      {deliveryChargeEnabled ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Delivery charge</Text>
-          <Text style={styles.cardHint}>
-            Optionally add the configured delivery item to this sale. Frappe
-            will recalculate the total before payment.
-          </Text>
-          <View style={styles.deliveryChargeRow}>
-            <View style={styles.paymentAmountWrap}>
-              <Text style={styles.currencyPrefix}>{currency}</Text>
-              <TextInput
-                accessibilityLabel="Delivery charge amount"
-                editable={deliveryChargeCanChange && !isApplyingDeliveryCharge}
-                inputMode="decimal"
-                keyboardType="decimal-pad"
-                onChangeText={setDeliveryChargeAmount}
-                placeholder="Optional"
-                placeholderTextColor={palette.onSurfaceMuted}
-                style={styles.paymentAmountInput}
-                value={displayedDeliveryChargeAmount}
+              <View style={styles.summaryDivider} />
+              <SummaryRow
+                label="Subtotal"
+                value={formatCurrency(netTotal, currency, precision)}
               />
-            </View>
-            <Pressable
-              accessibilityLabel="Apply delivery charge"
-              disabled={!deliveryChargeCanChange || isApplyingDeliveryCharge}
-              onPress={() => void applyDeliveryCharge()}
-              style={[
-                styles.secondaryButton,
-                (!deliveryChargeCanChange || isApplyingDeliveryCharge) &&
-                  styles.secondaryButtonDisabled,
-              ]}
-            >
-              {isApplyingDeliveryCharge ? (
-                <ActivityIndicator
-                  color={palette.onSurface}
-                  size="small"
-                />
-              ) : (
-                <Text style={styles.secondaryButtonLabel}>Apply</Text>
-              )}
-            </Pressable>
-          </View>
-          {!deliveryChargeCanChange ? (
-            <Text style={styles.cardHint}>
-              This POS profile does not allow changing the delivery charge.
-            </Text>
-          ) : null}
-          {deliveryChargeError ? (
-            <Text style={styles.errorText}>{deliveryChargeError}</Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {customerShippingAddresses.isLoading ||
-      customerShippingAddresses.data?.length ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Shipping address</Text>
-          <Pressable
-            accessibilityLabel="Choose shipping address"
-            disabled={isOffline || customerShippingAddresses.isLoading}
-            onPress={() => setIsShippingAddressPickerVisible(true)}
-            style={[
-              styles.shippingAddressSelector,
-              (isOffline || customerShippingAddresses.isLoading) &&
-                styles.secondaryButtonDisabled,
-            ]}
-          >
-            <View style={styles.shippingAddressText}>
-              <Text style={styles.shippingAddressTitle}>
-                {customerShippingAddresses.isLoading
-                  ? "Loading shipping addresses…"
-                  : shippingAddressText(selectedShippingAddress) ||
-                    "Select shipping address"}
-              </Text>
-              {selectedShippingAddress?.address_title ? (
-                <Text style={styles.cardHint}>
-                  {selectedShippingAddress.address_title}
-                </Text>
-              ) : null}
-            </View>
-            <MaterialCommunityIcons
-              color={palette.onSurfaceMuted}
-              name="chevron-right"
-              size={22}
-            />
-          </Pressable>
-        </View>
-      ) : null}
-
-      <PosCheckoutFieldsCard
-        disabled={checkout.isSubmitting}
-        fields={profile?.checkout_fields}
-        onChange={(fieldname, value) =>
-          setCheckoutFieldValues((current) => ({
-            ...current,
-            [fieldname]: value,
-          }))
-        }
-        transactionDoctype={transactionDoctype}
-        values={checkoutFieldValues}
-      />
-
-      {isInvoice || allowsSalesOrderAdvancePayments ? (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>
-            {isInvoice ? "Payment methods" : "Sales Order advance payment"}
-          </Text>
-          <View style={styles.paymentSummaryRow}>
-            <PaymentSummary
-              label="Allocated"
-              value={formatCurrency(
-                allocation.allocatedMinor / currencyScale(precision),
-                currency,
-                precision,
-              )}
-            />
-            <PaymentSummary
-              label={isInvoice ? paymentBalanceLabel : "Order balance"}
-              value={formatCurrency(
-                Math.abs(allocation.remainingMinor) / currencyScale(precision),
-                currency,
-                precision,
-              )}
-            />
-            <PaymentSummary label="Status" value={paymentStatus} />
-          </View>
-          <Text style={styles.cardHint}>
-            {isInvoice
-              ? isCreditSale
-                ? "Optionally record a deposit. The remaining balance will be recorded as credit."
-                : "Tap a payment mode to allocate the full balance, or enter amounts to split the payment."
-              : "Optionally collect an advance. It cannot exceed the Sales Order total and will be recorded against this order."}
-          </Text>
-          {manualModes.length ? (
-            <View style={styles.paymentModes}>
-              {manualModes.map((mode) => {
-                const amount = paymentAmounts[mode.mode_of_payment] ?? "";
-                const amountMinor = parsePaymentAmount(amount, precision);
-                const needsReference = Boolean(
-                  mode.requires_reference && amountMinor && amountMinor > 0,
-                );
-                const reference = paymentReferences[mode.mode_of_payment];
-                const isAll =
-                  amount === minorUnitsToInput(totalMinor, precision) &&
-                  manualModes.every(
-                    (other) =>
-                      other.mode_of_payment === mode.mode_of_payment ||
-                      !paymentAmounts[other.mode_of_payment],
-                  );
-                return (
-                  <View key={mode.mode_of_payment} style={styles.paymentMode}>
-                    <View style={styles.paymentModeRow}>
-                      <Pressable
-                        accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`}
-                        onPress={() => selectPaymentMode(mode.mode_of_payment)}
-                        style={[
-                          styles.paymentModeButton,
-                          isAll && styles.paymentModeButtonActive,
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.paymentModeLabel,
-                            isAll && styles.paymentModeLabelActive,
-                          ]}
-                        >
-                          {mode.mode_of_payment}
-                          {mode.default ? " · Default" : ""}
-                        </Text>
-                      </Pressable>
-                      <View style={styles.paymentAmountWrap}>
-                        <Text style={styles.currencyPrefix}>{currency}</Text>
-                        <TextInput
-                          accessibilityLabel={`${mode.mode_of_payment} amount`}
-                          inputMode="decimal"
-                          keyboardType="decimal-pad"
-                          onChangeText={(amountInput) =>
-                            setPaymentAmount(mode.mode_of_payment, amountInput)
-                          }
-                          placeholder={minorUnitsToInput(0, precision)}
-                          placeholderTextColor={palette.onSurfaceMuted}
-                          style={styles.paymentAmountInput}
-                          value={amount}
-                        />
-                      </View>
-                    </View>
-                    {needsReference ? (
-                      <View style={styles.paymentReference}>
-                        <Text style={styles.fieldLabel}>
-                          Transaction reference
-                        </Text>
-                        <TextInput
-                          accessibilityLabel={`${mode.mode_of_payment} transaction reference`}
-                          autoCapitalize="characters"
-                          onChangeText={(referenceNo) =>
-                            setPaymentReferenceNo(
-                              mode.mode_of_payment,
-                              referenceNo,
-                            )
-                          }
-                          placeholder="Receipt or transaction number"
-                          placeholderTextColor={palette.onSurfaceMuted}
-                          style={styles.input}
-                          value={reference?.referenceNo ?? ""}
-                        />
-                        <Text style={styles.fieldLabel}>Transaction date</Text>
-                        <Pressable
-                          accessibilityLabel={`Choose ${mode.mode_of_payment} transaction date`}
-                          onPress={() =>
-                            setReferenceDateMode(mode.mode_of_payment)
-                          }
-                          style={styles.datePickerButton}
-                        >
-                          <MaterialCommunityIcons
-                            color={palette.onSurfaceMuted}
-                            name="calendar-month-outline"
-                            size={20}
-                          />
-                          <Text style={styles.datePickerButtonLabel}>
-                            {formatDate(reference?.referenceDate || today())}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })}
-            </View>
-          ) : (
-            <Text style={isInvoice ? styles.errorText : styles.cardHint}>
-              {isInvoice
-                ? "No manual payment mode is configured for this POS profile."
-                : "No manual payment mode is configured, so this Sales Order will be submitted without an advance."}
-            </Text>
-          )}
-          {gatewayModes.length ? (
-            <View style={styles.gatewayModes}>
-              <Text style={styles.fieldLabel}>Gateway payments</Text>
-              {gatewayModes.map((mode) => {
-                const link = gatewayLinks[mode.mode_of_payment];
-                const isVerified = isSuccessfulGatewayPayment(link);
-                return (
-                  <Pressable
-                    key={mode.mode_of_payment}
-                    accessibilityLabel={`Pay with ${mode.mode_of_payment}`}
-                    onPress={() => openGatewayPayment(mode)}
-                    style={[
-                      styles.gatewayModeButton,
-                      isVerified && styles.gatewayModeButtonVerified,
-                    ]}
-                  >
-                    <View style={styles.gatewayModeText}>
-                      <Text style={styles.paymentModeLabel}>
-                        {mode.mode_of_payment}
-                      </Text>
-                      <Text style={styles.cardHint}>
-                        {isVerified
-                          ? `Verified · ${formatCurrency(link?.amount ?? 0, currency, precision)}`
-                          : link
-                            ? `Awaiting confirmation · ${link.status}`
-                            : "Tap to start a secure payment"}
-                      </Text>
-                    </View>
-                    <MaterialCommunityIcons
-                      color={
-                        isVerified ? palette.success : palette.onSurfaceMuted
-                      }
-                      name={isVerified ? "check-circle" : "cellphone-wireless"}
-                      size={22}
-                    />
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
-          {isInvoice && profile?.allow_partial_payment ? (
-            <Text style={styles.cardHint}>
-              Partial payments are enabled for this POS profile.
-            </Text>
-          ) : null}
-          {hasMissingPaymentReference ? (
-            <Text style={styles.errorText}>
-              A transaction reference is required for {missingReferenceMode}.
-            </Text>
-          ) : null}
-          {hasUnverifiedGatewayPayment ? (
-            <Text style={styles.errorText}>
-              Verify the selected gateway payment to continue. Checkout unlocks
-              after confirmation.
-            </Text>
-          ) : null}
-          {isInvoice && hasNonCashOverpayment ? (
-            <Text style={styles.errorText}>
-              Only cash can exceed the total and return change.
-            </Text>
-          ) : null}
-          {hasSalesOrderAdvanceOverpayment ? (
-            <Text style={styles.errorText}>
-              An advance cannot exceed the Sales Order total.
-            </Text>
-          ) : null}
-          {referenceDateMode ? (
-            <DateTimePicker
-              maximumDate={dateFromInput(today())}
-              mode="date"
-              negativeButton={{ label: "Cancel" }}
-              onDismiss={() => setReferenceDateMode(null)}
-              onValueChange={(_event, selectedDate) => {
-                setPaymentReferenceDate(
-                  referenceDateMode,
-                  dateInputValue(selectedDate),
-                );
-                setReferenceDateMode(null);
-              }}
-              positiveButton={{ label: "Select" }}
-              testID={`payment-reference-date-picker-${referenceDateMode}`}
-              value={dateFromInput(
-                paymentReferences[referenceDateMode]?.referenceDate || today(),
-              )}
-            />
-          ) : null}
-        </View>
-      ) : null}
-
-      {validationError || checkout.error ? (
-        <Text style={styles.errorText}>
-          {validationError || checkout.error}
-        </Text>
-      ) : null}
-      <Pressable
-        accessibilityLabel={isInvoice ? "Complete sale" : "Submit sales order"}
-        accessibilityState={{ disabled: !isReadyToSubmit }}
-        disabled={!isReadyToSubmit}
-        onPress={requestSubmit}
-        style={[
-          styles.submitButton,
-          !isReadyToSubmit && styles.submitButtonDisabled,
-        ]}
-      >
-        <Text style={styles.submitButtonLabel}>
-          {checkout.isSubmitting
-            ? "Submitting…"
-            : isInvoice
-              ? `Complete sale · ${formatCurrency(total, currency, precision)}`
-              : "Submit sales order"}
-        </Text>
-      </Pressable>
-
-      <Modal
-        animationType="slide"
-        onRequestClose={() => {
-          if (!gatewayPayment.isWorking) setActiveGatewayMode(null);
-        }}
-        presentationStyle="pageSheet"
-        visible={Boolean(activeGatewayMode)}
-      >
-        {activeGatewayMode ? (
-          <KeyboardAwareFormScroll
-            contentContainerStyle={styles.gatewayModalContent}
-            showsVerticalScrollIndicator={false}
-            style={styles.scrollView}
-          >
-            <View style={styles.header}>
-              <View style={styles.heading}>
-                <Text style={styles.title}>
-                  {activeGatewayMode.mode_of_payment}
-                </Text>
-                <Text style={styles.subtitle}>
-                  Verify{" "}
-                  {formatCurrency(
-                    (parsePaymentAmount(
-                      paymentAmounts[activeGatewayMode.mode_of_payment] || "",
-                      precision,
-                    ) || 0) / currencyScale(precision),
+              {(preview.data.taxes ?? []).map((tax, index) => (
+                <SummaryRow
+                  key={`${tax.account_head || tax.description || "tax"}-${index}`}
+                  label={taxLabel(
+                    tax.description,
+                    tax.account_head,
+                    tax.rate,
+                    tax.included_in_print_rate,
+                  )}
+                  value={formatCurrency(
+                    tax.tax_amount ?? 0,
                     currency,
                     precision,
-                  )}{" "}
-                  through {activeGatewayMode.payment_gateway}.
+                  )}
+                />
+              ))}
+              <SummaryRow
+                label="Total taxes and charges"
+                value={formatCurrency(taxTotal, currency, precision)}
+              />
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Grand total</Text>
+                <Text style={styles.totalValue}>
+                  {formatCurrency(grandTotal, currency, precision)}
                 </Text>
               </View>
-              <Pressable
-                accessibilityLabel="Close gateway payment"
-                disabled={gatewayPayment.isWorking}
-                onPress={() => setActiveGatewayMode(null)}
-                style={styles.backButton}
-              >
-                <MaterialCommunityIcons
-                  color={palette.onSurface}
-                  name="close"
-                  size={22}
+              {roundedTotal !== undefined && roundedTotal !== grandTotal ? (
+                <SummaryRow
+                  label="Rounded total"
+                  value={formatCurrency(roundedTotal, currency, precision)}
                 />
-              </Pressable>
-            </View>
-            <View style={styles.gatewayMethodButtons}>
-              <Pressable
-                accessibilityLabel="Use STK Push"
-                onPress={() => {
-                  gatewayPayment.clearError();
-                  setGatewayMethod("STK");
-                }}
-                style={[
-                  styles.gatewayMethodButton,
-                  gatewayMethod === "STK" && styles.gatewayMethodButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.gatewayMethodLabel,
-                    gatewayMethod === "STK" && styles.gatewayMethodLabelActive,
-                  ]}
-                >
-                  STK Push
-                </Text>
-              </Pressable>
-              <Pressable
-                accessibilityLabel="Find C2B payment"
-                onPress={() => {
-                  gatewayPayment.clearError();
-                  setGatewayMethod("C2B");
-                }}
-                style={[
-                  styles.gatewayMethodButton,
-                  gatewayMethod === "C2B" && styles.gatewayMethodButtonActive,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.gatewayMethodLabel,
-                    gatewayMethod === "C2B" && styles.gatewayMethodLabelActive,
-                  ]}
-                >
-                  Find C2B payment
-                </Text>
-              </Pressable>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {gatewayMethod === "STK" ? "STK Push" : "Incoming C2B payment"}
-              </Text>
-              <Text style={styles.cardHint}>
-                {gatewayMethod === "STK"
-                  ? "Send a payment prompt to the customer, then wait for gateway confirmation."
-                  : "Find a verified incoming payment and attach the exact amount to this sale."}
-              </Text>
-              {gatewayMethod === "STK" ? (
+              ) : null}
+              {loyaltyAmount ? (
                 <>
-                  <Text style={styles.fieldLabel}>Customer phone number</Text>
-                  <TextInput
-                    accessibilityLabel="Gateway customer phone number"
-                    inputMode="tel"
-                    keyboardType="phone-pad"
-                    onChangeText={setGatewayPhone}
-                    placeholder="Phone number"
-                    placeholderTextColor={palette.onSurfaceMuted}
-                    style={styles.input}
-                    value={gatewayPhone}
+                  <SummaryRow
+                    label="Loyalty redemption"
+                    value={`−${formatCurrency(loyaltyAmount, currency, precision)}`}
+                  />
+                  <SummaryRow
+                    label="Amount payable"
+                    value={formatCurrency(total, currency, precision)}
                   />
                 </>
-              ) : (
-                <>
-                  <Text style={styles.fieldLabel}>
-                    Transaction reference or payer
-                  </Text>
-                  <View style={styles.c2bSearchRow}>
-                    <TextInput
-                      accessibilityLabel="Search C2B payments"
-                      autoCapitalize="characters"
-                      onChangeText={(query) => {
-                        setC2bQuery(query);
-                        setHasC2bSearched(false);
-                      }}
-                      placeholder="Search incoming payment"
-                      placeholderTextColor={palette.onSurfaceMuted}
-                      style={[styles.input, styles.c2bSearchInput]}
-                      value={c2bQuery}
-                    />
-                    <Pressable
-                      accessibilityLabel="Search incoming C2B payments"
-                      disabled={isC2bSearching || c2bQuery.trim().length < 3}
-                      onPress={() => void searchC2BGatewayPayments()}
-                      style={[
-                        styles.secondaryButton,
-                        (isC2bSearching || c2bQuery.trim().length < 3) &&
-                          styles.secondaryButtonDisabled,
-                      ]}
-                    >
-                      {isC2bSearching ? (
-                        <ActivityIndicator
-                          color={palette.onSurface}
-                          size="small"
-                        />
-                      ) : (
-                        <Text style={styles.secondaryButtonLabel}>Search</Text>
-                      )}
-                    </Pressable>
-                  </View>
-                  {c2bResults.length ? (
-                    <View style={styles.c2bResults}>
-                      {c2bResults.map((payment) => {
-                        const amountMatches =
-                          totalToMinorUnits(payment.amount, precision) ===
-                          (parsePaymentAmount(
-                            paymentAmounts[activeGatewayMode.mode_of_payment] ||
-                              "",
-                            precision,
-                          ) || 0);
-                        return (
-                          <Pressable
-                            accessibilityLabel={`Attach C2B payment ${payment.transaction_id}`}
-                            disabled={
-                              !amountMatches || gatewayPayment.isWorking
-                            }
-                            key={payment.name}
-                            onPress={() =>
-                              void attachC2BGatewayPayment(payment)
-                            }
-                            style={[
-                              styles.c2bPayment,
-                              !amountMatches && styles.c2bPaymentDisabled,
-                            ]}
-                          >
-                            <View style={styles.gatewayModeText}>
-                              <Text style={styles.paymentModeLabel}>
-                                {payment.party_name ||
-                                  payment.party_phone ||
-                                  "Incoming payment"}
-                              </Text>
-                              <Text style={styles.cardHint}>
-                                {payment.transaction_id}
-                              </Text>
-                            </View>
-                            <View style={styles.c2bAmount}>
-                              <Text style={styles.paymentModeLabel}>
-                                {formatCurrency(
-                                  payment.amount,
-                                  payment.currency || currency,
-                                  precision,
-                                )}
-                              </Text>
-                              {!amountMatches ? (
-                                <Text style={styles.errorText}>
-                                  Amount does not match
-                                </Text>
-                              ) : null}
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  ) : null}
-                  {hasC2bSearched && !isC2bSearching && !c2bResults.length ? (
-                    <Text style={styles.cardHint}>
-                      No verified incoming payments found.
-                    </Text>
-                  ) : null}
-                </>
-              )}
-              {gatewayPayment.error ? (
-                <Text style={styles.errorText}>{gatewayPayment.error}</Text>
               ) : null}
-              {gatewayMethod === "STK" &&
-              gatewayLinks[activeGatewayMode.mode_of_payment] ? (
-                <Text
-                  style={
-                    isSuccessfulGatewayPayment(
-                      gatewayLinks[activeGatewayMode.mode_of_payment],
-                    )
-                      ? styles.gatewayVerifiedText
-                      : styles.cardHint
-                  }
-                >
-                  {isSuccessfulGatewayPayment(
-                    gatewayLinks[activeGatewayMode.mode_of_payment],
-                  )
-                    ? `Payment verified${gatewayLinks[activeGatewayMode.mode_of_payment]?.status === "Authorized" ? " (authorized)" : ""}.`
-                    : `Payment status: ${gatewayLinks[activeGatewayMode.mode_of_payment]?.status}. Checking automatically…`}
+              <View style={styles.summaryDivider} />
+              <SummaryRow
+                label="Paid amount"
+                value={formatCurrency(paidAmount, currency, precision)}
+              />
+              <SummaryRow
+                label={checkoutBalanceLabel}
+                value={formatCurrency(
+                  checkoutBalanceAmount,
+                  currency,
+                  precision,
+                )}
+              />
+            </>
+          ) : (
+            <Text style={styles.cardHint}>
+              Frappe will calculate final tax and totals when this Sales Order
+              is submitted.
+            </Text>
+          )}
+        </View>
+
+        {activeWorkflow ? (
+          <View style={styles.workflowCard}>
+            <MaterialCommunityIcons
+              color={palette.primary}
+              name="source-branch"
+              size={20}
+            />
+            <View style={styles.workflowText}>
+              <Text style={styles.workflowTitle}>
+                Workflow: {activeWorkflow.name}
+              </Text>
+              {initialWorkflowAction ? (
+                <Text style={styles.workflowHint}>
+                  Next action: {initialWorkflowAction}
                 </Text>
               ) : null}
-              {gatewayMethod === "STK" ? (
+            </View>
+          </View>
+        ) : null}
+
+        {!isInvoice ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Sales Order</Text>
+            <Text style={styles.cardHint}>
+              Choose when this order should be delivered.
+            </Text>
+            <Text style={styles.fieldLabel}>Delivery date</Text>
+            <Pressable
+              accessibilityLabel="Choose Sales Order delivery date"
+              onPress={() => setIsDeliveryDatePickerVisible(true)}
+              style={styles.datePickerButton}
+            >
+              <MaterialCommunityIcons
+                color={palette.onSurfaceMuted}
+                name="calendar-month-outline"
+                size={20}
+              />
+              <Text style={styles.datePickerButtonLabel}>
+                {formatDate(deliveryDate)}
+              </Text>
+            </Pressable>
+            {isDeliveryDatePickerVisible ? (
+              <DateTimePicker
+                minimumDate={dateFromInput(today())}
+                mode="date"
+                negativeButton={{ label: "Cancel" }}
+                onDismiss={() => setIsDeliveryDatePickerVisible(false)}
+                onValueChange={(_event, selectedDate) => {
+                  setDeliveryDate(dateInputValue(selectedDate));
+                  setIsDeliveryDatePickerVisible(false);
+                }}
+                positiveButton={{ label: "Select" }}
+                testID="sales-order-delivery-date-picker"
+                value={dateFromInput(deliveryDate)}
+              />
+            ) : null}
+            {!allowsSalesOrderAdvancePayments ? (
+              <Text style={styles.cardHint}>
+                This POS profile does not allow an advance payment for Sales
+                Orders.
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {isInvoice && (
+          <>
+            {canUseCredit ? (
+              <View style={styles.card}>
+                <View style={styles.creditSaleRow}>
+                  <View style={styles.creditSaleText}>
+                    <Text style={styles.cardTitle}>Credit sale</Text>
+                    <Text style={styles.cardHint}>
+                      Record an outstanding balance with a payment due date.
+                    </Text>
+                  </View>
+                  <Switch
+                    accessibilityLabel="Enable credit sale"
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isCreditSale }}
+                    onValueChange={setSaleType}
+                    thumbColor={palette.onSurface}
+                    trackColor={{
+                      false: palette.border,
+                      true: palette.success,
+                    }}
+                    value={isCreditSale}
+                  />
+                </View>
+                {isCreditSale ? (
+                  <>
+                    <Text style={styles.fieldLabel}>Payment due date</Text>
+                    <Pressable
+                      accessibilityLabel="Choose credit sale due date"
+                      onPress={() => setIsDueDatePickerVisible(true)}
+                      style={styles.datePickerButton}
+                    >
+                      <MaterialCommunityIcons
+                        color={palette.onSurfaceMuted}
+                        name="calendar-month-outline"
+                        size={20}
+                      />
+                      <Text style={styles.datePickerButtonLabel}>
+                        {formatDate(dueDate)}
+                      </Text>
+                    </Pressable>
+                    {isDueDatePickerVisible ? (
+                      <DateTimePicker
+                        minimumDate={dateFromInput(postingDate)}
+                        mode="date"
+                        negativeButton={{ label: "Cancel" }}
+                        onDismiss={() => setIsDueDatePickerVisible(false)}
+                        onValueChange={(_event, selectedDate) => {
+                          setDueDate(dateInputValue(selectedDate));
+                          setIsDueDatePickerVisible(false);
+                        }}
+                        positiveButton={{ label: "Select" }}
+                        value={dateFromInput(dueDate)}
+                      />
+                    ) : null}
+                  </>
+                ) : null}
+              </View>
+            ) : null}
+          </>
+        )}
+
+        {isInvoice && customerLoyalty.data?.enrolled ? (
+          <View style={styles.card}>
+            <View style={styles.loyaltyHeading}>
+              <MaterialCommunityIcons
+                color={palette.primary}
+                name="star-circle-outline"
+                size={22}
+              />
+              <View style={styles.heading}>
+                <Text style={styles.cardTitle}>Loyalty redemption</Text>
+                <Text style={styles.cardHint}>
+                  {availableLoyaltyPoints.toLocaleString()} points available ·{" "}
+                  {formatCurrency(
+                    customerLoyalty.data.redemption_value ?? 0,
+                    customerLoyalty.data.currency || currency,
+                    precision,
+                  )}
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.fieldLabel}>Points to redeem</Text>
+            <View style={styles.loyaltyInputRow}>
+              <TextInput
+                accessibilityLabel="Loyalty points to redeem"
+                editable={!isOffline}
+                inputMode="numeric"
+                keyboardType="number-pad"
+                onChangeText={setLoyaltyInput}
+                placeholder="Enter points"
+                placeholderTextColor={palette.onSurfaceMuted}
+                style={[styles.input, styles.loyaltyInput]}
+                value={loyaltyInput}
+              />
+              <Pressable
+                accessibilityLabel="Redeem maximum loyalty points"
+                disabled={
+                  isOffline || !maximumLoyaltyPoints || isApplyingLoyalty
+                }
+                onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
+                style={[
+                  styles.secondaryButton,
+                  (isOffline || !maximumLoyaltyPoints || isApplyingLoyalty) &&
+                    styles.secondaryButtonDisabled,
+                ]}
+              >
+                <Text style={styles.secondaryButtonLabel}>Maximum</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Apply loyalty points"
+                disabled={
+                  Boolean(loyaltyInputError) ||
+                  !loyaltyInputPoints ||
+                  isApplyingLoyalty ||
+                  isOffline
+                }
+                onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
+                style={[
+                  styles.secondaryButton,
+                  (Boolean(loyaltyInputError) ||
+                    !loyaltyInputPoints ||
+                    isApplyingLoyalty ||
+                    isOffline) &&
+                    styles.secondaryButtonDisabled,
+                ]}
+              >
+                {isApplyingLoyalty ? (
+                  <ActivityIndicator color={palette.onSurface} size="small" />
+                ) : (
+                  <Text style={styles.secondaryButtonLabel}>Apply</Text>
+                )}
+              </Pressable>
+            </View>
+            {loyaltyInputError ? (
+              <Text style={styles.errorText}>
+                Enter between 1 and {maximumLoyaltyPoints.toLocaleString()}{" "}
+                points.
+              </Text>
+            ) : null}
+            {loyaltyError ? (
+              <Text style={styles.errorText}>{loyaltyError}</Text>
+            ) : null}
+            {!isLoyaltySelectionValid ? (
+              <Text style={styles.errorText}>
+                The available balance changed. Apply a valid number of points
+                again.
+              </Text>
+            ) : null}
+            {appliedLoyaltyPoints ? (
+              <View style={styles.loyaltyAppliedRow}>
+                <Text style={styles.cardHint}>
+                  Applied: {appliedLoyaltyPoints.toLocaleString()} points ·{" "}
+                  {formatCurrency(loyaltyAmount, currency, precision)}
+                </Text>
                 <Pressable
-                  accessibilityLabel="Send STK payment request"
-                  disabled={
-                    gatewayPayment.isWorking ||
-                    !gatewayPhone.trim() ||
-                    isSuccessfulGatewayPayment(
-                      gatewayLinks[activeGatewayMode.mode_of_payment],
-                    )
+                  accessibilityLabel="Remove loyalty redemption"
+                  disabled={isOffline || isApplyingLoyalty}
+                  onPress={() => void applyLoyaltyPoints(0)}
+                >
+                  <Text style={styles.loyaltyRemoveLabel}>Remove</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {isInvoice && isWalkinCustomer ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Receipt Tax ID</Text>
+            <Text style={styles.cardHint}>
+              Optionally add the walk-in customer’s PIN or Tax ID to this
+              receipt.
+            </Text>
+            <Text style={styles.fieldLabel}>Customer Tax ID</Text>
+            <TextInput
+              accessibilityLabel="Customer Tax ID"
+              autoCapitalize="characters"
+              maxLength={140}
+              onChangeText={setCheckoutTaxId}
+              placeholder={
+                saleCustomer?.taxId || "PIN / Tax ID for this receipt"
+              }
+              placeholderTextColor={palette.onSurfaceMuted}
+              style={styles.input}
+              value={checkoutTaxId}
+            />
+          </View>
+        ) : null}
+
+        {deliveryChargeEnabled ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Delivery charge</Text>
+            <Text style={styles.cardHint}>
+              Optionally add the configured delivery item to this sale. Frappe
+              will recalculate the total before payment.
+            </Text>
+            <View style={styles.deliveryChargeRow}>
+              <View style={styles.paymentAmountWrap}>
+                <Text style={styles.currencyPrefix}>{currency}</Text>
+                <TextInput
+                  accessibilityLabel="Delivery charge amount"
+                  editable={
+                    deliveryChargeCanChange && !isApplyingDeliveryCharge
                   }
-                  onPress={() => void initiateGatewayPayment()}
+                  inputMode="decimal"
+                  keyboardType="decimal-pad"
+                  onChangeText={setDeliveryChargeAmount}
+                  placeholder="Optional"
+                  placeholderTextColor={palette.onSurfaceMuted}
+                  style={styles.paymentAmountInput}
+                  value={displayedDeliveryChargeAmount}
+                />
+              </View>
+              <Pressable
+                accessibilityLabel="Apply delivery charge"
+                disabled={!deliveryChargeCanChange || isApplyingDeliveryCharge}
+                onPress={() => void applyDeliveryCharge()}
+                style={[
+                  styles.secondaryButton,
+                  (!deliveryChargeCanChange || isApplyingDeliveryCharge) &&
+                    styles.secondaryButtonDisabled,
+                ]}
+              >
+                {isApplyingDeliveryCharge ? (
+                  <ActivityIndicator color={palette.onSurface} size="small" />
+                ) : (
+                  <Text style={styles.secondaryButtonLabel}>Apply</Text>
+                )}
+              </Pressable>
+            </View>
+            {!deliveryChargeCanChange ? (
+              <Text style={styles.cardHint}>
+                This POS profile does not allow changing the delivery charge.
+              </Text>
+            ) : null}
+            {deliveryChargeError ? (
+              <Text style={styles.errorText}>{deliveryChargeError}</Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {customerShippingAddresses.isLoading ||
+        customerShippingAddresses.data?.length ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Shipping address</Text>
+            <Pressable
+              accessibilityLabel="Choose shipping address"
+              disabled={isOffline || customerShippingAddresses.isLoading}
+              onPress={() => setIsShippingAddressPickerVisible(true)}
+              style={[
+                styles.shippingAddressSelector,
+                (isOffline || customerShippingAddresses.isLoading) &&
+                  styles.secondaryButtonDisabled,
+              ]}
+            >
+              <View style={styles.shippingAddressText}>
+                <Text style={styles.shippingAddressTitle}>
+                  {customerShippingAddresses.isLoading
+                    ? "Loading shipping addresses…"
+                    : shippingAddressText(selectedShippingAddress) ||
+                      "Select shipping address"}
+                </Text>
+                {selectedShippingAddress?.address_title ? (
+                  <Text style={styles.cardHint}>
+                    {selectedShippingAddress.address_title}
+                  </Text>
+                ) : null}
+              </View>
+              <MaterialCommunityIcons
+                color={palette.onSurfaceMuted}
+                name="chevron-right"
+                size={22}
+              />
+            </Pressable>
+          </View>
+        ) : null}
+
+        <PosCheckoutFieldsCard
+          disabled={checkout.isSubmitting}
+          fields={profile?.checkout_fields}
+          onChange={(fieldname, value) =>
+            setCheckoutFieldValues((current) => ({
+              ...current,
+              [fieldname]: value,
+            }))
+          }
+          transactionDoctype={transactionDoctype}
+          values={checkoutFieldValues}
+        />
+
+        {isInvoice || allowsSalesOrderAdvancePayments ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              {isInvoice ? "Payment methods" : "Sales Order advance payment"}
+            </Text>
+            <View style={styles.paymentSummaryRow}>
+              <PaymentSummary
+                label="Allocated"
+                value={formatCurrency(
+                  allocation.allocatedMinor / currencyScale(precision),
+                  currency,
+                  precision,
+                )}
+              />
+              <PaymentSummary
+                label={isInvoice ? paymentBalanceLabel : "Order balance"}
+                value={formatCurrency(
+                  Math.abs(allocation.remainingMinor) /
+                    currencyScale(precision),
+                  currency,
+                  precision,
+                )}
+              />
+              <PaymentSummary label="Status" value={paymentStatus} />
+            </View>
+            <Text style={styles.cardHint}>
+              {isInvoice
+                ? isCreditSale
+                  ? "Optionally record a deposit. The remaining balance will be recorded as credit."
+                  : "Tap a payment mode to allocate the full balance, or enter amounts to split the payment."
+                : "Optionally collect an advance. It cannot exceed the Sales Order total and will be recorded against this order."}
+            </Text>
+            {manualModes.length ? (
+              <View style={styles.paymentModes}>
+                {manualModes.map((mode) => {
+                  const amount = paymentAmounts[mode.mode_of_payment] ?? "";
+                  const amountMinor = parsePaymentAmount(amount, precision);
+                  const needsReference = Boolean(
+                    mode.requires_reference && amountMinor && amountMinor > 0,
+                  );
+                  const reference = paymentReferences[mode.mode_of_payment];
+                  const isAll =
+                    amount === minorUnitsToInput(totalMinor, precision) &&
+                    manualModes.every(
+                      (other) =>
+                        other.mode_of_payment === mode.mode_of_payment ||
+                        !paymentAmounts[other.mode_of_payment],
+                    );
+                  return (
+                    <View key={mode.mode_of_payment} style={styles.paymentMode}>
+                      <View style={styles.paymentModeRow}>
+                        <Pressable
+                          accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`}
+                          onPress={() =>
+                            selectPaymentMode(mode.mode_of_payment)
+                          }
+                          style={[
+                            styles.paymentModeButton,
+                            isAll && styles.paymentModeButtonActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.paymentModeLabel,
+                              isAll && styles.paymentModeLabelActive,
+                            ]}
+                          >
+                            {mode.mode_of_payment}
+                            {mode.default ? " · Default" : ""}
+                          </Text>
+                        </Pressable>
+                        <View style={styles.paymentAmountWrap}>
+                          <Text style={styles.currencyPrefix}>{currency}</Text>
+                          <TextInput
+                            accessibilityLabel={`${mode.mode_of_payment} amount`}
+                            inputMode="decimal"
+                            keyboardType="decimal-pad"
+                            onChangeText={(amountInput) =>
+                              setPaymentAmount(
+                                mode.mode_of_payment,
+                                amountInput,
+                              )
+                            }
+                            placeholder={minorUnitsToInput(0, precision)}
+                            placeholderTextColor={palette.onSurfaceMuted}
+                            style={styles.paymentAmountInput}
+                            value={amount}
+                          />
+                        </View>
+                      </View>
+                      {needsReference ? (
+                        <View style={styles.paymentReference}>
+                          <Text style={styles.fieldLabel}>
+                            Transaction reference
+                          </Text>
+                          <TextInput
+                            accessibilityLabel={`${mode.mode_of_payment} transaction reference`}
+                            autoCapitalize="characters"
+                            onChangeText={(referenceNo) =>
+                              setPaymentReferenceNo(
+                                mode.mode_of_payment,
+                                referenceNo,
+                              )
+                            }
+                            placeholder="Receipt or transaction number"
+                            placeholderTextColor={palette.onSurfaceMuted}
+                            style={styles.input}
+                            value={reference?.referenceNo ?? ""}
+                          />
+                          <Text style={styles.fieldLabel}>
+                            Transaction date
+                          </Text>
+                          <Pressable
+                            accessibilityLabel={`Choose ${mode.mode_of_payment} transaction date`}
+                            onPress={() =>
+                              setReferenceDateMode(mode.mode_of_payment)
+                            }
+                            style={styles.datePickerButton}
+                          >
+                            <MaterialCommunityIcons
+                              color={palette.onSurfaceMuted}
+                              name="calendar-month-outline"
+                              size={20}
+                            />
+                            <Text style={styles.datePickerButtonLabel}>
+                              {formatDate(reference?.referenceDate || today())}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={isInvoice ? styles.errorText : styles.cardHint}>
+                {isInvoice
+                  ? "No manual payment mode is configured for this POS profile."
+                  : "No manual payment mode is configured, so this Sales Order will be submitted without an advance."}
+              </Text>
+            )}
+            {gatewayModes.length ? (
+              <View style={styles.gatewayModes}>
+                <Text style={styles.fieldLabel}>Gateway payments</Text>
+                {gatewayModes.map((mode) => {
+                  const link = gatewayLinks[mode.mode_of_payment];
+                  const isVerified = isSuccessfulGatewayPayment(link);
+                  return (
+                    <Pressable
+                      key={mode.mode_of_payment}
+                      accessibilityLabel={`Pay with ${mode.mode_of_payment}`}
+                      onPress={() => openGatewayPayment(mode)}
+                      style={[
+                        styles.gatewayModeButton,
+                        isVerified && styles.gatewayModeButtonVerified,
+                      ]}
+                    >
+                      <View style={styles.gatewayModeText}>
+                        <Text style={styles.paymentModeLabel}>
+                          {mode.mode_of_payment}
+                        </Text>
+                        <Text style={styles.cardHint}>
+                          {isVerified
+                            ? `Verified · ${formatCurrency(link?.amount ?? 0, currency, precision)}`
+                            : link
+                              ? `Awaiting confirmation · ${link.status}`
+                              : "Tap to start a secure payment"}
+                        </Text>
+                      </View>
+                      <MaterialCommunityIcons
+                        color={
+                          isVerified ? palette.success : palette.onSurfaceMuted
+                        }
+                        name={
+                          isVerified ? "check-circle" : "cellphone-wireless"
+                        }
+                        size={22}
+                      />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+            {isInvoice && profile?.allow_partial_payment ? (
+              <Text style={styles.cardHint}>
+                Partial payments are enabled for this POS profile.
+              </Text>
+            ) : null}
+            {hasMissingPaymentReference ? (
+              <Text style={styles.errorText}>
+                A transaction reference is required for {missingReferenceMode}.
+              </Text>
+            ) : null}
+            {hasUnverifiedGatewayPayment ? (
+              <Text style={styles.errorText}>
+                Verify the selected gateway payment to continue. Checkout
+                unlocks after confirmation.
+              </Text>
+            ) : null}
+            {isInvoice && hasNonCashOverpayment ? (
+              <Text style={styles.errorText}>
+                Only cash can exceed the total and return change.
+              </Text>
+            ) : null}
+            {hasSalesOrderAdvanceOverpayment ? (
+              <Text style={styles.errorText}>
+                An advance cannot exceed the Sales Order total.
+              </Text>
+            ) : null}
+            {referenceDateMode ? (
+              <DateTimePicker
+                maximumDate={dateFromInput(today())}
+                mode="date"
+                negativeButton={{ label: "Cancel" }}
+                onDismiss={() => setReferenceDateMode(null)}
+                onValueChange={(_event, selectedDate) => {
+                  setPaymentReferenceDate(
+                    referenceDateMode,
+                    dateInputValue(selectedDate),
+                  );
+                  setReferenceDateMode(null);
+                }}
+                positiveButton={{ label: "Select" }}
+                testID={`payment-reference-date-picker-${referenceDateMode}`}
+                value={dateFromInput(
+                  paymentReferences[referenceDateMode]?.referenceDate ||
+                    today(),
+                )}
+              />
+            ) : null}
+          </View>
+        ) : null}
+
+        {validationError || checkout.error ? (
+          <Text style={styles.errorText}>
+            {validationError || checkout.error}
+          </Text>
+        ) : null}
+        <Pressable
+          accessibilityLabel={
+            isInvoice ? "Complete sale" : "Submit sales order"
+          }
+          accessibilityState={{ disabled: !isReadyToSubmit }}
+          disabled={!isReadyToSubmit}
+          onPress={requestSubmit}
+          style={[
+            styles.submitButton,
+            !isReadyToSubmit && styles.submitButtonDisabled,
+          ]}
+        >
+          <Text style={styles.submitButtonLabel}>
+            {checkout.isSubmitting
+              ? "Submitting…"
+              : isInvoice
+                ? `Complete sale · ${formatCurrency(total, currency, precision)}`
+                : "Submit sales order"}
+          </Text>
+        </Pressable>
+
+        <Modal
+          animationType="slide"
+          onRequestClose={() => {
+            if (!gatewayPayment.isWorking) setActiveGatewayMode(null);
+          }}
+          presentationStyle="pageSheet"
+          visible={Boolean(activeGatewayMode)}
+        >
+          {activeGatewayMode ? (
+            <KeyboardAwareFormScroll
+              contentContainerStyle={styles.gatewayModalContent}
+              showsVerticalScrollIndicator={false}
+              style={styles.scrollView}
+            >
+              <View style={styles.header}>
+                <View style={styles.heading}>
+                  <Text style={styles.title}>
+                    {activeGatewayMode.mode_of_payment}
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    Verify{" "}
+                    {formatCurrency(
+                      (parsePaymentAmount(
+                        paymentAmounts[activeGatewayMode.mode_of_payment] || "",
+                        precision,
+                      ) || 0) / currencyScale(precision),
+                      currency,
+                      precision,
+                    )}{" "}
+                    through {activeGatewayMode.payment_gateway}.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityLabel="Close gateway payment"
+                  disabled={gatewayPayment.isWorking}
+                  onPress={() => setActiveGatewayMode(null)}
+                  style={styles.backButton}
+                >
+                  <MaterialCommunityIcons
+                    color={palette.onSurface}
+                    name="close"
+                    size={22}
+                  />
+                </Pressable>
+              </View>
+              <View style={styles.gatewayMethodButtons}>
+                <Pressable
+                  accessibilityLabel="Use STK Push"
+                  onPress={() => {
+                    gatewayPayment.clearError();
+                    setGatewayMethod("STK");
+                  }}
                   style={[
-                    styles.submitButton,
-                    (gatewayPayment.isWorking ||
-                      !gatewayPhone.trim() ||
-                      isSuccessfulGatewayPayment(
-                        gatewayLinks[activeGatewayMode.mode_of_payment],
-                      )) &&
-                      styles.submitButtonDisabled,
+                    styles.gatewayMethodButton,
+                    gatewayMethod === "STK" && styles.gatewayMethodButtonActive,
                   ]}
                 >
-                  {gatewayPayment.isWorking ? (
-                    <ActivityIndicator
-                      color={palette.onPrimary}
-                      size="small"
-                    />
-                  ) : (
-                    <Text style={styles.submitButtonLabel}>
-                      {gatewayLinks[activeGatewayMode.mode_of_payment]
-                        ? "Retry STK request"
-                        : "Send STK request"}
-                    </Text>
-                  )}
-                </Pressable>
-              ) : null}
-              {gatewayMethod === "STK" &&
-              gatewayLinks[activeGatewayMode.mode_of_payment] ? (
-                <View style={styles.gatewayActions}>
-                  <Pressable
-                    accessibilityLabel="Check gateway payment status"
-                    disabled={gatewayPayment.isWorking}
-                    onPress={() => void refreshGatewayPayment()}
-                    style={styles.secondaryButton}
+                  <Text
+                    style={[
+                      styles.gatewayMethodLabel,
+                      gatewayMethod === "STK" &&
+                        styles.gatewayMethodLabelActive,
+                    ]}
                   >
-                    <Text style={styles.secondaryButtonLabel}>
-                      Check status
+                    STK Push
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel="Find C2B payment"
+                  onPress={() => {
+                    gatewayPayment.clearError();
+                    setGatewayMethod("C2B");
+                  }}
+                  style={[
+                    styles.gatewayMethodButton,
+                    gatewayMethod === "C2B" && styles.gatewayMethodButtonActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.gatewayMethodLabel,
+                      gatewayMethod === "C2B" &&
+                        styles.gatewayMethodLabelActive,
+                    ]}
+                  >
+                    Find C2B payment
+                  </Text>
+                </Pressable>
+              </View>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>
+                  {gatewayMethod === "STK"
+                    ? "STK Push"
+                    : "Incoming C2B payment"}
+                </Text>
+                <Text style={styles.cardHint}>
+                  {gatewayMethod === "STK"
+                    ? "Send a payment prompt to the customer, then wait for gateway confirmation."
+                    : "Find a verified incoming payment and attach the exact amount to this sale."}
+                </Text>
+                {gatewayMethod === "STK" ? (
+                  <>
+                    <Text style={styles.fieldLabel}>Customer phone number</Text>
+                    <TextInput
+                      accessibilityLabel="Gateway customer phone number"
+                      inputMode="tel"
+                      keyboardType="phone-pad"
+                      onChangeText={setGatewayPhone}
+                      placeholder="Phone number"
+                      placeholderTextColor={palette.onSurfaceMuted}
+                      style={styles.input}
+                      value={gatewayPhone}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.fieldLabel}>
+                      Transaction reference or payer
                     </Text>
-                  </Pressable>
+                    <View style={styles.c2bSearchRow}>
+                      <TextInput
+                        accessibilityLabel="Search C2B payments"
+                        autoCapitalize="characters"
+                        onChangeText={(query) => {
+                          setC2bQuery(query);
+                          setHasC2bSearched(false);
+                        }}
+                        placeholder="Search incoming payment"
+                        placeholderTextColor={palette.onSurfaceMuted}
+                        style={[styles.input, styles.c2bSearchInput]}
+                        value={c2bQuery}
+                      />
+                      <Pressable
+                        accessibilityLabel="Search incoming C2B payments"
+                        disabled={isC2bSearching || c2bQuery.trim().length < 3}
+                        onPress={() => void searchC2BGatewayPayments()}
+                        style={[
+                          styles.secondaryButton,
+                          (isC2bSearching || c2bQuery.trim().length < 3) &&
+                            styles.secondaryButtonDisabled,
+                        ]}
+                      >
+                        {isC2bSearching ? (
+                          <ActivityIndicator
+                            color={palette.onSurface}
+                            size="small"
+                          />
+                        ) : (
+                          <Text style={styles.secondaryButtonLabel}>
+                            Search
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                    {c2bResults.length ? (
+                      <View style={styles.c2bResults}>
+                        {c2bResults.map((payment) => {
+                          const amountMatches =
+                            totalToMinorUnits(payment.amount, precision) ===
+                            (parsePaymentAmount(
+                              paymentAmounts[
+                                activeGatewayMode.mode_of_payment
+                              ] || "",
+                              precision,
+                            ) || 0);
+                          return (
+                            <Pressable
+                              accessibilityLabel={`Attach C2B payment ${payment.transaction_id}`}
+                              disabled={
+                                !amountMatches || gatewayPayment.isWorking
+                              }
+                              key={payment.name}
+                              onPress={() =>
+                                void attachC2BGatewayPayment(payment)
+                              }
+                              style={[
+                                styles.c2bPayment,
+                                !amountMatches && styles.c2bPaymentDisabled,
+                              ]}
+                            >
+                              <View style={styles.gatewayModeText}>
+                                <Text style={styles.paymentModeLabel}>
+                                  {payment.party_name ||
+                                    payment.party_phone ||
+                                    "Incoming payment"}
+                                </Text>
+                                <Text style={styles.cardHint}>
+                                  {payment.transaction_id}
+                                </Text>
+                              </View>
+                              <View style={styles.c2bAmount}>
+                                <Text style={styles.paymentModeLabel}>
+                                  {formatCurrency(
+                                    payment.amount,
+                                    payment.currency || currency,
+                                    precision,
+                                  )}
+                                </Text>
+                                {!amountMatches ? (
+                                  <Text style={styles.errorText}>
+                                    Amount does not match
+                                  </Text>
+                                ) : null}
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+                    {hasC2bSearched && !isC2bSearching && !c2bResults.length ? (
+                      <Text style={styles.cardHint}>
+                        No verified incoming payments found.
+                      </Text>
+                    ) : null}
+                  </>
+                )}
+                {gatewayPayment.error ? (
+                  <Text style={styles.errorText}>{gatewayPayment.error}</Text>
+                ) : null}
+                {gatewayMethod === "STK" &&
+                gatewayLinks[activeGatewayMode.mode_of_payment] ? (
+                  <Text
+                    style={
+                      isSuccessfulGatewayPayment(
+                        gatewayLinks[activeGatewayMode.mode_of_payment],
+                      )
+                        ? styles.gatewayVerifiedText
+                        : styles.cardHint
+                    }
+                  >
+                    {isSuccessfulGatewayPayment(
+                      gatewayLinks[activeGatewayMode.mode_of_payment],
+                    )
+                      ? `Payment verified${gatewayLinks[activeGatewayMode.mode_of_payment]?.status === "Authorized" ? " (authorized)" : ""}.`
+                      : `Payment status: ${gatewayLinks[activeGatewayMode.mode_of_payment]?.status}. Checking automatically…`}
+                  </Text>
+                ) : null}
+                {gatewayMethod === "STK" ? (
                   <Pressable
-                    accessibilityLabel="Cancel gateway payment"
+                    accessibilityLabel="Send STK payment request"
                     disabled={
                       gatewayPayment.isWorking ||
+                      !gatewayPhone.trim() ||
                       isSuccessfulGatewayPayment(
                         gatewayLinks[activeGatewayMode.mode_of_payment],
                       )
                     }
-                    onPress={() => void cancelGatewayPayment()}
-                    style={styles.secondaryButton}
-                  >
-                    <Text style={styles.secondaryButtonLabel}>
-                      Cancel payment
-                    </Text>
-                  </Pressable>
-                </View>
-              ) : null}
-            </View>
-          </KeyboardAwareFormScroll>
-        ) : null}
-      </Modal>
-
-      <Modal
-        animationType="slide"
-        onRequestClose={() => setIsShippingAddressPickerVisible(false)}
-        presentationStyle="pageSheet"
-        visible={isShippingAddressPickerVisible}
-      >
-        <SafeAreaView
-          edges={["top", "bottom"]}
-          style={styles.shippingAddressModalPage}
-        >
-          <PosFixedPageHeader>
-            <View style={styles.header}>
-              <Pressable
-                accessibilityLabel="Back to checkout"
-                onPress={() => setIsShippingAddressPickerVisible(false)}
-                style={styles.backButton}
-              >
-                <MaterialCommunityIcons
-                  color={palette.onSurface}
-                  name="arrow-left"
-                  size={22}
-                />
-              </Pressable>
-              <View style={styles.heading}>
-                <Text style={styles.title}>Shipping address</Text>
-                <Text style={styles.subtitle}>
-                  Choose a permitted address for this {" "}
-                  {isInvoice ? "invoice" : "sales order"}.
-                </Text>
-              </View>
-            </View>
-          </PosFixedPageHeader>
-          <KeyboardAwareFormScroll
-            contentContainerStyle={styles.shippingAddressModalContent}
-            showsVerticalScrollIndicator={false}
-            style={styles.scrollView}
-          >
-            <View style={styles.shippingAddressOptions}>
-              {customerShippingAddresses.data?.map((address) => {
-                const selected = address.name === selectedShippingAddress?.name;
-                return (
-                  <Pressable
-                    accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
-                    disabled={isOffline}
-                    accessibilityState={{ selected }}
-                    key={address.name}
-                    onPress={() => {
-                      setShippingAddressName(address.name);
-                      setIsShippingAddressPickerVisible(false);
-                    }}
+                    onPress={() => void initiateGatewayPayment()}
                     style={[
-                      styles.shippingAddressOption,
-                      selected && styles.shippingAddressOptionSelected,
+                      styles.submitButton,
+                      (gatewayPayment.isWorking ||
+                        !gatewayPhone.trim() ||
+                        isSuccessfulGatewayPayment(
+                          gatewayLinks[activeGatewayMode.mode_of_payment],
+                        )) &&
+                        styles.submitButtonDisabled,
                     ]}
                   >
-                    <View style={styles.shippingAddressText}>
-                      <Text style={styles.shippingAddressTitle}>
-                        {shippingAddressText(address) ||
-                          address.address_title ||
-                          "Address details unavailable"}
-                      </Text>
-                      {address.address_title ? (
-                        <Text style={styles.cardHint}>
-                          {address.address_title}
-                        </Text>
-                      ) : null}
-                    </View>
-                    {selected ? (
-                      <MaterialCommunityIcons
-                        color={palette.primary}
-                        name="check-circle"
-                        size={22}
+                    {gatewayPayment.isWorking ? (
+                      <ActivityIndicator
+                        color={palette.onPrimary}
+                        size="small"
                       />
-                    ) : null}
+                    ) : (
+                      <Text style={styles.submitButtonLabel}>
+                        {gatewayLinks[activeGatewayMode.mode_of_payment]
+                          ? "Retry STK request"
+                          : "Send STK request"}
+                      </Text>
+                    )}
                   </Pressable>
-                );
-              })}
-            </View>
-          </KeyboardAwareFormScroll>
-        </SafeAreaView>
-      </Modal>
-
-      <Modal
-        animationType="fade"
-        onRequestClose={() => {
-          if (!checkout.isSubmitting)
-            setIsSubmitConfirmationVisible(false);
-        }}
-        presentationStyle="overFullScreen"
-        statusBarTranslucent
-        transparent
-        visible={isSubmitConfirmationVisible}
-      >
-        <View style={styles.confirmationModalRoot}>
-          <Pressable
-            accessibilityLabel="Dismiss sale confirmation"
-            disabled={checkout.isSubmitting}
-            onPress={() => setIsSubmitConfirmationVisible(false)}
-            style={styles.confirmationBackdrop}
-          />
-          <View accessibilityViewIsModal style={styles.confirmationDialog}>
-            {completedResult ? (
-              <>
-                <MaterialCommunityIcons
-                  color={
-                    completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? palette.primary
-                      : palette.success
-                  }
-                  name={
-                    completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? "clock-outline"
-                      : "check-circle-outline"
-                  }
-                  size={34}
-                />
-                <Text style={styles.confirmationTitle}>
-                  {completedResult.queue_status === "Queued" ||
-                  completedResult.queue_status === "Processing"
-                    ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is queued.`
-                    : `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} submitted.`}
-                </Text>
-                <Text style={styles.confirmationDescription}>
-                  {completedResult.queue_status === "Queued" ||
-                  completedResult.queue_status === "Processing"
-                    ? "The sale is waiting for server processing. A receipt will be available once it is submitted."
-                    : receipt.isWorking
-                      ? "Opening the native print preview…"
-                      : receipt.error
-                        ? "The sale is complete, but its receipt could not be prepared. You can retry from the invoice details screen."
-                        : "The receipt was sent to the native print preview."}
-                </Text>
-                <Pressable
-                  accessibilityLabel={`View submitted ${submissionLabel}`}
-                  onPress={() => onComplete(completedResult)}
-                  style={styles.confirmConfirmationButton}
-                >
-                  <Text style={styles.confirmConfirmationLabel}>
-                    View{" "}
-                    {submissionLabel === "sales invoice"
-                      ? "invoice"
-                      : "sales order"}
-                  </Text>
-                </Pressable>
-              </>
-            ) : checkout.isSubmitting ? (
-              <>
-                <ActivityIndicator color={palette.primary} size="small" />
-                <Text style={styles.confirmationTitle}>
-                  Submitting {submissionLabel}…
-                </Text>
-                <Text style={styles.confirmationDescription}>
-                  Please wait while the sale is confirmed.
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.confirmationTitle}>
-                  Confirm submission of {submissionLabel} for {customerName}?
-                </Text>
-                <Text style={styles.confirmationDescription}>
-                  {!isInvoice
-                    ? allocation.allocatedMinor > 0
-                      ? `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)} and collect an advance of ${formatCurrency(paidAmount, currency, precision)}.`
-                      : `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)}.`
-                    : isCreditSale
-                      ? "This will submit the sale as credit with its payment due date."
-                      : "This will submit the sale and its selected payment allocation."}
-                </Text>
-                {checkout.error ? (
-                  <Text accessibilityRole="alert" style={styles.errorText}>
-                    {checkout.error}
-                  </Text>
                 ) : null}
-                <View style={styles.confirmationActions}>
-                  <Pressable
-                    accessibilityLabel="Cancel sale submission"
-                    onPress={() => setIsSubmitConfirmationVisible(false)}
-                    style={styles.cancelConfirmationButton}
-                  >
-                    <Text style={styles.cancelConfirmationLabel}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityLabel={
-                      isInvoice
-                        ? "Confirm sales invoice submission"
-                        : "Confirm sales order submission"
+                {gatewayMethod === "STK" &&
+                gatewayLinks[activeGatewayMode.mode_of_payment] ? (
+                  <View style={styles.gatewayActions}>
+                    <Pressable
+                      accessibilityLabel="Check gateway payment status"
+                      disabled={gatewayPayment.isWorking}
+                      onPress={() => void refreshGatewayPayment()}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonLabel}>
+                        Check status
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="Cancel gateway payment"
+                      disabled={
+                        gatewayPayment.isWorking ||
+                        isSuccessfulGatewayPayment(
+                          gatewayLinks[activeGatewayMode.mode_of_payment],
+                        )
+                      }
+                      onPress={() => void cancelGatewayPayment()}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonLabel}>
+                        Cancel payment
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            </KeyboardAwareFormScroll>
+          ) : null}
+        </Modal>
+
+        <Modal
+          animationType="slide"
+          onRequestClose={() => setIsShippingAddressPickerVisible(false)}
+          presentationStyle="pageSheet"
+          visible={isShippingAddressPickerVisible}
+        >
+          <SafeAreaView
+            edges={["top", "bottom"]}
+            style={styles.shippingAddressModalPage}
+          >
+            <PosFixedPageHeader>
+              <View style={styles.header}>
+                <Pressable
+                  accessibilityLabel="Back to checkout"
+                  onPress={() => setIsShippingAddressPickerVisible(false)}
+                  style={styles.backButton}
+                >
+                  <MaterialCommunityIcons
+                    color={palette.onSurface}
+                    name="arrow-left"
+                    size={22}
+                  />
+                </Pressable>
+                <View style={styles.heading}>
+                  <Text style={styles.title}>Shipping address</Text>
+                  <Text style={styles.subtitle}>
+                    Choose a permitted address for this{" "}
+                    {isInvoice ? "invoice" : "sales order"}.
+                  </Text>
+                </View>
+              </View>
+            </PosFixedPageHeader>
+            <KeyboardAwareFormScroll
+              contentContainerStyle={styles.shippingAddressModalContent}
+              showsVerticalScrollIndicator={false}
+              style={styles.scrollView}
+            >
+              <View style={styles.shippingAddressOptions}>
+                {customerShippingAddresses.data?.map((address) => {
+                  const selected =
+                    address.name === selectedShippingAddress?.name;
+                  return (
+                    <Pressable
+                      accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                      disabled={isOffline}
+                      accessibilityState={{ selected }}
+                      key={address.name}
+                      onPress={() => {
+                        setShippingAddressName(address.name);
+                        setIsShippingAddressPickerVisible(false);
+                      }}
+                      style={[
+                        styles.shippingAddressOption,
+                        selected && styles.shippingAddressOptionSelected,
+                      ]}
+                    >
+                      <View style={styles.shippingAddressText}>
+                        <Text style={styles.shippingAddressTitle}>
+                          {shippingAddressText(address) ||
+                            address.address_title ||
+                            "Address details unavailable"}
+                        </Text>
+                        {address.address_title ? (
+                          <Text style={styles.cardHint}>
+                            {address.address_title}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {selected ? (
+                        <MaterialCommunityIcons
+                          color={palette.primary}
+                          name="check-circle"
+                          size={22}
+                        />
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </KeyboardAwareFormScroll>
+          </SafeAreaView>
+        </Modal>
+
+        <Modal
+          animationType="fade"
+          onRequestClose={() => {
+            if (!checkout.isSubmitting) setIsSubmitConfirmationVisible(false);
+          }}
+          presentationStyle="overFullScreen"
+          statusBarTranslucent
+          transparent
+          visible={isSubmitConfirmationVisible}
+        >
+          <View style={styles.confirmationModalRoot}>
+            <Pressable
+              accessibilityLabel="Dismiss sale confirmation"
+              disabled={checkout.isSubmitting}
+              onPress={() => setIsSubmitConfirmationVisible(false)}
+              style={styles.confirmationBackdrop}
+            />
+            <View accessibilityViewIsModal style={styles.confirmationDialog}>
+              {completedResult ? (
+                <>
+                  <MaterialCommunityIcons
+                    color={
+                      completedResult.queue_status === "Queued" ||
+                      completedResult.queue_status === "Processing"
+                        ? palette.primary
+                        : completedResult.docstatus === 0
+                          ? palette.primary
+                          : palette.success
                     }
-                    onPress={() => void submit()}
+                    name={
+                      completedResult.queue_status === "Queued" ||
+                      completedResult.queue_status === "Processing"
+                        ? "clock-outline"
+                        : completedResult.docstatus === 0
+                          ? "file-document-outline"
+                          : "check-circle-outline"
+                    }
+                    size={34}
+                  />
+                  <Text style={styles.confirmationTitle}>
+                    {completedResult.queue_status === "Queued" ||
+                    completedResult.queue_status === "Processing"
+                      ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is queued.`
+                      : completedResult.docstatus === 0
+                        ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is saved as a draft.`
+                        : `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} submitted.`}
+                  </Text>
+                  <Text style={styles.confirmationDescription}>
+                    {completedResult.queue_status === "Queued" ||
+                    completedResult.queue_status === "Processing"
+                      ? "The sale is waiting for server processing. A receipt will be available once it is submitted."
+                      : completedResult.docstatus === 0
+                        ? checkout.workflowError
+                          ? `The transaction was created, but its workflow action needs attention: ${checkout.workflowError}`
+                          : "The workflow left this transaction as a draft. Review it to continue or edit it if your workflow state permits."
+                        : receipt.isWorking
+                          ? "Opening the native print preview…"
+                          : receipt.error
+                            ? "The sale is complete, but its receipt could not be prepared. You can retry from the invoice details screen."
+                            : "The receipt was sent to the native print preview."}
+                  </Text>
+                  <Pressable
+                    accessibilityLabel={`View submitted ${submissionLabel}`}
+                    onPress={() => onComplete(completedResult)}
                     style={styles.confirmConfirmationButton}
                   >
                     <Text style={styles.confirmConfirmationLabel}>
-                      {isInvoice ? "Submit invoice" : "Submit order"}
+                      {completedResult.docstatus === 0 ? "View draft" : "View"}{" "}
+                      {submissionLabel === "sales invoice"
+                        ? "invoice"
+                        : "sales order"}
                     </Text>
                   </Pressable>
-                </View>
-              </>
-            )}
+                </>
+              ) : checkout.isSubmitting ? (
+                <>
+                  <ActivityIndicator color={palette.primary} size="small" />
+                  <Text style={styles.confirmationTitle}>
+                    Submitting {submissionLabel}…
+                  </Text>
+                  <Text style={styles.confirmationDescription}>
+                    Please wait while the sale is confirmed.
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.confirmationTitle}>
+                    Confirm submission of {submissionLabel} for {customerName}?
+                  </Text>
+                  <Text style={styles.confirmationDescription}>
+                    {!isInvoice
+                      ? allocation.allocatedMinor > 0
+                        ? `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)} and collect an advance of ${formatCurrency(paidAmount, currency, precision)}.`
+                        : `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)}.`
+                      : isCreditSale
+                        ? "This will submit the sale as credit with its payment due date."
+                        : "This will submit the sale and its selected payment allocation."}
+                  </Text>
+                  {checkout.error ? (
+                    <Text accessibilityRole="alert" style={styles.errorText}>
+                      {checkout.error}
+                    </Text>
+                  ) : null}
+                  <View style={styles.confirmationActions}>
+                    <Pressable
+                      accessibilityLabel="Cancel sale submission"
+                      onPress={() => setIsSubmitConfirmationVisible(false)}
+                      style={styles.cancelConfirmationButton}
+                    >
+                      <Text style={styles.cancelConfirmationLabel}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel={
+                        isInvoice
+                          ? "Confirm sales invoice submission"
+                          : "Confirm sales order submission"
+                      }
+                      onPress={() => void submit()}
+                      style={styles.confirmConfirmationButton}
+                    >
+                      <Text style={styles.confirmConfirmationLabel}>
+                        {isInvoice ? "Submit invoice" : "Submit order"}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+            </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
       </KeyboardAwareFormScroll>
     </View>
   );
@@ -2214,466 +2284,489 @@ function PaymentSummary({ label, value }: { label: string; value: string }) {
 
 function createStyles(palette: AppPalette) {
   return StyleSheet.create({
-  backButton: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  backToCartButton: {
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  backToCartLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  card: {
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  cardHint: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-    lineHeight: typography.lineHeight.body,
-  },
-  cardTitle: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.body,
-  },
-  c2bAmount: { alignItems: "flex-end", gap: 2 },
-  c2bPayment: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    padding: spacing.sm,
-  },
-  c2bPaymentDisabled: { opacity: 0.55 },
-  c2bResults: { gap: spacing.xs },
-  c2bSearchInput: { flex: 1 },
-  c2bSearchRow: {
-    alignItems: "stretch",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  cancelConfirmationButton: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  cancelConfirmationLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  confirmConfirmationButton: {
-    alignItems: "center",
-    backgroundColor: palette.primary,
-    borderRadius: radii.md,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  confirmConfirmationLabel: {
-    color: palette.onPrimary,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  confirmationActions: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  confirmationBackdrop: {
-    backgroundColor: palette.scrim,
-    ...StyleSheet.absoluteFill,
-  },
-  confirmationDescription: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    lineHeight: typography.lineHeight.body,
-  },
-  confirmationDialog: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    gap: spacing.md,
-    marginHorizontal: spacing.lg,
-    padding: spacing.lg,
-  },
-  confirmationModalRoot: { flex: 1, justifyContent: "center" },
-  confirmationTitle: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 19,
-    lineHeight: typography.lineHeight.body,
-  },
-  content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
-  creditSaleRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-    justifyContent: "space-between",
-  },
-  creditSaleText: { flex: 1, gap: 3 },
-  datePickerButton: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 48,
-    paddingHorizontal: spacing.sm,
-  },
-  datePickerButtonLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-  },
-  deliveryChargeRow: {
-    alignItems: "stretch",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  errorText: {
-    color: palette.error,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-  },
-  fieldLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-    marginTop: spacing.xs,
-  },
-  gatewayActions: { flexDirection: "row", gap: spacing.sm },
-  gatewayMethodButton: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 42,
-    paddingHorizontal: spacing.sm,
-  },
-  gatewayMethodButtonActive: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
-  },
-  gatewayMethodButtons: { flexDirection: "row", gap: spacing.sm },
-  gatewayMethodLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-    textAlign: "center",
-  },
-  gatewayMethodLabelActive: { color: palette.onPrimary },
-  gatewayModeButton: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    minHeight: 56,
-    padding: spacing.sm,
-  },
-  gatewayModeButtonVerified: { borderColor: palette.success },
-  gatewayModeText: { flex: 1, gap: 2 },
-  gatewayModes: { gap: spacing.xs },
-  gatewayModalContent: {
-    gap: spacing.md,
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  gatewayVerifiedText: {
-    color: palette.success,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
-  heading: { flex: 1, gap: 2 },
-  input: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  loyaltyAppliedRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  loyaltyHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  loyaltyInput: { flex: 1 },
-  loyaltyInputRow: {
-    alignItems: "stretch",
-    flexDirection: "row",
-    gap: spacing.xs,
-  },
-  loyaltyRemoveLabel: {
-    color: palette.error,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  currencyPrefix: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
-  },
-  paymentAmountInput: {
-    color: palette.onSurface,
-    flex: 1,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.sm,
-    textAlign: "right",
-  },
-  paymentAmountWrap: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    flexDirection: "row",
-    minHeight: 46,
-    paddingLeft: spacing.sm,
-  },
-  paymentModeButton: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainerHigh,
-    borderColor: "transparent",
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 46,
-    paddingHorizontal: spacing.sm,
-  },
-  paymentModeButtonActive: {
-    backgroundColor: palette.primary,
-    borderColor: palette.primary,
-  },
-  paymentModeLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-    textAlign: "center",
-  },
-  paymentModeLabelActive: { color: palette.onPrimary },
-  paymentMode: { gap: spacing.sm },
-  paymentModeRow: { flexDirection: "row", gap: spacing.sm },
-  paymentModes: { gap: spacing.sm },
-  paymentReference: { gap: spacing.xs },
-  paymentSummary: { flex: 1, gap: 2 },
-  paymentSummaryLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
-  paymentSummaryRow: {
-    backgroundColor: palette.surfaceContainer,
-    borderRadius: radii.sm,
-    flexDirection: "row",
-    gap: spacing.xs,
-    padding: spacing.sm,
-  },
-  paymentSummaryValue: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  restoredDraftHint: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-    padding: spacing.sm,
-  },
-  scrollView: { flex: 1 },
-  screen: { flex: 1 },
-  secondaryButton: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  secondaryButtonDisabled: { opacity: 0.5 },
-  secondaryButtonLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  shippingAddressModalContent: {
-    gap: spacing.md,
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
-  },
-  shippingAddressModalPage: {
-    backgroundColor: palette.background,
-    flex: 1,
-  },
-  shippingAddressOption: {
-    alignItems: "center",
-    backgroundColor: palette.surface,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    minHeight: 64,
-    padding: spacing.md,
-  },
-  shippingAddressOptionSelected: {
-    backgroundColor: palette.surfaceContainerHigh,
-    borderColor: palette.primary,
-  },
-  shippingAddressOptions: { gap: spacing.sm },
-  shippingAddressSelector: {
-    alignItems: "center",
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    minHeight: 56,
-    paddingHorizontal: spacing.sm,
-  },
-  shippingAddressText: { flex: 1, gap: 2 },
-  shippingAddressTitle: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.body,
-  },
-  state: {
-    alignItems: "center",
-    flex: 1,
-    gap: spacing.md,
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  stateText: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.body,
-    textAlign: "center",
-  },
-  submitButton: {
-    alignItems: "center",
-    backgroundColor: palette.primary,
-    borderRadius: radii.md,
-    justifyContent: "center",
-    minHeight: 50,
-    paddingHorizontal: spacing.md,
-  },
-  submitButtonDisabled: { opacity: 0.45 },
-  submitButtonLabel: {
-    color: palette.onPrimary,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.body,
-  },
-  subtitle: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-  },
-  summaryLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.small,
-  },
-  summaryDivider: {
-    backgroundColor: palette.border,
-    height: StyleSheet.hairlineWidth,
-    marginVertical: spacing.xs,
-  },
-  summaryItems: { gap: spacing.xs },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between" },
-  summarySectionTitle: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.small,
-  },
-  summaryValue: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
-  title: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 20,
-  },
-  totalLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.body,
-  },
-  totalRow: {
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
-  },
-  totalValue: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 20,
-  },
+    backButton: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.pill,
+      borderWidth: 1,
+      height: 40,
+      justifyContent: "center",
+      width: 40,
+    },
+    backToCartButton: {
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+    },
+    backToCartLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    card: {
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    cardHint: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+      lineHeight: typography.lineHeight.body,
+    },
+    cardTitle: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    c2bAmount: { alignItems: "flex-end", gap: 2 },
+    c2bPayment: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+      padding: spacing.sm,
+    },
+    c2bPaymentDisabled: { opacity: 0.55 },
+    c2bResults: { gap: spacing.xs },
+    c2bSearchInput: { flex: 1 },
+    c2bSearchRow: {
+      alignItems: "stretch",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    cancelConfirmationButton: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 44,
+      paddingHorizontal: spacing.sm,
+    },
+    cancelConfirmationLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    confirmConfirmationButton: {
+      alignItems: "center",
+      backgroundColor: palette.primary,
+      borderRadius: radii.md,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 44,
+      paddingHorizontal: spacing.sm,
+    },
+    confirmConfirmationLabel: {
+      color: palette.onPrimary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    confirmationActions: {
+      flexDirection: "row",
+      gap: spacing.sm,
+      marginTop: spacing.xs,
+    },
+    confirmationBackdrop: {
+      backgroundColor: palette.scrim,
+      ...StyleSheet.absoluteFill,
+    },
+    confirmationDescription: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      lineHeight: typography.lineHeight.body,
+    },
+    confirmationDialog: {
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.lg,
+      borderWidth: 1,
+      gap: spacing.md,
+      marginHorizontal: spacing.lg,
+      padding: spacing.lg,
+    },
+    confirmationModalRoot: { flex: 1, justifyContent: "center" },
+    confirmationTitle: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 19,
+      lineHeight: typography.lineHeight.body,
+    },
+    content: {
+      gap: spacing.md,
+      padding: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    creditSaleRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.md,
+      justifyContent: "space-between",
+    },
+    creditSaleText: { flex: 1, gap: 3 },
+    datePickerButton: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      minHeight: 48,
+      paddingHorizontal: spacing.sm,
+    },
+    datePickerButtonLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+    },
+    deliveryChargeRow: {
+      alignItems: "stretch",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    errorText: {
+      color: palette.error,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+      lineHeight: typography.lineHeight.body,
+    },
+    fieldLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+      marginTop: spacing.xs,
+    },
+    gatewayActions: { flexDirection: "row", gap: spacing.sm },
+    gatewayMethodButton: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 42,
+      paddingHorizontal: spacing.sm,
+    },
+    gatewayMethodButtonActive: {
+      backgroundColor: palette.primary,
+      borderColor: palette.primary,
+    },
+    gatewayMethodButtons: { flexDirection: "row", gap: spacing.sm },
+    gatewayMethodLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+      textAlign: "center",
+    },
+    gatewayMethodLabelActive: { color: palette.onPrimary },
+    gatewayModeButton: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+      minHeight: 56,
+      padding: spacing.sm,
+    },
+    gatewayModeButtonVerified: { borderColor: palette.success },
+    gatewayModeText: { flex: 1, gap: 2 },
+    gatewayModes: { gap: spacing.xs },
+    gatewayModalContent: {
+      gap: spacing.md,
+      padding: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    gatewayVerifiedText: {
+      color: palette.success,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.small,
+    },
+    header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
+    heading: { flex: 1, gap: 2 },
+    input: {
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.sm,
+    },
+    loyaltyAppliedRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "space-between",
+    },
+    loyaltyHeading: {
+      alignItems: "center",
+      flexDirection: "row",
+      gap: spacing.sm,
+    },
+    loyaltyInput: { flex: 1 },
+    loyaltyInputRow: {
+      alignItems: "stretch",
+      flexDirection: "row",
+      gap: spacing.xs,
+    },
+    loyaltyRemoveLabel: {
+      color: palette.error,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    currencyPrefix: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.tiny,
+    },
+    paymentAmountInput: {
+      color: palette.onSurface,
+      flex: 1,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      paddingHorizontal: spacing.xs,
+      paddingVertical: spacing.sm,
+      textAlign: "right",
+    },
+    paymentAmountWrap: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      flexDirection: "row",
+      minHeight: 46,
+      paddingLeft: spacing.sm,
+    },
+    paymentModeButton: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainerHigh,
+      borderColor: "transparent",
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 46,
+      paddingHorizontal: spacing.sm,
+    },
+    paymentModeButtonActive: {
+      backgroundColor: palette.primary,
+      borderColor: palette.primary,
+    },
+    paymentModeLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+      textAlign: "center",
+    },
+    paymentModeLabelActive: { color: palette.onPrimary },
+    paymentMode: { gap: spacing.sm },
+    paymentModeRow: { flexDirection: "row", gap: spacing.sm },
+    paymentModes: { gap: spacing.sm },
+    paymentReference: { gap: spacing.xs },
+    paymentSummary: { flex: 1, gap: 2 },
+    paymentSummaryLabel: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.tiny,
+    },
+    paymentSummaryRow: {
+      backgroundColor: palette.surfaceContainer,
+      borderRadius: radii.sm,
+      flexDirection: "row",
+      gap: spacing.xs,
+      padding: spacing.sm,
+    },
+    paymentSummaryValue: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    restoredDraftHint: {
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+      lineHeight: typography.lineHeight.body,
+      padding: spacing.sm,
+    },
+    scrollView: { flex: 1 },
+    screen: { flex: 1 },
+    secondaryButton: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 44,
+      paddingHorizontal: spacing.sm,
+    },
+    secondaryButtonDisabled: { opacity: 0.5 },
+    secondaryButtonLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    shippingAddressModalContent: {
+      gap: spacing.md,
+      padding: spacing.md,
+      paddingBottom: spacing.xxl,
+    },
+    shippingAddressModalPage: {
+      backgroundColor: palette.background,
+      flex: 1,
+    },
+    shippingAddressOption: {
+      alignItems: "center",
+      backgroundColor: palette.surface,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+      minHeight: 64,
+      padding: spacing.md,
+    },
+    shippingAddressOptionSelected: {
+      backgroundColor: palette.surfaceContainerHigh,
+      borderColor: palette.primary,
+    },
+    shippingAddressOptions: { gap: spacing.sm },
+    shippingAddressSelector: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flexDirection: "row",
+      gap: spacing.sm,
+      justifyContent: "space-between",
+      minHeight: 56,
+      paddingHorizontal: spacing.sm,
+    },
+    shippingAddressText: { flex: 1, gap: 2 },
+    shippingAddressTitle: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.body,
+    },
+    workflowCard: {
+      alignItems: "flex-start",
+      backgroundColor: palette.surfaceContainerHigh,
+      borderRadius: radii.md,
+      flexDirection: "row",
+      gap: spacing.sm,
+      padding: spacing.md,
+    },
+    workflowHint: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    workflowText: { flex: 1, gap: 2 },
+    workflowTitle: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    state: {
+      alignItems: "center",
+      flex: 1,
+      gap: spacing.md,
+      justifyContent: "center",
+      padding: spacing.xl,
+    },
+    stateText: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.body,
+      textAlign: "center",
+    },
+    submitButton: {
+      alignItems: "center",
+      backgroundColor: palette.primary,
+      borderRadius: radii.md,
+      justifyContent: "center",
+      minHeight: 50,
+      paddingHorizontal: spacing.md,
+    },
+    submitButtonDisabled: { opacity: 0.45 },
+    submitButtonLabel: {
+      color: palette.onPrimary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    subtitle: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    summaryLabel: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.regular,
+      fontSize: typography.size.small,
+    },
+    summaryDivider: {
+      backgroundColor: palette.border,
+      height: StyleSheet.hairlineWidth,
+      marginVertical: spacing.xs,
+    },
+    summaryItems: { gap: spacing.xs },
+    summaryRow: { flexDirection: "row", justifyContent: "space-between" },
+    summarySectionTitle: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.small,
+    },
+    summaryValue: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.small,
+    },
+    title: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 20,
+    },
+    totalLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
+    totalRow: {
+      borderTopColor: palette.border,
+      borderTopWidth: 1,
+      flexDirection: "row",
+      justifyContent: "space-between",
+      paddingTop: spacing.sm,
+    },
+    totalValue: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: 20,
+    },
   });
 }

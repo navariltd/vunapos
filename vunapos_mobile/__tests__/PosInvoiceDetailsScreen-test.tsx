@@ -20,6 +20,10 @@ jest.mock("@/features/pos/hooks/usePosInvoiceDetails", () => ({
   usePosInvoiceDetails: jest.fn(),
 }));
 
+jest.mock("@/features/pos/hooks/usePosWorkflowActions", () => ({
+  usePosWorkflowActions: jest.fn(),
+}));
+
 jest.mock("@/features/pos/hooks/useInvoiceReceipt", () => ({
   useInvoiceReceipt: jest.fn(),
 }));
@@ -34,6 +38,7 @@ jest.mock("@/features/pos/hooks/useInvoiceReturnPreview", () => ({
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosInvoiceDetails } from "@/features/pos/hooks/usePosInvoiceDetails";
+import { usePosWorkflowActions } from "@/features/pos/hooks/usePosWorkflowActions";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import { useErpNextRecord } from "@/features/pos/hooks/useErpNextRecord";
 import { useInvoiceReturnPreview } from "@/features/pos/hooks/useInvoiceReturnPreview";
@@ -41,6 +46,7 @@ import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetail
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
+const mockUsePosWorkflowActions = jest.mocked(usePosWorkflowActions);
 const mockUseInvoiceReceipt = jest.mocked(useInvoiceReceipt);
 const mockUseErpNextRecord = jest.mocked(useErpNextRecord);
 const mockUseInvoiceReturnPreview = jest.mocked(useInvoiceReturnPreview);
@@ -150,6 +156,15 @@ describe("PosInvoiceDetailsScreen", () => {
       },
       error: null,
       isLoading: false,
+      reload: jest.fn(),
+    });
+    mockUsePosWorkflowActions.mockReturnValue({
+      actions: [],
+      apply: jest.fn(),
+      error: null,
+      isApplying: null,
+      isLoading: false,
+      reload: jest.fn(),
     });
   });
 
@@ -199,6 +214,94 @@ describe("PosInvoiceDetailsScreen", () => {
     await fireEvent.press(screen.getByLabelText("Back to invoices"));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers draft editing only when ERPNext says the workflow state is editable", async () => {
+    const detailsState = mockUsePosInvoiceDetails({
+      invoiceDoctype: "POS Invoice",
+      invoiceName: "POS-INV-0001",
+      posProfile: "POS-001",
+    });
+    mockUsePosInvoiceDetails.mockReturnValue({
+      ...detailsState,
+      data: {
+        ...detailsState.data!,
+        can_edit: true,
+        docstatus: 0,
+        workflow_state: "Pending approval",
+      },
+    });
+    const onEditDraft = jest.fn().mockResolvedValue(undefined);
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceDoctype="POS Invoice"
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onEditDraft={onEditDraft}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText(/Pending approval/)).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Edit draft invoice"));
+    expect(onEditDraft).toHaveBeenCalledWith({
+      doctype: "POS Invoice",
+      name: "POS-INV-0001",
+    });
+
+    mockUsePosInvoiceDetails.mockReturnValue({
+      ...detailsState,
+      data: { ...detailsState.data!, can_edit: false, docstatus: 0 },
+    });
+    await screen.rerender(
+      <PosInvoiceDetailsScreen
+        invoiceDoctype="POS Invoice"
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onEditDraft={onEditDraft}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+    expect(screen.queryByLabelText("Edit draft invoice")).toBeNull();
+  });
+
+  it("renders a workflow draft status without crashing", async () => {
+    const detailsState = mockUsePosInvoiceDetails({
+      invoiceDoctype: "Sales Order",
+      invoiceName: "SAL-ORD-0001",
+      posProfile: "POS-001",
+    });
+    mockUsePosInvoiceDetails.mockReturnValue({
+      ...detailsState,
+      data: {
+        ...detailsState.data!,
+        docstatus: 0,
+        doctype: "Sales Order",
+        status: "Draft",
+        workflow_state: "Pending approval",
+      },
+    });
+
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceDoctype="Sales Order"
+        invoiceName="SAL-ORD-0001"
+        onBack={onBack}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Draft")).toBeTruthy();
+    expect(screen.getByText(/Pending approval/)).toBeTruthy();
   });
 
   it("opens the linked customer profile", async () => {
