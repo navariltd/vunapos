@@ -23,15 +23,22 @@ import {
 import { invalidateHeldInvoiceCache } from "@/services/posCacheInvalidation";
 
 function toCartItem(item: PosCatalogueItem): PosCartItem {
+  const rate = Number(item.rate || 0);
+  const priceListRate = Number(item.price_list_rate ?? rate);
   return {
     allow_negative_stock: Boolean(item.allow_negative_stock),
     available_qty: item.actual_qty ?? null,
+    catalogue_price_list_rate: priceListRate,
+    catalogue_rate: rate,
+    conversion_factor: Number(item.conversion_factor || 1),
     is_stock_item: Boolean(item.is_stock_item),
     item_code: item.item_code,
     item_name: item.item_name,
+    price_list_rate: priceListRate,
     qty: 1,
-    rate: Number(item.rate || 0),
-    uom: item.stock_uom,
+    rate,
+    uom: item.uom || item.stock_uom,
+    uoms: item.uoms,
   };
 }
 
@@ -82,6 +89,23 @@ function localCart(items: PosCartItem[]): PosCartData {
   };
 }
 
+/** Restore catalogue pricing after removing a customer-specific price context. */
+function restoreCataloguePricing(items: PosCartItem[]): PosCartItem[] {
+  return items.map((item) => {
+    if (item.pricing_override) return item;
+    const rate = item.catalogue_rate ?? item.price_list_rate ?? item.rate;
+    return {
+      ...item,
+      discount_amount: 0,
+      discount_percentage: 0,
+      price_list_rate:
+        item.catalogue_price_list_rate ?? item.catalogue_rate ?? rate,
+      pricing_rules: undefined,
+      rate,
+    };
+  });
+}
+
 function cartFromResponse(
   data: CartResponse,
   previousItems: PosCartItem[],
@@ -98,6 +122,14 @@ function cartFromResponse(
         allow_negative_stock: Boolean(item.allow_negative_stock),
         available_qty: item.actual_qty ?? previous?.available_qty ?? null,
         is_stock_item: Boolean(item.is_stock_item),
+        catalogue_price_list_rate:
+          previous?.catalogue_price_list_rate ??
+          previous?.price_list_rate ??
+          Number(item.price_list_rate ?? item.rate ?? 0),
+        catalogue_rate:
+          previous?.catalogue_rate ??
+          previous?.rate ??
+          Number(item.price_list_rate ?? item.rate ?? 0),
         pricing_override: previous?.pricing_override,
         rate: Number(item.rate || 0),
       };
@@ -173,7 +205,7 @@ export function usePosCart({
         return { items: [], taxes: [], totals: {} };
       }
       if (!cartCustomer) {
-        const nextData = localCart(nextItems);
+        const nextData = localCart(restoreCataloguePricing(nextItems));
         itemsRef.current = nextData.items;
         dataRef.current = nextData;
         setData(nextData);

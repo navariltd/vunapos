@@ -19,8 +19,13 @@ export type PosCatalogueItem = {
     inclusive?: boolean | null;
     inclusive_tax_rate?: number | null;
   } | null;
+  conversion_factor?: number | null;
+  price_list_rate?: number | null;
   rate?: number | null;
   stock_uom?: string | null;
+  /** The API-selected selling UOM; normally the Item's default sales UOM. */
+  uom?: string | null;
+  uoms?: PosItemUom[];
 };
 
 export type PosTemplateVariant = PosCatalogueItem & {
@@ -48,6 +53,9 @@ export type PosCartItem = {
   available_qty: number | null;
   batch_allocations?: PosBatchAllocation[];
   bundle_items?: PosCartBundleItem[];
+  /** Catalogue price before a customer-specific preview replaces it. */
+  catalogue_price_list_rate?: number;
+  catalogue_rate?: number;
   conversion_factor?: number;
   description?: string | null;
   discount_amount?: number;

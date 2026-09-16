@@ -205,6 +205,81 @@ describe("usePosCart", () => {
     expect(hook.result.current.items).toEqual([]);
   });
 
+  it("uses the catalogue sales UOM and restores its price after clearing a customer", async () => {
+    const salesUomItem = {
+      actual_qty: 120,
+      conversion_factor: 24,
+      is_stock_item: true,
+      item_code: "F61",
+      item_name: "Dairy Joy 200ml",
+      rate: 544,
+      stock_uom: "Pcs",
+      uom: "Carton",
+    };
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const sentItems = String(params?.items ?? "");
+        if (sentItems.includes('"item_code":"F61"')) {
+          return {
+            items: [
+              {
+                actual_qty: 120,
+                amount: 565,
+                is_stock_item: true,
+                item_code: "F61",
+                item_name: "Dairy Joy 200ml",
+                price_list_rate: 565,
+                qty: 1,
+                rate: 565,
+                uom: "Carton",
+              },
+            ],
+            taxes: [],
+            totals: { grand_total: 565, net_total: 565 },
+          };
+        }
+        throw new Error("Unexpected request");
+      },
+    );
+    const hook = await renderHook<
+      ReturnType<typeof usePosCart>,
+      { customer: PosSaleCustomer | null }
+    >(({ customer }) => usePosCart({ customer, posProfile: "POS-001" }), {
+      initialProps: { customer: null },
+    });
+
+    await act(async () => hook.result.current.add(salesUomItem));
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({ rate: 544, uom: "Carton" }),
+    ]);
+
+    await hook.rerender({
+      customer: { customer: "ABC-CORPS", customerName: "ABC Corps" },
+    });
+    await waitFor(() =>
+      expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+        "https://vuna.example.com",
+        "sid-1",
+        "vunapos.api.sales.preview_invoice",
+        expect.objectContaining({
+          customer: "ABC-CORPS",
+          items: '[{"item_code":"F61","qty":1,"uom":"Carton"}]',
+        }),
+      ),
+    );
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({ rate: 565, uom: "Carton" }),
+    ]);
+
+    await hook.rerender({ customer: null });
+    await waitFor(() =>
+      expect(hook.result.current.items).toEqual([
+        expect.objectContaining({ rate: 544, uom: "Carton" }),
+      ]),
+    );
+    expect(hook.result.current.subtotal).toBe(544);
+  });
+
   it("recalculates an existing cart when a selected customer is reset to the profile default", async () => {
     const hook = await renderHook<
       ReturnType<typeof usePosCart>,
