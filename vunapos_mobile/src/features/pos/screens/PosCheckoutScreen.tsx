@@ -2059,7 +2059,7 @@ export function PosCheckoutScreen({
       <Modal
         animationType="fade"
         onRequestClose={() => {
-          if (!checkout.isSubmitting && !completedResult)
+          if (!checkout.isSubmitting)
             setIsSubmitConfirmationVisible(false);
         }}
         presentationStyle="overFullScreen"
@@ -2070,7 +2070,7 @@ export function PosCheckoutScreen({
         <View style={styles.confirmationModalRoot}>
           <Pressable
             accessibilityLabel="Dismiss sale confirmation"
-            disabled={checkout.isSubmitting || Boolean(completedResult)}
+            disabled={checkout.isSubmitting}
             onPress={() => setIsSubmitConfirmationVisible(false)}
             style={styles.confirmationBackdrop}
           />

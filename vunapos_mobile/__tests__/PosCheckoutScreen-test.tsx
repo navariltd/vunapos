@@ -205,6 +205,51 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
+  it("dismisses the completed-sale popup from its backdrop without opening the invoice", async () => {
+    submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0001" });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await fireEvent.press(
+      screen.getByLabelText("Confirm sales invoice submission"),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Sales invoice SINV-0001 submitted.")).toBeTruthy(),
+    );
+
+    const confirmationDialog = screen.getByText(
+      "Sales invoice SINV-0001 submitted.",
+    ).parent;
+    const confirmationBackdrop = confirmationDialog?.parent?.children[0];
+    if (!confirmationBackdrop || typeof confirmationBackdrop === "string") {
+      throw new Error("Confirmation backdrop not found");
+    }
+    await fireEvent.press(confirmationBackdrop);
+    expect(screen.queryByText("Sales invoice SINV-0001 submitted.")).toBeNull();
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
   it("blocks checkout with the configured field label when a required checkout field is empty", async () => {
     mockUsePosBootstrap.mockReturnValue({
       data: {

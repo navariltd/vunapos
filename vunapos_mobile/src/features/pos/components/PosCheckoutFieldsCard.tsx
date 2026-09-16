@@ -213,6 +213,11 @@ export function PosCheckoutFieldsCard({
         visible={Boolean(selectField)}
       >
         <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityLabel="Dismiss checkout field options"
+            onPress={() => setSelectField(undefined)}
+            style={StyleSheet.absoluteFill}
+          />
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Select {selectField?.label}</Text>
             {selectOptions.map((option) => (
