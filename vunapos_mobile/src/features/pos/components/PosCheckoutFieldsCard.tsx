@@ -160,7 +160,7 @@ export function PosCheckoutFieldsCard({
                     />
                   </Pressable>
                 ) : isLink ? (
-                  <PosCheckoutLinkEditor
+                  <PosCheckoutLinkComboBox
                     disabled={disabled}
                     field={field}
                     onChange={onChange}
@@ -245,7 +245,13 @@ export function PosCheckoutFieldsCard({
   );
 }
 
-function PosCheckoutLinkEditor({
+/**
+ * Frappe Link fields are server-searchable rather than a fixed option list.
+ * Present them as a native searchable combo box so they have the same clear
+ * choose-from-a-popup interaction as Select fields without allowing arbitrary
+ * values to be submitted.
+ */
+function PosCheckoutLinkComboBox({
   disabled,
   field,
   onChange,
@@ -258,55 +264,114 @@ function PosCheckoutLinkEditor({
 }) {
   const { palette } = useAppearance();
   const styles = createStyles(palette);
-  const [isFocused, setIsFocused] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+  const [query, setQuery] = useState("");
   const linkSearch = useCheckoutLinkOptions(
-    isFocused ? field : undefined,
-    value,
+    isVisible ? field : undefined,
+    query,
   );
+
+  function dismiss() {
+    setIsVisible(false);
+    setQuery("");
+  }
 
   return (
     <>
-      <TextInput
-        accessibilityLabel={field.label}
-        editable={!disabled}
-        onChangeText={(nextValue) => onChange(field.fieldname, nextValue)}
-        onFocus={() => setIsFocused(true)}
-        placeholder={field.placeholder || `Search ${field.label}`}
-        placeholderTextColor={palette.onSurfaceMuted}
-        style={styles.input}
-        value={value}
-      />
-      {isFocused ? (
-        <View style={styles.linkResults}>
-          {linkSearch.isLoading ? (
-            <Text style={styles.fieldHelp}>Searching…</Text>
-          ) : linkSearch.error ? (
-            <Text style={styles.errorText}>{linkSearch.error}</Text>
-          ) : linkSearch.options.length ? (
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-              style={styles.linkResultsScroll}
-            >
-              {linkSearch.options.map((option) => (
-                <Pressable
+      <Pressable
+        accessibilityLabel={`Choose ${field.label}`}
+        disabled={disabled}
+        onPress={() => setIsVisible(true)}
+        style={[styles.selectButton, disabled && styles.disabled]}
+      >
+        <Text style={styles.selectButtonLabel}>
+          {value || field.placeholder || `Select ${field.label}`}
+        </Text>
+        <MaterialCommunityIcons
+          color={palette.onSurfaceMuted}
+          name="chevron-down"
+          size={20}
+        />
+      </Pressable>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={dismiss}
+        transparent
+        visible={isVisible}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityLabel={`Dismiss ${field.label} options`}
+            onPress={dismiss}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.modalCard}>
+            <View style={styles.comboHeader}>
+              <Text style={styles.modalTitle}>Select {field.label}</Text>
+              <Pressable
+                accessibilityLabel={`Close ${field.label} options`}
+                onPress={dismiss}
+                style={styles.comboCloseButton}
+              >
+                <MaterialCommunityIcons
+                  color={palette.onSurface}
+                  name="close"
+                  size={20}
+                />
+              </Pressable>
+            </View>
+            <TextInput
+              accessibilityLabel={`Search ${field.label}`}
+              autoFocus
+              onChangeText={setQuery}
+              placeholder={field.placeholder || `Search ${field.label}`}
+              placeholderTextColor={palette.onSurfaceMuted}
+              style={styles.input}
+              value={query}
+            />
+            {linkSearch.isLoading ? (
+              <Text style={styles.fieldHelp}>Searching…</Text>
+            ) : linkSearch.error ? (
+              <Text style={styles.errorText}>{linkSearch.error}</Text>
+            ) : linkSearch.options.length ? (
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                style={styles.comboResultsScroll}
+              >
+                {linkSearch.options.map((option) => (
+                  <Pressable
                   accessibilityLabel={`Select ${option.label}`}
                   key={option.value}
-                  onPress={() => {
-                    onChange(field.fieldname, option.value);
-                    setIsFocused(false);
-                  }}
-                  style={styles.linkOption}
-                >
-                  <Text style={styles.optionLabel}>{option.label}</Text>
+                    onPress={() => {
+                      onChange(field.fieldname, option.value);
+                      dismiss();
+                    }}
+                    style={styles.option}
+                  >
+                    <Text style={styles.optionLabel}>{option.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-          ) : (
-            <Text style={styles.fieldHelp}>No matching records.</Text>
-          )}
+            ) : (
+              <Text style={styles.fieldHelp}>No matching records.</Text>
+            )}
+            {value ? (
+              <Pressable
+                accessibilityLabel={`Clear ${field.label}`}
+                onPress={() => {
+                  onChange(field.fieldname, "");
+                  dismiss();
+                }}
+                style={styles.cancelButton}
+              >
+                <Text style={styles.cancelButtonLabel}>Clear selection</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      ) : null}
+      </Modal>
     </>
   );
 }
@@ -341,6 +406,13 @@ function createStyles(palette: AppPalette) {
   },
   checkRow: { alignItems: "center", flexDirection: "row", gap: spacing.md },
   checkText: { flex: 1, gap: spacing.xs },
+  comboCloseButton: { padding: spacing.xs },
+  comboHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  comboResultsScroll: { maxHeight: 256 },
   disabled: { opacity: 0.55 },
   errorText: {
     color: palette.error,
@@ -376,22 +448,6 @@ function createStyles(palette: AppPalette) {
     paddingTop: spacing.sm,
     textAlignVertical: "top",
   },
-  linkOption: {
-    borderBottomColor: palette.border,
-    borderBottomWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  linkResults: {
-    backgroundColor: palette.surfaceContainer,
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    maxHeight: 192,
-    overflow: "hidden",
-    padding: spacing.xs,
-  },
-  linkResultsScroll: { maxHeight: 176 },
   modalBackdrop: {
     alignItems: "center",
     backgroundColor: palette.scrim,
