@@ -347,6 +347,14 @@ export function PosWorkspaceScreen() {
           items={cart.items}
           onApplyDeliveryCharge={cart.applyDeliveryCharge}
           onBack={() => setCheckoutVisible(false)}
+          onClear={() => {
+            if (!cart.clear()) return;
+            setPriceListFallbackNotice(null);
+            setSelectedPriceList(undefined);
+            setSelectedSaleCustomer(null);
+            setCheckoutVisible(false);
+            setCartVisible(false);
+          }}
           onComplete={(result) => {
             cart.clear();
             setSelectedSaleCustomer(null);
@@ -361,6 +369,21 @@ export function PosWorkspaceScreen() {
             setCheckoutVisible(false);
             setCartVisible(false);
             setSelectedInvoice({ doctype: result.doctype, name: result.name });
+          }}
+          onHold={async () => {
+            const heldInvoice = await cart.hold();
+            if (heldInvoice) {
+              setSelectedPriceList(undefined);
+              setSelectedSaleCustomer(null);
+              setPostSaleRefreshKey((current) => current + 1);
+              setHeldRefreshKey((current) => current + 1);
+              setWorkspaceNotice(
+                `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
+              );
+              setCheckoutVisible(false);
+              setCartVisible(false);
+            }
+            return heldInvoice ? { name: heldInvoice.name } : null;
           }}
           onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}

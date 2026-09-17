@@ -13,6 +13,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import {
   PosCheckoutFieldsCard,
   PosCheckoutFieldValues,
@@ -66,7 +67,9 @@ type PosCheckoutScreenProps = {
     amount?: number,
   ) => Promise<PosCartData | null>;
   onBack: () => void;
+  onClear?: () => void;
   onComplete: (result: PosCheckoutResult) => void;
+  onHold?: () => Promise<{ name: string } | null>;
   onSalespersonTokenExpired?: () => void;
   orderType: PosOrderType;
   priceList?: string;
@@ -169,7 +172,9 @@ export function PosCheckoutScreen({
   items,
   onApplyDeliveryCharge,
   onBack,
+  onClear,
   onComplete,
+  onHold,
   onSalespersonTokenExpired,
   orderType,
   priceList,
@@ -254,6 +259,10 @@ export function PosCheckoutScreen({
     useState<PosCheckoutResult | null>(null);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] =
     useState(false);
+  const [clearConfirmationVisible, setClearConfirmationVisible] =
+    useState(false);
+  const [isHolding, setIsHolding] = useState(false);
+  const [holdError, setHoldError] = useState<string | null>(null);
 
   const updateGatewayPaymentFromRealtime = useCallback(
     (payment: PosGatewayPaymentLink) => {
@@ -922,6 +931,22 @@ export function PosCheckoutScreen({
     }
 
     setIsSubmitConfirmationVisible(true);
+  }
+
+  async function holdCheckout() {
+    if (!onHold || isHolding || isOffline) return;
+    setHoldError(null);
+    setIsHolding(true);
+    try {
+      const held = await onHold();
+      if (held) onBack();
+    } catch (error) {
+      setHoldError(
+        error instanceof Error ? error.message : "Could not hold this sale.",
+      );
+    } finally {
+      setIsHolding(false);
+    }
   }
 
   async function submit() {
@@ -1712,6 +1737,41 @@ export function PosCheckoutScreen({
             {validationError || checkout.error}
           </Text>
         ) : null}
+        {holdError ? <Text style={styles.errorText}>{holdError}</Text> : null}
+        <View style={styles.checkoutActions}>
+          {onClear ? (
+            <Pressable
+              accessibilityLabel="Clear checkout"
+              disabled={checkout.isSubmitting || isHolding || isOffline}
+              onPress={() => setClearConfirmationVisible(true)}
+              style={[
+                styles.secondaryActionButton,
+                (checkout.isSubmitting || isHolding || isOffline) &&
+                  styles.submitButtonDisabled,
+              ]}
+            >
+              <Text style={styles.secondaryActionLabel}>Clear</Text>
+            </Pressable>
+          ) : null}
+          {onHold && isInvoice ? (
+            <Pressable
+              accessibilityLabel="Hold checkout"
+              disabled={checkout.isSubmitting || isHolding || isOffline}
+              onPress={() => void holdCheckout()}
+              style={[
+                styles.secondaryActionButton,
+                (checkout.isSubmitting || isHolding || isOffline) &&
+                  styles.submitButtonDisabled,
+              ]}
+            >
+              {isHolding ? (
+                <ActivityIndicator color={palette.onSurface} size="small" />
+              ) : (
+                <Text style={styles.secondaryActionLabel}>Hold</Text>
+              )}
+            </Pressable>
+          ) : null}
+        </View>
         <Pressable
           accessibilityLabel={
             isInvoice ? "Complete sale" : "Submit sales order"
@@ -2253,6 +2313,18 @@ export function PosCheckoutScreen({
             </View>
           </View>
         </Modal>
+
+        {onClear ? (
+          <ClearCartConfirmationDialog
+            isOffline={isOffline || checkout.isSubmitting || isHolding}
+            onConfirm={() => {
+              onClear();
+              setClearConfirmationVisible(false);
+            }}
+            onDismiss={() => setClearConfirmationVisible(false)}
+            visible={clearConfirmationVisible}
+          />
+        ) : null}
       </KeyboardAwareFormScroll>
     </View>
   );
@@ -2407,6 +2479,10 @@ function createStyles(palette: AppPalette) {
       gap: spacing.md,
       padding: spacing.md,
       paddingBottom: spacing.xxl,
+    },
+    checkoutActions: {
+      flexDirection: "row",
+      gap: spacing.sm,
     },
     creditSaleRow: {
       alignItems: "center",
@@ -2712,6 +2788,21 @@ function createStyles(palette: AppPalette) {
       justifyContent: "center",
       minHeight: 50,
       paddingHorizontal: spacing.md,
+    },
+    secondaryActionButton: {
+      alignItems: "center",
+      borderColor: palette.border,
+      borderRadius: radii.md,
+      borderWidth: 1,
+      flex: 1,
+      justifyContent: "center",
+      minHeight: 50,
+      paddingHorizontal: spacing.md,
+    },
+    secondaryActionLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
     },
     submitButtonDisabled: { opacity: 0.45 },
     submitButtonLabel: {
