@@ -1278,11 +1278,163 @@ describe("PosCheckoutScreen", () => {
       }),
     );
     await fireEvent.press(screen.getByLabelText("Pay with M-Pesa STK"));
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText("Gateway customer phone number").props.value,
+      ).toBe("0712345678"),
+    );
     await fireEvent.press(screen.getByLabelText("Send STK payment request"));
 
     await waitFor(() =>
       expect(initiate).toHaveBeenCalledWith(
         expect.objectContaining({ phoneNumber: "0712345678" }),
+      ),
+    );
+  });
+
+  it("explains when gateway phone resolution cannot find a number", async () => {
+    const resolveCustomerPhone = jest.fn().mockResolvedValue({
+      customer: "CUST-001",
+      mobile_no: null,
+      source: null,
+    });
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate: jest.fn(),
+      isWorking: false,
+      resolveCustomerPhone,
+      searchC2B: jest.fn(),
+    });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          {
+            mode_of_payment: "M-Pesa STK",
+            payment_gateway: "M-Pesa",
+            type: "Phone",
+          },
+        ],
+        pos_profile: { name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(resolveCustomerPhone).toHaveBeenCalledWith({
+        customer: "CUST-001",
+        posProfile: "POS-001",
+      }),
+    );
+    await fireEvent.press(screen.getByLabelText("Pay with M-Pesa STK"));
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+        "No phone number was found for this customer. Enter one manually.",
+        ),
+      ).toBeTruthy(),
+    );
+    expect(screen.getByLabelText("Gateway customer phone number").props.value).toBe("");
+  });
+
+  it("does not retain a resolved phone after the checkout customer changes", async () => {
+    const resolveCustomerPhone = jest
+      .fn()
+      .mockImplementation(({ customer }: { customer: string }) =>
+        Promise.resolve({
+          customer,
+          mobile_no: customer === "CUST-001" ? "0712345678" : "0798765432",
+          source: "Customer",
+        }),
+      );
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate: jest.fn(),
+      isWorking: false,
+      resolveCustomerPhone,
+      searchC2B: jest.fn(),
+    });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          {
+            mode_of_payment: "M-Pesa STK",
+            payment_gateway: "M-Pesa",
+            type: "Phone",
+          },
+        ],
+        pos_profile: { name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(resolveCustomerPhone).toHaveBeenCalledWith({
+        customer: "CUST-001",
+        posProfile: "POS-001",
+      }),
+    );
+    await fireEvent.press(screen.getByLabelText("Pay with M-Pesa STK"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Gateway customer phone number").props.value).toBe(
+        "0712345678",
+      ),
+    );
+
+    screen.rerender(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-002", customerName: "Other Corp" }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(resolveCustomerPhone).toHaveBeenCalledWith({
+        customer: "CUST-002",
+        posProfile: "POS-001",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Gateway customer phone number").props.value).toBe(
+        "0798765432",
       ),
     );
   });

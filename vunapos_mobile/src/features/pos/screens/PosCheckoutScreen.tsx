@@ -239,6 +239,11 @@ export function PosCheckoutScreen({
   const [activeGatewayMode, setActiveGatewayMode] =
     useState<PosPaymentMode | null>(null);
   const [gatewayPhone, setGatewayPhone] = useState("");
+  const [gatewayPhoneError, setGatewayPhoneError] = useState<string | null>(
+    null,
+  );
+  const resolveCustomerPhoneRef = useRef(gatewayPayment.resolveCustomerPhone);
+  resolveCustomerPhoneRef.current = gatewayPayment.resolveCustomerPhone;
   const [gatewayMethod, setGatewayMethod] = useState<"STK" | "C2B">("STK");
   const [c2bQuery, setC2bQuery] = useState("");
   const [c2bResults, setC2bResults] = useState<PosC2BGatewayPayment[]>([]);
@@ -281,7 +286,12 @@ export function PosCheckoutScreen({
     if (localPhone) {
       resolvedPhoneCustomerRef.current = customerName;
       const phoneTimer = setTimeout(
-        () => setGatewayPhone((current) => (current === localPhone ? current : localPhone)),
+        () => {
+          setGatewayPhone((current) =>
+            current === localPhone ? current : localPhone,
+          );
+          setGatewayPhoneError(null);
+        },
         0,
       );
       return () => clearTimeout(phoneTimer);
@@ -297,26 +307,43 @@ export function PosCheckoutScreen({
 
     resolvedPhoneCustomerRef.current = customerName;
     let cancelled = false;
-    if (!gatewayPayment.resolveCustomerPhone) return;
+    if (!resolveCustomerPhoneRef.current) return;
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        setGatewayPhone("");
+        setGatewayPhoneError(null);
+      }
+    });
     void Promise.resolve(
-      gatewayPayment.resolveCustomerPhone({
+      resolveCustomerPhoneRef.current({
         customer: customerName,
         posProfile: profile.name,
       }),
     )
       .then((resolved) => {
         const phone = resolved?.mobile_no?.trim();
-        if (!cancelled && phone) setGatewayPhone(phone);
+        if (cancelled) return;
+        if (phone) {
+          setGatewayPhone(phone);
+          setGatewayPhoneError(null);
+        } else {
+          setGatewayPhoneError(
+            "No phone number was found for this customer. Enter one manually.",
+          );
+        }
       })
       .catch(() => {
-        // Phone resolution is an enhancement; the cashier can still enter it manually.
+        if (!cancelled) {
+          setGatewayPhoneError(
+            "Could not find the customer phone. Enter one manually.",
+          );
+        }
       });
 
     return () => {
       cancelled = true;
     };
   }, [
-    gatewayPayment,
     isOffline,
     profile?.name,
     saleCustomer?.customer,
@@ -2038,6 +2065,9 @@ export function PosCheckoutScreen({
                       style={styles.input}
                       value={gatewayPhone}
                     />
+                    {gatewayPhoneError ? (
+                      <Text style={styles.errorText}>{gatewayPhoneError}</Text>
+                    ) : null}
                   </>
                 ) : (
                   <>
