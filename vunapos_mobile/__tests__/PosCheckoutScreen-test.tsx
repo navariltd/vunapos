@@ -1618,6 +1618,15 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
+    expect(screen.getByText("Items")).toBeTruthy();
+    expect(screen.getByText("1 × Stock item")).toBeTruthy();
+    expect(screen.getByText("Estimated subtotal")).toBeTruthy();
+    expect(screen.getByText("Estimated total")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Final taxes and totals will be confirmed by Frappe when the Sales Order is submitted.",
+      ),
+    ).toBeTruthy();
     expect(screen.getByText("Sales Order advance payment")).toBeTruthy();
     await fireEvent.changeText(screen.getByLabelText("Cash amount"), "40");
     expect(screen.getByText("Advance payment")).toBeTruthy();

@@ -1136,10 +1136,50 @@ export function PosCheckoutScreen({
               />
             </>
           ) : (
-            <Text style={styles.cardHint}>
-              Frappe will calculate final tax and totals when this Sales Order
-              is submitted.
-            </Text>
+            <>
+              <SummaryRow label="Customer" value={customerName} />
+              <View style={styles.summaryDivider} />
+              <Text style={styles.summarySectionTitle}>Items</Text>
+              <View style={styles.summaryItems}>
+                {items.map((item) => (
+                  <SummaryRow
+                    key={item.item_code}
+                    label={`${item.qty} × ${item.item_name}`}
+                    value={formatCurrency(
+                      item.amount ?? item.qty * item.rate,
+                      currency,
+                      precision,
+                    )}
+                  />
+                ))}
+              </View>
+              <View style={styles.summaryDivider} />
+              <SummaryRow
+                label="Estimated subtotal"
+                value={formatCurrency(subtotal, currency, precision)}
+              />
+              <SummaryRow
+                label="Estimated total"
+                value={formatCurrency(subtotal, currency, precision)}
+              />
+              <Text style={styles.cardHint}>
+                Final taxes and totals will be confirmed by Frappe when the
+                Sales Order is submitted.
+              </Text>
+              <View style={styles.summaryDivider} />
+              <SummaryRow
+                label="Advance paid"
+                value={formatCurrency(paidAmount, currency, precision)}
+              />
+              <SummaryRow
+                label={isPaymentOverpaid ? "Cash change" : "Estimated balance"}
+                value={formatCurrency(
+                  checkoutBalanceAmount,
+                  currency,
+                  precision,
+                )}
+              />
+            </>
           )}
         </View>
 
