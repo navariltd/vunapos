@@ -574,6 +574,51 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
+  it("does not submit a configured Tax ID placeholder as cashier input", async () => {
+    submit.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-TAX-PLACEHOLDER-001",
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{
+          customer: "CUST-WALKIN",
+          customerName: "Walk-in customer",
+          isWalkin: true,
+          taxId: "P012345678X",
+        }}
+        subtotal={100}
+      />,
+    );
+
+    const taxIdInput = screen.getByLabelText("Customer Tax ID");
+    expect(taxIdInput.props.placeholder).toBe("P012345678X");
+    expect(taxIdInput.props.value).toBe("");
+
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await fireEvent.press(
+      screen.getByLabelText("Confirm sales invoice submission"),
+    );
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    expect(submit.mock.calls[0][0].taxId).toBeUndefined();
+  });
+
   it("supports a walk-in Tax ID on a Sales Order", async () => {
     submit.mockResolvedValue({
       doctype: "Sales Order",
