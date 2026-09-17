@@ -670,6 +670,23 @@ export function PosCheckoutScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeGatewayMode, gatewayLinks]);
 
+  const activeGatewayLink = activeGatewayMode
+    ? gatewayLinks[activeGatewayMode.mode_of_payment]
+    : undefined;
+  const isActiveGatewayPending = isPendingGatewayPayment(activeGatewayLink);
+  const isActiveGatewayVerified = isSuccessfulGatewayPayment(activeGatewayLink);
+
+  useEffect(() => {
+    if (!activeGatewayLink || !isActiveGatewayVerified) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) setActiveGatewayMode(null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeGatewayLink, isActiveGatewayVerified]);
+
   function selectPaymentMode(mode: string) {
     setPaymentAmounts(
       allocateAllToMode(paymentModes, mode, totalMinor, precision),
@@ -727,6 +744,15 @@ export function PosCheckoutScreen({
       ) || 0;
     if (!amountMinor || !gatewayPhone.trim()) return;
     const modeOfPayment = activeGatewayMode.mode_of_payment;
+    const existingLink = gatewayLinks[modeOfPayment];
+    const canRetry =
+      Boolean(gatewayPayment.error) ||
+      Boolean(
+        existingLink &&
+          !isPendingGatewayPayment(existingLink) &&
+          !isSuccessfulGatewayPayment(existingLink),
+      );
+    if (canRetry) delete gatewayIdempotencyKeys.current[modeOfPayment];
     const idempotencyKey =
       gatewayIdempotencyKeys.current[modeOfPayment] ||
       (gatewayIdempotencyKeys.current[modeOfPayment] =
@@ -2057,6 +2083,9 @@ export function PosCheckoutScreen({
                     <Text style={styles.fieldLabel}>Customer phone number</Text>
                     <TextInput
                       accessibilityLabel="Gateway customer phone number"
+                      editable={
+                        !gatewayPayment.isWorking && !isActiveGatewayPending
+                      }
                       inputMode="tel"
                       keyboardType="phone-pad"
                       onChangeText={setGatewayPhone}
@@ -2198,29 +2227,27 @@ export function PosCheckoutScreen({
                     disabled={
                       gatewayPayment.isWorking ||
                       !gatewayPhone.trim() ||
-                      isSuccessfulGatewayPayment(
-                        gatewayLinks[activeGatewayMode.mode_of_payment],
-                      )
+                      isActiveGatewayPending ||
+                      isActiveGatewayVerified
                     }
                     onPress={() => void initiateGatewayPayment()}
                     style={[
                       styles.submitButton,
                       (gatewayPayment.isWorking ||
                         !gatewayPhone.trim() ||
-                        isSuccessfulGatewayPayment(
-                          gatewayLinks[activeGatewayMode.mode_of_payment],
-                        )) &&
+                        isActiveGatewayPending ||
+                        isActiveGatewayVerified) &&
                         styles.submitButtonDisabled,
                     ]}
                   >
-                    {gatewayPayment.isWorking ? (
+                    {gatewayPayment.isWorking || isActiveGatewayPending ? (
                       <ActivityIndicator
                         color={palette.onPrimary}
                         size="small"
                       />
                     ) : (
                       <Text style={styles.submitButtonLabel}>
-                        {gatewayLinks[activeGatewayMode.mode_of_payment]
+                        {gatewayPayment.error || activeGatewayLink
                           ? "Retry STK request"
                           : "Send STK request"}
                       </Text>

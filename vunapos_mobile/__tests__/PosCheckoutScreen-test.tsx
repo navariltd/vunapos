@@ -1593,6 +1593,13 @@ describe("PosCheckoutScreen", () => {
       ),
     ).toBeTruthy();
     expect(
+      screen.getByLabelText("Send STK payment request").props.accessibilityState
+        .disabled,
+    ).toBe(true);
+    expect(
+      screen.getByLabelText("Gateway customer phone number").props.editable,
+    ).toBe(false);
+    expect(
       screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
     ).toBe(true);
 
@@ -1601,11 +1608,93 @@ describe("PosCheckoutScreen", () => {
     );
     await waitFor(() => expect(getStatus).toHaveBeenCalledWith("GPL-001"));
     await waitFor(() =>
-      expect(screen.getByText("Payment verified.")).toBeTruthy(),
+      expect(screen.queryByLabelText("Close gateway payment")).toBeNull(),
     );
     expect(
       screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
     ).toBe(false);
+  });
+
+  it("allows editing and retrying an STK request after it expires", async () => {
+    const initiate = jest
+      .fn()
+      .mockResolvedValue({
+        amount: 116,
+        mode_of_payment: "M-Pesa STK",
+        name: "GPL-001",
+        status: "Pending",
+      });
+    const getStatus = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-001",
+      status: "Expired",
+    });
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus,
+      initiate,
+      isWorking: false,
+      resolveCustomerPhone: jest.fn(),
+      searchC2B: jest.fn(),
+    });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          {
+            mode_of_payment: "M-Pesa STK",
+            payment_gateway: "M-Pesa",
+            type: "Phone",
+          },
+        ],
+        pos_profile: { name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{
+          customer: "CUST-001",
+          customerName: "ABC Corps",
+          mobile: "0712345678",
+        }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Pay with M-Pesa STK"));
+    await fireEvent.press(screen.getByLabelText("Send STK payment request"));
+    await waitFor(() => expect(initiate).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByLabelText("Gateway customer phone number").props.editable,
+    ).toBe(false);
+
+    await fireEvent.press(screen.getByLabelText("Check gateway payment status"));
+    await waitFor(() => expect(getStatus).toHaveBeenCalledWith("GPL-001"));
+    expect(screen.getByText("Retry STK request")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Gateway customer phone number").props.editable,
+    ).toBe(true);
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Gateway customer phone number"),
+      "0798765432",
+    );
+    await fireEvent.press(screen.getByLabelText("Send STK payment request"));
+    await waitFor(() => expect(initiate).toHaveBeenCalledTimes(2));
+    expect(initiate.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ phoneNumber: "0798765432" }),
+    );
   });
 
   it("unlocks checkout immediately when the matching gateway link is confirmed in realtime", async () => {
@@ -1699,7 +1788,7 @@ describe("PosCheckoutScreen", () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByText("Payment verified.")).toBeTruthy(),
+      expect(screen.queryByLabelText("Close gateway payment")).toBeNull(),
     );
     expect(
       screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
