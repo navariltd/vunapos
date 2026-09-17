@@ -209,12 +209,16 @@ export function POSHomePage({
     bootstrap.data?.allow_customer_payments !== false;
 
   const selectedPriceList = useCartStore((s) => s.selectedPriceList);
-  const items = useItemSearch(itemSearchQuery, selectedPriceList);
   const cartInvoice = useCartStore((s) => s.invoice);
   // Drafts edited from history retain their original doctype. Prefer it over
   // the workspace selector so Sales Orders never enter the invoice checkout path.
   const effectiveOrderType: OrderType =
     cartInvoice?.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
+  const items = useItemSearch(
+    itemSearchQuery,
+    selectedPriceList,
+    effectiveOrderType === "Sales Order",
+  );
   const cartQuantity =
     cartInvoice?.items.reduce(
       (total, item) => total + Number(item.qty || 0),
@@ -1401,6 +1405,7 @@ export function POSHomePage({
         details={bundleDetails}
         error={bundleError}
         isLoading={productBundleCall.loading}
+        ignoreStock={effectiveOrderType === "Sales Order"}
         isOpen={Boolean(bundleItem)}
         onClose={() => {
           setBundleItem(null);

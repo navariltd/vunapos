@@ -112,6 +112,7 @@ beforeEach(async () => {
 		selectedCustomerOverride: undefined,
 		selectedPriceList: undefined,
 		newItemPosition: "Bottom",
+		transactionOrderType: "Sales Invoice",
 	});
 });
 
@@ -171,6 +172,30 @@ describe("addCartItem", () => {
 		await expect(useCartStore.getState().addCartItem(scarce, makeApi())).rejects.toThrow(/Insufficient stock/);
 
 		expect(useCartStore.getState().invoice).toBeNull();
+	});
+
+	it("allows an out-of-stock Sales Order item and preserves its sales UOM", async () => {
+		useCartStore.setState({ transactionOrderType: "Sales Order" });
+		const item = makeItem({
+			item_code: "F61",
+			item_name: "Dairy Joy",
+			is_stock_item: 1,
+			actual_qty: 2,
+			allow_negative_stock: 0,
+			stock_uom: "Nos",
+			sales_uom: "Carton",
+			uom: "Carton",
+			conversion_factor: 24,
+		});
+
+		await useCartStore.getState().addCartItem(item, makeApi());
+
+		expect(useCartStore.getState().invoice?.items[0]).toMatchObject({
+			item_code: "F61",
+			qty: 1,
+			uom: "Carton",
+			conversion_factor: 24,
+		});
 	});
 });
 
@@ -895,6 +920,23 @@ describe("submitCart", () => {
 		).rejects.toThrow(/must equal the quantity/);
 	});
 
+	it("allows incomplete manual batch allocations for Sales Orders", async () => {
+		useCartStore.setState({ transactionOrderType: "Sales Order" });
+		const row = useCartStore.getState().invoice?.items[0];
+		expect(row).toBeDefined();
+
+		await expect(
+			useCartStore.getState().updateCartItemBatchAllocations(
+				row!.row_name,
+				[{ batch_no: "BATCH-A", qty: 0.5 }],
+				makeApi(),
+			),
+		).resolves.toBeUndefined();
+		expect(useCartStore.getState().invoice?.items[0].batch_allocations).toEqual([
+			{ batch_no: "BATCH-A", qty: 0.5 },
+		]);
+	});
+
 	it("submits directly with the checkout idempotency key and clears the cart", async () => {
 		await db.items.put({ item_code: "ITEM-1", item_name: "Widget", rate: 100, actual_qty: 5, modified: "2026-07-10" });
 		const createAndSubmitInvoice = vi.fn().mockResolvedValue({
@@ -1057,6 +1099,66 @@ describe("submitCart", () => {
 			customer: "CUST-1",
 		});
 		expect(useCartStore.getState().invoice).not.toBeNull();
+	});
+
+	it("does not refresh or validate stock for an online Sales Order checkout", async () => {
+		const getItemDetails = vi.fn().mockRejectedValue(new Error("stock refresh should not run"));
+		const createAndSubmitSalesOrder = vi.fn().mockResolvedValue({
+			doctype: "Sales Order", name: "SAL-ORD-STOCK-1", docstatus: 1, items: [], totals: {},
+		});
+		useCartStore.setState({ transactionOrderType: "Sales Order" });
+		await useCartStore.getState().addCartItem(
+			makeItem({
+				item_code: "SO-ITEM",
+				is_stock_item: 1,
+				actual_qty: 0,
+				allow_negative_stock: 0,
+				uom: "Carton",
+				stock_uom: "Nos",
+				conversion_factor: 24,
+			}),
+			makeApi(),
+		);
+
+		const result = await useCartStore.getState().submitCart(
+			[{ mode_of_payment: "Cash", amount: 100 }],
+			null,
+			"idem-so-stock",
+			makeApi({ getItemDetails, createAndSubmitSalesOrder }),
+			true,
+			false,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			"Sales Order",
+		);
+
+		expect(getItemDetails).not.toHaveBeenCalled();
+		expect(createAndSubmitSalesOrder).toHaveBeenCalled();
+		expect(result?.invoice.doctype).toBe("Sales Order");
+	});
+
+	it("revalidates stock after switching a Sales Order cart to Invoice", async () => {
+		useCartStore.setState({ transactionOrderType: "Sales Order" });
+		await useCartStore.getState().addCartItem(
+			makeItem({ is_stock_item: 1, actual_qty: 0, allow_negative_stock: 0 }),
+			makeApi(),
+		);
+		useCartStore.setState({ transactionOrderType: "Sales Invoice" });
+		const getItemDetails = vi.fn().mockResolvedValue(
+			makeItem({ is_stock_item: 1, actual_qty: 0, allow_negative_stock: 0 }),
+		);
+
+		await expect(useCartStore.getState().submitCart(
+			[{ mode_of_payment: "Cash", amount: 100 }],
+			null,
+			"idem-switched-invoice",
+			makeApi({ getItemDetails }),
+			true,
+		)).rejects.toThrow(/Available quantity is 0/);
+		expect(getItemDetails).toHaveBeenCalledWith(expect.objectContaining({ item_code: "ITEM-1" }));
 	});
 
 	it("checks out a held/source-tracked invoice through the server", async () => {
