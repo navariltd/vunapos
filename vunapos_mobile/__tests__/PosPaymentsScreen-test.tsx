@@ -139,6 +139,7 @@ describe("PosPaymentsScreen", () => {
       getStatus: jest.fn(),
       initiate: jest.fn(),
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B: jest.fn(),
     });
   });
@@ -854,6 +855,7 @@ describe("PosPaymentsScreen", () => {
       getStatus: jest.fn(),
       initiate,
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B: jest.fn(),
     });
     mockUseReceiveCustomerPayment.mockReturnValue({
@@ -976,6 +978,7 @@ describe("PosPaymentsScreen", () => {
       getStatus: jest.fn(),
       initiate: jest.fn(),
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B,
     });
     mockUsePosCustomerSearch.mockReturnValue({

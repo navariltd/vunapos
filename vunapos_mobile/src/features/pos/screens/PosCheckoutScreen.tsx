@@ -188,6 +188,7 @@ export function PosCheckoutScreen({
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
+  const profile = bootstrap.data?.pos_profile;
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [loyaltyInput, setLoyaltyInput] = useState("");
@@ -263,6 +264,62 @@ export function PosCheckoutScreen({
     useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
+  const resolvedPhoneCustomerRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const customerName = saleCustomer?.customer;
+    const localPhone = saleCustomer?.mobile?.trim();
+
+    if (!customerName) {
+      resolvedPhoneCustomerRef.current = null;
+      const resetTimer = setTimeout(() => setGatewayPhone(""), 0);
+      return () => clearTimeout(resetTimer);
+    }
+
+    if (localPhone) {
+      resolvedPhoneCustomerRef.current = customerName;
+      const phoneTimer = setTimeout(
+        () => setGatewayPhone((current) => (current === localPhone ? current : localPhone)),
+        0,
+      );
+      return () => clearTimeout(phoneTimer);
+    }
+
+    if (
+      resolvedPhoneCustomerRef.current === customerName ||
+      !profile?.name ||
+      isOffline
+    ) {
+      return;
+    }
+
+    resolvedPhoneCustomerRef.current = customerName;
+    let cancelled = false;
+    if (!gatewayPayment.resolveCustomerPhone) return;
+    void Promise.resolve(
+      gatewayPayment.resolveCustomerPhone({
+        customer: customerName,
+        posProfile: profile.name,
+      }),
+    )
+      .then((resolved) => {
+        const phone = resolved?.mobile_no?.trim();
+        if (!cancelled && phone) setGatewayPhone(phone);
+      })
+      .catch(() => {
+        // Phone resolution is an enhancement; the cashier can still enter it manually.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    gatewayPayment,
+    isOffline,
+    profile?.name,
+    saleCustomer?.customer,
+    saleCustomer?.mobile,
+  ]);
 
   const updateGatewayPaymentFromRealtime = useCallback(
     (payment: PosGatewayPaymentLink) => {
@@ -279,7 +336,6 @@ export function PosCheckoutScreen({
   );
   useGatewayPaymentRealtime(updateGatewayPaymentFromRealtime);
 
-  const profile = bootstrap.data?.pos_profile;
   const transactionDoctype = isInvoice
     ? profile?.invoice_mode || "Sales Invoice"
     : "Sales Order";
@@ -602,7 +658,7 @@ export function PosCheckoutScreen({
         precision,
       ),
     );
-    setGatewayPhone(saleCustomer?.mobile || "");
+    setGatewayPhone((current) => saleCustomer?.mobile?.trim() || current);
     setGatewayMethod("STK");
     setC2bQuery("");
     setC2bResults([]);
@@ -1842,11 +1898,15 @@ export function PosCheckoutScreen({
           visible={Boolean(activeGatewayMode)}
         >
           {activeGatewayMode ? (
-            <KeyboardAwareFormScroll
-              contentContainerStyle={styles.gatewayModalContent}
-              showsVerticalScrollIndicator={false}
-              style={styles.scrollView}
+            <SafeAreaView
+              edges={["top", "bottom"]}
+              style={styles.gatewayModalPage}
             >
+              <KeyboardAwareFormScroll
+                contentContainerStyle={styles.gatewayModalContent}
+                showsVerticalScrollIndicator={false}
+                style={styles.scrollView}
+              >
               <View style={styles.header}>
                 <View style={styles.heading}>
                   <Text style={styles.title}>
@@ -2136,7 +2196,8 @@ export function PosCheckoutScreen({
                   </View>
                 ) : null}
               </View>
-            </KeyboardAwareFormScroll>
+              </KeyboardAwareFormScroll>
+            </SafeAreaView>
           ) : null}
         </Modal>
 
@@ -2603,6 +2664,10 @@ function createStyles(palette: AppPalette) {
     gatewayModeButtonVerified: { borderColor: palette.success },
     gatewayModeText: { flex: 1, gap: 2 },
     gatewayModes: { gap: spacing.xs },
+    gatewayModalPage: {
+      backgroundColor: palette.surface,
+      flex: 1,
+    },
     gatewayModalContent: {
       gap: spacing.md,
       padding: spacing.md,

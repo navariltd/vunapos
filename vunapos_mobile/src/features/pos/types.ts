@@ -333,6 +333,12 @@ export type PosGatewayPaymentLink = {
     | string;
 };
 
+export type PosCustomerContactPhone = {
+  customer: string;
+  mobile_no?: string | null;
+  source?: "Customer" | "Contact" | null;
+};
+
 export type PosC2BGatewayPayment = {
   amount: number;
   currency?: string | null;

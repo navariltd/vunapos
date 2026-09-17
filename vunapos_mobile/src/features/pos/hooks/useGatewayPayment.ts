@@ -2,7 +2,11 @@ import { useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { useNetworkStatus } from '@/services/NetworkStatusProvider';
-import { PosC2BGatewayPayment, PosGatewayPaymentLink } from '@/features/pos/types';
+import {
+  PosC2BGatewayPayment,
+  PosCustomerContactPhone,
+  PosGatewayPaymentLink,
+} from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/frappeClient';
 
 type InitiateGatewayPaymentInput = {
@@ -66,6 +70,13 @@ export function useGatewayPayment() {
     return request<PosGatewayPaymentLink>('vunapos.api.gateway.get_gateway_payment_status', { gateway_payment_link: gatewayPaymentLink }, true);
   }
 
+  function resolveCustomerPhone(input: { customer: string; posProfile: string }) {
+    return request<PosCustomerContactPhone>(
+      'vunapos.api.customer.get_customer_contact_phone',
+      { customer: input.customer, pos_profile: input.posProfile },
+    );
+  }
+
   function cancel(gatewayPaymentLink: string) {
     return request<PosGatewayPaymentLink>('vunapos.api.gateway.cancel_gateway_payment_link', { gateway_payment_link: gatewayPaymentLink });
   }
@@ -85,5 +96,15 @@ export function useGatewayPayment() {
     });
   }
 
-  return { attachC2B, cancel, clearError, error, getStatus, initiate, isWorking, searchC2B };
+  return {
+    attachC2B,
+    cancel,
+    clearError,
+    error,
+    getStatus,
+    initiate,
+    isWorking,
+    resolveCustomerPhone,
+    searchC2B,
+  };
 }

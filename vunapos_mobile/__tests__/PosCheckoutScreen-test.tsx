@@ -130,6 +130,7 @@ describe("PosCheckoutScreen", () => {
       getStatus: jest.fn(),
       initiate: jest.fn(),
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B: jest.fn(),
     });
     mockUseGatewayPaymentRealtime.mockImplementation(() => undefined);
@@ -1162,6 +1163,73 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
+  it("resolves a missing customer phone before opening gateway payment", async () => {
+    const resolveCustomerPhone = jest.fn().mockResolvedValue({
+      customer: "CUST-001",
+      mobile_no: "0712345678",
+      source: "Contact",
+    });
+    const initiate = jest.fn().mockResolvedValue({
+      amount: 116,
+      mode_of_payment: "M-Pesa STK",
+      name: "GPL-001",
+      status: "Pending",
+    });
+    mockUseGatewayPayment.mockReturnValue({
+      attachC2B: jest.fn(),
+      cancel: jest.fn(),
+      clearError: jest.fn(),
+      error: null,
+      getStatus: jest.fn(),
+      initiate,
+      isWorking: false,
+      resolveCustomerPhone,
+      searchC2B: jest.fn(),
+    });
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [
+          { default: true, mode_of_payment: "Cash", type: "Cash" },
+          {
+            mode_of_payment: "M-Pesa STK",
+            payment_gateway: "M-Pesa",
+            type: "Phone",
+          },
+        ],
+        pos_profile: { name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(resolveCustomerPhone).toHaveBeenCalledWith({
+        customer: "CUST-001",
+        posProfile: "POS-001",
+      }),
+    );
+    await fireEvent.press(screen.getByLabelText("Pay with M-Pesa STK"));
+    await fireEvent.press(screen.getByLabelText("Send STK payment request"));
+
+    await waitFor(() =>
+      expect(initiate).toHaveBeenCalledWith(
+        expect.objectContaining({ phoneNumber: "0712345678" }),
+      ),
+    );
+  });
+
   it("blocks gateway checkout until the server confirms the gateway payment", async () => {
     const initiate = jest.fn().mockResolvedValue({
       amount: 116,
@@ -1183,6 +1251,7 @@ describe("PosCheckoutScreen", () => {
       getStatus,
       initiate,
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B: jest.fn(),
     });
     mockUsePosBootstrap.mockReturnValue({
@@ -1286,6 +1355,7 @@ describe("PosCheckoutScreen", () => {
       getStatus: jest.fn(),
       initiate,
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B: jest.fn(),
     });
     mockUseGatewayPaymentRealtime.mockImplementation((onChange) => {
@@ -1384,6 +1454,7 @@ describe("PosCheckoutScreen", () => {
       getStatus: jest.fn(),
       initiate: jest.fn(),
       isWorking: false,
+      resolveCustomerPhone: jest.fn(),
       searchC2B,
     });
     mockUsePosBootstrap.mockReturnValue({
