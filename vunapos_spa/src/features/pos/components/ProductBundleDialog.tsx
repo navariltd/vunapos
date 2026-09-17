@@ -16,6 +16,7 @@ type ProductBundleDialogProps = {
   currency?: string;
   error?: string | null;
   isLoading?: boolean;
+  ignoreStock?: boolean;
   isOpen: boolean;
   bundle: ItemDTO | null;
   details: ProductBundleDetails | null;
@@ -27,6 +28,7 @@ export function ProductBundleDialog({
   currency,
   error,
   isLoading,
+  ignoreStock,
   isOpen,
   bundle,
   details,
@@ -37,7 +39,7 @@ export function ProductBundleDialog({
   const availableQty = Number(details?.available_qty ?? bundle.actual_qty ?? 0);
   const canAdd =
     Boolean(details) &&
-    (availableQty > 0 || Boolean(bundle.allow_negative_stock));
+    ignoreStock || (availableQty > 0 || Boolean(bundle.allow_negative_stock));
 
   return (
     <div

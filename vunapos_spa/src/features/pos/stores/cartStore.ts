@@ -917,7 +917,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 	addCartItem: async (item, api) => {
 			const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-			const initialUom = selectAvailableInitialUom(item);
+			const initialUom = get().transactionOrderType === "Sales Order"
+				? { item }
+				: selectAvailableInitialUom(item);
 			const itemForCart = initialUom.item;
 			if (isStockControlled(itemForCart) && get().transactionOrderType !== "Sales Order") {
 				validateAvailableQty(itemForCart, 1);
@@ -1158,7 +1160,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, batch_allocations: allocations || [] } : item,
 			);
-			validateManualBatchAllocations(nextItems);
+			if (get().transactionOrderType !== "Sales Order" && invoice.source_invoice_doctype !== "Sales Order") {
+				validateManualBatchAllocations(nextItems);
+			}
 			if (isLocalCart(invoice)) {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
