@@ -507,6 +507,55 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
+  it("supports a walk-in Tax ID on a Sales Order", async () => {
+    submit.mockResolvedValue({
+      doctype: "Sales Order",
+      name: "SO-TAX-001",
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{
+          customer: "CUST-WALKIN",
+          customerName: "Walk-in customer",
+          isWalkin: true,
+        }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getByLabelText("Customer Tax ID")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Customer Tax ID"),
+      "  A123456789Z  ",
+    );
+    await fireEvent.press(screen.getByLabelText("Submit sales order"));
+    await fireEvent.press(
+      screen.getByLabelText("Confirm sales order submission"),
+    );
+
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({ taxId: "A123456789Z" }),
+      ),
+    );
+  });
+
   it("allows a permitted delivery charge to be applied through the parent cart", async () => {
     const applyDeliveryCharge = jest.fn().mockResolvedValue({
       items: [],

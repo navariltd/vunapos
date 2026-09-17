@@ -23,7 +23,7 @@ export function PosTopBar({
   allowOrderTypeChange,
 }: PosTopBarProps) {
   const [settingsVisible, setSettingsVisible] = useState(false);
-  const { clearLocalPosData } = useAppSession();
+  const { clearLocalPosData, signOut } = useAppSession();
   const { palette } = useAppearance();
 
   function selectOrderType(nextOrderType: PosOrderType) {
@@ -65,6 +65,7 @@ export function PosTopBar({
         onClose={() => setSettingsVisible(false)}
         onClearLocalData={clearSavedPosData}
         onOrderTypeChange={selectOrderType}
+        onSignOut={signOut}
         allowOrderTypeChange={allowOrderTypeChange}
         orderType={orderType}
         visible={settingsVisible}

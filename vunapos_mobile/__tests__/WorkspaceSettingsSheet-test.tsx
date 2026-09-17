@@ -7,6 +7,7 @@ import {
 
 const mockSetPreference = jest.fn();
 const onClearLocalData = jest.fn();
+const onSignOut = jest.fn().mockResolvedValue(undefined);
 
 jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ bottom: 24, left: 0, right: 0, top: 0 }),
@@ -144,6 +145,26 @@ describe("WorkspaceSettingsSheet", () => {
     );
 
     await waitFor(() => expect(onClearLocalData).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires confirmation before signing out", async () => {
+    const screen = await render(
+      <WorkspaceSettingsSheet
+        onClose={onClose}
+        onClearLocalData={onClearLocalData}
+        onOrderTypeChange={onOrderTypeChange}
+        onSignOut={onSignOut}
+        orderType="Invoice"
+        visible
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Sign out"));
+    expect(onSignOut).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByLabelText("Confirm signing out"));
+
+    await waitFor(() => expect(onSignOut).toHaveBeenCalledTimes(1));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

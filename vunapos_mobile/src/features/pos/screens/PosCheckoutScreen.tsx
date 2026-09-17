@@ -1471,12 +1471,12 @@ export function PosCheckoutScreen({
           </View>
         ) : null}
 
-        {isInvoice && isWalkinCustomer ? (
+        {isWalkinCustomer ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Receipt Tax ID</Text>
+            <Text style={styles.cardTitle}>Transaction Tax ID</Text>
             <Text style={styles.cardHint}>
               Optionally add the walk-in customer’s PIN or Tax ID to this
-              receipt.
+              transaction.
             </Text>
             <Text style={styles.fieldLabel}>Customer Tax ID</Text>
             <TextInput

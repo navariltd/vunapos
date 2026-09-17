@@ -13,6 +13,7 @@ type WorkspaceSettingsSheetProps = {
   onClose: () => void;
   onClearLocalData: () => Promise<void>;
   onOrderTypeChange: (orderType: PosOrderType) => void;
+  onSignOut?: () => Promise<void>;
   orderType: PosOrderType;
   allowOrderTypeChange?: boolean;
   visible: boolean;
@@ -33,6 +34,7 @@ export function WorkspaceSettingsSheet({
   onClose,
   onClearLocalData,
   onOrderTypeChange,
+  onSignOut,
   orderType,
   allowOrderTypeChange = true,
   visible,
@@ -41,6 +43,8 @@ export function WorkspaceSettingsSheet({
   const insets = useSafeAreaInsets();
   const [confirmingClear, setConfirmingClear] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   async function confirmClearLocalData() {
     setIsClearing(true);
@@ -50,6 +54,18 @@ export function WorkspaceSettingsSheet({
       onClose();
     } finally {
       setIsClearing(false);
+    }
+  }
+
+  async function confirmSignOut() {
+    if (!onSignOut) return;
+    setIsSigningOut(true);
+    try {
+      await onSignOut();
+      setConfirmingSignOut(false);
+      onClose();
+    } finally {
+      setIsSigningOut(false);
     }
   }
 
@@ -105,6 +121,57 @@ export function WorkspaceSettingsSheet({
               />
             </Pressable>
           </View>
+
+          {onSignOut ? (
+            <>
+              <Text
+                style={[styles.sectionLabel, { color: palette.onSurfaceMuted }]}
+              >
+                ACCOUNT
+              </Text>
+              {confirmingSignOut ? (
+                <View
+                  style={[
+                    styles.clearConfirmation,
+                    {
+                      backgroundColor: palette.errorSurface,
+                      borderColor: palette.error,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.confirmationTitle, { color: palette.onError }]}>Sign out?</Text>
+                  <Text style={[styles.confirmationCopy, { color: palette.onError }]}>Your saved workspace data will be cleared from this device.</Text>
+                  <View style={styles.confirmationActions}>
+                    <Pressable
+                      accessibilityLabel="Cancel signing out"
+                      disabled={isSigningOut}
+                      onPress={() => setConfirmingSignOut(false)}
+                      style={[styles.clearAction, { borderColor: palette.error }]}
+                    >
+                      <Text style={[styles.clearActionLabel, { color: palette.onError }]}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityLabel="Confirm signing out"
+                      disabled={isSigningOut}
+                      onPress={() => void confirmSignOut()}
+                      style={[styles.clearAction, { backgroundColor: palette.error }]}
+                    >
+                      <Text style={[styles.clearActionLabel, { color: palette.onPrimary }]}>{isSigningOut ? "Signing out…" : "Sign out"}</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  accessibilityLabel="Sign out"
+                  onPress={() => setConfirmingSignOut(true)}
+                  style={[styles.clearDataButton, { borderColor: palette.error }]}
+                >
+                  <MaterialCommunityIcons color={palette.error} name="logout" size={18} />
+                  <Text style={[styles.clearDataLabel, { color: palette.error }]}>Sign out</Text>
+                </Pressable>
+              )}
+            </>
+          ) : null}
 
           <Text
             style={[styles.sectionLabel, { color: palette.onSurfaceMuted }]}
