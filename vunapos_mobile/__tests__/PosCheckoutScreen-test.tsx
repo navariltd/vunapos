@@ -604,6 +604,14 @@ describe("PosCheckoutScreen", () => {
       screen.getByLabelText("Delivery charge amount"),
       "25",
     );
+    expect(
+      screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText(
+        "Delivery charge changed but not applied. Apply it before submitting.",
+      ),
+    ).toBeTruthy();
     await fireEvent.press(screen.getByLabelText("Apply delivery charge"));
 
     await waitFor(() =>

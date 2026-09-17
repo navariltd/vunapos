@@ -200,6 +200,8 @@ export function PosCheckoutScreen({
   const [deliveryChargeAmount, setDeliveryChargeAmount] = useState<
     string | null
   >(null);
+  const [appliedDeliveryChargeAmount, setAppliedDeliveryChargeAmount] =
+    useState<string | null>(null);
   const [deliveryChargeError, setDeliveryChargeError] = useState<string | null>(
     null,
   );
@@ -434,6 +436,20 @@ export function PosCheckoutScreen({
           precision,
         )
       : "");
+  const typedDeliveryChargeMinor = parsePaymentAmount(
+    displayedDeliveryChargeAmount,
+    precision,
+  );
+  const appliedDeliveryChargeMinor =
+    appliedDeliveryChargeAmount !== null
+      ? parsePaymentAmount(appliedDeliveryChargeAmount, precision)
+      : deliveryChargeCartItem
+        ? totalToMinorUnits(deliveryChargeCartItem.rate, precision)
+        : 0;
+  const deliveryChargeDirty =
+    deliveryChargeAmount !== null &&
+    (typedDeliveryChargeMinor === null ||
+      typedDeliveryChargeMinor !== appliedDeliveryChargeMinor);
   const selectedShippingAddress =
     customerShippingAddresses.data?.find(
       (address) => address.name === shippingAddressName,
@@ -535,6 +551,7 @@ export function PosCheckoutScreen({
     items.length &&
     !checkout.isSubmitting &&
     !isApplyingDeliveryCharge &&
+    !deliveryChargeDirty &&
     !isApplyingLoyalty &&
     isLoyaltySelectionValid &&
     (isInvoice
@@ -814,10 +831,13 @@ export function PosCheckoutScreen({
       deliveryChargeItem,
       amountMinor / currencyScale(precision),
     );
-    if (!applied)
+    if (!applied) {
       setDeliveryChargeError(
         "Could not update the delivery charge. Try again.",
       );
+    } else {
+      setAppliedDeliveryChargeAmount(minorUnitsToInput(amountMinor, precision));
+    }
     setIsApplyingDeliveryCharge(false);
   }
 
@@ -913,6 +933,12 @@ export function PosCheckoutScreen({
     if (!isInvoice && deliveryDate < today()) {
       setValidationError(
         "The Sales Order delivery date cannot be before today.",
+      );
+      return;
+    }
+    if (deliveryChargeDirty) {
+      setValidationError(
+        "Apply the delivery charge change before submitting this sale.",
       );
       return;
     }
@@ -1542,6 +1568,12 @@ export function PosCheckoutScreen({
             ) : null}
             {deliveryChargeError ? (
               <Text style={styles.errorText}>{deliveryChargeError}</Text>
+            ) : null}
+            {deliveryChargeDirty && !deliveryChargeError ? (
+              <Text style={styles.cardHint}>
+                Delivery charge changed but not applied. Apply it before
+                submitting.
+              </Text>
             ) : null}
           </View>
         ) : null}
