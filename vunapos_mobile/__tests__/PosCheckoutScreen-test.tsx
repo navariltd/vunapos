@@ -254,6 +254,73 @@ describe("PosCheckoutScreen", () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  it("holds the active invoice from checkout and returns to the catalogue", async () => {
+    const onBack = jest.fn();
+    const onHold = jest.fn().mockResolvedValue({ name: "HOLD-0001" });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 2,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={onBack}
+        onComplete={onComplete}
+        onHold={onHold}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={200}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Hold checkout"));
+
+    await waitFor(() => expect(onHold).toHaveBeenCalledTimes(1));
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirms clearing the active checkout before removing its cart", async () => {
+    const onClear = jest.fn();
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onClear={onClear}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Clear checkout"));
+    expect(screen.getByText("Clear the current cart?")).toBeTruthy();
+    expect(onClear).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByLabelText("Confirm clear cart"));
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+
   it("blocks checkout with the configured field label when a required checkout field is empty", async () => {
     mockUsePosBootstrap.mockReturnValue({
       data: {
