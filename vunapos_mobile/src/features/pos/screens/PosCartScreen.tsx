@@ -1403,7 +1403,12 @@ export function PosCartScreen({
               {holdFeedback}
             </Text>
           ) : null}
-          <View style={styles.cartActions}>
+          <View
+            style={[
+              styles.cartActions,
+              !canHold && styles.cartActionsStandalone,
+            ]}
+          >
             {canHold ? (
               <Pressable
                 accessibilityLabel="Hold cart"
@@ -1430,7 +1435,9 @@ export function PosCartScreen({
               onPress={onCheckout}
               style={[
                 styles.checkoutButton,
-                canHold && styles.checkoutButtonWithHold,
+                canHold
+                  ? styles.checkoutButtonWithHold
+                  : styles.checkoutButtonStandalone,
                 (isCartBusy || error || requiresCustomer) &&
                   styles.checkoutButtonDisabled,
               ]}
@@ -1750,6 +1757,11 @@ function createStyles(palette: AppPalette) {
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  checkoutButtonStandalone: {
+    alignSelf: "center",
+    width: "80%",
   },
   checkoutButtonWithHold: { flex: 1 },
   checkoutButtonDisabled: {
@@ -1781,6 +1793,7 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.tiny,
   },
   cartActions: { flexDirection: "row", gap: spacing.sm },
+  cartActionsStandalone: { justifyContent: "center" },
   clearCustomerButton: {
     alignItems: "center",
     borderColor: palette.border,

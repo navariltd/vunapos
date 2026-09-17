@@ -195,6 +195,9 @@ describe("PosCartScreen", () => {
     expect(onCheckout).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Proceed to checkout")).toHaveStyle({
       backgroundColor: lightPalette.primary,
+      alignSelf: "center",
+      paddingHorizontal: 16,
+      width: "80%",
     });
 
     await fireEvent.press(screen.getByLabelText("Use default sale customer"));
