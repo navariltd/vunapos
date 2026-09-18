@@ -11,6 +11,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mobile-tests:
+    runs-on: ubuntu-latest
+    name: Mobile
+    defaults:
+      run:
+        working-directory: vunapos_mobile
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          check-latest: true
+
+      - name: Install mobile dependencies
+        run: npm install
+
+      - name: Typecheck mobile app
+        run: npx tsc --noEmit
+
+      - name: Lint mobile app
+        run: npm run lint
+
+      - name: Run mobile tests
+        run: npm test
+
   tests:
     runs-on: ubuntu-latest
     strategy:
