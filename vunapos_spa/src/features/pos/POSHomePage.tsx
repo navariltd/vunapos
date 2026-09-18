@@ -1270,12 +1270,16 @@ export function POSHomePage({
         onResolveCustomerPhone={gatewayPayments.getCustomerContactPhone}
         onCancelGatewayPayment={gatewayPayments.cancelGatewayPaymentLink}
         onInitiateGatewayPayment={(params) =>
-          gatewayPayments.initiateStkPayment({
-            ...params,
-            pos_profile: bootstrap.data?.pos_profile,
-            customer: activeCustomer?.customer,
-            currency: bootstrap.data?.currency,
-          })
+          cartActions.prepareGatewayPayment(effectiveOrderType).then((prepared) =>
+            gatewayPayments.initiateStkPayment({
+              ...params,
+              pos_profile: bootstrap.data?.pos_profile,
+              customer: activeCustomer?.customer,
+              currency: bootstrap.data?.currency,
+              account_reference:
+                prepared?.source_invoice_name || prepared?.name || params.account_reference,
+            }),
+          )
         }
         onPreviewLoyalty={(points) =>
           cartActions.previewLoyaltyRedemption(points)

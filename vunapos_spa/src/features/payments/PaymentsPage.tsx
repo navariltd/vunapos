@@ -587,6 +587,7 @@ export function PaymentsPage({
                         phone_number: gatewayPhone,
                         customer: receiveCustomer,
                         currency,
+                        account_reference: invoice || undefined,
                         idempotency_key: `${idempotencyKey.current}:${mode}:customer-payment:stk`,
                       }),
                     ),

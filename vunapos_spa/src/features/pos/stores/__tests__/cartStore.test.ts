@@ -197,6 +197,31 @@ describe("addCartItem", () => {
 			conversion_factor: 24,
 		});
 	});
+
+	it("materializes a draft before a gateway payment so it has a document reference", async () => {
+		await useCartStore.getState().addCartItem(makeItem(), makeApi());
+		const createInvoiceFromCart = vi.fn().mockResolvedValue({
+			doctype: "Sales Order",
+			name: "SAL-ORD-GATEWAY-1",
+			docstatus: 0,
+			items: [{ item_code: "ITEM-1", qty: 1, rate: 100, amount: 100 }],
+			totals: { grand_total: 100, rounded_total: 100 },
+		});
+
+		const prepared = await useCartStore.getState().prepareGatewayPayment(
+			makeApi({ createInvoiceFromCart }),
+			"Sales Order",
+		);
+
+		expect(createInvoiceFromCart).toHaveBeenCalledWith(expect.objectContaining({
+			invoice_doctype: "Sales Order",
+			items: expect.any(String),
+		}));
+		expect(prepared).toMatchObject({
+			source_invoice_doctype: "Sales Order",
+			source_invoice_name: "SAL-ORD-GATEWAY-1",
+		});
+	});
 });
 
 describe("scanBarcode", () => {
