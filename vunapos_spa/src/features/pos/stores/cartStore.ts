@@ -686,6 +686,7 @@ type CartActions = {
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshPriceListPricing: (priceList: string | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
+	prepareGatewayPayment: (api: CartApi, orderType?: "Sales Invoice" | "Sales Order") => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
@@ -879,6 +880,34 @@ export const useCartStore = create<CartStore>((set, get) => {
 			items: cartItemsPayload(cart.items),
 			loyalty_points: cart.loyalty_points || undefined,
 		});
+	}
+
+	async function prepareGatewayPayment(
+		api: CartApi,
+		orderType: "Sales Invoice" | "Sales Order" = get().transactionOrderType,
+	): Promise<InvoiceDTO | null> {
+		const invoice = get().invoice;
+		if (!invoice?.items?.length) return null;
+		if (invoice.source_invoice_doctype && invoice.source_invoice_name) return invoice;
+		if (!isLocalCart(invoice)) return invoice;
+
+		const selectedCustomer = getActiveCustomer(get());
+		const draft = await runMutation(() => createInvoiceFromCart(api.createInvoiceFromCart, {
+			pos_profile: get().posProfile,
+			customer: selectedCustomer?.customer || invoice.customer,
+			price_list: get().selectedPriceList || invoice.selling_price_list,
+			items: cartItemsPayload(invoice.items),
+			loyalty_points: invoice.loyalty_points || undefined,
+			invoice_doctype: orderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
+		}));
+		const materialized = {
+			...draft,
+			is_local: true,
+			source_invoice_doctype: draft.doctype,
+			source_invoice_name: draft.name,
+		};
+		set({ invoice: materialized });
+		return materialized;
 	}
 
 	async function restoreDefaultCataloguePricing(api: CartApi) {
@@ -1461,6 +1490,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (!get().invoice?.items.length) return null;
 			return get().validateCart(api);
 		},
+
+		prepareGatewayPayment: (api, orderType) => prepareGatewayPayment(api, orderType),
 
 		submitCart: async (
 			payments,

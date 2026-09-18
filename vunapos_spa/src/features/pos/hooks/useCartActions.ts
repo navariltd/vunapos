@@ -26,6 +26,7 @@ export function useCartActions() {
 	const refreshCartConfigurationAction = useCartStore((s) => s.refreshCartConfiguration);
 	const refreshCustomerPricingAction = useCartStore((s) => s.refreshCustomerPricing);
 	const refreshPriceListPricingAction = useCartStore((s) => s.refreshPriceListPricing);
+	const prepareGatewayPaymentAction = useCartStore((s) => s.prepareGatewayPayment);
 	const submitCartAction = useCartStore((s) => s.submitCart);
 	const holdCartAction = useCartStore((s) => s.holdCart);
 	const restoreHeldInvoiceAction = useCartStore((s) => s.restoreHeldInvoice);
@@ -57,6 +58,7 @@ export function useCartActions() {
 			refreshCustomerPricing: (customer: CustomerDTO | null | undefined) =>
 				refreshCustomerPricingAction(customer, api),
 			refreshPriceListPricing: (priceList?: string) => refreshPriceListPricingAction(priceList, api),
+			prepareGatewayPayment: (orderType?: "Sales Invoice" | "Sales Order") => prepareGatewayPaymentAction(api, orderType),
 			submitCart: (
 				payments: PaymentInput[],
 				printFormat: string | null | undefined,
@@ -97,6 +99,7 @@ export function useCartActions() {
 			refreshCartConfigurationAction,
 			refreshCustomerPricingAction,
 			refreshPriceListPricingAction,
+			prepareGatewayPaymentAction,
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,
