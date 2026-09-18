@@ -652,7 +652,11 @@ def initiate_stk_gateway_payment(
 	precision = get_currency_precision() or 2
 	amount = _normalize_amount(amount, precision)
 	currency = currency or profile.currency
-	account_reference = (account_reference or idempotency_key or "").strip()
+	# The account reference is shown to the customer by the payment provider. It
+	# must never expose the internal retry/idempotency key. Checkout callers pass
+	# the draft invoice/order name; retain a stable product label for legacy
+	# callers that do not have a document reference yet.
+	account_reference = (account_reference or "VUNAPOS").strip()
 
 	existing = _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key)
 	if existing:
