@@ -171,6 +171,8 @@ describe("PosCartScreen", () => {
 
     expect(screen.getAllByText("KES 250.00")).toHaveLength(2);
     expect(screen.getByText("KES 290.00")).toBeTruthy();
+    expect(screen.getByText("Subtotal")).toBeTruthy();
+    expect(screen.getByText("VAT Added")).toBeTruthy();
     await fireEvent.press(
       screen.getByLabelText("Increase quantity for Stock item"),
     );

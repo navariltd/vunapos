@@ -1352,7 +1352,7 @@ export function PosCartScreen({
             </Text>
           ) : null}
           <View style={styles.summary}>
-            <Text style={styles.summaryLabel}>Net total</Text>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
             <Text style={styles.summaryAmount}>
               {displayCurrency(subtotal)}
             </Text>
@@ -1364,7 +1364,7 @@ export function PosCartScreen({
             >
               <Text
                 style={styles.summaryRowLabel}
-              >{`${tax.description || tax.account_head || "Tax"}${tax.rate !== undefined ? ` (${tax.rate}%)` : ""}${tax.included_in_print_rate ? " · included" : ""}`}</Text>
+              >{`${tax.description || tax.account_head || "Tax"}${tax.rate ? ` ${tax.rate}% ·` : ""} ${tax.included_in_print_rate ? "Included" : "Added"}`}</Text>
               <Text style={styles.summaryRowAmount}>
                 {displayCurrency(tax.tax_amount || 0)}
               </Text>

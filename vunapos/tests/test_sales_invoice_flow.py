@@ -239,7 +239,9 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		item_code = ensure_test_item()
 
 		with patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True):
-			with patch("vunapos.services.payment_service.receive_customer_payment", return_value={"name": "PAY-001"}) as receive_payment:
+			with patch(
+				"vunapos.services.payment_service.receive_customer_payment", return_value={"name": "PAY-001"}
+			) as receive_payment:
 				response = create_and_submit_sales_order(
 					pos_profile=profile,
 					items=[{"item_code": item_code, "qty": 1}],

@@ -133,13 +133,9 @@ function taxLabel(
   description?: string,
   accountHead?: string,
   rate?: number,
-  included?: boolean,
 ) {
   const name = description || accountHead || "Tax";
-  const rateLabel =
-    rate === undefined || rate === null
-      ? ""
-      : ` · ${rate}%${included ? " included" : ""}`;
+  const rateLabel = rate ? ` · ${rate}%` : "";
   return `${name}${rateLabel}`;
 }
 
@@ -415,9 +411,6 @@ export function PosCheckoutScreen({
   const netTotal = preview.data?.totals.net_total ?? invoiceTotal;
   const grandTotal = preview.data?.totals.grand_total ?? invoiceTotal;
   const roundedTotal = preview.data?.totals.rounded_total;
-  const taxTotal =
-    preview.data?.totals.total_taxes_and_charges ??
-    Math.max(grandTotal - netTotal, 0);
   const postingDate = preview.data?.posting_date ?? today();
   const precision = profile?.currency_precision ?? 2;
   const totalMinor = totalToMinorUnits(total, precision);
@@ -1219,7 +1212,6 @@ export function PosCheckoutScreen({
                     tax.description,
                     tax.account_head,
                     tax.rate,
-                    tax.included_in_print_rate,
                   )}
                   value={formatCurrency(
                     tax.tax_amount ?? 0,
@@ -1228,10 +1220,6 @@ export function PosCheckoutScreen({
                   )}
                 />
               ))}
-              <SummaryRow
-                label="Total taxes and charges"
-                value={formatCurrency(taxTotal, currency, precision)}
-              />
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Grand total</Text>
                 <Text style={styles.totalValue}>
@@ -1258,7 +1246,7 @@ export function PosCheckoutScreen({
               ) : null}
               <View style={styles.summaryDivider} />
               <SummaryRow
-                label="Paid amount"
+                label="Paid"
                 value={formatCurrency(paidAmount, currency, precision)}
               />
               <SummaryRow

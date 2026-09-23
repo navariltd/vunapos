@@ -122,6 +122,7 @@ def validate_global_checkout_fields(doc, method=None):
 		if field.read_only or field.fieldtype in DISALLOWED_FIELD_TYPES:
 			frappe.throw(_("Field {0} cannot be edited from VunaPOS.").format(fieldname))
 
+
 def apply_checkout_field_values(doc, values=None, profile=None):
 	"""Apply whitelisted POS checkout values to a transaction document."""
 	if isinstance(values, str):

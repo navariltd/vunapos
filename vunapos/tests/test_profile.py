@@ -4,7 +4,10 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from vunapos.api.profile import get_bootstrap_data
-from vunapos.services.checkout_field_service import get_global_checkout_fields, validate_global_checkout_fields
+from vunapos.services.checkout_field_service import (
+	get_global_checkout_fields,
+	validate_global_checkout_fields,
+)
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 from vunapos.setup.utils import ensure_vunapos_custom_fields

@@ -1146,10 +1146,10 @@ describe("PosCheckoutScreen", () => {
 
     expect(screen.getByText("Checkout summary")).toBeTruthy();
     expect(screen.getByText("1 × Stock item")).toBeTruthy();
+    expect(screen.getByText("Subtotal")).toBeTruthy();
     expect(screen.getByText("VAT · 16%")).toBeTruthy();
-    expect(screen.getByText("Total taxes and charges")).toBeTruthy();
     expect(screen.getByText("Grand total")).toBeTruthy();
-    expect(screen.getByText("Paid amount")).toBeTruthy();
+    expect(screen.getByText("Paid")).toBeTruthy();
     await waitFor(() => expect(screen.getByText("Balance")).toBeTruthy());
   });
 
