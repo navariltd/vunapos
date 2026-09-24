@@ -2364,7 +2364,12 @@ export function PosCheckoutScreen({
         <Modal
           animationType="fade"
           onRequestClose={() => {
-            if (!checkout.isSubmitting) setIsSubmitConfirmationVisible(false);
+            if (checkout.isSubmitting) return;
+            if (completedResult) {
+              onComplete(completedResult);
+            } else {
+              setIsSubmitConfirmationVisible(false);
+            }
           }}
           presentationStyle="overFullScreen"
           statusBarTranslucent
@@ -2375,7 +2380,13 @@ export function PosCheckoutScreen({
             <Pressable
               accessibilityLabel="Dismiss sale confirmation"
               disabled={checkout.isSubmitting}
-              onPress={() => setIsSubmitConfirmationVisible(false)}
+              onPress={() => {
+                if (completedResult) {
+                  onComplete(completedResult);
+                } else {
+                  setIsSubmitConfirmationVisible(false);
+                }
+              }}
               style={styles.confirmationBackdrop}
             />
             <View accessibilityViewIsModal style={styles.confirmationDialog}>

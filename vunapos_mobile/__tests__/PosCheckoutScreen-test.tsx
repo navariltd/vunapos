@@ -207,7 +207,7 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("dismisses the completed-sale popup from its backdrop without opening the invoice", async () => {
+  it("returns to the workspace after dismissing the completed-sale popup", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0001" });
     const screen = await render(
       <PosCheckoutScreen
@@ -250,8 +250,10 @@ describe("PosCheckoutScreen", () => {
       throw new Error("Confirmation backdrop not found");
     }
     await fireEvent.press(confirmationBackdrop);
-    expect(screen.queryByText("Sales invoice SINV-0001 submitted.")).toBeNull();
-    expect(onComplete).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledWith({
+      doctype: "Sales Invoice",
+      name: "SINV-0001",
+    });
   });
 
   it("holds the active invoice from checkout and returns to the catalogue", async () => {
@@ -2058,6 +2060,73 @@ describe("PosCheckoutScreen", () => {
           }),
         ),
       );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("returns to the workspace after dismissing a submitted Sales Order", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-09-01T12:00:00"));
+    try {
+      submit.mockResolvedValue({
+        doctype: "Sales Order",
+        name: "SAL-ORD-0003",
+      });
+      const screen = await render(
+        <PosCheckoutScreen
+          currency="KES"
+          items={[
+            {
+              allow_negative_stock: false,
+              available_qty: 4,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: 100,
+              uom: "Nos",
+            },
+          ]}
+          onBack={jest.fn()}
+          onComplete={onComplete}
+          orderType="Order"
+          saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+          subtotal={100}
+        />,
+      );
+
+      await fireEvent.press(
+        screen.getByLabelText("Choose Sales Order delivery date"),
+      );
+      await fireEvent(
+        screen.getByTestId("sales-order-delivery-date-picker"),
+        "valueChange",
+        {},
+        new Date(2026, 8, 12, 12),
+      );
+      await fireEvent.press(screen.getByLabelText("Submit sales order"));
+      await fireEvent.press(
+        screen.getByLabelText("Confirm sales order submission"),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByText("Sales order SAL-ORD-0003 submitted."),
+        ).toBeTruthy(),
+      );
+
+      const confirmationDialog = screen.getByText(
+        "Sales order SAL-ORD-0003 submitted.",
+      ).parent;
+      const confirmationBackdrop = confirmationDialog?.parent?.children[0];
+      if (!confirmationBackdrop || typeof confirmationBackdrop === "string") {
+        throw new Error("Confirmation backdrop not found");
+      }
+      await fireEvent.press(confirmationBackdrop);
+      expect(onComplete).toHaveBeenCalledWith({
+        doctype: "Sales Order",
+        name: "SAL-ORD-0003",
+      });
     } finally {
       jest.useRealTimers();
     }
