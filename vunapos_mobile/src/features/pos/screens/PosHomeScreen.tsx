@@ -57,7 +57,7 @@ type PosHomeScreenProps = {
   onAddToCart: (
     item: PosCatalogueItem,
     currency: string,
-  ) => Promise<boolean | void> | boolean | void;
+  ) => Promise<boolean | string | void> | boolean | string | void;
   onOpenCart: () => void;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
@@ -200,6 +200,7 @@ export function PosHomeScreen({
           setAddError(`Could not add ${item.item_name}. Please try again.`);
           return false;
         }
+        if (typeof added === "string") setCatalogueNotice(added);
         return true;
       } catch (error) {
         setAddError(

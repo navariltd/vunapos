@@ -77,6 +77,7 @@ export type PosCartItem = {
   qty: number;
   rate: number;
   serial_allocations?: PosSerialAllocation[];
+  stock_uom?: string | null;
   uom?: string | null;
   uoms?: PosItemUom[];
   warehouse?: string | null;

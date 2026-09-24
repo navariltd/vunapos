@@ -150,6 +150,47 @@ describe("usePosCart", () => {
     );
   });
 
+  it("falls back to the stock UOM when one sales UOM cannot be fulfilled", async () => {
+    const catalogueItem = {
+      actual_qty: 22,
+      conversion_factor: 24,
+      is_stock_item: true,
+      item_code: "F61",
+      item_name: "Dairy Joy 200ml",
+      price_list_rate: 240,
+      rate: 240,
+      stock_uom: "Pcs",
+      uom: "Carton",
+      uoms: [
+        { conversion_factor: 1, rate: 10, uom: "Pcs" },
+        { conversion_factor: 24, rate: 240, uom: "Carton" },
+      ],
+    };
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    let result: boolean | string = false;
+    await act(async () => {
+      result = await hook.result.current.add(catalogueItem);
+    });
+
+    expect(result).toBe(
+      "Only 22 Pcs available; 1 Carton requires 24 Pcs. Added as Pcs.",
+    );
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items: '[{"item_code":"F61","qty":1,"uom":"Pcs"}]',
+      }),
+    );
+  });
+
   it("keeps the current cart intact and makes no request when explicitly offline", async () => {
     const hook = await renderHook(() =>
       usePosCart({
@@ -345,7 +386,7 @@ describe("usePosCart", () => {
     await act(async () => hook.result.current.add(item));
     mockGetVunaMethod.mockRejectedValueOnce(new Error("Network error"));
 
-    let addPromise: Promise<boolean>;
+    let addPromise: Promise<boolean | string>;
     await act(async () => {
       addPromise = hook.result.current.add(item);
       await expect(addPromise).rejects.toThrow("Network error");

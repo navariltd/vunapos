@@ -23,6 +23,48 @@ import {
 } from "@/services/frappeClient";
 import { invalidateHeldInvoiceCache } from "@/services/posCacheInvalidation";
 
+function selectAvailableInitialUom(item: PosCatalogueItem): {
+  item: PosCatalogueItem;
+  notice?: string;
+} {
+  const requestedUom = item.uom || item.stock_uom;
+  const requestedFactor = Number(item.conversion_factor || 1);
+  const available = Number(item.actual_qty);
+  if (
+    item.is_stock_item === false ||
+    Boolean(item.allow_negative_stock) ||
+    !Number.isFinite(available) ||
+    !item.stock_uom ||
+    !requestedUom ||
+    requestedUom === item.stock_uom ||
+    requestedFactor <= 1 ||
+    available >= requestedFactor ||
+    available < 1
+  ) {
+    return { item };
+  }
+
+  const stockUomRate = item.uoms?.find(
+    (row) => row.uom === item.stock_uom,
+  )?.rate;
+  const rate =
+    stockUomRate == null
+      ? Number(item.rate || 0) / requestedFactor
+      : Number(stockUomRate);
+  const priceListRate =
+    item.uoms?.find((row) => row.uom === item.stock_uom)?.rate ?? rate;
+  return {
+    item: {
+      ...item,
+      conversion_factor: 1,
+      price_list_rate: Number(priceListRate),
+      rate,
+      uom: item.stock_uom,
+    },
+    notice: `Only ${available} ${item.stock_uom} available; 1 ${requestedUom} requires ${requestedFactor} ${item.stock_uom}. Added as ${item.stock_uom}.`,
+  };
+}
+
 function toCartItem(item: PosCatalogueItem): PosCartItem {
   const rate = Number(item.rate || 0);
   const priceListRate = Number(item.price_list_rate ?? rate);
@@ -316,20 +358,31 @@ export function usePosCart({
   async function add(
     item: PosCatalogueItem,
     cartCustomer = customerRef.current,
-  ): Promise<boolean> {
+  ): Promise<boolean | string> {
+    const initialUom = selectAvailableInitialUom(item);
+    const itemForCart = initialUom.item;
     const current = itemsRef.current;
     const existing = current.find(
-      (cartItem) => cartItem.item_code === item.item_code,
+      (cartItem) =>
+        cartItem.item_code === itemForCart.item_code &&
+        (cartItem.uom || cartItem.stock_uom) ===
+          (itemForCart.uom || itemForCart.stock_uom) &&
+        Number(cartItem.conversion_factor || 1) ===
+          Number(itemForCart.conversion_factor || 1),
     );
     const nextItems = existing
       ? current.map((cartItem) =>
-          cartItem.item_code === item.item_code
+          cartItem.item_code === itemForCart.item_code &&
+          (cartItem.uom || cartItem.stock_uom) ===
+            (itemForCart.uom || itemForCart.stock_uom) &&
+          Number(cartItem.conversion_factor || 1) ===
+            Number(itemForCart.conversion_factor || 1)
             ? { ...clearTrackingAllocations(cartItem), qty: cartItem.qty + 1 }
             : cartItem,
         )
-      : [...current, toCartItem(item)];
+      : [...current, toCartItem(itemForCart)];
     const nextData = await refresh(nextItems, cartCustomer);
-    if (nextData !== null) return true;
+    if (nextData !== null) return initialUom.notice || true;
     const message = lastRefreshErrorRef.current;
     if (message) throw new Error(message);
     return false;
