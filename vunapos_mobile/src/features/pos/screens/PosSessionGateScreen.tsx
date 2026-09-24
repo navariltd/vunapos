@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -9,6 +9,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { useToast } from "@/components/feedback/ToastProvider";
 import {
   OpenPosShiftResult,
   useOpenPosShift,
@@ -46,10 +47,17 @@ export function PosSessionGateScreen({
   session,
 }: PosSessionGateScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const opening = useOpenPosShift();
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [validationError, setValidationError] = useState<string | null>(null);
+  useEffect(() => {
+    if (validationError || opening.error) {
+      const message = validationError || opening.error || "Unable to open POS shift.";
+      toast.error(message, { title: "POS shift needs attention" });
+    }
+  }, [opening.error, toast, validationError]);
 
   if (!session) {
     return (

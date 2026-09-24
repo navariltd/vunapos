@@ -13,6 +13,7 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import {
@@ -67,7 +68,6 @@ type PosCartScreenProps = {
   orderType: PosOrderType;
   posProfile?: string;
   priceList?: string;
-  priceListFallbackNotice?: string | null;
   priceListOptions?: PosPriceList[];
   requireManagerPinForItemRemoval?: boolean;
   requiresCustomer: boolean;
@@ -292,12 +292,21 @@ function BatchAllocationEditor({
   posProfile?: string;
 }) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const styles = createStyles(palette);
   const batches = usePosItemBatches({
     enabled: !disabled,
     itemCode: item.item_code,
     posProfile,
   });
+  useEffect(() => {
+    if (batches.error) {
+      toast.error(batches.error, {
+        title: "Could not load batches",
+        dedupeKey: `batch-error:${item.item_code}:${batches.error}`,
+      });
+    }
+  }, [batches.error, item.item_code, toast]);
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       (item.batch_allocations || []).map((allocation) => [
@@ -496,12 +505,21 @@ function SerialAllocationEditor({
   posProfile?: string;
 }) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const styles = createStyles(palette);
   const serialData = usePosItemBatches({
     enabled: !disabled,
     itemCode: item.item_code,
     posProfile,
   });
+  useEffect(() => {
+    if (serialData.error) {
+      toast.error(serialData.error, {
+        title: "Could not load serial numbers",
+        dedupeKey: `serial-error:${item.item_code}:${serialData.error}`,
+      });
+    }
+  }, [item.item_code, serialData.error, toast]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(
     () =>
@@ -1083,7 +1101,6 @@ export function PosCartScreen({
   orderType,
   posProfile,
   priceList,
-  priceListFallbackNotice,
   priceListOptions = [],
   requireManagerPinForItemRemoval = false,
   requiresCustomer,
@@ -1094,14 +1111,27 @@ export function PosCartScreen({
   totals,
 }: PosCartScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const styles = createStyles(palette);
+  useEffect(() => {
+    if (error) {
+      toast.error(error, {
+        dedupeKey: `cart-error:${error}`,
+        title: "Cart update failed",
+      });
+    }
+  }, [error, toast]);
+  useEffect(() => {
+    if (holdError) {
+      toast.error(holdError, { title: "Could not hold sale" });
+    }
+  }, [holdError, toast]);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = isOfflineProp ?? connectionStatus !== "online";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
-  const [holdFeedback, setHoldFeedback] = useState<string | null>(null);
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
@@ -1125,10 +1155,7 @@ export function PosCartScreen({
 
   async function holdCart() {
     const heldInvoice = await onHold?.();
-    if (heldInvoice)
-      setHoldFeedback(
-        `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
-      );
+    void heldInvoice;
   }
 
   return (
@@ -1271,9 +1298,6 @@ export function PosCartScreen({
               />
             </Pressable>
           ) : null}
-          {priceListFallbackNotice ? (
-            <Text style={styles.loyaltyLoading}>{priceListFallbackNotice}</Text>
-          ) : null}
           <View style={styles.itemList}>
             {items.map((item) => (
               <CartLine
@@ -1398,11 +1422,6 @@ export function PosCartScreen({
           <Text style={styles.checkoutNote}>
             Payment is collected at checkout.
           </Text>
-          {holdFeedback ? (
-            <Text accessibilityLiveRegion="polite" style={styles.holdFeedback}>
-              {holdFeedback}
-            </Text>
-          ) : null}
           <View
             style={[
               styles.cartActions,
@@ -2433,13 +2452,6 @@ function createStyles(palette: AppPalette) {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
-  },
-  holdFeedback: {
-    color: palette.primary,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-    lineHeight: typography.lineHeight.body,
-    textAlign: "center",
   },
   });
 }

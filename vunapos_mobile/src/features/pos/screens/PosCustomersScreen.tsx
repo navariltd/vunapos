@@ -7,10 +7,11 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosCustomerFiltersSheet } from "@/features/pos/components/PosCustomerFiltersSheet";
 import { usePosCustomerDirectory } from "@/features/pos/hooks/usePosCustomerDirectory";
@@ -61,6 +62,7 @@ export function PosCustomersScreen({
   posProfile,
 }: PosCustomersScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const [localDirectoryState, setLocalDirectoryState] =
     useState<PosCustomerDirectoryViewState>(
@@ -78,6 +80,14 @@ export function PosCustomersScreen({
     filters,
     start,
   );
+  useEffect(() => {
+    if (directory.error) {
+      toast.error(directory.error, {
+        title: "Could not load customers",
+        dedupeKey: `customer-directory-error:${directory.error}`,
+      });
+    }
+  }, [directory.error, toast]);
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   function openFilterSheet() {

@@ -26,6 +26,7 @@ import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { useToast } from "@/components/feedback/ToastProvider";
 import {
   usePosCheckoutPreview,
   useSubmitPosCheckout,
@@ -180,6 +181,7 @@ export function PosCheckoutScreen({
   subtotal,
 }: PosCheckoutScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
@@ -268,6 +270,32 @@ export function PosCheckoutScreen({
   const [isHolding, setIsHolding] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
   const resolvedPhoneCustomerRef = useRef<string | null>(null);
+  useEffect(() => {
+    const message = validationError || checkout.error;
+    if (message) {
+      toast.error(message, {
+        dedupeKey: `checkout-error:${message}`,
+        title: "Checkout needs attention",
+      });
+    }
+  }, [checkout.error, toast, validationError]);
+  useEffect(() => {
+    if (holdError) toast.error(holdError, { title: "Could not hold sale" });
+  }, [holdError, toast]);
+
+  useEffect(() => {
+    const message =
+      deliveryChargeError ||
+      loyaltyError ||
+      gatewayPhoneError ||
+      gatewayPayment.error;
+    if (message) {
+      toast.error(message, {
+        title: "Checkout needs attention",
+        dedupeKey: `checkout-field-error:${message}`,
+      });
+    }
+  }, [deliveryChargeError, gatewayPayment.error, gatewayPhoneError, loyaltyError, toast]);
 
   useEffect(() => {
     const customerName = saleCustomer?.customer;

@@ -29,6 +29,7 @@ import {
   PosSession,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
@@ -54,6 +55,7 @@ function configuredOrderType(
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const workspaceBootstrap = usePosBootstrap();
   const isOffline = connectionStatus !== "online";
@@ -80,9 +82,6 @@ export function PosWorkspaceScreen() {
   const [selectedSaleCustomer, setSelectedSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
-  const [priceListFallbackNotice, setPriceListFallbackNotice] = useState<
-    string | null
-  >(null);
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   // A selected customer belongs to the active cart only. The POS Profile
@@ -97,7 +96,6 @@ export function PosWorkspaceScreen() {
   const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
-  const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const cart = usePosCart({
     customer: saleCustomer,
     orderType,
@@ -164,9 +162,10 @@ export function PosWorkspaceScreen() {
         ready: true,
         status: "OPEN",
       });
+      toast.success("POS shift opened.");
       setPostSaleRefreshKey((current) => current + 1);
     },
-    [companyUrl, sessionId],
+    [companyUrl, sessionId, toast],
   );
   const salespersonLocked = Boolean(
     posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
@@ -184,12 +183,13 @@ export function PosWorkspaceScreen() {
     if (permitted.includes(selectedPriceList)) return;
     const fallback = setTimeout(() => {
       setSelectedPriceList(undefined);
-      setPriceListFallbackNotice(
+      toast.warning(
         "The selected price list is no longer available. Prices were reset to the POS default.",
+        { title: "Price list reset" },
       );
     }, 0);
     return () => clearTimeout(fallback);
-  }, [posProfileConfig, selectedPriceList]);
+  }, [posProfileConfig, selectedPriceList, toast]);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -356,7 +356,6 @@ export function PosWorkspaceScreen() {
           onBack={() => setCheckoutVisible(false)}
           onClear={() => {
             if (!cart.clear()) return;
-            setPriceListFallbackNotice(null);
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(null);
             setCheckoutVisible(false);
@@ -376,6 +375,9 @@ export function PosWorkspaceScreen() {
             setCheckoutVisible(false);
             setCartVisible(false);
             setSelectedInvoice({ doctype: result.doctype, name: result.name });
+            toast.success(
+              `${result.doctype} ${result.name} submitted successfully.`,
+            );
           }}
           onHold={async () => {
             const heldInvoice = await cart.hold();
@@ -384,9 +386,9 @@ export function PosWorkspaceScreen() {
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
-              setWorkspaceNotice(
-                `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
-              );
+              toast.info(`${heldInvoice.name} is held.`, {
+                title: "Sale held",
+              });
               setCheckoutVisible(false);
               setCartVisible(false);
             }
@@ -420,7 +422,6 @@ export function PosWorkspaceScreen() {
           }}
           onClear={() => {
             if (!cart.clear()) return false;
-            setPriceListFallbackNotice(null);
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(null);
             return true;
@@ -432,9 +433,9 @@ export function PosWorkspaceScreen() {
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
-              setWorkspaceNotice(
-                `${heldInvoice.name} is held. You can continue it from Held Invoices.`,
-              );
+              toast.info(`${heldInvoice.name} is held.`, {
+                title: "Sale held",
+              });
               setCartVisible(false);
               return { name: heldInvoice.name };
             }
@@ -449,7 +450,6 @@ export function PosWorkspaceScreen() {
             const isRemovingLastItem = cart.itemCount === 1;
             const wasRemoved = await cart.remove(itemCode);
             if (!wasRemoved || !isRemovingLastItem) return;
-            setPriceListFallbackNotice(null);
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(null);
           }}
@@ -460,7 +460,6 @@ export function PosWorkspaceScreen() {
           }}
           onSelectPriceList={(priceList) => {
             if (isOffline) return;
-            setPriceListFallbackNotice(null);
             setSelectedPriceList(priceList);
           }}
           onUpdateBatchAllocations={cart.updateBatchAllocations}
@@ -472,7 +471,6 @@ export function PosWorkspaceScreen() {
           orderType={orderType}
           posProfile={posProfile}
           priceList={selectedPriceList}
-          priceListFallbackNotice={priceListFallbackNotice}
           priceListOptions={posProfileConfig?.allowed_price_lists}
           requireManagerPinForItemRemoval={Boolean(
             posProfileConfig?.require_manager_pin_item_removal,
@@ -507,7 +505,6 @@ export function PosWorkspaceScreen() {
             priceList: selectedPriceList,
           }}
           refreshKey={postSaleRefreshKey}
-          workspaceNotice={workspaceNotice}
         />
       ) : activeTab === "Payments" ? (
         <PosPaymentsScreen

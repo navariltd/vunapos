@@ -17,6 +17,7 @@ import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
 import { PosItemSearch } from "@/features/pos/components/PosItemSearch";
 import { PosProductBundleSheet } from "@/features/pos/components/PosProductBundleSheet";
 import { PosVariantPickerSheet } from "@/features/pos/components/PosVariantPickerSheet";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBarcodeScan } from "@/features/pos/hooks/usePosBarcodeScan";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosItemSearch } from "@/features/pos/hooks/usePosItemSearch";
@@ -61,7 +62,6 @@ type PosHomeScreenProps = {
   onOpenCart: () => void;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
-  workspaceNotice?: string | null;
 };
 
 export function PosHomeScreen({
@@ -70,9 +70,9 @@ export function PosHomeScreen({
   onOpenCart,
   pricingContext,
   refreshKey = 0,
-  workspaceNotice,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
@@ -80,7 +80,6 @@ export function PosHomeScreen({
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
   const [addError, setAddError] = useState<string | null>(null);
-  const [catalogueNotice, setCatalogueNotice] = useState<string | null>(null);
   const [variantTemplate, setVariantTemplate] =
     useState<PosCatalogueItem | null>(null);
   const [variantActionError, setVariantActionError] = useState<string | null>(
@@ -137,6 +136,27 @@ export function PosHomeScreen({
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
   });
+  useEffect(() => {
+    const message =
+      bootstrap.error ||
+      itemSearch.error ||
+      variantActionError ||
+      templateVariants.error ||
+      productBundle.error;
+    if (message) {
+      toast.error(message, {
+        title: "Could not load catalogue",
+        dedupeKey: `catalogue-error:${message}`,
+      });
+    }
+  }, [
+    bootstrap.error,
+    itemSearch.error,
+    productBundle.error,
+    templateVariants.error,
+    toast,
+    variantActionError,
+  ]);
   const handledRefreshKey = useRef(refreshKey);
   const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
@@ -177,6 +197,9 @@ export function PosHomeScreen({
     async (item: PosCatalogueItem): Promise<boolean> => {
       if (isOffline) {
         setAddError("Connection unavailable. Reconnect to add items.");
+        toast.error("Connection unavailable. Reconnect to add items.", {
+          title: "Unable to add item",
+        });
         return false;
       }
       if (pendingItemCode) return false;
@@ -197,23 +220,35 @@ export function PosHomeScreen({
       try {
         const added = await onAddToCart(item, currency);
         if (added === false) {
-          setAddError(`Could not add ${item.item_name}. Please try again.`);
+          const message = `Could not add ${item.item_name}. Please try again.`;
+          setAddError(message);
+          toast.error(message, { title: "Could not add item" });
           return false;
         }
-        if (typeof added === "string") setCatalogueNotice(added);
+        if (typeof added === "string") {
+          toast.info(added, { title: "Item added" });
+        } else {
+          toast.success(`${item.item_name} added to the cart.`);
+        }
         return true;
       } catch (error) {
-        setAddError(
-          error instanceof Error && error.message
-            ? error.message
-            : `Could not add ${item.item_name}. Please try again.`,
-        );
+          setAddError(
+            error instanceof Error && error.message
+              ? error.message
+              : `Could not add ${item.item_name}. Please try again.`,
+          );
+          toast.error(
+            error instanceof Error && error.message
+              ? error.message
+              : `Could not add ${item.item_name}. Please try again.`,
+            { title: "Could not add item" },
+          );
         return false;
       } finally {
         setPendingItemCode(null);
       }
     },
-    [currency, isOffline, isOutOfStock, onAddToCart, pendingItemCode],
+    [currency, isOffline, isOutOfStock, onAddToCart, pendingItemCode, toast],
   );
 
   useEffect(() => {
@@ -276,12 +311,7 @@ export function PosHomeScreen({
       return `${item.item_name || item.item_code} is out of stock.`;
     setSearchQuery("");
     const added = await addItem(item);
-    if (added) {
-      setCatalogueNotice(
-        `${item.item_name || item.item_code} added to the cart.`,
-      );
-      return null;
-    }
+    if (added) return null;
     return `Could not add ${item.item_name || item.item_code}. Please try again.`;
   }
 
@@ -411,13 +441,6 @@ export function PosHomeScreen({
                 {addError}
               </Text>
             ) : null}
-            {catalogueNotice || workspaceNotice ? (
-              <Text
-                style={[styles.catalogueNotice, { color: palette.success }]}
-              >
-                {catalogueNotice || workspaceNotice}
-              </Text>
-            ) : null}
           </View>
         }
         ListFooterComponent={
@@ -488,12 +511,6 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.sm,
     paddingBottom: spacing.sm,
-  },
-  catalogueNotice: {
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.xs,
   },
   addError: {
     fontFamily: typography.fontFamily.medium,

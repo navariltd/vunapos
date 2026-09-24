@@ -1,8 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { useEffect } from "react";
 import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -264,6 +266,7 @@ export function PosCustomerDetailsScreen({
 }: PosCustomerDetailsScreenProps) {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
+  const toast = useToast();
   const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
   const details = usePosCustomerDetails({
@@ -271,6 +274,14 @@ export function PosCustomerDetailsScreen({
     posProfile: bootstrap.data?.pos_profile.name,
   });
   const error = bootstrap.error ?? details.error;
+  useEffect(() => {
+    if (error) {
+      toast.error(error, {
+        title: "Could not load customer",
+        dedupeKey: `customer-details-error:${customer}:${error}`,
+      });
+    }
+  }, [customer, error, toast]);
 
   if (bootstrap.isLoading || details.isLoading) {
     return (

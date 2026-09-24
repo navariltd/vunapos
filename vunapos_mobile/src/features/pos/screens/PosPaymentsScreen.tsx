@@ -15,6 +15,7 @@ import { Text } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { formatPosCurrency } from "@/features/pos/currency";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
@@ -308,6 +309,16 @@ function PaymentHistoryContext({
     !hasInvalidDateRange,
   );
   const isOffline = connectionStatus !== "online";
+  const toast = useToast();
+
+  useEffect(() => {
+    if (history.error) {
+      toast.error(history.error, {
+        title: "Could not load payment history",
+        dedupeKey: `payment-history-error:${history.error}`,
+      });
+    }
+  }, [history.error, toast]);
 
   useEffect(() => {
     onRefreshReady(history.reload);
@@ -924,6 +935,15 @@ function HistoryRecordLink({
 }) {
   const { error, isOpening, openRecord } = useErpNextRecord();
   const { palette } = useAppearance();
+  const toast = useToast();
+  useEffect(() => {
+    if (error) {
+      toast.error(error, {
+        title: "Could not open ERPNext record",
+        dedupeKey: `erp-record-error:${doctype}:${name}:${error}`,
+      });
+    }
+  }, [doctype, error, name, toast]);
 
   return (
     <View style={styles.historyRecordLink}>
@@ -1002,6 +1022,7 @@ function ReceivePaymentContext({
   paymentModes: PosPaymentMode[];
   posProfile?: string;
 }) {
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
   const isOffline = connectionStatus !== "online";
@@ -1023,7 +1044,6 @@ function ReceivePaymentContext({
   const [datePickerVisible, setDatePickerVisible] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [gatewayLink, setGatewayLink] = useState<PosGatewayPaymentLink | null>(
     null,
   );
@@ -1066,6 +1086,24 @@ function ReceivePaymentContext({
       Number(paymentAmountInput) <= 0);
   const receivePayment = useReceiveCustomerPayment();
   const gatewayPayment = useGatewayPayment();
+  useEffect(() => {
+    const message = customerSearch.error || customerDetails.error;
+    if (message) {
+      toast.error(message, {
+        title: "Could not load payment customer",
+        dedupeKey: `receive-customer-error:${message}`,
+      });
+    }
+  }, [customerDetails.error, customerSearch.error, toast]);
+  useEffect(() => {
+    const message = validationError || receivePayment.error || gatewayPayment.error;
+    if (message) {
+      toast.error(message, {
+        dedupeKey: `receive-payment-error:${message}`,
+        title: "Payment needs attention",
+      });
+    }
+  }, [gatewayPayment.error, receivePayment.error, toast, validationError]);
   const hasRequiredReference =
     !requiresReference || Boolean(referenceNo.trim() && referenceDate);
   const isGatewayVerified = gatewayLink?.status === "Paid";
@@ -1249,7 +1287,6 @@ function ReceivePaymentContext({
 
   async function submitPayment() {
     setValidationError(null);
-    setSuccessMessage(null);
     const paymentAmount = Number(paymentAmountInput);
     if (!selectedCustomer || !posProfile) {
       setValidationError("Select a customer before receiving a payment.");
@@ -1292,9 +1329,9 @@ function ReceivePaymentContext({
     });
     if (!payment) return;
 
-    setSuccessMessage(
-      `Payment Entry ${payment.name} was submitted successfully.`,
-    );
+    toast.success(`Payment Entry ${payment.name} was submitted successfully.`, {
+      title: "Payment received",
+    });
     setAmount("");
     setHasEditedAmount(true);
     setSelectedInvoice(null);
@@ -2076,14 +2113,6 @@ function ReceivePaymentContext({
               {validationError || receivePayment.error}
             </Text>
           ) : null}
-          {successMessage ? (
-            <Text
-              accessibilityRole="alert"
-              style={[styles.successText, { color: palette.success }]}
-            >
-              {successMessage}
-            </Text>
-          ) : null}
           <Pressable
             accessibilityLabel="Submit customer payment"
             accessibilityRole="button"
@@ -2127,6 +2156,7 @@ function ReconcilePaymentContext({
   currencyPrecision: number;
   posProfile?: string;
 }) {
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
   const isOffline = connectionStatus !== "online";
@@ -2138,7 +2168,6 @@ function ReconcilePaymentContext({
   const [allocationPreview, setAllocationPreview] = useState<
     PosPaymentReconciliationAllocation[]
   >([]);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const customerSearch = usePosCustomerSearch(query, !isOffline, posProfile);
   const allocation = usePosPaymentReconciliationAllocation();
   const reconciliation = usePosPaymentReconciliation();
@@ -2146,12 +2175,29 @@ function ReconcilePaymentContext({
     selectedCustomer?.customer || "",
     posProfile,
   );
+  useEffect(() => {
+    const message = customerSearch.error || candidates.error;
+    if (message) {
+      toast.error(message, {
+        title: "Could not load reconciliation data",
+        dedupeKey: `reconciliation-data-error:${message}`,
+      });
+    }
+  }, [candidates.error, customerSearch.error, toast]);
+  useEffect(() => {
+    const message = allocation.error || reconciliation.error;
+    if (message) {
+      toast.error(message, {
+        dedupeKey: `reconciliation-error:${message}`,
+        title: "Reconciliation failed",
+      });
+    }
+  }, [allocation.error, reconciliation.error, toast]);
 
   function resetSelections() {
     setSelectedPayments([]);
     setSelectedInvoices([]);
     setAllocationPreview([]);
-    setSuccessMessage(null);
     allocation.clearError();
     reconciliation.clearError();
   }
@@ -2169,7 +2215,6 @@ function ReconcilePaymentContext({
 
   function togglePayment(name: string) {
     setAllocationPreview([]);
-    setSuccessMessage(null);
     allocation.clearError();
     reconciliation.clearError();
     setSelectedPayments((current) =>
@@ -2181,7 +2226,6 @@ function ReconcilePaymentContext({
 
   function toggleInvoice(name: string) {
     setAllocationPreview([]);
-    setSuccessMessage(null);
     allocation.clearError();
     reconciliation.clearError();
     setSelectedInvoices((current) =>
@@ -2211,7 +2255,6 @@ function ReconcilePaymentContext({
 
   async function requestAllocationPreview() {
     if (!selectedCustomer || !posProfile) return;
-    setSuccessMessage(null);
     reconciliation.clearError();
     const preview = await allocation.allocate({
       customer: selectedCustomer.customer,
@@ -2236,12 +2279,13 @@ function ReconcilePaymentContext({
     setSelectedInvoices([]);
     setAllocationPreview([]);
     allocation.clearError();
-    setSuccessMessage(
+    toast.success(
       `Reconciled ${formatPosCurrency(
         result.allocated_amount,
         currency,
         currencyPrecision,
       )} successfully.`,
+      { title: "Payments reconciled" },
     );
     candidates.reload();
   }
@@ -2417,14 +2461,6 @@ function ReconcilePaymentContext({
                   style={[styles.errorText, { color: palette.error }]}
                 >
                   {allocation.error || reconciliation.error}
-                </Text>
-              ) : null}
-              {successMessage ? (
-                <Text
-                  accessibilityRole="alert"
-                  style={[styles.successText, { color: palette.success }]}
-                >
-                  {successMessage}
                 </Text>
               ) : null}
               <Pressable

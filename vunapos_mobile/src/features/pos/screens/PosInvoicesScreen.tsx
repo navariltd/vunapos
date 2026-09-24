@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -9,6 +9,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { PosInvoiceFiltersSheet } from "@/features/pos/components/PosInvoiceFiltersSheet";
 import { PosInvoiceListItem } from "@/features/pos/components/PosInvoiceListItem";
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -142,6 +143,7 @@ export function PosInvoicesScreen({
   onRestoreHeld,
 }: PosInvoicesScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const styles = createStyles(palette);
   const [activeTab, setActiveTab] = useState<"history" | "held">("history");
@@ -230,6 +232,16 @@ export function PosInvoicesScreen({
   }
 
   const historyError = bootstrap.error ?? history.error;
+  const heldError = bootstrap.error ?? held.error ?? restoreError;
+  useEffect(() => {
+    const message = historyError || heldError;
+    if (message) {
+      toast.error(message, {
+        title: "Could not load invoices",
+        dedupeKey: `invoices-error:${message}`,
+      });
+    }
+  }, [heldError, historyError, toast]);
   const activeFilterCount = [
     filters.customer,
     filters.fromDate,

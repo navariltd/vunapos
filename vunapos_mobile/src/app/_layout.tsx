@@ -11,6 +11,7 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
+import { ToastProvider } from "@/components/feedback/ToastProvider";
 import {
   AppSessionProvider,
   useAppSession,
@@ -34,9 +35,11 @@ export default function RootLayout() {
       <KeyboardProvider>
         <AppearanceProvider>
           <NetworkStatusProvider>
-            <AppSessionProvider>
-              <RootNavigator fontsLoaded={fontsLoaded} />
-            </AppSessionProvider>
+            <ToastProvider>
+              <AppSessionProvider>
+                <RootNavigator fontsLoaded={fontsLoaded} />
+              </AppSessionProvider>
+            </ToastProvider>
           </NetworkStatusProvider>
         </AppearanceProvider>
       </KeyboardProvider>

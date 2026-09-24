@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -10,6 +10,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
@@ -38,6 +39,7 @@ export function PosCloseShiftScreen({
   posProfile,
 }: PosCloseShiftScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const preview = usePosClosingPreview(posProfile);
   const closeShift = useClosePosShift();
@@ -46,6 +48,15 @@ export function PosCloseShiftScreen({
   );
   const [confirmationVisible, setConfirmationVisible] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  useEffect(() => {
+    const message = validationError || preview.error || closeShift.error;
+    if (message) {
+      toast.error(message, {
+        dedupeKey: `close-shift-error:${message}`,
+        title: "Close shift needs attention",
+      });
+    }
+  }, [closeShift.error, preview.error, toast, validationError]);
 
   if (!posProfile) {
     return (

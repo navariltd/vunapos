@@ -70,6 +70,15 @@ jest.mock("@/features/pos/hooks/usePosItemBatches", () => ({
   usePosItemBatches: jest.fn(),
 }));
 
+jest.mock("@/components/feedback/ToastProvider", () => ({
+  useToast: () => ({
+    error: jest.fn(),
+    info: jest.fn(),
+    success: jest.fn(),
+    warning: jest.fn(),
+  }),
+}));
+
 import { PosCartScreen } from "@/features/pos/screens/PosCartScreen";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
@@ -303,7 +312,7 @@ describe("PosCartScreen", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it("holds an invoice cart and explains where the cashier can continue it", async () => {
+  it("holds an invoice cart through the provided action", async () => {
     const onHold = jest.fn().mockResolvedValue({ name: "SINV-0001" });
     const screen = await render(
       <PosCartScreen
@@ -344,11 +353,6 @@ describe("PosCartScreen", () => {
 
     await fireEvent.press(screen.getByLabelText("Hold cart"));
     expect(onHold).toHaveBeenCalledTimes(1);
-    expect(
-      screen.getByText(
-        "SINV-0001 is held. You can continue it from Held Invoices.",
-      ),
-    ).toBeTruthy();
   });
 
   it("labels checkout as continuing when the cart comes from a held draft", async () => {

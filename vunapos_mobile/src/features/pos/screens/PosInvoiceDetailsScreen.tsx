@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoiceReturnPreviewSheet";
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
@@ -153,6 +154,7 @@ export function PosInvoiceDetailsScreen({
   onStartSale,
 }: PosInvoiceDetailsScreenProps) {
   const { palette } = useAppearance();
+  const toast = useToast();
   const styles = createStyles(palette);
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
@@ -170,6 +172,15 @@ export function PosInvoiceDetailsScreen({
     posProfile: bootstrap.data?.pos_profile.name,
   });
   const error = bootstrap.error ?? details.error;
+  useEffect(() => {
+    const message = error || workflowActions.error;
+    if (message) {
+      toast.error(message, {
+        title: "Could not load invoice",
+        dedupeKey: `invoice-details-error:${invoiceDoctype}:${invoiceName}:${message}`,
+      });
+    }
+  }, [error, invoiceDoctype, invoiceName, toast, workflowActions.error]);
 
   if (bootstrap.isLoading || details.isLoading) {
     return (
