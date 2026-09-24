@@ -13,7 +13,9 @@ type FrappeLoginResponse = {
 
 type FrappeErrorResponse = {
   _server_messages?: string;
-  message?: string;
+  message?: unknown;
+  exception?: string;
+  exc_type?: string;
 };
 
 type VunaEnvelope<T> = {
@@ -32,6 +34,7 @@ export class FrappeClientError extends Error {
   constructor(
     message: string,
     readonly code: "api" | "connection" | "login" | "session",
+    readonly status?: number,
   ) {
     super(message);
   }
@@ -118,20 +121,53 @@ async function readJson<T>(response: Response): Promise<T | undefined> {
   }
 }
 
+function cleanFrappeMessage(value: string) {
+  return value
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .trim();
+}
+
+function messageFromValue(value: unknown): string | undefined {
+  if (typeof value === "string" && value.trim())
+    return cleanFrappeMessage(value);
+  if (!value || typeof value !== "object") return;
+  const message = (value as { message?: unknown }).message;
+  return messageFromValue(message);
+}
+
+/** Extracts the useful, user-facing message from Frappe's error variants. */
 function getFrappeErrorMessage(payload: FrappeErrorResponse | undefined) {
-  if (typeof payload?.message === "string" && payload.message.trim()) {
-    return payload.message;
+  const directMessage = messageFromValue(payload?.message);
+  if (directMessage) return directMessage;
+
+  if (payload?._server_messages) {
+    try {
+      const messages = JSON.parse(payload._server_messages) as unknown;
+      if (Array.isArray(messages)) {
+        for (const candidate of messages) {
+          let parsedCandidate: unknown = candidate;
+          if (typeof candidate === "string") {
+            try {
+              parsedCandidate = JSON.parse(candidate);
+            } catch {
+              // Keep the original text as a fallback.
+            }
+          }
+          const message = messageFromValue(parsedCandidate);
+          if (message) return message;
+        }
+      }
+    } catch {
+      // Continue to Frappe's exception fallback below.
+    }
   }
 
-  if (!payload?._server_messages) return;
-
-  try {
-    const messages = JSON.parse(payload._server_messages) as unknown;
-    if (!Array.isArray(messages) || typeof messages[0] !== "string") return;
-    const first = JSON.parse(messages[0]) as { message?: unknown };
-    return typeof first.message === "string" ? first.message : undefined;
-  } catch {
-    return;
+  const exception = payload?.exception;
+  if (typeof exception === "string" && exception.trim()) {
+    const withoutType = exception.replace(/^[^:]+:\s*/, "");
+    return cleanFrappeMessage(withoutType);
   }
 }
 
@@ -402,8 +438,10 @@ export async function getVunaMethod<T>(
 
     if (!response.ok) {
       throw new FrappeClientError(
-        `The server could not complete this request (${response.status}).`,
+        getFrappeErrorMessage(payload) ??
+          `The server could not complete this request (${response.status}).`,
         "api",
+        response.status,
       );
     }
 
@@ -523,8 +561,10 @@ async function postVunaEnvelopeMethod<T>(
 
     if (!response.ok) {
       throw new FrappeClientError(
-        `The server could not complete this request (${response.status}).`,
+        getFrappeErrorMessage(payload) ??
+          `The server could not complete this request (${response.status}).`,
         "api",
+        response.status,
       );
     }
 
@@ -603,15 +643,19 @@ export async function postFrappeJsonMethod<T>(
 
     if (!response.ok) {
       throw new FrappeClientError(
-        `The server could not complete this request (${response.status}).`,
+        getFrappeErrorMessage(payload) ??
+          `The server could not complete this request (${response.status}).`,
         "api",
+        response.status,
       );
     }
 
     if (payload?.message === undefined) {
       throw new FrappeClientError(
-        "The server could not complete this request.",
+        getFrappeErrorMessage(payload) ??
+          "The server could not complete this request.",
         "api",
+        response.status,
       );
     }
 

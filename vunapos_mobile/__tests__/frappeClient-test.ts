@@ -496,5 +496,72 @@ describe("frappeClient", () => {
         },
       );
     });
+
+    it("surfaces Frappe validation messages from failed JSON requests", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: { message: { data: { csrf_token: "csrf-1" }, ok: true } },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: {
+              _server_messages: JSON.stringify([
+                JSON.stringify({
+                  message:
+                    "Cashier <strong>cashier@example.com</strong> already has an open POS shift.",
+                }),
+              ]),
+              exc_type: "ValidationError",
+            },
+            ok: false,
+            status: 417,
+          }),
+        );
+
+      await expect(
+        postFrappeJsonMethod(
+          "https://vuna.example.com",
+          "session id",
+          "vunapos.api.pos_entry.create_opening_entry",
+          {},
+        ),
+      ).rejects.toMatchObject({
+        code: "api",
+        message: "Cashier cashier@example.com already has an open POS shift.",
+        status: 417,
+      });
+    });
+
+    it("falls back to the server exception when no structured message exists", async () => {
+      fetchMock
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: { message: { data: { csrf_token: "csrf-1" }, ok: true } },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({
+            json: {
+              exception: "frappe.exceptions.ValidationError: Invalid balance",
+            },
+            ok: false,
+            status: 417,
+          }),
+        );
+
+      await expect(
+        postFrappeJsonMethod(
+          "https://vuna.example.com",
+          "session id",
+          "vunapos.api.pos_entry.create_opening_entry",
+          {},
+        ),
+      ).rejects.toMatchObject({
+        message: "Invalid balance",
+        status: 417,
+      });
+    });
   });
 });
