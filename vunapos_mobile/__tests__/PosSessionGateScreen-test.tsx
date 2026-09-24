@@ -75,8 +75,12 @@ describe("PosSessionGateScreen", () => {
     );
 
     expect(screen.getAllByText("Start POS shift")).toHaveLength(2);
+    const cashInput = screen.getByLabelText("Cash opening balance");
+    expect(cashInput).toHaveProp("value", "0");
+    await fireEvent(cashInput, "focus");
+    expect(cashInput).toHaveProp("value", "");
     await fireEvent.changeText(
-      screen.getByLabelText("Cash opening balance"),
+      cashInput,
       "1200.50",
     );
     await fireEvent.press(screen.getByLabelText("Start POS shift"));

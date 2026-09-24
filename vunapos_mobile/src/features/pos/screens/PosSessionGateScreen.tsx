@@ -50,7 +50,11 @@ export function PosSessionGateScreen({
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const opening = useOpenPosShift();
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [amounts, setAmounts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      paymentModes.map((mode) => [mode.mode_of_payment, "0"]),
+    ),
+  );
   const [validationError, setValidationError] = useState<string | null>(null);
   useEffect(() => {
     if (validationError || opening.error) {
@@ -58,7 +62,6 @@ export function PosSessionGateScreen({
       toast.error(message, { title: "POS shift needs attention" });
     }
   }, [opening.error, toast, validationError]);
-
   if (!session) {
     return (
       <View style={[styles.centered, { backgroundColor: palette.background }]}>
@@ -157,31 +160,50 @@ export function PosSessionGateScreen({
               },
             ]}
           >
-            <Text style={[styles.modeName, { color: palette.onSurface }]}>
-              {mode.mode_of_payment}
+            <Text
+              style={[styles.modeName, { color: palette.onSurface }]}
+            >
+              {mode.mode_of_payment} ({currency || "currency"})
             </Text>
-            <View style={styles.amountField}>
-              {currency ? (
-                <Text
-                  style={[styles.currency, { color: palette.onSurfaceMuted }]}
-                >
-                  {currency}
-                </Text>
-              ) : null}
+            <View
+              style={[
+                styles.amountField,
+                {
+                  backgroundColor: palette.surface,
+                  borderColor: palette.border,
+                },
+              ]}
+            >
               <TextInput
                 accessibilityLabel={`${mode.mode_of_payment} opening balance`}
                 editable={!opening.isOpening}
                 keyboardType="decimal-pad"
+                onBlur={() => {
+                  if (!amounts[mode.mode_of_payment]?.trim()) {
+                    setAmounts((current) => ({
+                      ...current,
+                      [mode.mode_of_payment]: "0",
+                    }));
+                  }
+                }}
                 onChangeText={(value) =>
                   setAmounts((current) => ({
                     ...current,
                     [mode.mode_of_payment]: value,
                   }))
                 }
-                placeholder="0.00"
+                onFocus={() => {
+                  if (amounts[mode.mode_of_payment] === "0") {
+                    setAmounts((current) => ({
+                      ...current,
+                      [mode.mode_of_payment]: "",
+                    }));
+                  }
+                }}
+                placeholder="0"
                 placeholderTextColor={palette.onSurfaceMuted}
                 style={[styles.amountInput, { color: palette.onSurface }]}
-                value={amounts[mode.mode_of_payment] ?? ""}
+                value={amounts[mode.mode_of_payment] ?? "0"}
               />
             </View>
           </View>
@@ -257,14 +279,20 @@ function SessionMessage({
 }
 
 const styles = StyleSheet.create({
-  amountField: { alignItems: "center", flexDirection: "row", minWidth: 138 },
+  amountField: {
+    alignItems: "center",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    minWidth: 138,
+  },
   amountInput: {
     flex: 1,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.body,
-    paddingHorizontal: spacing.xs,
-    paddingVertical: spacing.xs,
-    textAlign: "right",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    textAlign: "left",
   },
   card: {
     borderRadius: radii.lg,
@@ -288,10 +316,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: spacing.lg,
   },
-  currency: {
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.small,
-  },
   disabledButton: { opacity: 0.5 },
   heading: { gap: spacing.xs },
   message: {
@@ -303,6 +327,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.body,
+    lineHeight: typography.lineHeight.body,
   },
   paymentMode: {
     alignItems: "center",
