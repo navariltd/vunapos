@@ -100,6 +100,7 @@ export function PosWorkspaceScreen() {
   const [workspaceNotice, setWorkspaceNotice] = useState<string | null>(null);
   const cart = usePosCart({
     customer: saleCustomer,
+    orderType,
     posProfile,
     priceList: selectedPriceList,
   });
@@ -309,6 +310,12 @@ export function PosWorkspaceScreen() {
           }}
           onEditDraft={async (source) => {
             const restored = await cart.restoreHeldInvoice(source);
+            // A restored draft owns its transaction type. Keep its Sales Order
+            // preview path even when the POS Profile defaults to Invoice.
+            orderTypeOverrideRef.current = true;
+            setOrderType(
+              restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
+            );
             setSelectedPriceList(restored.selling_price_list);
             setSelectedSaleCustomer(
               restored.customer
@@ -542,6 +549,10 @@ export function PosWorkspaceScreen() {
           onOpenInvoice={setSelectedInvoice}
           onRestoreHeld={async (invoice) => {
             const restored = await cart.restoreHeldInvoice(invoice);
+            orderTypeOverrideRef.current = true;
+            setOrderType(
+              restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
+            );
             setSelectedPriceList(restored.selling_price_list);
             setSelectedSaleCustomer(
               restored.customer

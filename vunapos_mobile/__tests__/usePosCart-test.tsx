@@ -125,6 +125,31 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("previews an order as a Sales Order so tracked stock is not allocated while building it", async () => {
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        orderType: "Order",
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        customer: "CUST-001",
+        invoice_doctype: "Sales Order",
+        pos_profile: "POS-001",
+      }),
+    );
+  });
+
   it("keeps the current cart intact and makes no request when explicitly offline", async () => {
     const hook = await renderHook(() =>
       usePosCart({
@@ -320,18 +345,28 @@ describe("usePosCart", () => {
     await act(async () => hook.result.current.add(item));
     mockGetVunaMethod.mockRejectedValueOnce(new Error("Network error"));
 
-    let added = true;
+    let addPromise: Promise<boolean>;
     await act(async () => {
-      added = await hook.result.current.add(item);
+      addPromise = hook.result.current.add(item);
+      await expect(addPromise).rejects.toThrow("Network error");
     });
 
     await waitFor(() =>
       expect(hook.result.current.error).toBe("Network error"),
     );
-    expect(added).toBe(false);
     expect(hook.result.current.items).toEqual([
       expect.objectContaining({ qty: 1 }),
     ]);
+
+    await act(async () => {
+      await hook.result.current.retry();
+    });
+    const retryParams = mockGetVunaMethod.mock.calls.at(-1)?.[3] as Record<
+      string,
+      unknown
+    >;
+    expect(retryParams.items).toBe('[{"item_code":"ITEM-001","qty":1,"uom":"Nos"}]');
+    expect(hook.result.current.error).toBeNull();
   });
 
   it("creates a validated draft, holds it, then clears the local cart", async () => {
@@ -762,6 +797,133 @@ describe("usePosCart", () => {
         ],
       }),
     ]);
+  });
+
+  it("clears tracking allocations when quantity increases or the same item is added again", async () => {
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const cartItem = JSON.parse(String(params?.items ?? "[]"))[0];
+        const quantity = Number(cartItem.qty);
+        return {
+          items: [
+            {
+              actual_qty: 4,
+              allow_negative_stock: false,
+              amount: quantity * 125,
+              batch_allocations: cartItem.batch_allocations?.length
+                ? cartItem.batch_allocations
+                : [{ batch_no: "BATCH-001", qty: quantity }],
+              has_batch_no: true,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: quantity,
+              rate: 125,
+              uom: "Nos",
+            },
+          ],
+          taxes: [],
+          totals: { grand_total: quantity * 125, net_total: quantity * 125 },
+        };
+      },
+    );
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    expect(hook.result.current.items[0].batch_allocations).toEqual([
+      expect.objectContaining({ batch_no: "BATCH-001", qty: 1 }),
+    ]);
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items: '[{"item_code":"ITEM-001","qty":2,"uom":"Nos"}]',
+      }),
+    );
+    expect(hook.result.current.items[0]).toEqual(
+      expect.objectContaining({
+        batch_allocations: [
+          expect.objectContaining({ batch_no: "BATCH-001", qty: 2 }),
+        ],
+        qty: 2,
+      }),
+    );
+  });
+
+  it("clears batch and serial allocations when changing UOM", async () => {
+    mockGetVunaMethod.mockImplementation(
+      async (_companyUrl, _sessionId, _method, params) => {
+        const cartItem = JSON.parse(String(params?.items ?? "[]"))[0];
+        const uom = cartItem.uom || "Nos";
+        return {
+          items: [
+            {
+              actual_qty: 12,
+              allow_negative_stock: false,
+              amount: uom === "Box" ? 1200 : 125,
+              batch_allocations: cartItem.batch_allocations || [],
+              conversion_factor: uom === "Box" ? 12 : 1,
+              has_batch_no: true,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: uom === "Box" ? 1200 : 125,
+              serial_allocations: cartItem.serial_allocations || [],
+              uom,
+              uoms: [
+                { conversion_factor: 1, uom: "Nos" },
+                { conversion_factor: 12, uom: "Box" },
+              ],
+            },
+          ],
+          taxes: [],
+          totals: {
+            grand_total: uom === "Box" ? 1200 : 125,
+            net_total: uom === "Box" ? 1200 : 125,
+          },
+        };
+      },
+    );
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+      await hook.result.current.updateBatchAllocations("ITEM-001", [
+        { batch_no: "BATCH-001", qty: 1 },
+      ]);
+      await hook.result.current.updateSerialAllocations("ITEM-001", [
+        { serial_no: "SERIAL-001" },
+      ]);
+      await hook.result.current.updateUom("ITEM-001", "Box");
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        items: '[{"item_code":"ITEM-001","qty":1,"uom":"Box"}]',
+      }),
+    );
   });
 
   it("persists an exact serial selection through Frappe before checkout", async () => {

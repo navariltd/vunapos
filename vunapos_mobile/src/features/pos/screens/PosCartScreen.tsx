@@ -694,7 +694,7 @@ function CartLine({
     item.is_stock_item &&
     !item.allow_negative_stock &&
     item.available_qty !== null
-      ? item.available_qty
+      ? item.available_qty / Number(item.conversion_factor || 1)
       : null;
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
@@ -1331,8 +1331,8 @@ export function PosCartScreen({
           {error ? (
             <View style={styles.errorState}>
               <Text style={styles.errorText}>
-                Could not refresh current pricing, tax, and stock. Your existing
-                cart has been kept.
+                That cart change could not be applied. Your last valid cart is
+                still shown. Reduce the quantity or try again.
               </Text>
               <Text style={styles.errorText}>{error}</Text>
               <Pressable

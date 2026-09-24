@@ -201,8 +201,12 @@ export function PosHomeScreen({
           return false;
         }
         return true;
-      } catch {
-        setAddError(`Could not add ${item.item_name}. Please try again.`);
+      } catch (error) {
+        setAddError(
+          error instanceof Error && error.message
+            ? error.message
+            : `Could not add ${item.item_name}. Please try again.`,
+        );
         return false;
       } finally {
         setPendingItemCode(null);

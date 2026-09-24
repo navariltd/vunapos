@@ -14,6 +14,7 @@ import {
   PosRestoredInvoice,
   PosSerialAllocation,
   PosSaleCustomer,
+  PosOrderType,
 } from "@/features/pos/types";
 import {
   FrappeClientError,
@@ -44,6 +45,7 @@ function toCartItem(item: PosCatalogueItem): PosCartItem {
 
 type UsePosCartArgs = {
   customer: PosSaleCustomer | null;
+  orderType?: PosOrderType;
   posProfile?: string;
   priceList?: string;
 };
@@ -86,6 +88,19 @@ function localCart(items: PosCartItem[]): PosCartData {
     items,
     taxes: [],
     totals: { grand_total: netTotal, net_total: netTotal },
+  };
+}
+
+/**
+ * Batch and serial selections describe an exact stock quantity. Any quantity
+ * or UOM change invalidates that selection; leaving it attached makes the next
+ * server preview reject an otherwise valid cart with a tracking mismatch.
+ */
+function clearTrackingAllocations(item: PosCartItem): PosCartItem {
+  return {
+    ...item,
+    batch_allocations: undefined,
+    serial_allocations: undefined,
   };
 }
 
@@ -140,6 +155,7 @@ function cartFromResponse(
 /** Session-only cart state calculated by Frappe after each cart change. */
 export function usePosCart({
   customer,
+  orderType = "Invoice",
   posProfile,
   priceList,
 }: UsePosCartArgs) {
@@ -167,9 +183,14 @@ export function usePosCart({
   const customerRef = useRef(customer);
   const holdDraftRef = useRef<PosCheckoutResult | null>(null);
   const sourceInvoiceRef = useRef<PosCartSource | null>(null);
+  const lastRefreshErrorRef = useRef<string | null>(null);
   const customerKey = customer?.customer || "";
   const priceListRef = useRef(priceList);
   const priceListKey = priceList || "";
+  // Sales Orders must be previewed as Sales Orders. For invoices, leaving this
+  // unset preserves the POS Settings-selected invoice doctype (Sales Invoice
+  // or POS Invoice) on the server.
+  const invoiceDoctype = orderType === "Order" ? "Sales Order" : undefined;
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -202,6 +223,7 @@ export function usePosCart({
         dataRef.current = emptyCart;
         setData(emptyCart);
         setError(null);
+        lastRefreshErrorRef.current = null;
         return { items: [], taxes: [], totals: {} };
       }
       if (!cartCustomer) {
@@ -210,6 +232,7 @@ export function usePosCart({
         dataRef.current = nextData;
         setData(nextData);
         setError(null);
+        lastRefreshErrorRef.current = null;
         setIsUpdating(false);
         return nextData;
       }
@@ -235,6 +258,7 @@ export function usePosCart({
           {
             customer: cartCustomer?.customer || undefined,
             items: JSON.stringify(toCartPayload(nextItems)),
+            ...(invoiceDoctype ? { invoice_doctype: invoiceDoctype } : {}),
             pos_profile: posProfile,
             price_list: cartPriceList,
           },
@@ -244,6 +268,7 @@ export function usePosCart({
           itemsRef.current = nextData.items;
           dataRef.current = nextData;
           setData(nextData);
+          lastRefreshErrorRef.current = null;
         }
         return nextData;
       } catch (requestError) {
@@ -254,19 +279,33 @@ export function usePosCart({
           void invalidateSession();
         }
         if (request === requestNumber.current) {
-          itemsRef.current = dataRef.current.items;
-          setError(
+          const message =
             requestError instanceof Error
               ? requestError.message
-              : "Could not update the cart.",
-          );
+              : "Could not update the cart.";
+          // A failed preview must never become the cart state or the retry
+          // target. Keep the last server-approved cart and retry that state.
+          const lastValidData = dataRef.current;
+          itemsRef.current = lastValidData.items;
+          attemptedItemsRef.current = lastValidData.items;
+          attemptedCustomerRef.current = customerRef.current;
+          setData(lastValidData);
+          lastRefreshErrorRef.current = message;
+          setError(message);
         }
         return null;
       } finally {
         if (request === requestNumber.current) setIsUpdating(false);
       }
     },
-    [companyUrl, invalidateSession, isOffline, posProfile, sessionId],
+    [
+      companyUrl,
+      invalidateSession,
+      invoiceDoctype,
+      isOffline,
+      posProfile,
+      sessionId,
+    ],
   );
 
   useEffect(() => {
@@ -285,11 +324,15 @@ export function usePosCart({
     const nextItems = existing
       ? current.map((cartItem) =>
           cartItem.item_code === item.item_code
-            ? { ...cartItem, qty: cartItem.qty + 1 }
+            ? { ...clearTrackingAllocations(cartItem), qty: cartItem.qty + 1 }
             : cartItem,
         )
       : [...current, toCartItem(item)];
-    return (await refresh(nextItems, cartCustomer)) !== null;
+    const nextData = await refresh(nextItems, cartCustomer);
+    if (nextData !== null) return true;
+    const message = lastRefreshErrorRef.current;
+    if (message) throw new Error(message);
+    return false;
   }
 
   function clear() {
@@ -306,6 +349,7 @@ export function usePosCart({
     sourceInvoiceRef.current = null;
     setData(emptyCart);
     setError(null);
+    lastRefreshErrorRef.current = null;
     setHasPendingHold(false);
     setHoldError(null);
     setIsHolding(false);
@@ -469,7 +513,12 @@ export function usePosCart({
     if (!Number.isFinite(quantity)) return;
     const nextItems = itemsRef.current.flatMap((item) => {
       if (item.item_code !== itemCode) return [item];
-      return quantity > 0 ? [{ ...item, qty: quantity }] : [];
+      if (quantity <= 0) return [];
+      return [
+        quantity === item.qty
+          ? item
+          : { ...clearTrackingAllocations(item), qty: quantity },
+      ];
     });
     await refresh(nextItems);
   }
@@ -581,7 +630,11 @@ export function usePosCart({
     await refresh(
       itemsRef.current.map((item) =>
         item.item_code === itemCode
-          ? { ...item, pricing_override: undefined, uom }
+          ? {
+              ...clearTrackingAllocations(item),
+              pricing_override: undefined,
+              uom,
+            }
           : item,
       ),
     );
