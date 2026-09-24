@@ -102,6 +102,27 @@ export function PosWorkspaceScreen() {
     posProfile,
     priceList: selectedPriceList,
   });
+  useEffect(() => {
+    if (
+      (!cart.restoredCustomer || selectedSaleCustomer) &&
+      (!cart.restoredPriceList || selectedPriceList)
+    )
+      return;
+    const restore = setTimeout(() => {
+      if (cart.restoredCustomer && !selectedSaleCustomer) {
+        setSelectedSaleCustomer(cart.restoredCustomer);
+      }
+      if (cart.restoredPriceList && !selectedPriceList) {
+        setSelectedPriceList(cart.restoredPriceList);
+      }
+    }, 0);
+    return () => clearTimeout(restore);
+  }, [
+    cart.restoredCustomer,
+    cart.restoredPriceList,
+    selectedPriceList,
+    selectedSaleCustomer,
+  ]);
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
     const defaultCustomer = bootstrap.default_customer;

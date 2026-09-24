@@ -27,6 +27,14 @@ jest.mock("@/services/posCacheInvalidation", () => ({
     mockInvalidateHeldInvoiceCache(...args),
 }));
 
+jest.mock("@/services/posCache", () => ({
+  posCache: {
+    clearResource: jest.fn(),
+    read: jest.fn().mockResolvedValue(null),
+    write: jest.fn(),
+  },
+}));
+
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { PosSaleCustomer } from "@/features/pos/types";

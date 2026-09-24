@@ -22,6 +22,17 @@ import {
   postVunaMethod,
 } from "@/services/frappeClient";
 import { invalidateHeldInvoiceCache } from "@/services/posCacheInvalidation";
+import { posCache, PosCacheScope } from "@/services/posCache";
+
+const ACTIVE_CART_RESOURCE = "active-cart";
+const ACTIVE_CART_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+type PersistedCart = {
+  customer: PosSaleCustomer | null;
+  data: PosCartData;
+  priceList?: string;
+  sourceInvoice: PosCartSource | null;
+};
 
 function selectAvailableInitialUom(item: PosCatalogueItem): {
   item: PosCatalogueItem;
@@ -217,6 +228,9 @@ export function usePosCart({
   const [sourceInvoice, setSourceInvoice] = useState<PosCartSource | null>(
     null,
   );
+  const [restoredCustomer, setRestoredCustomer] =
+    useState<PosSaleCustomer | null>(null);
+  const [restoredPriceList, setRestoredPriceList] = useState<string>();
   const requestNumber = useRef(0);
   const attemptedItemsRef = useRef<PosCartItem[]>([]);
   const attemptedCustomerRef = useRef<PosSaleCustomer | null>(customer);
@@ -233,6 +247,15 @@ export function usePosCart({
   // unset preserves the POS Settings-selected invoice doctype (Sales Invoice
   // or POS Invoice) on the server.
   const invoiceDoctype = orderType === "Order" ? "Sales Order" : undefined;
+  const cartCacheScope = useMemo<PosCacheScope | null>(
+    () =>
+      companyUrl && posProfile && sessionId
+        ? { companyUrl, posProfile, userId: sessionId }
+        : null,
+    [companyUrl, posProfile, sessionId],
+  );
+  const hydrationStartedRef = useRef<string | null>(null);
+  const hydratedScopeRef = useRef<string | null>(null);
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -349,6 +372,63 @@ export function usePosCart({
       sessionId,
     ],
   );
+
+  useEffect(() => {
+    if (!cartCacheScope) return;
+    const scopeKey = JSON.stringify(cartCacheScope);
+    if (hydrationStartedRef.current === scopeKey) return;
+    hydrationStartedRef.current = scopeKey;
+    let cancelled = false;
+    void posCache
+      .read<PersistedCart>({
+        resource: ACTIVE_CART_RESOURCE,
+        scope: cartCacheScope,
+      })
+      .then((cached) => {
+        if (cancelled) return;
+        hydratedScopeRef.current = scopeKey;
+        if (!cached?.data?.data?.items?.length) return;
+        const draft = cached.data;
+        itemsRef.current = draft.data.items;
+        dataRef.current = draft.data;
+        attemptedItemsRef.current = draft.data.items;
+        attemptedCustomerRef.current = draft.customer;
+        sourceInvoiceRef.current = draft.sourceInvoice;
+        setData(draft.data);
+        setSourceInvoice(draft.sourceInvoice);
+        setRestoredCustomer(draft.customer);
+        setRestoredPriceList(draft.priceList);
+        if (!isOffline) {
+          void refresh(draft.data.items, draft.customer, draft.priceList);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cartCacheScope, isOffline, refresh]);
+
+  useEffect(() => {
+    if (
+      !cartCacheScope ||
+      hydratedScopeRef.current !== JSON.stringify(cartCacheScope)
+    )
+      return;
+    if (!data.items.length) {
+      void posCache.clearResource(cartCacheScope, ACTIVE_CART_RESOURCE);
+      return;
+    }
+    const draft: PersistedCart = {
+      customer: customerRef.current,
+      data,
+      priceList: priceListRef.current,
+      sourceInvoice: sourceInvoiceRef.current,
+    };
+    void posCache.write(
+      { resource: ACTIVE_CART_RESOURCE, scope: cartCacheScope },
+      draft,
+      ACTIVE_CART_TTL_MS,
+    );
+  }, [cartCacheScope, customerKey, data, priceListKey]);
 
   useEffect(() => {
     if (itemsRef.current.length)
@@ -799,6 +879,8 @@ export function usePosCart({
     isUpdating,
     items: data.items,
     refresh,
+    restoredCustomer,
+    restoredPriceList,
     remove,
     restoreHeldInvoice,
     requiresCustomer,
