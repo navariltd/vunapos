@@ -4,6 +4,7 @@ import {
   PosCacheScope,
   posCacheKey,
 } from "@/services/posCache";
+import { clearCacheDiagnostics, getCacheDiagnostics } from "@/services/cacheDiagnostics";
 
 type StoredEntry = {
   accessedAt: number;
@@ -125,6 +126,7 @@ describe("PosCache", () => {
     now = 1_000;
     storage = new MemoryStorage();
     cache = new PosCache(storage, { now: () => now, maximumEntriesPerNamespace: 2 });
+    clearCacheDiagnostics();
   });
 
   it("creates stable keys and isolates companies, users, profiles, and queries", () => {
@@ -165,6 +167,29 @@ describe("PosCache", () => {
       fetchedAt: 1_000,
       isStale: false,
     });
+  });
+
+  it("reports safe hit, miss, and request-deduplication diagnostics", async () => {
+    await expect(cache.read(key)).resolves.toBeNull();
+    await cache.write(key, { items: ["milk"] }, 3_600);
+    await expect(cache.read(key)).resolves.toMatchObject({ data: { items: ["milk"] } });
+
+    let resolveRequest: ((value: string[]) => void) | undefined;
+    const loader = jest.fn(
+      () => new Promise<string[]>((resolve) => { resolveRequest = resolve; }),
+    );
+    const first = cache.fetch({ ...key, query: "milk" }, loader, 1_000);
+    const second = cache.fetch({ ...key, query: "milk" }, loader, 1_000);
+    resolveRequest?.(["milk"]);
+    await expect(Promise.all([first, second])).resolves.toEqual([["milk"], ["milk"]]);
+
+    expect(getCacheDiagnostics()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operation: "read", outcome: "miss", resource: "catalogue" }),
+      expect.objectContaining({ operation: "read", outcome: "hit", resource: "catalogue" }),
+      expect.objectContaining({ operation: "fetch", outcome: "deduplicated", resource: "catalogue" }),
+      expect.objectContaining({ operation: "fetch", outcome: "success", resource: "catalogue" }),
+    ]));
+    expect(JSON.stringify(getCacheDiagnostics())).not.toContain("milk");
   });
 
   it("keeps a stale record available for stale-while-revalidate views", async () => {

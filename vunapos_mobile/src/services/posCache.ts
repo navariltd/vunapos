@@ -1,5 +1,7 @@
 import * as SQLite from "expo-sqlite";
 
+import { recordCacheDiagnostic } from "@/services/cacheDiagnostics";
+
 /**
  * The cache is deliberately scoped more narrowly than the device. A caller
  * must identify the signed-in account and POS profile so one cashier cannot
@@ -303,33 +305,65 @@ export class PosCache {
   }
 
   async read<T>(key: PosCacheKey): Promise<PosCacheEntry<T> | null> {
+    const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
     let stored = this.memory.get(cacheKey);
+    let source: "memory" | "sqlite" = "memory";
 
     if (!stored) {
       try {
         stored = await this.storage.get(cacheKey) ?? undefined;
+        source = "sqlite";
         if (stored) this.memory.set(cacheKey, stored);
       } catch {
+        recordCacheDiagnostic({
+          durationMs: Date.now() - startedAt,
+          operation: "read",
+          outcome: "error",
+          resource: key.resource,
+          source: "sqlite",
+        });
         return null;
       }
     }
 
     if (!stored || stored.schemaVersion !== this.schemaVersion) {
       if (stored) await this.delete(cacheKey);
+      recordCacheDiagnostic({
+        durationMs: Date.now() - startedAt,
+        operation: "read",
+        outcome: "miss",
+        resource: key.resource,
+        source,
+      });
       return null;
     }
 
     try {
       const data = JSON.parse(stored.payload) as T;
+      const isStale = stored.expiresAt <= this.now();
+      recordCacheDiagnostic({
+        durationMs: Date.now() - startedAt,
+        operation: "read",
+        outcome: isStale ? "stale" : "hit",
+        resource: key.resource,
+        source,
+      });
       return {
         data,
         expiresAt: stored.expiresAt,
         fetchedAt: stored.fetchedAt,
-        isStale: stored.expiresAt <= this.now(),
+        isStale,
       };
     } catch {
       await this.delete(cacheKey);
+      recordCacheDiagnostic({
+        durationMs: Date.now() - startedAt,
+        operation: "read",
+        outcome: "error",
+        resource: key.resource,
+        source,
+      });
       return null;
     }
   }
@@ -338,6 +372,11 @@ export class PosCache {
     const now = this.now();
     const payload = JSON.stringify(data);
     if (utf8ByteLength(payload) > this.maximumEntryBytes) {
+      recordCacheDiagnostic({
+        operation: "write",
+        outcome: "skipped",
+        resource: key.resource,
+      });
       return;
     }
     const entry: StoredCacheEntry = {
@@ -363,19 +402,55 @@ export class PosCache {
       );
     } catch {
       // The in-memory entry is still useful for this session.
+      recordCacheDiagnostic({
+        operation: "write",
+        outcome: "error",
+        resource: key.resource,
+        source: "sqlite",
+      });
+      return;
     }
+    recordCacheDiagnostic({
+      operation: "write",
+      outcome: "success",
+      resource: key.resource,
+      source: "sqlite",
+    });
   }
 
   /** Shares the one live request for a resource between all interested views. */
   async fetch<T>(key: PosCacheKey, loader: () => Promise<T>, ttlMs: number) {
     const cacheKey = posCacheKey(key);
     const existing = this.inFlight.get(cacheKey) as Promise<T> | undefined;
-    if (existing) return existing;
+    if (existing) {
+      recordCacheDiagnostic({
+        operation: "fetch",
+        outcome: "deduplicated",
+        resource: key.resource,
+        source: "network",
+      });
+      return existing;
+    }
 
     const request = loader()
       .then(async (data) => {
         await this.write(key, data, ttlMs);
+        recordCacheDiagnostic({
+          operation: "fetch",
+          outcome: "success",
+          resource: key.resource,
+          source: "network",
+        });
         return data;
+      })
+      .catch((error: unknown) => {
+        recordCacheDiagnostic({
+          operation: "fetch",
+          outcome: "error",
+          resource: key.resource,
+          source: "network",
+        });
+        throw error;
       })
       .finally(() => this.inFlight.delete(cacheKey));
     this.inFlight.set(cacheKey, request);
@@ -392,6 +467,7 @@ export class PosCache {
     } catch {
       // Cache cleanup cannot block a sign-out or company change.
     }
+    recordCacheDiagnostic({ operation: "clear", outcome: "success", resource: "namespace" });
   }
 
   /** Used when the active account changes, so no POS data outlives its owner. */
@@ -402,6 +478,7 @@ export class PosCache {
     } catch {
       // A cache cleanup failure must not block sign-out or company switching.
     }
+    recordCacheDiagnostic({ operation: "clear", outcome: "success", resource: "all" });
   }
 
   async clearResource(scope: PosCacheScope, resource: string) {
@@ -416,6 +493,7 @@ export class PosCache {
     } catch {
       // Invalidating browse data must never block a successful mutation.
     }
+    recordCacheDiagnostic({ operation: "clear", outcome: "success", resource });
   }
 
   /**
@@ -435,6 +513,7 @@ export class PosCache {
     } catch {
       // Cache invalidation must not turn a successful server mutation into an error.
     }
+    recordCacheDiagnostic({ operation: "invalidate", outcome: "success", resource });
   }
 
   private async delete(cacheKey: string) {
