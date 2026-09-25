@@ -141,6 +141,8 @@ export type PosCartTotals = {
 
 export type PosCartData = {
   items: PosCartItem[];
+  /** Price list resolved by the server for this cart/transaction. */
+  selling_price_list?: string | null;
   taxes: PosCartTax[];
   totals: PosCartTotals;
 };
@@ -445,6 +447,7 @@ export type PosInvoiceDetail = {
   posting_time?: string;
   returns?: PosInvoiceReturn[];
   status: PosInvoiceStatus;
+  selling_price_list?: string | null;
   taxes?: PosInvoiceDetailTax[];
   totals: {
     grand_total?: number;

@@ -73,6 +73,8 @@ type PosCartScreenProps = {
   requiresCustomer: boolean;
   sourceInvoice?: { doctype: string; name: string } | null;
   defaultSaleCustomer: PosSaleCustomer | null;
+  defaultPriceList?: string | null;
+  resolvedPriceList?: string;
   saleCustomer: PosSaleCustomer | null;
   subtotal: number;
   taxes: PosCartTax[];
@@ -1102,6 +1104,8 @@ export function PosCartScreen({
   posProfile,
   priceList,
   priceListOptions = [],
+  defaultPriceList: profileDefaultPriceList,
+  resolvedPriceList,
   requireManagerPinForItemRemoval = false,
   requiresCustomer,
   saleCustomer,
@@ -1149,7 +1153,8 @@ export function PosCartScreen({
     saleCustomer.customer === defaultSaleCustomer.customer,
   );
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
-  const activePriceList = priceList || defaultPriceList;
+  const activePriceList =
+    resolvedPriceList || priceList || defaultPriceList || profileDefaultPriceList;
   const isCartBusy = isUpdating || isHolding || hasPendingHold || isOffline;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 

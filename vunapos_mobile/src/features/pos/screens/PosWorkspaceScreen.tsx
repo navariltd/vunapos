@@ -432,6 +432,7 @@ export function PosWorkspaceScreen() {
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
           currencyPrecision={posProfileConfig?.currency_precision}
+          defaultPriceList={posProfileConfig?.price_list}
           hasPendingHold={cart.hasPendingHold}
           holdError={cart.holdError}
           isOffline={isOffline}
@@ -493,6 +494,7 @@ export function PosWorkspaceScreen() {
           posProfile={posProfile}
           priceList={selectedPriceList}
           priceListOptions={posProfileConfig?.allowed_price_lists}
+          resolvedPriceList={cart.sellingPriceList}
           requireManagerPinForItemRemoval={Boolean(
             posProfileConfig?.require_manager_pin_item_removal,
           )}

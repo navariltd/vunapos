@@ -881,6 +881,7 @@ export function usePosCart({
     refresh,
     restoredCustomer,
     restoredPriceList,
+    sellingPriceList: data.selling_price_list || undefined,
     remove,
     restoreHeldInvoice,
     requiresCustomer,

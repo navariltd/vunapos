@@ -429,6 +429,10 @@ export function PosInvoiceDetailsScreen({
           <View style={styles.keyValues}>
             <KeyValue label="Cashier" value={invoice.cashier} />
             <KeyValue label="POS Profile" value={invoice.pos_profile} />
+            <KeyValue
+              label="Price list"
+              value={invoice.selling_price_list || undefined}
+            />
             <KeyValue label="Opening entry" value={invoice.opening_entry} />
             <KeyValue label="Closing entry" value={invoice.closing_entry} />
             <KeyValue label="Warehouse" value={invoice.warehouse} />
