@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { memo } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -37,7 +38,7 @@ function quantityLabel(item: PosCatalogueItem) {
   return `Qty ${Number(item.actual_qty || 0)}`;
 }
 
-export function PosItemCard({
+export const PosItemCard = memo(function PosItemCard({
   currency,
   currencyPrecision = 2,
   imageUrl,
@@ -181,7 +182,7 @@ export function PosItemCard({
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   addButton: {

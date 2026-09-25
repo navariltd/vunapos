@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
+import { memo } from "react";
 import { Text } from "react-native-paper";
 
 import { formatPosCurrency } from "@/features/pos/currency";
@@ -26,7 +27,7 @@ function taxLabel(item: PosCatalogueItem) {
 }
 
 /** Compact profile-controlled catalogue presentation that retains full add context. */
-export function PosItemListRow({
+export const PosItemListRow = memo(function PosItemListRow({
   currency,
   currencyPrecision = 2,
   isAdding = false,
@@ -142,7 +143,7 @@ export function PosItemListRow({
       </View>
     </Pressable>
   );
-}
+});
 
 const styles = StyleSheet.create({
   addButton: {

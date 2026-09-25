@@ -322,27 +322,30 @@ export function PosHomeScreen({
     if (error) setAddError(error);
   }
 
-  const renderItem: ListRenderItem<PosCatalogueItem> = ({ item }) =>
-    hideImages ? (
-      <PosItemListRow
-        currency={currency}
-        currencyPrecision={currencyPrecision}
-        isAdding={pendingItemCode === item.item_code}
-        isOffline={isOffline}
-        item={item}
-        onAdd={addItem}
-      />
-    ) : (
-      <PosItemCard
-        currency={currency}
-        currencyPrecision={currencyPrecision}
-        imageUrl={itemImageUrl(item.image, companyUrl)}
-        isAdding={pendingItemCode === item.item_code}
-        isOffline={isOffline}
-        item={item}
-        onAdd={addItem}
-      />
-    );
+  const renderItem = useCallback<ListRenderItem<PosCatalogueItem>>(
+    ({ item }) =>
+      hideImages ? (
+        <PosItemListRow
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          isAdding={pendingItemCode === item.item_code}
+          isOffline={isOffline}
+          item={item}
+          onAdd={addItem}
+        />
+      ) : (
+        <PosItemCard
+          currency={currency}
+          currencyPrecision={currencyPrecision}
+          imageUrl={itemImageUrl(item.image, companyUrl)}
+          isAdding={pendingItemCode === item.item_code}
+          isOffline={isOffline}
+          item={item}
+          onAdd={addItem}
+        />
+      ),
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode],
+  );
 
   if (bootstrap.isLoading)
     return (
@@ -378,6 +381,7 @@ export function PosHomeScreen({
         columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
         data={visibleItems}
+        initialNumToRender={hideImages ? 12 : 8}
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
         ListEmptyComponent={
@@ -454,6 +458,8 @@ export function PosHomeScreen({
           />
         }
         numColumns={hideImages ? 1 : 2}
+        maxToRenderPerBatch={8}
+        removeClippedSubviews
         renderItem={renderItem}
         refreshControl={
           <RefreshControl
@@ -464,6 +470,8 @@ export function PosHomeScreen({
           />
         }
         showsVerticalScrollIndicator={false}
+        updateCellsBatchingPeriod={50}
+        windowSize={7}
       />
       <PosCartButton itemCount={cartItemCount} onPress={onOpenCart} />
       <PosBarcodeScannerModal
