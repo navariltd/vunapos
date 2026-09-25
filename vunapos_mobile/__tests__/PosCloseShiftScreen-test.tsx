@@ -69,7 +69,7 @@ describe("PosCloseShiftScreen", () => {
     ).toBeTruthy();
   });
 
-  it("opens the Close Shift workspace and returns to POS", async () => {
+  it("opens the Close Shift workspace without a redundant back action", async () => {
     const screen = await render(
       <PosCloseShiftScreen onBackToPos={onBackToPos} posProfile="POS-001" />,
     );
@@ -79,9 +79,8 @@ describe("PosCloseShiftScreen", () => {
       screen.getByText("Reconcile the till and close POS-001."),
     ).toBeTruthy();
 
-    await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
-
-    expect(onBackToPos).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
+    expect(onBackToPos).not.toHaveBeenCalled();
   });
 
   it("shows the fresh server closing preview and refreshes it", async () => {
@@ -363,7 +362,7 @@ describe("PosCloseShiftScreen", () => {
       "",
     );
     await fireEvent.press(
-      screen.getByRole("button", { name: "Review shift counts" }),
+      screen.getByRole("button", { name: "Close POS shift" }),
     );
     expect(screen.getByText("Enter a counted amount for Cash.")).toBeTruthy();
     expect(
@@ -377,7 +376,7 @@ describe("PosCloseShiftScreen", () => {
       "-5",
     );
     await fireEvent.press(
-      screen.getByRole("button", { name: "Review shift counts" }),
+      screen.getByRole("button", { name: "Close POS shift" }),
     );
     expect(
       screen.getByText("Enter a valid counted amount for Cash."),
@@ -422,19 +421,19 @@ describe("PosCloseShiftScreen", () => {
       "90",
     );
     await fireEvent.press(
-      screen.getByRole("button", { name: "Review shift counts" }),
+      screen.getByRole("button", { name: "Close POS shift" }),
     );
 
     expect(
       screen.getByText(
-        "Confirm the totals below before closing this POS shift.",
+        "Review the shift summary before closing. A new POS Opening Entry will be required before making another sale.",
       ),
     ).toBeTruthy();
     expect(screen.getAllByText("KES 580.00")).toHaveLength(2);
     expect(screen.getByText(/\(−?KES|\(-KES/)).toBeTruthy();
 
     await fireEvent.press(
-      screen.getByRole("button", { name: "Back to shift counts" }),
+      screen.getByRole("button", { name: "Cancel closing POS shift" }),
     );
     expect(screen.queryByText("Counted amounts")).toBeNull();
   });
@@ -500,7 +499,7 @@ describe("PosCloseShiftScreen", () => {
       "80.50",
     );
     await fireEvent.press(
-      screen.getByRole("button", { name: "Review shift counts" }),
+      screen.getByRole("button", { name: "Close POS shift" }),
     );
     await fireEvent.press(
       screen.getByRole("button", { name: "Close POS Shift" }),
@@ -558,7 +557,7 @@ describe("PosCloseShiftScreen", () => {
     );
 
     await fireEvent.press(
-      screen.getByRole("button", { name: "Review shift counts" }),
+      screen.getByRole("button", { name: "Close POS shift" }),
     );
     closeShiftState.error = "The server rejected the closing balance.";
     closeShiftState.isClosing = true;

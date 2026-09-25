@@ -68,7 +68,7 @@ describe("PosCustomersScreen", () => {
     ).toBeTruthy();
   });
 
-  it("shows the customer-management disabled state and returns to POS", async () => {
+  it("shows the customer-management disabled state without a redundant back action", async () => {
     const onBackToPos = jest.fn();
     const screen = await render(
       <PosCustomersScreen
@@ -84,8 +84,8 @@ describe("PosCustomersScreen", () => {
         "Customer management is disabled for this POS Profile.",
       ),
     ).toBeTruthy();
-    await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
-    expect(onBackToPos).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
+    expect(onBackToPos).not.toHaveBeenCalled();
   });
 
   it("opens the Customer tab shell when the profile permits management", async () => {

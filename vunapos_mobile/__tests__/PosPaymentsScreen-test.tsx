@@ -2,9 +2,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
+  render as nativeRender,
   waitFor,
 } from "@testing-library/react-native";
+import type { ReactElement } from "react";
 
 const mockUseNetworkStatus = jest.fn();
 const mockUsePosCustomerDetails = jest.fn();
@@ -75,6 +76,11 @@ jest.mock("@/features/pos/hooks/useGatewayPaymentRealtime", () => ({
 }));
 
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
+import { ToastProvider } from "@/components/feedback/ToastProvider";
+
+function render(ui: ReactElement) {
+  return nativeRender(<ToastProvider>{ui}</ToastProvider>);
+}
 
 describe("PosPaymentsScreen", () => {
   const onBackToPos = jest.fn();
@@ -594,7 +600,7 @@ describe("PosPaymentsScreen", () => {
     expect(screen.queryByText("Allocation preview")).toBeNull();
   });
 
-  it("shows the online-only warning and returns to POS", async () => {
+  it("shows the online-only warning without a redundant Back to POS action", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
       <PosPaymentsScreen
@@ -613,8 +619,8 @@ describe("PosPaymentsScreen", () => {
         "Payments require a connection. Reconnect before continuing.",
       ),
     ).toBeTruthy();
-    await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
-    expect(onBackToPos).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
+    expect(onBackToPos).not.toHaveBeenCalled();
   });
 
   it("selects a customer, shows current outstanding invoices, and pre-fills the chosen invoice amount", async () => {

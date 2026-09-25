@@ -417,18 +417,13 @@ jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosInvoicesScreen", () => ({
   PosInvoicesScreen: ({
-    onBackToPos,
     onOpenInvoice,
   }: {
-    onBackToPos: () => void;
     onOpenInvoice: (invoice: { name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
       <>
-        <Pressable accessibilityRole="button" onPress={onBackToPos}>
-          <Text>Back to POS</Text>
-        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => onOpenInvoice({ name: "POS-INV-0001" })}
@@ -540,18 +535,14 @@ describe("PosWorkspaceScreen", () => {
     await cleanup();
   });
 
-  it("returns from invoice history to the POS home screen", async () => {
+  it("does not render a redundant back-to-POS action in invoice history", async () => {
     const screen = await render(<PosWorkspaceScreen />);
 
     expect(screen.getByText("POS home")).toBeTruthy();
     await fireEvent.press(
       screen.getByRole("button", { name: "Open invoices" }),
     );
-    expect(screen.getByRole("button", { name: "Back to POS" })).toBeTruthy();
-
-    await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
-
-    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
   });
 
   it("starts a fresh POS sale with the invoice customer selected", async () => {
