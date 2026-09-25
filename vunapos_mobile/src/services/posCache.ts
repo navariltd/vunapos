@@ -1,6 +1,5 @@
-import * as SQLite from "expo-sqlite";
-
 import { recordCacheDiagnostic } from "@/services/cacheDiagnostics";
+import { openPosDatabase } from "@/services/posDatabase";
 
 /**
  * The cache is deliberately scoped more narrowly than the device. A caller
@@ -61,9 +60,7 @@ export type PosCacheOptions = {
   schemaVersion?: number;
 };
 
-const CACHE_DATABASE_NAME = "vunapos-cache.db";
 const CACHE_SCHEMA_VERSION = 1;
-const CACHE_DATABASE_SCHEMA_VERSION = 1;
 const DEFAULT_MAXIMUM_BYTES_PER_NAMESPACE = 5_000_000;
 const DEFAULT_MAXIMUM_ENTRY_BYTES = 2_000_000;
 const DEFAULT_MAXIMUM_ENTRIES_PER_NAMESPACE = 80;
@@ -101,51 +98,8 @@ export function posCacheKey(key: PosCacheKey) {
 }
 
 class ExpoSqliteCacheStorage implements CacheStorage {
-  private databasePromise: Promise<SQLite.SQLiteDatabase> | null = null;
-
   private async database() {
-    if (!this.databasePromise) {
-      this.databasePromise = SQLite.openDatabaseAsync(CACHE_DATABASE_NAME)
-        .then(async (database) => {
-          const version = await database.getFirstAsync<{ user_version: number }>(
-            "PRAGMA user_version",
-          );
-          if ((version?.user_version ?? 0) !== CACHE_DATABASE_SCHEMA_VERSION) {
-            await database.execAsync("DROP TABLE IF EXISTS pos_cache_entries");
-          }
-          await database.execAsync(`
-            PRAGMA journal_mode = WAL;
-            CREATE TABLE IF NOT EXISTS pos_cache_entries (
-              cache_key TEXT PRIMARY KEY NOT NULL,
-              namespace TEXT NOT NULL,
-              resource TEXT NOT NULL,
-              schema_version INTEGER NOT NULL,
-              payload TEXT NOT NULL,
-              fetched_at INTEGER NOT NULL,
-              expires_at INTEGER NOT NULL,
-              accessed_at INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_pos_cache_namespace_accessed
-              ON pos_cache_entries(namespace, accessed_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_pos_cache_namespace_resource
-              ON pos_cache_entries(namespace, resource);
-            CREATE INDEX IF NOT EXISTS idx_pos_cache_expires_at
-              ON pos_cache_entries(expires_at);
-          `);
-          await database.execAsync(
-            `PRAGMA user_version = ${CACHE_DATABASE_SCHEMA_VERSION}`,
-          );
-          return database;
-        })
-        .catch((error: unknown) => {
-          // A failed migration/open must not poison future attempts. PosCache
-          // catches this request; a later live request can retry once storage
-          // is available again.
-          this.databasePromise = null;
-          throw error;
-        });
-    }
-    return this.databasePromise;
+    return openPosDatabase();
   }
 
   async get(cacheKey: string): Promise<StoredCacheEntry | null> {
