@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -443,33 +444,45 @@ export function PosCloseShiftScreen({
                 </Text>
               )}
             </View>
-            <Pressable
-              accessibilityLabel="Review shift counts"
-              accessibilityRole="button"
-              onPress={reviewCounts}
-              style={[
-                styles.reviewButton,
-                { backgroundColor: palette.primary },
-              ]}
-            >
-              <Text
-                style={[styles.reviewButtonLabel, { color: palette.onPrimary }]}
+            <View style={styles.actionRow}>
+              <Pressable
+                accessibilityLabel="Refresh shift totals"
+                accessibilityRole="button"
+                onPress={preview.reload}
+                style={[
+                  styles.refreshButton,
+                  styles.actionButton,
+                  { borderColor: palette.border },
+                ]}
               >
-                Review shift counts
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="Refresh shift totals"
-              accessibilityRole="button"
-              onPress={preview.reload}
-              style={[styles.refreshButton, { borderColor: palette.border }]}
-            >
-              <Text
-                style={[styles.backButtonLabel, { color: palette.onSurface }]}
+                <MaterialCommunityIcons
+                  color={palette.onSurface}
+                  name="refresh"
+                  size={18}
+                />
+                <Text
+                  style={[styles.backButtonLabel, { color: palette.onSurface }]}
+                >
+                  Refresh totals
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Close POS shift"
+                accessibilityRole="button"
+                onPress={reviewCounts}
+                style={[
+                  styles.reviewButton,
+                  styles.actionButton,
+                  { backgroundColor: palette.error },
+                ]}
               >
-                Refresh totals
-              </Text>
-            </Pressable>
+                <Text
+                  style={[styles.reviewButtonLabel, { color: palette.onPrimary }]}
+                >
+                  Close POS Shift
+                </Text>
+              </Pressable>
+            </View>
           </>
         ) : (
           <StateCard
@@ -693,10 +706,11 @@ function CloseShiftCountConfirmationDialog({
           <Text
             style={[styles.confirmationTitle, { color: palette.onSurface }]}
           >
-            Review shift counts
+            Close this POS shift?
           </Text>
           <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
-            Confirm the totals below before closing this POS shift.
+            Review the shift summary before closing. A new POS Opening Entry
+            will be required before making another sale.
           </Text>
           <View style={styles.confirmationSummary}>
             <ConfirmationValue label="Invoices" value={String(invoiceCount)} />
@@ -767,16 +781,12 @@ function CloseShiftCountConfirmationDialog({
           ) : null}
           <View style={styles.confirmationActions}>
             <Pressable
-              accessibilityLabel="Back to shift counts"
+              accessibilityLabel="Cancel closing POS shift"
               accessibilityRole="button"
               onPress={onDismiss}
               style={[styles.backButton, { borderColor: palette.border }]}
             >
-              <Text
-                style={[styles.backButtonLabel, { color: palette.onSurface }]}
-              >
-                Back to counts
-              </Text>
+              <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>Cancel</Text>
             </Pressable>
             <Pressable
               accessibilityLabel="Close POS Shift"
@@ -870,7 +880,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
-  confirmationActions: { alignItems: "flex-end" },
+  confirmationActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   confirmationDialog: {
     borderRadius: radii.lg,
     borderWidth: 1,
@@ -959,9 +974,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  actionButton: { flex: 1, minHeight: 44 },
+  actionRow: { flexDirection: "row", gap: spacing.sm },
   refreshButton: {
     alignItems: "center",
-    alignSelf: "flex-end",
+    flexDirection: "row",
+    gap: spacing.xs,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
@@ -979,7 +997,6 @@ const styles = StyleSheet.create({
   },
   reviewButton: {
     alignItems: "center",
-    alignSelf: "flex-end",
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 44,
