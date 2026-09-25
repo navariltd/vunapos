@@ -27,7 +27,8 @@ type PosCustomersScreenProps = {
   customerManagementEnabled: boolean;
   currencyPrecision?: number;
   directoryState?: PosCustomerDirectoryViewState;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   onDirectoryStateChange?: (state: PosCustomerDirectoryViewState) => void;
   onOpenCustomer?: (customer: string) => void;
   posProfile?: string;
@@ -56,7 +57,6 @@ export function PosCustomersScreen({
   customerManagementEnabled,
   currencyPrecision = 2,
   directoryState,
-  onBackToPos,
   onDirectoryStateChange,
   onOpenCustomer,
   posProfile,
@@ -157,7 +157,6 @@ export function PosCustomersScreen({
           <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
             Customer management is disabled for this POS Profile.
           </Text>
-          <BackToPosButton onPress={onBackToPos} />
         </View>
       </View>
     );
@@ -188,7 +187,6 @@ export function PosCustomersScreen({
             Customers and balances you are permitted to view.
           </Text>
         </View>
-        <BackToPosButton onPress={onBackToPos} />
       </View>
       <TextInput
         accessibilityLabel="Search customers"
@@ -376,22 +374,6 @@ function DirectoryPagination({
         </Pressable>
       </View>
     </View>
-  );
-}
-
-function BackToPosButton({ onPress }: { onPress: () => void }) {
-  const { palette } = useAppearance();
-  return (
-    <Pressable
-      accessibilityLabel="Back to POS"
-      accessibilityRole="button"
-      onPress={onPress}
-      style={[styles.backButton, { borderColor: palette.border }]}
-    >
-      <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
-        Back to POS
-      </Text>
-    </Pressable>
   );
 }
 

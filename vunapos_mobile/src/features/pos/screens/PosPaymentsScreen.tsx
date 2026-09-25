@@ -55,7 +55,8 @@ type PosPaymentsScreenProps = {
   currencyPrecision: number;
   initialReceiveCustomer?: PosSaleCustomer;
   initialReceiveInvoice?: string;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
 };
@@ -106,7 +107,6 @@ export function PosPaymentsScreen({
   currencyPrecision,
   initialReceiveCustomer,
   initialReceiveInvoice,
-  onBackToPos,
   paymentModes,
   posProfile,
 }: PosPaymentsScreenProps) {
@@ -185,16 +185,6 @@ export function PosPaymentsScreen({
             Receive and reconcile customer payments.
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to POS"
-          onPress={onBackToPos}
-          style={[styles.backButton, { borderColor: palette.border }]}
-        >
-          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
-            Back to POS
-          </Text>
-        </Pressable>
       </View>
 
       {connectionStatus === "offline" ? (

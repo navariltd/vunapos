@@ -540,7 +540,6 @@ export function PosWorkspaceScreen() {
           currencyPrecision={posProfileConfig?.currency_precision ?? 2}
           initialReceiveCustomer={receivePaymentContext?.customer}
           initialReceiveInvoice={receivePaymentContext?.invoice}
-          onBackToPos={() => changeTab("Home")}
           paymentModes={paymentModes}
           posProfile={posProfile}
         />
@@ -549,7 +548,6 @@ export function PosWorkspaceScreen() {
           customerManagementEnabled={allowsCustomerManagement}
           currencyPrecision={posProfileConfig?.currency_precision}
           directoryState={customerDirectoryState}
-          onBackToPos={() => changeTab("Home")}
           onDirectoryStateChange={setCustomerDirectoryState}
           onOpenCustomer={setSelectedCustomer}
           posProfile={posProfile}
@@ -558,14 +556,12 @@ export function PosWorkspaceScreen() {
         <PosCloseShiftScreen
           currency={posProfileConfig?.currency}
           currencyPrecision={posProfileConfig?.currency_precision}
-          onBackToPos={() => changeTab("Home")}
           onShiftClosed={setPosSession}
           posProfile={posProfile}
         />
       ) : (
         <PosInvoicesScreen
           heldRefreshKey={heldRefreshKey}
-          onBackToPos={() => changeTab("Home")}
           onOpenInvoice={setSelectedInvoice}
           onRestoreHeld={async (invoice) => {
             const restored = await cart.restoreHeldInvoice(invoice);

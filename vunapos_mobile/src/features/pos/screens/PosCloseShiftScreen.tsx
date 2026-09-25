@@ -23,7 +23,8 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosCloseShiftScreenProps = {
   currency?: string;
   currencyPrecision?: number;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   onShiftClosed?: (session: PosSession) => void;
   posProfile?: string;
 };
@@ -35,7 +36,6 @@ type PosCloseShiftScreenProps = {
 export function PosCloseShiftScreen({
   currency = "KES",
   currencyPrecision = 2,
-  onBackToPos,
   onShiftClosed,
   posProfile,
 }: PosCloseShiftScreenProps) {
@@ -138,18 +138,6 @@ export function PosCloseShiftScreen({
               Reconcile the till and close {posProfile}.
             </Text>
           </View>
-          <Pressable
-            accessibilityLabel="Back to POS"
-            accessibilityRole="button"
-            onPress={onBackToPos}
-            style={[styles.backButton, { borderColor: palette.border }]}
-          >
-            <Text
-              style={[styles.backButtonLabel, { color: palette.onSurface }]}
-            >
-              Back to POS
-            </Text>
-          </Pressable>
         </View>
 
         {connectionStatus !== "online" ? (
