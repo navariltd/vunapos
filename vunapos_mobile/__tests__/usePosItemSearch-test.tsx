@@ -168,4 +168,36 @@ describe('usePosItemSearch', () => {
       expect.any(AbortSignal),
     );
   });
+
+  it('merges server fallback rows into the cached catalogue without dropping local rows', async () => {
+    const localItem = {
+      actual_qty: 4,
+      item_code: 'LOCAL-001',
+      item_name: 'Cached local item',
+      rate: 120,
+    };
+    const fallbackItem = {
+      actual_qty: 2,
+      item_code: 'REMOTE-001',
+      item_name: 'Server fallback item',
+      rate: 80,
+    };
+    mockGetVunaMethod.mockResolvedValue([fallbackItem]);
+
+    const hook = await renderHook(() =>
+      usePosItemSearch({
+        initialItems: [localItem],
+        loadAll: true,
+        posProfile: 'POS-001',
+        query: '',
+      }),
+    );
+
+    await waitFor(() =>
+      expect(hook.result.current.items.map((item) => item.item_code)).toEqual([
+        'LOCAL-001',
+        'REMOTE-001',
+      ]),
+    );
+  });
 });

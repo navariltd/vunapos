@@ -28,6 +28,15 @@ type PosItemSearchResult = {
   reload: () => void | Promise<void>;
 };
 
+function mergeCatalogueRows(
+  cached: PosCatalogueItem[],
+  incoming: PosCatalogueItem[],
+) {
+  const rows = new Map(cached.map((item) => [item.item_code, item]));
+  for (const item of incoming) rows.set(item.item_code, item);
+  return [...rows.values()];
+}
+
 /**
  * Searches the live, profile-scoped catalogue after a short typing pause.
  *
@@ -71,7 +80,8 @@ export function usePosItemSearch({
   }, [normalizedQuery]);
 
   const needsServerRequest = canUseInitialItems
-    ? Boolean(debouncedQuery || loadAll) && initialMatches.length === 0
+    ? Boolean(debouncedQuery || loadAll) &&
+      (loadAll || initialMatches.length === 0)
     : Boolean(debouncedQuery || loadAll || initialItems !== undefined);
   const cacheKey =
     companyUrl && sessionId && posProfile && needsServerRequest
@@ -126,6 +136,13 @@ export function usePosItemSearch({
     enabled,
     load,
   });
+  const serverItems = resource.data ?? [];
+  const localRows = normalizedQuery
+    ? initialMatches
+    : initialItems ?? [];
+  const mergedItems = canUseInitialItems
+    ? mergeCatalogueRows(localRows, serverItems)
+    : serverItems;
 
   return {
     cachedItems:
@@ -143,7 +160,7 @@ export function usePosItemSearch({
       (normalizedQuery !== debouncedQuery || resource.isLoading),
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,
-    items: resource.data ?? initialMatches,
+    items: resource.data ? mergedItems : initialMatches,
     lastUpdated: resource.lastUpdated,
     reload: resource.refresh,
   };
