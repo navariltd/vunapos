@@ -1,5 +1,6 @@
 import {
   FrappeClientError,
+  FRAPPE_REQUEST_TIMEOUT_MS,
   getVunaMethod,
   postFrappeJsonMethod,
   postVunaJsonMethod,
@@ -54,10 +55,11 @@ describe("frappeClient", () => {
       ).resolves.toBeUndefined();
       expect(fetchMock).toHaveBeenCalledWith(
         "https://vuna.example.com/api/method/vunapos.api.pos.ping",
-        {
+        expect.objectContaining({
           headers: { Accept: "application/json" },
           method: "GET",
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -100,14 +102,15 @@ describe("frappeClient", () => {
       ).resolves.toBe("session-id");
       expect(fetchMock).toHaveBeenCalledWith(
         "https://vuna.example.com/api/method/login",
-        {
+        expect.objectContaining({
           body: "usr=cashier%40example.com&pwd=secret",
           headers: {
             Accept: "application/json",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           },
           method: "POST",
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -178,14 +181,15 @@ describe("frappeClient", () => {
       ).resolves.toBeUndefined();
       expect(fetchMock).toHaveBeenCalledWith(
         "https://vuna.example.com/api/method/frappe.core.doctype.user.user.reset_password",
-        {
+        expect.objectContaining({
           body: "user=cashier%40example.com",
           headers: {
             Accept: "application/json",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           },
           method: "POST",
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -203,14 +207,15 @@ describe("frappeClient", () => {
       ).resolves.toBe("fresh-session");
       expect(fetchMock).toHaveBeenCalledWith(
         "https://vuna.example.com/api/method/frappe.core.doctype.user.user.update_password",
-        {
+        expect.objectContaining({
           body: "key=one-time-key&logout_all_sessions=1&new_password=new-secret",
           headers: {
             Accept: "application/json",
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           },
           method: "POST",
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 
@@ -254,10 +259,11 @@ describe("frappeClient", () => {
         ).resolves.toBe(expected);
         expect(fetchMock).toHaveBeenLastCalledWith(
           "https://vuna.example.com/api/method/vunapos.api.auth.get_csrf_token",
-          {
+          expect.objectContaining({
             headers: { Accept: "application/json", Cookie: "sid=session%20id" },
             method: "GET",
-          },
+            signal: expect.any(AbortSignal),
+          }),
         );
       },
     );
@@ -358,6 +364,34 @@ describe("frappeClient", () => {
       });
     });
 
+    it("propagates caller cancellation without waiting for the timeout", async () => {
+      const controller = new AbortController();
+      fetchMock.mockImplementation(
+        (_input: RequestInfo, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("The operation was aborted.", "AbortError")),
+              { once: true },
+            );
+          }),
+      );
+
+      const request = getVunaMethod(
+        "https://vuna.example.com",
+        "sid",
+        "method",
+        {},
+        controller.signal,
+      );
+      controller.abort();
+
+      await expect(request).rejects.toMatchObject({
+        code: "aborted",
+        reason: "aborted",
+      });
+    });
+
     it("classifies timeout failures as retryable connection errors", async () => {
       fetchMock.mockRejectedValue(
         new DOMException("The request timed out.", "TimeoutError"),
@@ -370,6 +404,37 @@ describe("frappeClient", () => {
         reason: "timeout",
         message: "The request timed out. Check your connection and try again.",
       });
+    });
+
+    it("aborts a hanging read at the shared timeout and cleans up its timer", async () => {
+      jest.useFakeTimers();
+      fetchMock.mockImplementation(
+        (_input: RequestInfo, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(new DOMException("The request timed out.", "AbortError")),
+              { once: true },
+            );
+          }),
+      );
+
+      try {
+        const request = getVunaMethod(
+          "https://vuna.example.com",
+          "sid",
+          "method",
+        );
+        const result = expect(request).rejects.toMatchObject({
+          code: "connection",
+          reason: "timeout",
+        });
+
+        await jest.advanceTimersByTimeAsync(FRAPPE_REQUEST_TIMEOUT_MS.read);
+        await result;
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it("classifies native fetch failures as network connection errors", async () => {
@@ -420,7 +485,7 @@ describe("frappeClient", () => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
         "https://vuna.example.com/api/method/vunapos.api.payment.receive_customer_payment",
-        {
+        expect.objectContaining({
           body: "amount=150&customer=CUST-001",
           headers: {
             Accept: "application/json",
@@ -429,8 +494,8 @@ describe("frappeClient", () => {
             "X-Frappe-CSRF-Token": "csrf-1",
           },
           method: "POST",
-          signal: undefined,
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
   });
@@ -511,7 +576,7 @@ describe("frappeClient", () => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         2,
         "https://vuna.example.com/api/method/vunapos.api.pos_entry.create_opening_entry",
-        {
+        expect.objectContaining({
           body: JSON.stringify({
             opening_balance: [{ mode_of_payment: "Cash", opening_amount: 100 }],
             pos_profile: "POS-001",
@@ -523,8 +588,8 @@ describe("frappeClient", () => {
             "X-Frappe-CSRF-Token": "csrf-1",
           },
           method: "POST",
-          signal: undefined,
-        },
+          signal: expect.any(AbortSignal),
+        }),
       );
     });
 

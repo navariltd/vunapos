@@ -30,6 +30,13 @@ type VunaMethodParams = Record<
 >;
 type FrappeJsonMethodParams = Record<string, unknown>;
 
+/** Shared upper bounds for requests. Mutations get more time because Frappe
+ * may be committing stock, payment, or shift changes before replying. */
+export const FRAPPE_REQUEST_TIMEOUT_MS = {
+  read: 15_000,
+  mutation: 30_000,
+} as const;
+
 export class FrappeClientError extends Error {
   constructor(
     message: string,
@@ -102,6 +109,51 @@ function connectionError(
     "network",
     error,
   );
+}
+
+function timeoutError() {
+  return new DOMException("The request timed out.", "TimeoutError");
+}
+
+/**
+ * Adds one consistent lifetime to every Frappe request while preserving the
+ * caller's AbortSignal. The wrapper only aborts its private controller on a
+ * timeout; callers can still cancel reads when a screen or query is replaced.
+ */
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timedOut = false;
+  const callerSignal = init.signal;
+  const abortFromCaller = () => {
+    controller.abort();
+  };
+
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+    }
+  }
+
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (timedOut) throw timeoutError();
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener("abort", abortFromCaller);
+  }
 }
 
 /**
@@ -237,12 +289,13 @@ function getFrappeErrorMessage(payload: FrappeErrorResponse | undefined) {
 
 export async function verifyVunaPosSite(companyUrl: string): Promise<void> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(companyUrl, "/api/method/vunapos.api.pos.ping"),
       {
         headers: { Accept: "application/json" },
         method: "GET",
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.read,
     );
     if (!response.ok) {
       throw new FrappeClientError(
@@ -283,7 +336,7 @@ export async function signInToFrappe(
   }
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(normalized.url, "/api/method/login"),
       {
         body: new URLSearchParams({
@@ -296,6 +349,7 @@ export async function signInToFrappe(
         },
         method: "POST",
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
     if (!response.ok) {
@@ -350,7 +404,7 @@ export async function requestFrappePasswordReset(
   }
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(
         normalized.url,
         "/api/method/frappe.core.doctype.user.user.reset_password",
@@ -363,6 +417,7 @@ export async function requestFrappePasswordReset(
         },
         method: "POST",
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
     if (!response.ok) {
@@ -394,7 +449,7 @@ export async function updateFrappePassword(
   }
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(
         normalized.url,
         "/api/method/frappe.core.doctype.user.user.update_password",
@@ -411,6 +466,7 @@ export async function updateFrappePassword(
         },
         method: "POST",
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
     const payload = await readJson<FrappeErrorResponse>(response);
 
@@ -445,7 +501,7 @@ export async function validateFrappeSession(
   sessionId: string,
 ): Promise<"valid" | "expired" | "unavailable"> {
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(companyUrl, "/api/method/vunapos.api.auth.get_csrf_token"),
       {
         headers: {
@@ -454,6 +510,7 @@ export async function validateFrappeSession(
         },
         method: "GET",
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.read,
     );
     if (response.status === 401 || response.status === 403) {
       return "expired";
@@ -477,14 +534,18 @@ export async function getVunaMethod<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   try {
-    const response = await fetch(getMethodUrl(companyUrl, method, params), {
-      headers: {
-        Accept: "application/json",
-        Cookie: `sid=${encodeURIComponent(sessionId)}`,
+    const response = await fetchWithTimeout(
+      getMethodUrl(companyUrl, method, params),
+      {
+        headers: {
+          Accept: "application/json",
+          Cookie: `sid=${encodeURIComponent(sessionId)}`,
+        },
+        method: "GET",
+        signal,
       },
-      method: "GET",
-      signal,
-    });
+      FRAPPE_REQUEST_TIMEOUT_MS.read,
+    );
 
     if (response.status === 401 || response.status === 403) {
       throw new FrappeClientError(
@@ -591,7 +652,7 @@ async function postVunaEnvelopeMethod<T>(
   );
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(companyUrl, `/api/method/${method}`),
       {
         body,
@@ -604,6 +665,7 @@ async function postVunaEnvelopeMethod<T>(
         method: "POST",
         signal,
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
     if (response.status === 401 || response.status === 403) {
@@ -670,7 +732,7 @@ export async function postFrappeJsonMethod<T>(
   );
 
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       requestUrl(companyUrl, `/api/method/${method}`),
       {
         body: JSON.stringify(params),
@@ -683,6 +745,7 @@ export async function postFrappeJsonMethod<T>(
         method: "POST",
         signal,
       },
+      FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
     if (response.status === 401 || response.status === 403) {
