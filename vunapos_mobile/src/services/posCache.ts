@@ -50,6 +50,13 @@ type CacheStorage = {
     now: number,
   ): Promise<void>;
   write(entry: StoredCacheEntry): Promise<void>;
+  /** Optional atomic replacement used by SQLite-backed production storage. */
+  writeAndPrune?: (
+    entry: StoredCacheEntry,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) => Promise<void>;
 };
 
 export type PosCacheOptions = {
@@ -159,6 +166,63 @@ class ExpoSqliteCacheStorage implements CacheStorage {
       entry.expiresAt,
       entry.accessedAt,
     );
+  }
+
+  async writeAndPrune(
+    entry: StoredCacheEntry,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
+    const database = await this.database();
+    await database.withTransactionAsync(async () => {
+      await database.runAsync(
+        `INSERT OR REPLACE INTO pos_cache_entries
+          (cache_key, namespace, resource, schema_version, payload, fetched_at, expires_at, accessed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        entry.cacheKey,
+        entry.namespace,
+        entry.resource,
+        entry.schemaVersion,
+        entry.payload,
+        entry.fetchedAt,
+        entry.expiresAt,
+        entry.accessedAt,
+      );
+      await database.runAsync(
+        "DELETE FROM pos_cache_entries WHERE expires_at <= ?",
+        now,
+      );
+      await database.runAsync(
+        `DELETE FROM pos_cache_entries
+         WHERE cache_key IN (
+           SELECT cache_key FROM pos_cache_entries
+           WHERE namespace = ?
+           ORDER BY accessed_at DESC
+           LIMIT -1 OFFSET ?
+         )`,
+        entry.namespace,
+        maximumEntries,
+      );
+      await database.runAsync(
+        `DELETE FROM pos_cache_entries
+         WHERE cache_key IN (
+           SELECT cache_key FROM (
+             SELECT
+               cache_key,
+               SUM(LENGTH(CAST(payload AS BLOB))) OVER (
+                 ORDER BY accessed_at DESC, cache_key DESC
+                 ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+               ) AS cumulative_payload_bytes
+             FROM pos_cache_entries
+             WHERE namespace = ?
+           )
+           WHERE cumulative_payload_bytes > ?
+         )`,
+        entry.namespace,
+        maximumBytes,
+      );
+    });
   }
 
   async delete(cacheKey: string) {
@@ -363,18 +427,34 @@ export class PosCache {
     // rolled back if the write fails.
     this.memory.set(entry.cacheKey, entry);
     try {
-      await this.storage.write(entry);
-      await this.storage.prune(
-        entry.namespace,
-        this.maximumEntriesPerNamespace,
-        this.maximumBytesPerNamespace,
-        now,
-      );
+      if (this.storage.writeAndPrune) {
+        await this.storage.writeAndPrune(
+          entry,
+          this.maximumEntriesPerNamespace,
+          this.maximumBytesPerNamespace,
+          now,
+        );
+      } else {
+        await this.storage.write(entry);
+        await this.storage.prune(
+          entry.namespace,
+          this.maximumEntriesPerNamespace,
+          this.maximumBytesPerNamespace,
+          now,
+        );
+      }
     } catch {
       // A first live response may still be useful for this running process
       // when persistence is unavailable. Once a previous snapshot exists,
       // restore it so a failed refresh cannot replace approved data.
       if (previousEntry) this.memory.set(entry.cacheKey, previousEntry);
+      try {
+        if (previousEntry) await this.storage.write(previousEntry);
+        else await this.storage.delete(entry.cacheKey);
+      } catch {
+        // The durable store may be unavailable; retain the live candidate only
+        // when there was no prior approved snapshot.
+      }
       recordCacheDiagnostic({
         operation: "write",
         outcome: "error",

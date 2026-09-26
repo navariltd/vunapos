@@ -110,6 +110,20 @@ class FailingStorage extends MemoryStorage {
   }
 }
 
+class FailingPruneStorage extends MemoryStorage {
+  failPrune = false;
+
+  override async prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
+    if (this.failPrune) throw new Error("Cache prune interrupted");
+    return super.prune(namespace, maximumEntries, maximumBytes, now);
+  }
+}
+
 const scope: PosCacheScope = {
   companyUrl: "https://acme.example.com",
   posProfile: "Main POS",
@@ -296,6 +310,36 @@ describe("PosCache", () => {
     await expect(restartedCache.read(key)).resolves.toMatchObject({
       data: { items: ["approved"] },
     });
+  });
+
+  it("rolls back a durable write when pruning is interrupted", async () => {
+    const interruptedStorage = new FailingPruneStorage();
+    const interruptedCache = new PosCache(interruptedStorage, { now: () => now });
+    await interruptedCache.write(key, { items: ["approved"] }, 3_600);
+    interruptedStorage.failPrune = true;
+
+    await interruptedCache.write(key, { items: ["interrupted"] }, 3_600);
+
+    const restartedCache = new PosCache(interruptedStorage, { now: () => now });
+    await expect(restartedCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+  });
+
+  it("notifies readers only after a durable replacement succeeds", async () => {
+    const interruptedStorage = new FailingPruneStorage();
+    const interruptedCache = new PosCache(interruptedStorage, { now: () => now });
+    const listener = jest.fn();
+    const unsubscribe = interruptedCache.subscribe(key, listener);
+
+    interruptedStorage.failPrune = true;
+    await interruptedCache.write(key, { items: ["rejected"] }, 3_600);
+    expect(listener).not.toHaveBeenCalled();
+
+    interruptedStorage.failPrune = false;
+    await interruptedCache.write(key, { items: ["approved"] }, 3_600);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 
   it("bounds durable records and clears only the requested namespace", async () => {
