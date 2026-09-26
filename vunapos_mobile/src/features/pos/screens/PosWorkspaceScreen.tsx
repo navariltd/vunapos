@@ -392,7 +392,6 @@ export function PosWorkspaceScreen() {
             // submitted. Start the next sale from the POS Profile default.
             orderTypeOverrideRef.current = false;
             setOrderType(configuredOrderType(posProfileConfig));
-            setPostSaleRefreshKey((current) => current + 1);
             setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)
               salespersonPin.lock();

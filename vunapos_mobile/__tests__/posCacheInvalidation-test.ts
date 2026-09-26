@@ -1,5 +1,9 @@
 jest.mock("@/services/posCache", () => ({
-  posCache: { markResourceStale: jest.fn() },
+  posCache: {
+    markResourceStale: jest.fn(),
+    read: jest.fn(),
+    write: jest.fn(),
+  },
 }));
 
 import {
@@ -8,6 +12,7 @@ import {
   invalidateHeldInvoiceCache,
   invalidateReturnCache,
   invalidateSaleCache,
+  patchCachedCatalogueItems,
 } from "@/services/posCacheInvalidation";
 import { posCache } from "@/services/posCache";
 
@@ -15,6 +20,47 @@ describe("invalidateSaleCache", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     jest.mocked(posCache.markResourceStale).mockResolvedValue(undefined);
+    jest.mocked(posCache.write).mockResolvedValue(undefined);
+  });
+
+  it("patches only affected cached catalogue rows with authoritative stock", async () => {
+    jest.mocked(posCache.read).mockResolvedValue({
+      data: {
+        items: [
+          { item_code: "ITEM-001", item_name: "One", actual_qty: 10, rate: 5 },
+          { item_code: "ITEM-002", item_name: "Two", actual_qty: 8, rate: 7 },
+        ],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      },
+      expiresAt: Date.now() + 60_000,
+      fetchedAt: Date.now(),
+      isStale: false,
+    });
+
+    await patchCachedCatalogueItems({
+      companyUrl: "https://vuna.example.com",
+      sessionId: "sid-1",
+      patches: [{ item_code: "ITEM-001", actual_qty: 4, rate: 6 }],
+    });
+
+    expect(posCache.write).toHaveBeenCalledWith(
+      {
+        resource: "workspace-configuration",
+        scope: {
+          companyUrl: "https://vuna.example.com",
+          posProfile: "workspace",
+          userId: "sid-1",
+        },
+      },
+      expect.objectContaining({
+        items: [
+          { item_code: "ITEM-001", item_name: "One", actual_qty: 4, rate: 6 },
+          { item_code: "ITEM-002", item_name: "Two", actual_qty: 8, rate: 7 },
+        ],
+      }),
+      expect.any(Number),
+    );
   });
 
   it("marks only the signed-in profile's changed sale resources stale", async () => {

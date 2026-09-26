@@ -10,7 +10,12 @@ import { NetworkConnectionStatus } from "@/services/NetworkStatusProvider";
 /** Freshness is a refresh trigger; stale rows remain available while it runs. */
 export const POS_CACHE_TTL_MS = 60 * 1000;
 
-export type PosCachedResourceClient = Pick<typeof posCache, "fetch" | "read">;
+export type PosCachedResourceClient = Pick<
+  typeof posCache,
+  "fetch" | "read"
+> & {
+  subscribe?: (key: PosCacheKey, listener: () => void) => () => void;
+};
 
 type UsePosCachedResourceArgs<T> = {
   cache?: PosCachedResourceClient;
@@ -189,6 +194,25 @@ export function usePosCachedResource<T>({
       disposed = true;
     };
   }, [enabled, keyFingerprint, loadResource]);
+
+  useEffect(() => {
+    if (!keyFingerprint || !cache.subscribe || !cacheKey) return;
+    const unsubscribe = cache.subscribe(cacheKey, () => {
+      void cache.read<T>(cacheKey).then((cached) => {
+        if (!cached || posCacheKey(cacheKey) !== keyFingerprint) return;
+        setState({
+          data: cached.data,
+          error: null,
+          isLoading: false,
+          isRefreshing: false,
+          isStale: cached.isStale,
+          keyFingerprint,
+          lastUpdated: cached.fetchedAt,
+        });
+      });
+    });
+    return unsubscribe;
+  }, [cache, cacheKey, keyFingerprint]);
 
   useEffect(() => {
     if (!enabled || !keyFingerprint) return;

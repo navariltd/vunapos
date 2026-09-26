@@ -236,6 +236,7 @@ class ExpoSqliteCacheStorage implements CacheStorage {
  */
 export class PosCache {
   private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly listeners = new Map<string, Set<() => void>>();
   private readonly memory = new Map<string, StoredCacheEntry>();
   private readonly maximumBytesPerNamespace: number;
   private readonly maximumEntryBytes: number;
@@ -344,6 +345,7 @@ export class PosCache {
       schemaVersion: this.schemaVersion,
     };
     this.memory.set(entry.cacheKey, entry);
+    for (const listener of this.listeners.get(entry.cacheKey) ?? []) listener();
     this.pruneMemory(entry.namespace, now);
 
     try {
@@ -370,6 +372,18 @@ export class PosCache {
       resource: key.resource,
       source: "sqlite",
     });
+  }
+
+  /** Allows mounted resource hooks to observe targeted cache patches. */
+  subscribe(key: PosCacheKey, listener: () => void) {
+    const cacheKey = posCacheKey(key);
+    const listeners = this.listeners.get(cacheKey) ?? new Set<() => void>();
+    listeners.add(listener);
+    this.listeners.set(cacheKey, listeners);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.listeners.delete(cacheKey);
+    };
   }
 
   /** Shares the one live request for a resource between all interested views. */
@@ -414,7 +428,10 @@ export class PosCache {
   async clearNamespace(scope: PosCacheScope) {
     const namespace = posCacheNamespace(scope);
     for (const [cacheKey, entry] of this.memory) {
-      if (entry.namespace === namespace) this.memory.delete(cacheKey);
+      if (entry.namespace === namespace) {
+        this.memory.delete(cacheKey);
+        this.listeners.delete(cacheKey);
+      }
     }
     try {
       await this.storage.clearNamespace(namespace);
@@ -427,6 +444,7 @@ export class PosCache {
   /** Used when the active account changes, so no POS data outlives its owner. */
   async clearAll() {
     this.memory.clear();
+    this.listeners.clear();
     try {
       await this.storage.clearAll();
     } catch {

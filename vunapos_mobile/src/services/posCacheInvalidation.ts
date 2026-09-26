@@ -1,4 +1,4 @@
-import { PosCartSource } from "@/features/pos/types";
+import { PosBootstrapData, PosCartSource, PosCatalogueItem } from "@/features/pos/types";
 import { PosCacheScope, posCache } from "@/services/posCache";
 
 const saleResources = [
@@ -24,6 +24,55 @@ type InvalidateSaleCacheArgs = {
   sessionId: string;
   sourceInvoice?: PosCartSource | null;
 };
+
+export type PosCataloguePatch = Pick<PosCatalogueItem, "item_code"> &
+  Partial<Pick<PosCatalogueItem, "actual_qty" | "rate" | "price_list_rate">>;
+
+/**
+ * Applies authoritative post-sale values to the cached bootstrap snapshot.
+ * This updates only affected rows and leaves the rest of the catalogue alone.
+ */
+export async function patchCachedCatalogueItems({
+  companyUrl,
+  sessionId,
+  patches,
+}: {
+  companyUrl: string;
+  sessionId: string;
+  patches: PosCataloguePatch[];
+}) {
+  if (!patches.length) return;
+  const scope: PosCacheScope = {
+    companyUrl,
+    posProfile: "workspace",
+    userId: sessionId,
+  };
+  const key = { resource: "workspace-configuration", scope } as const;
+  const cached = await posCache.read<PosBootstrapData>(key);
+  if (!cached?.data.items?.length) return;
+  const byCode = new Map(patches.map((patch) => [patch.item_code, patch]));
+  let changed = false;
+  const items = cached.data.items.map((item) => {
+    const patch = byCode.get(item.item_code);
+    if (!patch) return item;
+    changed = true;
+    return {
+      ...item,
+      ...(patch.actual_qty === undefined ? {} : { actual_qty: patch.actual_qty }),
+      ...(patch.rate === undefined ? {} : { rate: patch.rate }),
+      ...(patch.price_list_rate === undefined
+        ? {}
+        : { price_list_rate: patch.price_list_rate }),
+    };
+  });
+  if (!changed) return;
+  await posCache.write(
+    key,
+    { ...cached.data, items },
+    Math.max(cached.expiresAt - Date.now(), 1),
+  );
+  if (cached.isStale) await posCache.markResourceStale(scope, key.resource);
+}
 
 /**
  * A submitted sale changes stock, customer balances, and shift reporting.

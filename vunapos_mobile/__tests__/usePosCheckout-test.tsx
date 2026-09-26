@@ -21,8 +21,11 @@ jest.mock("@/services/frappeClient", () => ({
 }));
 
 const mockInvalidateSaleCache = jest.fn();
+const mockPatchCachedCatalogueItems = jest.fn();
 jest.mock("@/services/posCacheInvalidation", () => ({
   invalidateSaleCache: (...args: unknown[]) => mockInvalidateSaleCache(...args),
+  patchCachedCatalogueItems: (...args: unknown[]) =>
+    mockPatchCachedCatalogueItems(...args),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
@@ -52,6 +55,7 @@ describe("POS checkout hooks", () => {
     jest.clearAllMocks();
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockInvalidateSaleCache.mockResolvedValue(undefined);
+    mockPatchCachedCatalogueItems.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -163,6 +167,56 @@ describe("POS checkout hooks", () => {
       posProfile: "POS-001",
       sessionId: "sid-1",
       sourceInvoice: undefined,
+    });
+  });
+
+  it("refreshes only sold item rows after a successful submission", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-0002",
+    });
+    mockGetVunaMethod.mockResolvedValue({
+      actual_qty: 2,
+      price_list_rate: 125,
+      rate: 125,
+    });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item, { ...item, qty: 1 }],
+        orderType: "Invoice",
+        payments: [{ amount: 375, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+        priceList: "Standard Selling",
+      });
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.item.get_item_details",
+      {
+        customer: "CUST-001",
+        item_code: "ITEM-001",
+        pos_profile: "POS-001",
+        price_list: "Standard Selling",
+      },
+    );
+    expect(mockPatchCachedCatalogueItems).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      sessionId: "sid-1",
+      patches: [
+        {
+          actual_qty: 2,
+          item_code: "ITEM-001",
+          price_list_rate: 125,
+          rate: 125,
+        },
+      ],
     });
   });
 
