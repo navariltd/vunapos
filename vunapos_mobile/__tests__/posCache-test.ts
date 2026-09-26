@@ -270,6 +270,34 @@ describe("PosCache", () => {
     expect(loader).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the previous snapshot when replacing it fails durably", async () => {
+    await cache.write(key, { items: ["approved"] }, 3_600);
+    const failingStorage = new FailingStorage();
+    await failingStorage.write({
+      accessedAt: now,
+      cacheKey: posCacheKey(key),
+      expiresAt: now + 3_600,
+      fetchedAt: now,
+      namespace: JSON.stringify(scope),
+      payload: JSON.stringify({ items: ["approved"] }),
+      resource: key.resource,
+      schemaVersion: 1,
+    });
+    const failingCache = new PosCache(failingStorage, { now: () => now });
+    await failingCache.read(key);
+    failingStorage.failWrites = true;
+
+    await failingCache.write(key, { items: ["uncommitted"] }, 3_600);
+
+    await expect(failingCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+    const restartedCache = new PosCache(failingStorage, { now: () => now });
+    await expect(restartedCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+  });
+
   it("bounds durable records and clears only the requested namespace", async () => {
     await cache.write({ ...key, query: 1 }, 1, 1_000);
     now += 1;

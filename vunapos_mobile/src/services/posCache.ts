@@ -357,10 +357,11 @@ export class PosCache {
       resource: key.resource,
       schemaVersion: this.schemaVersion,
     };
+    const previousEntry = this.memory.get(entry.cacheKey);
+    // Keep reads responsive while SQLite commits, but do not notify mounted
+    // resources until the durable replacement succeeds. The candidate is
+    // rolled back if the write fails.
     this.memory.set(entry.cacheKey, entry);
-    for (const listener of this.listeners.get(entry.cacheKey) ?? []) listener();
-    this.pruneMemory(entry.namespace, now);
-
     try {
       await this.storage.write(entry);
       await this.storage.prune(
@@ -370,7 +371,10 @@ export class PosCache {
         now,
       );
     } catch {
-      // The in-memory entry is still useful for this session.
+      // A first live response may still be useful for this running process
+      // when persistence is unavailable. Once a previous snapshot exists,
+      // restore it so a failed refresh cannot replace approved data.
+      if (previousEntry) this.memory.set(entry.cacheKey, previousEntry);
       recordCacheDiagnostic({
         operation: "write",
         outcome: "error",
@@ -379,6 +383,11 @@ export class PosCache {
       });
       return;
     }
+    // Publish the new snapshot only after the durable replacement succeeds.
+    // A failed SQLite write leaves the previous in-memory and durable entries
+    // available to stale-while-revalidate readers.
+    for (const listener of this.listeners.get(entry.cacheKey) ?? []) listener();
+    this.pruneMemory(entry.namespace, now);
     recordCacheDiagnostic({
       operation: "write",
       outcome: "success",
