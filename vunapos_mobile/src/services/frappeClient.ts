@@ -33,11 +33,75 @@ type FrappeJsonMethodParams = Record<string, unknown>;
 export class FrappeClientError extends Error {
   constructor(
     message: string,
-    readonly code: "api" | "connection" | "login" | "session",
+    readonly code: "api" | "connection" | "login" | "session" | "aborted",
     readonly status?: number,
+    readonly reason?: "network" | "timeout" | "aborted",
+    readonly cause?: unknown,
   ) {
     super(message);
+    this.name = "FrappeClientError";
   }
+}
+
+/** A connection failure that callers may safely present as a retryable toast. */
+export function isFrappeConnectionError(
+  error: unknown,
+): error is FrappeClientError {
+  return error instanceof FrappeClientError && error.code === "connection";
+}
+
+/** An intentional cancellation should not be presented as a network outage. */
+export function isFrappeAbortError(error: unknown): boolean {
+  return error instanceof FrappeClientError && error.code === "aborted";
+}
+
+function isAbortError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "name" in error &&
+      (error as { name?: unknown }).name === "AbortError",
+  );
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "name" in error &&
+      (error as { name?: unknown }).name === "TimeoutError",
+  );
+}
+
+function connectionError(
+  fallbackMessage: string,
+  error: unknown,
+): FrappeClientError {
+  if (isAbortError(error)) {
+    return new FrappeClientError(
+      "The request was cancelled.",
+      "aborted",
+      undefined,
+      "aborted",
+      error,
+    );
+  }
+  if (isTimeoutError(error)) {
+    return new FrappeClientError(
+      "The request timed out. Check your connection and try again.",
+      "connection",
+      undefined,
+      "timeout",
+      error,
+    );
+  }
+  return new FrappeClientError(
+    fallbackMessage,
+    "connection",
+    undefined,
+    "network",
+    error,
+  );
 }
 
 /**
@@ -198,9 +262,9 @@ export async function verifyVunaPosSite(companyUrl: string): Promise<void> {
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach that address. Check the URL and your connection.",
-      "connection",
+      error,
     );
   }
 }
@@ -266,9 +330,9 @@ export async function signInToFrappe(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }
@@ -309,9 +373,9 @@ export async function requestFrappePasswordReset(
     }
   } catch (error) {
     if (error instanceof FrappeClientError) throw error;
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }
@@ -369,9 +433,9 @@ export async function updateFrappePassword(
     return sessionId;
   } catch (error) {
     if (error instanceof FrappeClientError) throw error;
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }
@@ -457,12 +521,9 @@ export async function getVunaMethod<T>(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }
@@ -580,12 +641,9 @@ async function postVunaEnvelopeMethod<T>(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }
@@ -664,12 +722,9 @@ export async function postFrappeJsonMethod<T>(
     if (error instanceof FrappeClientError) {
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw error;
-    }
-    throw new FrappeClientError(
+    throw connectionError(
       "Could not reach your company site. Check your connection and try again.",
-      "connection",
+      error,
     );
   }
 }

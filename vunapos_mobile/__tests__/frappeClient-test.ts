@@ -342,7 +342,7 @@ describe("frappeClient", () => {
       });
     });
 
-    it("preserves an aborted request so callers can ignore it safely", async () => {
+    it("normalizes an aborted request while preserving its cancellation cause", async () => {
       const aborted = new DOMException(
         "The operation was aborted.",
         "AbortError",
@@ -351,7 +351,38 @@ describe("frappeClient", () => {
 
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
-      ).rejects.toBe(aborted);
+      ).rejects.toMatchObject({
+        cause: aborted,
+        code: "aborted",
+        reason: "aborted",
+      });
+    });
+
+    it("classifies timeout failures as retryable connection errors", async () => {
+      fetchMock.mockRejectedValue(
+        new DOMException("The request timed out.", "TimeoutError"),
+      );
+
+      await expect(
+        getVunaMethod("https://vuna.example.com", "sid", "method"),
+      ).rejects.toMatchObject({
+        code: "connection",
+        reason: "timeout",
+        message: "The request timed out. Check your connection and try again.",
+      });
+    });
+
+    it("classifies native fetch failures as network connection errors", async () => {
+      const networkFailure = new TypeError("Network request failed");
+      fetchMock.mockRejectedValue(networkFailure);
+
+      await expect(
+        getVunaMethod("https://vuna.example.com", "sid", "method"),
+      ).rejects.toMatchObject({
+        cause: networkFailure,
+        code: "connection",
+        reason: "network",
+      });
     });
   });
 
