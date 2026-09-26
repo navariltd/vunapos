@@ -4,6 +4,7 @@ import { AppState } from "react-native";
 const mockUseAppSession = jest.fn();
 const mockUseNetworkStatus = jest.fn();
 const mockGetVunaMethod = jest.fn();
+const mockValidateFrappeSession = jest.fn();
 const mockInvalidateRealtimeResource = jest.fn();
 const mockListener = jest.fn();
 let appStateCallback: ((state: "active" | "background") => void) | undefined;
@@ -16,6 +17,8 @@ jest.mock("@/services/NetworkStatusProvider", () => ({
 }));
 jest.mock("@/services/frappeClient", () => ({
   getVunaMethod: (...args: unknown[]) => mockGetVunaMethod(...args),
+  validateFrappeSession: (...args: unknown[]) =>
+    mockValidateFrappeSession(...args),
 }));
 jest.mock("@/sync/realtimeInvalidation", () => ({
   invalidateRealtimeResource: (...args: unknown[]) =>
@@ -34,6 +37,7 @@ describe("usePosRefreshTriggers", () => {
     });
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     mockGetVunaMethod.mockResolvedValue({});
+    mockValidateFrappeSession.mockResolvedValue("valid");
     mockInvalidateRealtimeResource.mockResolvedValue(undefined);
     appStateCallback = undefined;
     jest.spyOn(AppState, "addEventListener").mockImplementation(

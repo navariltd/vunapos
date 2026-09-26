@@ -7,6 +7,10 @@ import {
   getRealtimeDiagnostics,
   subscribeRealtimeDiagnostics,
 } from "@/sync/frappeRealtimeClient";
+import {
+  getServerReachabilityDiagnostics,
+  subscribeServerReachability,
+} from "@/sync/serverReachability";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
@@ -15,24 +19,43 @@ export function NetworkStatusBanner() {
   const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
   const [realtime, setRealtime] = useState(getRealtimeDiagnostics);
+  const [server, setServer] = useState(getServerReachabilityDiagnostics);
 
   useEffect(() => {
     const unsubscribe = subscribeRealtimeDiagnostics(() =>
       setRealtime(getRealtimeDiagnostics()),
     );
+    const unsubscribeServer = subscribeServerReachability(() =>
+      setServer(getServerReachabilityDiagnostics()),
+    );
     return () => {
       unsubscribe();
+      unsubscribeServer();
     };
   }, []);
 
   const deviceOffline = connectionStatus === "offline";
   const realtimeUnavailable =
     !deviceOffline && realtime.status === "error";
-  if (!deviceOffline && !realtimeUnavailable) return null;
+  const serverUnavailable =
+    !deviceOffline && server.status === "unreachable";
+  const sessionExpired =
+    !deviceOffline && server.status === "session-expired";
+  if (
+    !deviceOffline &&
+    !realtimeUnavailable &&
+    !serverUnavailable &&
+    !sessionExpired
+  )
+    return null;
 
   const message = deviceOffline
     ? "Connection unavailable. Reconnecting…"
-    : "Realtime updates unavailable. Data will repair through server refresh.";
+    : serverUnavailable
+      ? "Company server unavailable. Actions will retry when it is reachable."
+      : sessionExpired
+        ? "Your session has expired. Sign in again to continue."
+        : "Realtime updates unavailable. Data will repair through server refresh.";
 
   return (
     <View
@@ -49,7 +72,15 @@ export function NetworkStatusBanner() {
     >
       <MaterialCommunityIcons
         color={palette.error}
-        name={deviceOffline ? "wifi-off" : "sync-alert"}
+        name={
+          deviceOffline
+            ? "wifi-off"
+            : serverUnavailable
+              ? "server-network-off"
+              : sessionExpired
+                ? "account-alert"
+              : "sync-alert"
+        }
         size={17}
       />
       <Text style={[styles.message, { color: palette.onError }]}>
