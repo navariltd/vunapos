@@ -585,15 +585,15 @@ describe("PosCloseShiftScreen", () => {
     ).toBeTruthy();
   });
 
-  it("blocks the workflow while offline and explains the connection requirement", async () => {
+  it("does not block the close workspace while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
       <PosCloseShiftScreen onBackToPos={onBackToPos} posProfile="POS-001" />,
     );
 
     expect(
-      screen.getByText("Reconnect to the server before closing this shift."),
-    ).toBeTruthy();
+      screen.queryByText("Reconnect to the server before closing this shift."),
+    ).toBeNull();
   });
 
   it("shows a preview error and allows the cashier to retry", async () => {

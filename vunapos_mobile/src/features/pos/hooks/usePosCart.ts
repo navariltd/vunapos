@@ -522,11 +522,6 @@ export function usePosCart({
   async function restoreHeldInvoice(
     heldInvoice: PosHeldInvoice,
   ): Promise<PosRestoredInvoice> {
-    if (isOffline) {
-      throw new Error(
-        "Connection unavailable. Reconnect before restoring a held invoice.",
-      );
-    }
     if (!companyUrl || !sessionId || !posProfile) {
       throw new Error(
         "Your POS session is not ready. Try again once the workspace has loaded.",
@@ -581,10 +576,6 @@ export function usePosCart({
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
   async function hold(): Promise<PosCheckoutResult | null> {
-    if (isOffline) {
-      setHoldError("Connection unavailable. Reconnect before holding this cart.");
-      return null;
-    }
     const cartItems = itemsRef.current;
     if (!cartItems.length) {
       setHoldError("Add an item before holding this cart.");

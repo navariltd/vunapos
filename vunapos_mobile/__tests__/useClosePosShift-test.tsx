@@ -91,4 +91,29 @@ describe("useClosePosShift", () => {
       ),
     );
   });
+
+  it("does not submit a second closing while the first request is pending", async () => {
+    let resolve!: (value: unknown) => void;
+    mockPostVunaJsonMethod.mockReturnValueOnce(
+      new Promise((nextResolve) => {
+        resolve = nextResolve;
+      }),
+    );
+    const hook = await renderHook(() => useClosePosShift());
+    const input = {
+      closingBalances: [{ closing_amount: 0, mode_of_payment: "Cash" }],
+      posProfile: "POS-001",
+    };
+
+    let first!: Promise<unknown>;
+    await act(async () => {
+      first = hook.result.current.close(input);
+      await hook.result.current.close(input);
+    });
+    expect(mockPostVunaJsonMethod).toHaveBeenCalledTimes(1);
+    resolve({ name: "POS-CLOSE-001", session: null });
+    await act(async () => {
+      await first;
+    });
+  });
 });

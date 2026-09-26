@@ -16,7 +16,6 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
 import { PosClosingPreviewInvoice, PosSession } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
@@ -41,7 +40,6 @@ export function PosCloseShiftScreen({
 }: PosCloseShiftScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   const preview = usePosClosingPreview(posProfile);
   const closeShift = useClosePosShift();
   const [countedAmounts, setCountedAmounts] = useState<Record<string, string>>(
@@ -140,17 +138,7 @@ export function PosCloseShiftScreen({
           </View>
         </View>
 
-        {connectionStatus !== "online" ? (
-          <StateCard
-            message={
-              connectionStatus === "offline"
-                ? "Reconnect to the server before closing this shift."
-                : "Checking the server connection before closing this shift."
-            }
-            palette={palette}
-            tone="error"
-          />
-        ) : preview.isLoading ? (
+        {preview.isLoading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator color={palette.primary} />
             <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -494,7 +482,6 @@ export function PosCloseShiftScreen({
           error={closeShift.error}
           grandTotal={preview.data.grand_total}
           invoiceCount={preview.data.invoice_count}
-          isOffline={connectionStatus !== "online"}
           isClosing={closeShift.isClosing}
           onConfirm={() => void confirmClose()}
           onDismiss={() => setConfirmationVisible(false)}
@@ -645,7 +632,6 @@ function CloseShiftCountConfirmationDialog({
   error,
   grandTotal,
   invoiceCount,
-  isOffline,
   isClosing,
   onConfirm,
   onDismiss,
@@ -661,7 +647,6 @@ function CloseShiftCountConfirmationDialog({
   error: string | null;
   grandTotal: number;
   invoiceCount: number;
-  isOffline: boolean;
   isClosing: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
