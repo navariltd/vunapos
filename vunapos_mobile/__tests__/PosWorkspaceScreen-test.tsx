@@ -104,6 +104,15 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
       reload: jest.fn(),
     };
   },
+  usePosBootstrapConfig: () => ({
+    data: null,
+    error: null,
+    isLoading: false,
+    isRefreshing: false,
+    isStale: false,
+    lastUpdated: null,
+    reload: jest.fn(),
+  }),
 }));
 
 jest.mock("@/features/pos/screens/PosHomeScreen", () => ({

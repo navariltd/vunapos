@@ -5,8 +5,10 @@ export const POS_DATABASE_SCHEMA_VERSION = 2;
 
 /**
  * Version 1 is the cache envelope table used by the existing generic cache.
- * Version 2 adds the normalized read-model tables. Keeping these migrations
- * explicit lets an existing installation upgrade without losing its cache.
+ * Version 2 reserves normalized read-model tables for a future projection.
+ * The active mobile cache remains `pos_cache_entries`, matching the SPA's
+ * snapshot model; these tables must not become a second source of truth until
+ * a complete reader/writer migration is deliberately implemented.
  */
 export const POS_DATABASE_MIGRATIONS: Readonly<Record<number, string>> = {
   1: `

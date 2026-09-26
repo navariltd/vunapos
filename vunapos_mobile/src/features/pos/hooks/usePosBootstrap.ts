@@ -26,6 +26,11 @@ type PosBootstrapState = {
   reload: (options?: { full?: boolean }) => void | Promise<void>;
 };
 
+/** The small, configuration-first response used to render the POS shell. */
+export type PosBootstrapConfigState = Omit<PosBootstrapState, "data"> & {
+  data: PosBootstrapData | null;
+};
+
 const CHECKOUT_FIELD_DOCTYPES = new Set<PosCheckoutFieldDefinition["doctype"]>([
   "POS Invoice",
   "Sales Invoice",
@@ -301,4 +306,70 @@ export function usePosBootstrap(): PosBootstrapState {
     lastUpdated: resource.lastUpdated,
     reload,
   };
+}
+
+/**
+ * Loads the SPA-equivalent configuration snapshot independently of the
+ * catalogue.  Keeping this in the same cache/resource path gives mobile the
+ * same two-stage startup contract without inventing a new backend response.
+ */
+export function usePosBootstrapConfig(): PosBootstrapConfigState {
+  const { companyUrl, invalidateSession, sessionId } = useAppSession();
+  const { connectionStatus } = useNetworkStatus();
+  const cacheKey =
+    companyUrl && sessionId
+      ? {
+          resource: "workspace-config",
+          scope: { companyUrl, userId: sessionId, posProfile: "workspace" },
+        }
+      : null;
+  const load = useCallback(
+    async (signal: AbortSignal) => {
+      if (!companyUrl || !sessionId) {
+        throw new Error(
+          "Your session is no longer available. Sign in again to continue.",
+        );
+      }
+      try {
+        return normalizeBootstrap(
+          await getVunaMethod<PosBootstrapData>(
+            companyUrl,
+            sessionId,
+            "vunapos.api.pos.get_pos_bootstrap_config",
+            {},
+            signal,
+          ),
+        );
+      } catch (error) {
+        if (error instanceof FrappeClientError && error.code === "session") {
+          void invalidateSession();
+        }
+        throw error;
+      }
+    },
+    [companyUrl, invalidateSession, sessionId],
+  );
+  const resource = usePosCachedResource({
+    cacheKey,
+    connectionStatus,
+    load,
+    ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
+  });
+  const reloadResource = resource.refresh;
+  const reload = useCallback(() => reloadResource(), [reloadResource]);
+  useEffect(
+    () =>
+      registerRealtimeRefresh("workspace-configuration", () => reload()),
+    [reload],
+  );
+
+  if (!cacheKey) {
+    return {
+      data: null,
+      error: "Your session is no longer available. Sign in again to continue.",
+      isLoading: false,
+      reload,
+    };
+  }
+  return { ...resource, reload };
 }

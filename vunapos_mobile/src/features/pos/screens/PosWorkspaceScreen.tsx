@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
 import { AppShell } from "@/features/shell/components/AppShell";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
@@ -30,7 +31,10 @@ import {
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useToast } from "@/components/feedback/ToastProvider";
-import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import {
+  usePosBootstrap,
+  usePosBootstrapConfig,
+} from "@/features/pos/hooks/usePosBootstrap";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
 
@@ -58,6 +62,10 @@ export function PosWorkspaceScreen() {
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
   const workspaceBootstrap = usePosBootstrap();
+  // The shell configuration is intentionally loaded independently of the
+  // catalogue. This lets the POS/session gate render while items hydrate in
+  // the background, matching the SPA startup sequence.
+  const workspaceConfig = usePosBootstrapConfig();
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
@@ -161,6 +169,14 @@ export function PosWorkspaceScreen() {
     );
   }, []);
   useEffect(() => {
+    if (!workspaceConfig.data) return;
+    const sync = setTimeout(
+      () => receivePosProfile(workspaceConfig.data!),
+      0,
+    );
+    return () => clearTimeout(sync);
+  }, [receivePosProfile, workspaceConfig.data]);
+  useEffect(() => {
     if (!workspaceBootstrap.data) return;
     const sync = setTimeout(
       () => receivePosProfile(workspaceBootstrap.data!),
@@ -247,6 +263,10 @@ export function PosWorkspaceScreen() {
     setCheckoutVisible(false);
     setReceivePaymentContext({ customer, invoice });
     setActiveTab("Payments");
+  }
+
+  if (!workspaceConfig.data && workspaceConfig.isLoading) {
+    return <AppLaunchScreen message="Preparing your POS settings…" />;
   }
 
   return (

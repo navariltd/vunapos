@@ -27,7 +27,10 @@ jest.mock("@/services/frappeClient", () => ({
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import {
+  usePosBootstrap,
+  usePosBootstrapConfig,
+} from "@/features/pos/hooks/usePosBootstrap";
 import { getVunaMethod } from "@/services/frappeClient";
 import { posCache } from "@/services/posCache";
 
@@ -48,6 +51,52 @@ describe("usePosBootstrap", () => {
       invalidateSession,
       sessionId: "sid-1",
     } as unknown as ReturnType<typeof useAppSession>);
+  });
+
+  it("loads shell configuration independently from the catalogue bootstrap", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      payment_modes: [{ mode_of_payment: "Cash", default: true }],
+      pos_profile: { currency: "KES", name: "POS-001" },
+      pos_session: { ready: true },
+      tax_settings: { add_taxes_from_item_tax_template: true },
+    });
+
+    const hook = await renderHook(() => usePosBootstrapConfig());
+
+    await waitFor(() =>
+      expect(hook.result.current.data?.pos_profile.name).toBe("POS-001"),
+    );
+    expect(hook.result.current.data?.items).toBeUndefined();
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.pos.get_pos_bootstrap_config",
+      {},
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("keeps configuration usable when catalogue hydration fails", async () => {
+    mockGetVunaMethod
+      .mockResolvedValueOnce({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { ready: true },
+      })
+      .mockRejectedValueOnce(new Error("catalogue unavailable"));
+
+    const hook = await renderHook(() => ({
+      config: usePosBootstrapConfig(),
+      catalogue: usePosBootstrap(),
+    }));
+
+    await waitFor(() =>
+      expect(hook.result.current.config.data?.pos_profile.name).toBe("POS-001"),
+    );
+    await waitFor(() =>
+      expect(hook.result.current.catalogue.error).toBe("catalogue unavailable"),
+    );
+    expect(hook.result.current.config.error).toBeNull();
   });
 
   afterEach(async () => {
