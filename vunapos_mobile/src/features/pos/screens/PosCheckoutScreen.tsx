@@ -21,7 +21,6 @@ import {
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
@@ -183,8 +182,6 @@ export function PosCheckoutScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
   const profile = bootstrap.data?.pos_profile;
   const isInvoice = orderType === "Invoice";
@@ -323,8 +320,7 @@ export function PosCheckoutScreen({
 
     if (
       resolvedPhoneCustomerRef.current === customerName ||
-      !profile?.name ||
-      isOffline
+      !profile?.name
     ) {
       return;
     }
@@ -368,7 +364,6 @@ export function PosCheckoutScreen({
       cancelled = true;
     };
   }, [
-    isOffline,
     profile?.name,
     saleCustomer?.customer,
     saleCustomer?.mobile,

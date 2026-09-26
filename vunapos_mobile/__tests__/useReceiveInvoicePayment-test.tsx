@@ -131,6 +131,32 @@ describe("useReceiveInvoicePayment", () => {
     expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 
+  it("keeps the payment idempotency key when the response is lost", async () => {
+    mockPostVunaMethod.mockRejectedValueOnce(new Error("Network request failed"));
+    const hook = await renderHook(() => useReceiveInvoicePayment());
+    const input = {
+      amount: 150,
+      customer: "CUST-001",
+      invoice: "SINV-0001",
+      modeOfPayment: "Cash",
+      posProfile: "POS-001",
+    };
+
+    await act(async () => {
+      await hook.result.current.receive(input);
+    });
+    const firstKey = (mockPostVunaMethod.mock.calls[0]?.[3] as Record<string, unknown>)
+      .idempotency_key;
+
+    mockPostVunaMethod.mockResolvedValueOnce({ name: "ACC-PAY-RETRY-001" });
+    await act(async () => {
+      await hook.result.current.receive(input);
+    });
+
+    expect((mockPostVunaMethod.mock.calls[1]?.[3] as Record<string, unknown>)
+      .idempotency_key).toBe(firstKey);
+  });
+
   it("submits an unallocated customer advance without invoice-only fields", async () => {
     mockPostVunaMethod.mockResolvedValue({ name: "ACC-PAY-0002" });
     const hook = await renderHook(() => useReceiveCustomerPayment());

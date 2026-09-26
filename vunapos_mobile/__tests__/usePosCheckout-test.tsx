@@ -326,6 +326,46 @@ describe("POS checkout hooks", () => {
     expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 
+  it("attempts submission while offline and keeps the checkout key for a safe retry", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPostVunaMethod.mockRejectedValue(new Error("Network request failed"));
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+    const firstKey = (mockPostVunaMethod.mock.calls[0]?.[3] as Record<string, unknown>)
+      .idempotency_key;
+
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+    expect(hook.result.current.error).toBe("Network request failed");
+
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-RETRY-001",
+    });
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect((mockPostVunaMethod.mock.calls[1]?.[3] as Record<string, unknown>)
+      .idempotency_key).toBe(firstKey);
+  });
+
   it("serializes configured checkout values only when the cashier supplied them", async () => {
     mockPostVunaMethod.mockResolvedValue({
       doctype: "Sales Invoice",
