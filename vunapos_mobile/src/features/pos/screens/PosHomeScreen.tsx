@@ -62,6 +62,7 @@ type PosHomeScreenProps = {
   onOpenCart: () => void;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
+  useBootstrapCatalogue?: boolean;
 };
 
 export function PosHomeScreen({
@@ -70,6 +71,7 @@ export function PosHomeScreen({
   onOpenCart,
   pricingContext,
   refreshKey = 0,
+  useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
@@ -88,14 +90,15 @@ export function PosHomeScreen({
   const [bundleItem, setBundleItem] = useState<PosCatalogueItem | null>(null);
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
-    customer: pricingContext?.customer,
+    customer: useBootstrapCatalogue ? undefined : pricingContext?.customer,
     enabled: !isOffline,
-    // Bootstrap intentionally returns only the first catalogue page. Keep it
-    // visible for first paint, then replace it with the complete live
-    // profile/customer/price-list catalogue when this request resolves.
-    loadAll: true,
+    // Bootstrap rows are the local-first catalogue. The hook only falls back
+    // to the server for an uncached query or an explicit pricing context,
+    // matching the SPA instead of downloading the full catalogue on mount.
+    initialItems: bootstrap.data?.items,
+    loadAll: !useBootstrapCatalogue,
     posProfile: bootstrap.data?.pos_profile.name,
-    priceList: pricingContext?.priceList,
+    priceList: useBootstrapCatalogue ? undefined : pricingContext?.priceList,
     query: searchQuery,
   });
   const bootstrapItems = bootstrap.data?.items ?? [];

@@ -70,6 +70,54 @@ describe('usePosItemSearch', () => {
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
   });
 
+  it('uses bootstrap catalogue rows locally without downloading the full catalogue', async () => {
+    const items = [
+      { actual_qty: 4, item_code: 'MILK-001', item_name: 'Milk', rate: 120 },
+      { actual_qty: 2, item_code: 'BREAD-001', item_name: 'Bread', rate: 80 },
+    ];
+    const hook = await renderHook(() =>
+      usePosItemSearch({
+        initialItems: items,
+        loadAll: false,
+        posProfile: 'POS-001',
+        query: 'milk',
+      }),
+    );
+
+    await waitFor(() => expect(hook.result.current.items).toEqual([items[0]]));
+    expect(hook.result.current.hasLoaded).toBe(true);
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it('uses the server for an explicit customer context even when bootstrap rows exist', async () => {
+    const bootstrapItem = {
+      actual_qty: 4,
+      item_code: 'MILK-001',
+      item_name: 'Milk',
+      rate: 120,
+    };
+    const customerItem = { ...bootstrapItem, rate: 135 };
+    mockGetVunaMethod.mockResolvedValue([customerItem]);
+    const hook = await renderHook(() =>
+      usePosItemSearch({
+        customer: 'CUST-001',
+        initialItems: [bootstrapItem],
+        loadAll: false,
+        posProfile: 'POS-001',
+        query: '',
+      }),
+    );
+
+    await waitFor(() => expect(hook.result.current.items).toEqual([customerItem]));
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      'https://vuna.example.com',
+      'sid-1',
+      'vunapos.api.item.search_items',
+      expect.objectContaining({ customer: 'CUST-001', limit: 60, query: '' }),
+      expect.any(AbortSignal),
+    );
+  });
+
   it('retains the last complete catalogue for local offline browsing', async () => {
     const items = [{ actual_qty: 4, item_code: 'CACHE-001', item_name: 'Cached item', rate: 120 }];
     mockGetVunaMethod.mockResolvedValue(items);

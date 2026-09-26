@@ -528,6 +528,7 @@ export function PosWorkspaceScreen() {
             priceList: selectedPriceList,
           }}
           refreshKey={postSaleRefreshKey}
+          useBootstrapCatalogue={!selectedSaleCustomer && !selectedPriceList}
         />
       ) : activeTab === "Payments" ? (
         <PosPaymentsScreen

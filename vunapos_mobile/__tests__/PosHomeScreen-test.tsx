@@ -269,7 +269,16 @@ describe("PosHomeScreen", () => {
     expect(screen.getByText("Card: Live catalogue item")).toBeTruthy();
     expect(screen.getByText("Image: none")).toBeTruthy();
     expect(mockUsePosItemSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ loadAll: true, posProfile: "POS-001" }),
+      expect.objectContaining({
+        initialItems: [{
+          actual_qty: 3,
+          item_code: "LIVE-001",
+          item_name: "Live catalogue item",
+          rate: 150,
+        }],
+        loadAll: true,
+        posProfile: "POS-001",
+      }),
     );
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");

@@ -169,6 +169,18 @@ describe("PosCache", () => {
     });
   });
 
+  it("hydrates from durable storage after the in-memory process cache is replaced", async () => {
+    await cache.write(key, { items: ["persisted milk"] }, 3_600);
+
+    // A new PosCache instance represents a process restart while SQLite remains.
+    const restartedCache = new PosCache(storage, { now: () => now });
+
+    await expect(restartedCache.read<{ items: string[] }>(key)).resolves.toMatchObject({
+      data: { items: ["persisted milk"] },
+      isStale: false,
+    });
+  });
+
   it("reports safe hit, miss, and request-deduplication diagnostics", async () => {
     await expect(cache.read(key)).resolves.toBeNull();
     await cache.write(key, { items: ["milk"] }, 3_600);
