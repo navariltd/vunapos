@@ -210,6 +210,9 @@ export type PosDefaultCustomer = {
 export type PosBootstrapData = {
   /** Server watermark used by the SPA-compatible timestamp delta contract. */
   server_time?: string;
+  /** Explicit SPA-compatible sync metadata persisted with the snapshot. */
+  lastFullSync?: string;
+  lastDeltaSync?: string;
   bootstrap_version?: number;
   mode?: "full" | "delta";
   deleted?: Record<string, string[]>;

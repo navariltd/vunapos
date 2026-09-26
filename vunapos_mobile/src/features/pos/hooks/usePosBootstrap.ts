@@ -125,6 +125,22 @@ function normalizeBootstrap(data: PosBootstrapData): PosBootstrapData {
   };
 }
 
+function requireBootstrapPayload(value: unknown): PosBootstrapData {
+  if (!value || typeof value !== "object") {
+    throw new Error("The POS bootstrap response was empty or malformed.");
+  }
+  const payload = value as Partial<PosBootstrapData>;
+  if (
+    !payload.pos_profile ||
+    typeof payload.pos_profile !== "object" ||
+    typeof payload.pos_profile.name !== "string" ||
+    !Array.isArray(payload.payment_modes)
+  ) {
+    throw new Error("The POS bootstrap response was incomplete.");
+  }
+  return value as PosBootstrapData;
+}
+
 function rowKey(row: Record<string, unknown>) {
   return String(row.item_code ?? row.customer ?? row.name ?? "");
 }
@@ -191,6 +207,30 @@ export function mergePosBootstrapDelta(
   };
 }
 
+function withSyncMetadata(
+  cached: PosBootstrapData | null | undefined,
+  incoming: PosBootstrapData,
+  responseMode: PosBootstrapData["mode"] = incoming.mode,
+): PosBootstrapData {
+  const serverTime = incoming.server_time ?? cached?.server_time;
+  if (responseMode === "delta" && cached) {
+    return {
+      ...incoming,
+      server_time: serverTime,
+      lastFullSync:
+        cached.lastFullSync ??
+        (cached.mode === "full" ? cached.server_time : undefined),
+      lastDeltaSync: incoming.server_time ?? cached.lastDeltaSync,
+    };
+  }
+  return {
+    ...incoming,
+    server_time: serverTime,
+    lastFullSync: incoming.server_time ?? cached?.lastFullSync,
+    lastDeltaSync: incoming.server_time ?? cached?.lastDeltaSync,
+  };
+}
+
 export function usePosBootstrap(): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -216,13 +256,22 @@ export function usePosBootstrap(): PosBootstrapState {
         );
       }
       try {
-        const since = forceFullRefreshRef.current ? undefined : cached?.server_time;
-        let data = await getVunaMethod<PosBootstrapData>(
-          companyUrl,
-          sessionId,
-          "vunapos.api.pos.get_pos_bootstrap",
-          since ? { since } : {},
-          signal,
+        const since = forceFullRefreshRef.current
+          ? undefined
+          : cached?.lastDeltaSync ?? cached?.server_time;
+        const posProfile = cached?.pos_profile?.name;
+        let data = requireBootstrapPayload(
+          await getVunaMethod<PosBootstrapData>(
+            companyUrl,
+            sessionId,
+            "vunapos.api.pos.get_pos_bootstrap",
+            since
+              ? { pos_profile: posProfile, since }
+              : posProfile
+                ? { pos_profile: posProfile }
+                : {},
+            signal,
+          ),
         );
         // A schema/configuration revision invalidates the timestamp window. The
         // second request is a normal full snapshot, matching the SPA recovery path.
@@ -232,16 +281,23 @@ export function usePosBootstrap(): PosBootstrapState {
           data.bootstrap_version !== undefined &&
           data.bootstrap_version !== cached.bootstrap_version
         ) {
-          data = await getVunaMethod<PosBootstrapData>(
-            companyUrl,
-            sessionId,
-            "vunapos.api.pos.get_pos_bootstrap",
-            {},
-            signal,
+          data = requireBootstrapPayload(
+            await getVunaMethod<PosBootstrapData>(
+              companyUrl,
+              sessionId,
+              "vunapos.api.pos.get_pos_bootstrap",
+              posProfile ? { pos_profile: posProfile } : {},
+              signal,
+            ),
           );
         }
+        const normalized = normalizeBootstrap(data);
         return normalizeBootstrap(
-          mergePosBootstrapDelta(cached, normalizeBootstrap(data)),
+          withSyncMetadata(
+            cached,
+            mergePosBootstrapDelta(cached, normalized),
+            normalized.mode,
+          ),
         );
       } catch (error) {
         if (error instanceof FrappeClientError && error.code === "session") {
@@ -332,12 +388,14 @@ export function usePosBootstrapConfig(): PosBootstrapConfigState {
       }
       try {
         return normalizeBootstrap(
-          await getVunaMethod<PosBootstrapData>(
-            companyUrl,
-            sessionId,
-            "vunapos.api.pos.get_pos_bootstrap_config",
-            {},
-            signal,
+          requireBootstrapPayload(
+            await getVunaMethod<PosBootstrapData>(
+              companyUrl,
+              sessionId,
+              "vunapos.api.pos.get_pos_bootstrap_config",
+              {},
+              signal,
+            ),
           ),
         );
       } catch (error) {

@@ -308,7 +308,7 @@ describe("usePosBootstrap", () => {
       "https://vuna.example.com",
       "sid-1",
       "vunapos.api.pos.get_pos_bootstrap",
-      { since: "2026-09-26 09:00:00" },
+      { pos_profile: "POS-001", since: "2026-09-26 09:00:00" },
       expect.any(AbortSignal),
     );
     expect(hook.result.current.data?.items?.find((item) => item.item_code === "CHANGED-001")?.actual_qty).toBe(7);
@@ -316,6 +316,12 @@ describe("usePosBootstrap", () => {
     expect(hook.result.current.data?.payment_modes).toEqual([
       { mode_of_payment: "Cash", default: true },
     ]);
+    expect(hook.result.current.data?.lastFullSync).toBe(
+      "2026-09-26 09:00:00",
+    );
+    expect(hook.result.current.data?.lastDeltaSync).toBe(
+      "2026-09-26 09:01:00",
+    );
   });
 
   it("falls back to a full snapshot when the bootstrap version changes", async () => {
@@ -373,7 +379,7 @@ describe("usePosBootstrap", () => {
       "https://vuna.example.com",
       "sid-1",
       "vunapos.api.pos.get_pos_bootstrap",
-      { since: "2026-09-26 09:00:00" },
+      { pos_profile: "POS-001", since: "2026-09-26 09:00:00" },
       expect.any(AbortSignal),
     );
     expect(mockGetVunaMethod).toHaveBeenNthCalledWith(
@@ -381,7 +387,7 @@ describe("usePosBootstrap", () => {
       "https://vuna.example.com",
       "sid-1",
       "vunapos.api.pos.get_pos_bootstrap",
-      {},
+      { pos_profile: "POS-001" },
       expect.any(AbortSignal),
     );
   });
@@ -433,8 +439,47 @@ describe("usePosBootstrap", () => {
       "https://vuna.example.com",
       "sid-1",
       "vunapos.api.pos.get_pos_bootstrap",
-      { since: "2026-09-26 09:00:00" },
+      { pos_profile: "POS-001", since: "2026-09-26 09:00:00" },
       expect.any(AbortSignal),
     );
+  });
+
+  it("rejects malformed refresh payloads without replacing the cached snapshot", async () => {
+    await posCache.write(
+      {
+        resource: "workspace-configuration",
+        scope: {
+          companyUrl: "https://vuna.example.com",
+          posProfile: "workspace",
+          userId: "sid-1",
+        },
+      },
+      {
+        server_time: "2026-09-26 09:00:00",
+        bootstrap_version: 6,
+        mode: "full",
+        items: [{ item_code: "KEEP-001", item_name: "Keep me" }],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      },
+      1,
+    );
+    await posCache.markResourceStale(
+      {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+      "workspace-configuration",
+    );
+    mockGetVunaMethod.mockResolvedValue(null);
+
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() =>
+      expect(hook.result.current.error).toBe(
+        "The POS bootstrap response was empty or malformed.",
+      ),
+    );
+    expect(hook.result.current.data?.items?.[0]?.item_code).toBe("KEEP-001");
   });
 });
