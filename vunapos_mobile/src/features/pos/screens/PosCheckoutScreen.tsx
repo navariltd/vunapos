@@ -916,12 +916,6 @@ export function PosCheckoutScreen({
   }
 
   async function applyLoyaltyPoints(points: number) {
-    if (isOffline) {
-      setLoyaltyError(
-        "Connection unavailable. Reconnect before redeeming loyalty points.",
-      );
-      return;
-    }
     if (points < 0 || points > maximumLoyaltyPoints) {
       setLoyaltyError(
         `Enter between 1 and ${maximumLoyaltyPoints.toLocaleString()} points.`,
@@ -1090,7 +1084,7 @@ export function PosCheckoutScreen({
   }
 
   async function holdCheckout() {
-    if (!onHold || isHolding || isOffline) return;
+    if (!onHold || isHolding) return;
     setHoldError(null);
     setIsHolding(true);
     try {
@@ -1485,7 +1479,7 @@ export function PosCheckoutScreen({
             <View style={styles.loyaltyInputRow}>
               <TextInput
                 accessibilityLabel="Loyalty points to redeem"
-                editable={!isOffline}
+                editable
                 inputMode="numeric"
                 keyboardType="number-pad"
                 onChangeText={setLoyaltyInput}
@@ -1497,12 +1491,12 @@ export function PosCheckoutScreen({
               <Pressable
                 accessibilityLabel="Redeem maximum loyalty points"
                 disabled={
-                  isOffline || !maximumLoyaltyPoints || isApplyingLoyalty
+                  !maximumLoyaltyPoints || isApplyingLoyalty
                 }
                 onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
                 style={[
                   styles.secondaryButton,
-                  (isOffline || !maximumLoyaltyPoints || isApplyingLoyalty) &&
+                  (!maximumLoyaltyPoints || isApplyingLoyalty) &&
                     styles.secondaryButtonDisabled,
                 ]}
               >
@@ -1513,16 +1507,14 @@ export function PosCheckoutScreen({
                 disabled={
                   Boolean(loyaltyInputError) ||
                   !loyaltyInputPoints ||
-                  isApplyingLoyalty ||
-                  isOffline
+                  isApplyingLoyalty
                 }
                 onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
                 style={[
                   styles.secondaryButton,
                   (Boolean(loyaltyInputError) ||
                     !loyaltyInputPoints ||
-                    isApplyingLoyalty ||
-                    isOffline) &&
+                    isApplyingLoyalty) &&
                     styles.secondaryButtonDisabled,
                 ]}
               >
@@ -1556,7 +1548,7 @@ export function PosCheckoutScreen({
                 </Text>
                 <Pressable
                   accessibilityLabel="Remove loyalty redemption"
-                  disabled={isOffline || isApplyingLoyalty}
+                  disabled={isApplyingLoyalty}
                   onPress={() => void applyLoyaltyPoints(0)}
                 >
                   <Text style={styles.loyaltyRemoveLabel}>Remove</Text>
@@ -1653,11 +1645,11 @@ export function PosCheckoutScreen({
             <Text style={styles.cardTitle}>Shipping address</Text>
             <Pressable
               accessibilityLabel="Choose shipping address"
-              disabled={isOffline || customerShippingAddresses.isLoading}
+              disabled={customerShippingAddresses.isLoading}
               onPress={() => setIsShippingAddressPickerVisible(true)}
               style={[
                 styles.shippingAddressSelector,
-                (isOffline || customerShippingAddresses.isLoading) &&
+                customerShippingAddresses.isLoading &&
                   styles.secondaryButtonDisabled,
               ]}
             >
@@ -1939,11 +1931,11 @@ export function PosCheckoutScreen({
           {onClear ? (
             <Pressable
               accessibilityLabel="Clear checkout"
-              disabled={checkout.isSubmitting || isHolding || isOffline}
+              disabled={checkout.isSubmitting || isHolding}
               onPress={() => setClearConfirmationVisible(true)}
               style={[
                 styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding || isOffline) &&
+                (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
@@ -1953,11 +1945,11 @@ export function PosCheckoutScreen({
           {onHold && isInvoice ? (
             <Pressable
               accessibilityLabel="Hold checkout"
-              disabled={checkout.isSubmitting || isHolding || isOffline}
+              disabled={checkout.isSubmitting || isHolding}
               onPress={() => void holdCheckout()}
               style={[
                 styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding || isOffline) &&
+                (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
@@ -2350,7 +2342,7 @@ export function PosCheckoutScreen({
                   return (
                     <Pressable
                       accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
-                      disabled={isOffline}
+                      disabled={false}
                       accessibilityState={{ selected }}
                       key={address.name}
                       onPress={() => {
@@ -2533,7 +2525,7 @@ export function PosCheckoutScreen({
 
         {onClear ? (
           <ClearCartConfirmationDialog
-            isOffline={isOffline || checkout.isSubmitting || isHolding}
+            isOffline={checkout.isSubmitting || isHolding}
             onConfirm={() => {
               onClear();
               setClearConfirmationVisible(false);

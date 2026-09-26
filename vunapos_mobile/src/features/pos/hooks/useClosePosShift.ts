@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosCloseShiftResult } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { FrappeClientError, postVunaJsonMethod } from "@/services/frappeClient";
 
 type ClosePosShiftInput = {
@@ -13,7 +12,6 @@ type ClosePosShiftInput = {
 /** Submits previously reviewed till counts; ERPNext remains authoritative. */
 export function useClosePosShift() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -24,10 +22,6 @@ export function useClosePosShift() {
   async function close(
     input: ClosePosShiftInput,
   ): Promise<PosCloseShiftResult | null> {
-    if (connectionStatus !== "online") {
-      setError("Reconnect to the server before closing this shift.");
-      return null;
-    }
     if (!companyUrl || !sessionId) {
       setError(
         "Your session is no longer available. Sign in again to continue.",

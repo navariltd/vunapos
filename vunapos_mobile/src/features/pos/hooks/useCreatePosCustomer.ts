@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerSearchResult } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
 import { invalidateCustomerDirectoryCache } from '@/services/posCacheInvalidation';
@@ -19,15 +18,10 @@ type CustomerResponse = {
 /** Creates a permitted customer through Frappe; the server remains the authority for access. */
 export function useCreatePosCustomer() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   async function create(customerName: string, posProfile?: string): Promise<PosCustomerSearchResult | null> {
-    if (connectionStatus !== 'online') {
-      setError('Connection unavailable. Reconnect before creating a customer.');
-      return null;
-    }
     const trimmedName = customerName.trim();
     if (!trimmedName) {
       setError('Enter a customer name.');

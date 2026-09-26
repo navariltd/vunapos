@@ -46,9 +46,7 @@ export const PosItemListRow = memo(function PosItemListRow({
   return (
     <Pressable
       accessibilityHint={
-        isOffline
-          ? "Reconnect to add items"
-          : outOfStock
+        outOfStock
           ? "This item is out of stock"
           : isAdding
             ? "This item is being added to the cart"
@@ -57,14 +55,14 @@ export const PosItemListRow = memo(function PosItemListRow({
       accessibilityLabel={
         isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
       }
-    disabled={outOfStock || isAdding || isOffline}
+    disabled={outOfStock || isAdding}
       onPress={() => onAdd(item)}
       style={[
         styles.row,
         {
           backgroundColor: palette.surface,
           borderColor: palette.borderSubtle,
-          opacity: outOfStock || isAdding || isOffline ? 0.72 : 1,
+          opacity: outOfStock || isAdding ? 0.72 : 1,
         },
       ]}
     >

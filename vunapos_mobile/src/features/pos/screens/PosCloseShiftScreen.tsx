@@ -779,12 +779,12 @@ function CloseShiftCountConfirmationDialog({
             <Pressable
               accessibilityLabel="Close POS Shift"
               accessibilityRole="button"
-              disabled={isClosing || isOffline}
+              disabled={isClosing}
               onPress={onConfirm}
               style={[
                 styles.closeButton,
                 { backgroundColor: palette.error },
-                (isClosing || isOffline) && styles.disabled,
+                isClosing && styles.disabled,
               ]}
             >
               {isClosing ? (

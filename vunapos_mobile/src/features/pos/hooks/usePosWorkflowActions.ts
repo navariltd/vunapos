@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   FrappeClientError,
   getVunaMethod,
@@ -15,10 +14,9 @@ type Args = { doctype: string; name: string; posProfile?: string };
 /** Reads the server-authorized actions for one draft and applies one action. */
 export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const requestKey =
-    connectionStatus === "online" && companyUrl && sessionId && posProfile
+    companyUrl && sessionId && posProfile
       ? JSON.stringify({
           companyUrl,
           doctype,
@@ -84,12 +82,7 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
 
   const apply = useCallback(
     async (action: string) => {
-      if (
-        connectionStatus !== "online" ||
-        !companyUrl ||
-        !sessionId ||
-        !posProfile
-      )
+      if (!companyUrl || !sessionId || !posProfile)
         return false;
       setIsApplying(action);
       setApplyError(null);
@@ -120,7 +113,6 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
     },
     [
       companyUrl,
-      connectionStatus,
       doctype,
       invalidateSession,
       name,

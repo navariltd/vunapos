@@ -95,8 +95,9 @@ describe("useReceiveInvoicePayment", () => {
     });
   });
 
-  it("does not submit a customer payment while offline", async () => {
+  it("attempts a customer payment while offline and surfaces the request failure", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPostVunaMethod.mockRejectedValue(new Error("Network request failed"));
     const hook = await renderHook(() => useReceiveInvoicePayment());
 
     await act(async () => {
@@ -109,13 +110,11 @@ describe("useReceiveInvoicePayment", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe(
-      "Connection unavailable. Reconnect before receiving a payment.",
-    );
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+    expect(hook.result.current.error).toBe("Network request failed");
   });
 
-  it("waits for confirmed reachability before submitting a customer payment", async () => {
+  it("attempts a customer payment when reachability is unknown", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     const hook = await renderHook(() => useReceiveInvoicePayment());
 
@@ -129,7 +128,7 @@ describe("useReceiveInvoicePayment", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 
   it("submits an unallocated customer advance without invoice-only fields", async () => {

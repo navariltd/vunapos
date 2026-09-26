@@ -29,7 +29,7 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const customerCreation = useCreatePosCustomer();
-  const search = usePosCustomerSearch(query, visible && !isOffline, posProfile);
+  const search = usePosCustomerSearch(query, visible, posProfile);
 
   function select(customer: PosCustomerSearchResult) {
     onSelect(customer);
@@ -63,29 +63,28 @@ export function PosCustomerPickerSheet({ allowCustomerCreation, isOffline = fals
             </View>
             <View style={styles.searchField}>
               <MaterialCommunityIcons color={palette.onSurfaceMuted} name="magnify" size={20} />
-              <TextInput accessibilityLabel="Search customers" autoFocus editable={!isOffline} onChangeText={setQuery} placeholder="Search customers" placeholderTextColor={palette.onSurfaceMuted} style={styles.searchInput} value={query} />
+              <TextInput accessibilityLabel="Search customers" autoFocus onChangeText={setQuery} placeholder="Search customers" placeholderTextColor={palette.onSurfaceMuted} style={styles.searchInput} value={query} />
             </View>
             <View style={styles.list}>
-              {isOffline ? <Text style={styles.stateText}>Reconnect to search or change the customer.</Text> : null}
               {search.isLoading ? <Text style={styles.stateText}>Loading customers…</Text> : null}
               {search.error ? <Text style={styles.errorText}>{search.error}</Text> : null}
               {!search.isLoading && !search.error && !search.rows.length ? <Text style={styles.stateText}>No customers found.</Text> : null}
-              {search.rows.map((customer) => <Pressable accessibilityLabel={`Select customer ${customer.customerName}`} disabled={isOffline} key={customer.customer} onPress={() => select(customer)} style={styles.customerRow}>
+              {search.rows.map((customer) => <Pressable accessibilityLabel={`Select customer ${customer.customerName}`} key={customer.customer} onPress={() => select(customer)} style={styles.customerRow}>
                 <View style={styles.customerMain}><Text style={styles.customerName}>{customer.customerName}</Text><Text style={styles.customerMeta}>{customer.mobile || customer.email || customer.customer}</Text></View>
                 <MaterialCommunityIcons color={palette.onSurfaceMuted} name="chevron-right" size={20} />
               </Pressable>)}
             </View>
             {allowCustomerCreation ? (
               <View style={styles.createSection}>
-                <Pressable accessibilityLabel="Create customer" disabled={isOffline || customerCreation.isCreating} onPress={() => setShowCreate((current) => !current)} style={styles.createToggle}>
+                <Pressable accessibilityLabel="Create customer" disabled={customerCreation.isCreating} onPress={() => setShowCreate((current) => !current)} style={styles.createToggle}>
                   <MaterialCommunityIcons color={palette.primary} name="plus" size={19} />
                   <Text style={styles.createToggleLabel}>Create customer</Text>
                 </Pressable>
                 {showCreate ? (
                   <View style={styles.createForm}>
-                    <TextInput accessibilityLabel="New customer name" autoCapitalize="words" editable={!isOffline && !customerCreation.isCreating} onChangeText={setCustomerName} placeholder="Customer name" placeholderTextColor={palette.onSurfaceMuted} style={styles.createInput} value={customerName} />
+                    <TextInput accessibilityLabel="New customer name" autoCapitalize="words" editable={!customerCreation.isCreating} onChangeText={setCustomerName} placeholder="Customer name" placeholderTextColor={palette.onSurfaceMuted} style={styles.createInput} value={customerName} />
                     {customerCreation.error ? <Text accessibilityRole="alert" style={styles.errorText}>{customerCreation.error}</Text> : null}
-                    <Pressable accessibilityLabel="Save customer" disabled={isOffline || customerCreation.isCreating || !customerName.trim()} onPress={() => { void createCustomer(); }} style={[styles.saveButton, (isOffline || customerCreation.isCreating || !customerName.trim()) && styles.saveButtonDisabled]}>
+                    <Pressable accessibilityLabel="Save customer" disabled={customerCreation.isCreating || !customerName.trim()} onPress={() => { void createCustomer(); }} style={[styles.saveButton, (customerCreation.isCreating || !customerName.trim()) && styles.saveButtonDisabled]}>
                       <Text style={styles.saveButtonLabel}>{customerCreation.isCreating ? 'Creating…' : 'Save customer'}</Text>
                     </Pressable>
                   </View>

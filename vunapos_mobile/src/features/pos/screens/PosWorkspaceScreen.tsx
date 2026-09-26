@@ -242,7 +242,6 @@ export function PosWorkspaceScreen() {
   }
 
   function startSale(customer: PosSaleCustomer) {
-    if (isOffline) return;
     if (!cart.clear()) return;
     setSelectedPriceList(undefined);
     setSelectedSaleCustomer(customer);
@@ -255,7 +254,7 @@ export function PosWorkspaceScreen() {
   }
 
   function openReceivePayment(customer: PosSaleCustomer, invoice?: string) {
-    if (isOffline || !allowsCustomerPayments) return;
+    if (!allowsCustomerPayments) return;
     setSelectedInvoice(null);
     setSelectedCustomer(null);
     setSelectedPaymentEntry(null);
@@ -488,7 +487,6 @@ export function PosWorkspaceScreen() {
             return null;
           }}
           onClearSaleCustomer={() => {
-            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(null);
           }}
@@ -500,12 +498,10 @@ export function PosWorkspaceScreen() {
             setSelectedSaleCustomer(null);
           }}
           onSelectSaleCustomer={(customer) => {
-            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(customer);
           }}
           onSelectPriceList={(priceList) => {
-            if (isOffline) return;
             setSelectedPriceList(priceList);
           }}
           onUpdateBatchAllocations={cart.updateBatchAllocations}

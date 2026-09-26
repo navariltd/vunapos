@@ -78,7 +78,7 @@ describe("usePosPaymentReconciliation", () => {
     });
   });
 
-  it("does not reconcile while offline", async () => {
+  it("attempts reconciliation while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const hook = await renderHook(() => usePosPaymentReconciliation());
 
@@ -91,9 +91,6 @@ describe("usePosPaymentReconciliation", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe(
-      "Connection unavailable. Reconnect before reconciling payments.",
-    );
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 });

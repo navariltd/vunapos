@@ -1150,7 +1150,6 @@ export function PosCartScreen({
   const customerLoyalty = usePosCustomerLoyalty(
     saleCustomer?.customer,
     posProfile,
-    !isOffline,
   );
   const isUsingDefaultCustomer = Boolean(
     saleCustomer?.customer &&
@@ -1160,7 +1159,7 @@ export function PosCartScreen({
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
   const activePriceList =
     resolvedPriceList || priceList || defaultPriceList || profileDefaultPriceList;
-  const isCartBusy = isUpdating || isHolding || hasPendingHold || isOffline;
+  const isCartBusy = isUpdating || isHolding || hasPendingHold;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 
   async function holdCart() {
@@ -1499,7 +1498,7 @@ export function PosCartScreen({
               <Text style={styles.errorText}>{error}</Text>
               <Pressable
                 accessibilityLabel="Retry adding item to cart"
-                disabled={isOffline}
+                disabled={false}
                 onPress={isOffline ? undefined : onRetry}
                 style={styles.retryButton}
               >
@@ -1518,7 +1517,7 @@ export function PosCartScreen({
       )}
       <PosCustomerPickerSheet
         allowCustomerCreation={allowCustomerCreation}
-        isOffline={isOffline}
+        isOffline={false}
         onDismiss={() => setCustomerPickerVisible(false)}
         onSelect={(customer) => {
           onSelectSaleCustomer(customer);
@@ -1529,7 +1528,7 @@ export function PosCartScreen({
       />
       <PosPriceListPickerSheet
         defaultPriceList={defaultPriceList}
-        isOffline={isOffline}
+        isOffline={false}
         onDismiss={() => setPriceListPickerVisible(false)}
         onSelect={onSelectPriceList || (() => undefined)}
         options={priceListOptions}
@@ -1537,7 +1536,7 @@ export function PosCartScreen({
         visible={priceListPickerVisible}
       />
       <PosUomPickerSheet
-        isOffline={isOffline}
+        isOffline={false}
         itemName={uomPickerItem?.item_name || ""}
         onDismiss={() => setUomPickerItem(null)}
         onSelect={(uom) => {
@@ -1553,7 +1552,7 @@ export function PosCartScreen({
         visible={Boolean(uomPickerItem)}
       />
       <ManagerPinApprovalDialog
-        isOffline={isOffline}
+        isOffline={false}
         onApproved={() => {
           if (managerPinItem) onRemove(managerPinItem.item_code);
           setManagerPinItem(null);
@@ -1563,7 +1562,7 @@ export function PosCartScreen({
         visible={Boolean(managerPinItem)}
       />
       <ClearCartConfirmationDialog
-        isOffline={isOffline}
+        isOffline={false}
         onConfirm={() => {
           onClear();
           setClearConfirmationVisible(false);

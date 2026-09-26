@@ -64,14 +64,12 @@ export const PosItemCard = memo(function PosItemCard({
     >
       <Pressable
         accessibilityHint={
-          isOffline
-            ? "Reconnect to add items"
-            : outOfStock
+          outOfStock
             ? "This item is out of stock"
             : "Adds this item to the cart"
         }
         accessibilityLabel={item.item_name}
-        disabled={outOfStock || isAdding || isOffline}
+        disabled={outOfStock || isAdding}
         onPress={() => onAdd(item)}
         style={[
           styles.previewArea,

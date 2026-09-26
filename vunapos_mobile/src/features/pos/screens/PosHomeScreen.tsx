@@ -198,13 +198,6 @@ export function PosHomeScreen({
 
   const addItem = useCallback(
     async (item: PosCatalogueItem): Promise<boolean> => {
-      if (isOffline) {
-        setAddError("Connection unavailable. Reconnect to add items.");
-        toast.error("Connection unavailable. Reconnect to add items.", {
-          title: "Unable to add item",
-        });
-        return false;
-      }
       if (pendingItemCode) return false;
       if (item.has_variants) {
         setVariantActionError(null);
@@ -251,7 +244,7 @@ export function PosHomeScreen({
         setPendingItemCode(null);
       }
     },
-    [currency, isOffline, isOutOfStock, onAddToCart, pendingItemCode, toast],
+    [currency, isOutOfStock, onAddToCart, pendingItemCode, toast],
   );
 
   useEffect(() => {
@@ -410,7 +403,7 @@ export function PosHomeScreen({
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
               onSubmit={() => void submitSearch()}
-              scanDisabled={isOffline}
+              scanDisabled={false}
               value={searchQuery}
             />
             {itemSearch.error ? (

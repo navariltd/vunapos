@@ -143,7 +143,7 @@ export function PosVariantPickerSheet({
               </Text>
               <Pressable
                 accessibilityLabel="Retry loading variants"
-                disabled={isOffline}
+                disabled={false}
                 onPress={isOffline ? undefined : onRetry}
                 style={[styles.retryButton, { borderColor: palette.border }]}
               >
@@ -247,7 +247,7 @@ export function PosVariantPickerSheet({
                       </Text>
                       <Pressable
                         accessibilityLabel={`Add variant ${variant.item_name || variant.item_code}`}
-                        disabled={unavailable || isSelecting || isOffline}
+                        disabled={unavailable || isSelecting}
                         onPress={() => onSelect(variant)}
                         style={[
                           styles.addButton,

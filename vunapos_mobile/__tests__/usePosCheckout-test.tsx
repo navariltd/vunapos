@@ -308,7 +308,7 @@ describe("POS checkout hooks", () => {
     );
   });
 
-  it("waits for confirmed reachability before submitting a sale", async () => {
+  it("attempts submission when reachability is unknown and lets the client classify failure", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     const hook = await renderHook(() => useSubmitPosCheckout());
 
@@ -323,7 +323,7 @@ describe("POS checkout hooks", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 
   it("serializes configured checkout values only when the cashier supplied them", async () => {

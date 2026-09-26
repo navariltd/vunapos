@@ -1,7 +1,6 @@
 import { useRef, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCreatedInvoiceReturn } from '@/features/pos/types';
 import { FrappeClientError, postVunaMethod } from '@/services/frappeClient';
 import { invalidateReturnCache } from '@/services/posCacheInvalidation';
@@ -20,16 +19,11 @@ function createIdempotencyKey() {
 /** Creates one retry-safe credit note from server-validated invoice rows. */
 export function useCreateInvoiceReturn() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
   async function create(input: CreateInvoiceReturnInput): Promise<PosCreatedInvoiceReturn | null> {
-    if (connectionStatus !== 'online') {
-      setError('Connection unavailable. Reconnect before submitting this return.');
-      return null;
-    }
     if (!companyUrl || !sessionId) {
       setError('Your session is no longer available. Sign in again to continue.');
       return null;

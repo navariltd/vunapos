@@ -520,7 +520,7 @@ describe("PosCloseShiftScreen", () => {
     });
   });
 
-  it("keeps a failed close visible and disables confirmation while closing or offline", async () => {
+  it("keeps a failed close visible while allowing the server request to be retried offline", async () => {
     const closeShiftState = {
       clearError: jest.fn(),
       close: jest.fn().mockResolvedValue(null),
@@ -581,7 +581,7 @@ describe("PosCloseShiftScreen", () => {
     );
 
     expect(
-      screen.getByRole("button", { name: "Close POS Shift", disabled: true }),
+      screen.getByRole("button", { name: "Close POS Shift", disabled: false }),
     ).toBeTruthy();
   });
 

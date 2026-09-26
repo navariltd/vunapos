@@ -286,12 +286,6 @@ export function usePosCart({
       cartPriceList = priceListRef.current,
       rollbackData?: PosCartData,
     ): Promise<PosCartData | null> => {
-      if (isOffline) {
-        setError(
-          "Connection unavailable. Reconnect before changing this cart.",
-        );
-        return null;
-      }
       if (!nextItems.length) {
         const emptyCart = localCart([]);
         itemsRef.current = emptyCart.items;
@@ -379,7 +373,6 @@ export function usePosCart({
       companyUrl,
       invalidateSession,
       invoiceDoctype,
-      isOffline,
       posProfile,
       sessionId,
     ],
@@ -505,10 +498,6 @@ export function usePosCart({
   }
 
   function clear() {
-    if (isOffline) {
-      setError("Connection unavailable. Reconnect before clearing this cart.");
-      return false;
-    }
     requestNumber.current += 1;
     const emptyCart = { items: [], taxes: [], totals: {} };
     itemsRef.current = emptyCart.items;

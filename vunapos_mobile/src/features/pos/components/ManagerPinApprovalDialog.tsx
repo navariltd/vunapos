@@ -100,7 +100,7 @@ export function ManagerPinApprovalDialog({
             <TextInput
               accessibilityLabel="Manager PIN"
               autoFocus
-              editable={!isOffline && !isVerifying}
+              editable={!isVerifying}
               inputMode="numeric"
               keyboardType="number-pad"
               maxLength={6}
@@ -124,11 +124,11 @@ export function ManagerPinApprovalDialog({
               </Pressable>
               <Pressable
                 accessibilityLabel="Approve item removal"
-                disabled={isOffline || isVerifying || pin.length < 4}
+              disabled={isVerifying || pin.length < 4}
                 onPress={() => void verify()}
                 style={[
                   styles.approveButton,
-                  (isOffline || isVerifying || pin.length < 4) && styles.disabled,
+                  (isVerifying || pin.length < 4) && styles.disabled,
                 ]}
               >
                 {isVerifying ? (

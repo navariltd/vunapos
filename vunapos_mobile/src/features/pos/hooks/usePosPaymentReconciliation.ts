@@ -3,7 +3,6 @@ import { useState } from "react";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosPaymentReconciliationAllocation } from "@/features/pos/types";
 import { FrappeClientError, postVunaMethod } from "@/services/frappeClient";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { invalidateCustomerPaymentCache } from "@/services/posCacheInvalidation";
 
 type ReconcileInput = {
@@ -21,7 +20,6 @@ export type PosPaymentReconciliationResult = {
 /** Commits a reviewed reconciliation while the server revalidates every entry. */
 export function usePosPaymentReconciliation() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isReconciling, setIsReconciling] = useState(false);
 
@@ -32,12 +30,6 @@ export function usePosPaymentReconciliation() {
   async function reconcile(
     input: ReconcileInput,
   ): Promise<PosPaymentReconciliationResult | null> {
-    if (connectionStatus !== "online") {
-      setError(
-        "Connection unavailable. Reconnect before reconciling payments.",
-      );
-      return null;
-    }
     if (!companyUrl || !sessionId) {
       setError(
         "Your session is no longer available. Sign in again to continue.",

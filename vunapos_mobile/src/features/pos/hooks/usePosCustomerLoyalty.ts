@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerLoyalty } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -18,9 +17,8 @@ type PosCustomerLoyaltyRequestState = Omit<PosCustomerLoyaltyState, 'isLoading'>
 /** Fetches the customer's live loyalty balance and redemption conversion from ERPNext. */
 export function usePosCustomerLoyalty(customer: string | undefined, posProfile: string | undefined, enabled = true): PosCustomerLoyaltyState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const activeKey = companyUrl && sessionId && customer && posProfile ? `${companyUrl}:${sessionId}:${posProfile}:${customer}` : null;
-  const requestKey = enabled && connectionStatus === 'online' ? activeKey : null;
+  const requestKey = enabled ? activeKey : null;
   const [state, setState] = useState<PosCustomerLoyaltyRequestState>({ data: null, error: null, requestKey: null });
 
   useEffect(() => {
