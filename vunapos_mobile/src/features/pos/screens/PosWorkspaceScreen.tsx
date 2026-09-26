@@ -450,6 +450,8 @@ export function PosWorkspaceScreen() {
           allowCustomerCreation={Boolean(
             posProfileConfig?.allow_customer_creation,
           )}
+          cartCacheIsStale={cart.cartCacheIsStale}
+          cartCacheLastUpdated={cart.cartCacheLastUpdated}
           allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}

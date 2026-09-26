@@ -14,6 +14,7 @@ import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import {
@@ -32,6 +33,8 @@ import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
+  cartCacheIsStale?: boolean;
+  cartCacheLastUpdated?: number | null;
   allowDiscountChange?: boolean;
   allowPriceListSwitching?: boolean;
   allowRateChange?: boolean;
@@ -1072,6 +1075,8 @@ function CartLine({
 
 export function PosCartScreen({
   allowCustomerCreation,
+  cartCacheIsStale = false,
+  cartCacheLastUpdated,
   allowDiscountChange = false,
   allowPriceListSwitching = false,
   allowRateChange = false,
@@ -1427,6 +1432,11 @@ export function PosCartScreen({
           <Text style={styles.checkoutNote}>
             Payment is collected at checkout.
           </Text>
+          <PosCacheStatus
+            isOffline={isOffline}
+            isStale={cartCacheIsStale}
+            lastUpdated={cartCacheLastUpdated}
+          />
           <View
             style={[
               styles.cartActions,

@@ -10,6 +10,8 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 }));
 
 const mockUseNetworkStatus = jest.fn();
+const mockPosCacheRead = jest.fn();
+const mockPosCacheWrite = jest.fn();
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
@@ -30,8 +32,8 @@ jest.mock("@/services/posCacheInvalidation", () => ({
 jest.mock("@/services/posCache", () => ({
   posCache: {
     clearResource: jest.fn(),
-    read: jest.fn().mockResolvedValue(null),
-    write: jest.fn(),
+    read: (...args: unknown[]) => mockPosCacheRead(...args),
+    write: (...args: unknown[]) => mockPosCacheWrite(...args),
   },
 }));
 
@@ -56,6 +58,7 @@ const item = {
 describe("usePosCart", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPosCacheRead.mockResolvedValue(null);
     mockInvalidateHeldInvoiceCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
@@ -306,6 +309,38 @@ describe("usePosCart", () => {
     expect(hook.result.current.items).toHaveLength(1);
     expect(mockGetVunaMethod).toHaveBeenCalledTimes(requestCount);
     expect(mockPostVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it("restores a stale durable cart offline without making it look fresh or writing it back", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPosCacheRead.mockResolvedValue({
+      data: {
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        data: {
+          items: [{ ...item, qty: 1 }],
+          taxes: [],
+          totals: { grand_total: 125, net_total: 125 },
+        },
+        priceList: "Standard Selling",
+        sourceInvoice: null,
+      },
+      expiresAt: 1,
+      fetchedAt: 100,
+      isStale: true,
+    });
+
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
+    expect(hook.result.current.cartCacheIsStale).toBe(true);
+    expect(hook.result.current.cartCacheLastUpdated).toBe(100);
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(mockPosCacheWrite).not.toHaveBeenCalled();
   });
 
   it("keeps a temporary cart until a customer is selected, then refreshes it with Frappe", async () => {

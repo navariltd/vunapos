@@ -234,6 +234,8 @@ export function usePosCart({
   const [restoredCustomer, setRestoredCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [restoredPriceList, setRestoredPriceList] = useState<string>();
+  const [cartCacheIsStale, setCartCacheIsStale] = useState(false);
+  const [cartCacheLastUpdated, setCartCacheLastUpdated] = useState<number | null>(null);
   const requestNumber = useRef(0);
   const attemptedItemsRef = useRef<PosCartItem[]>([]);
   const attemptedCustomerRef = useRef<PosSaleCustomer | null>(customer);
@@ -259,6 +261,10 @@ export function usePosCart({
   );
   const hydrationStartedRef = useRef<string | null>(null);
   const hydratedScopeRef = useRef<string | null>(null);
+  // Reading a durable cart must not rewrite its fetchedAt/expiry metadata before
+  // the server re-preview completes. Otherwise an offline, stale cart would be
+  // made to look fresh merely by being restored into React state.
+  const restoredCachePendingWriteRef = useRef(false);
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -337,6 +343,8 @@ export function usePosCart({
           itemsRef.current = nextData.items;
           dataRef.current = nextData;
           setData(nextData);
+          setCartCacheIsStale(false);
+          setCartCacheLastUpdated(Date.now());
           lastRefreshErrorRef.current = null;
         }
         return nextData;
@@ -391,7 +399,14 @@ export function usePosCart({
       .then((cached) => {
         if (cancelled) return;
         hydratedScopeRef.current = scopeKey;
-        if (!cached?.data?.data?.items?.length) return;
+        if (!cached?.data?.data?.items?.length) {
+          setCartCacheIsStale(false);
+          setCartCacheLastUpdated(null);
+          return;
+        }
+        restoredCachePendingWriteRef.current = true;
+        setCartCacheIsStale(cached.isStale);
+        setCartCacheLastUpdated(cached.fetchedAt);
         const draft = cached.data;
         itemsRef.current = draft.data.items;
         dataRef.current = draft.data;
@@ -417,6 +432,10 @@ export function usePosCart({
       hydratedScopeRef.current !== JSON.stringify(cartCacheScope)
     )
       return;
+    if (restoredCachePendingWriteRef.current) {
+      restoredCachePendingWriteRef.current = false;
+      return;
+    }
     if (!data.items.length) {
       void posCache.clearResource(cartCacheScope, ACTIVE_CART_RESOURCE);
       return;
@@ -498,6 +517,8 @@ export function usePosCart({
     holdDraftRef.current = null;
     sourceInvoiceRef.current = null;
     setData(emptyCart);
+    setCartCacheIsStale(false);
+    setCartCacheLastUpdated(null);
     setError(null);
     lastRefreshErrorRef.current = null;
     setHasPendingHold(false);
@@ -902,6 +923,8 @@ export function usePosCart({
     remove,
     restoreHeldInvoice,
     requiresCustomer,
+    cartCacheIsStale,
+    cartCacheLastUpdated,
     retry,
     subtotal,
     sourceInvoice,
