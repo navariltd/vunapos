@@ -805,12 +805,6 @@ export function usePosCart({
     itemCode: string,
     amount?: number,
   ): Promise<PosCartData | null> {
-    if (isOffline) {
-      setError(
-        "Connection unavailable. Reconnect before changing the delivery charge.",
-      );
-      return null;
-    }
     if (amount === undefined || amount <= 0) {
       return refresh(
         itemsRef.current.filter((item) => item.item_code !== itemCode),

@@ -311,6 +311,31 @@ describe("usePosCart", () => {
     expect(mockPostVunaMethod).not.toHaveBeenCalled();
   });
 
+  it("attempts delivery-charge preview while offline so the request classifies the failure", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockGetVunaMethod.mockRejectedValueOnce(new Error("Network unavailable"));
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.applyDeliveryCharge("DELIVERY", 50);
+    });
+
+    expect(result).toBeNull();
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.item.get_item_details",
+      expect.objectContaining({ item_code: "DELIVERY" }),
+    );
+    expect(hook.result.current.error).toBe("Network unavailable");
+  });
+
   it("restores a stale durable cart offline without making it look fresh or writing it back", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     mockPosCacheRead.mockResolvedValue({

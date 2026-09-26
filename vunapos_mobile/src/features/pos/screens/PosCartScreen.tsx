@@ -1371,7 +1371,7 @@ export function PosCartScreen({
               <Pressable
                 accessibilityLabel="Retry updating cart"
                 disabled={isCartBusy}
-                onPress={isOffline ? undefined : onRetry}
+                onPress={onRetry}
                 style={styles.retryButton}
               >
                 <Text style={styles.retryButtonLabel}>Try again</Text>
@@ -1499,7 +1499,7 @@ export function PosCartScreen({
               <Pressable
                 accessibilityLabel="Retry adding item to cart"
                 disabled={false}
-                onPress={isOffline ? undefined : onRetry}
+                onPress={onRetry}
                 style={styles.retryButton}
               >
                 <Text style={styles.retryButtonLabel}>Try again</Text>
