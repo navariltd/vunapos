@@ -942,7 +942,7 @@ describe("PosCheckoutScreen", () => {
     expect(clearError).toHaveBeenCalled();
   });
 
-  it("accepts a credit-sale deposit and submits its outstanding balance as credit", async () => {
+  it("hides payment methods and submits no payments for a credit sale", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0004" });
     const screen = await render(
       <PosCheckoutScreen
@@ -972,15 +972,8 @@ describe("PosCheckoutScreen", () => {
       "valueChange",
       true,
     );
-    await fireEvent.changeText(screen.getByLabelText("Cash amount"), "40");
-
-    expect(
-      screen.getByText(
-        "Optionally record a deposit. The remaining balance will be recorded as credit.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("Deposit + credit")).toBeTruthy();
-    expect(screen.getAllByText("Outstanding")).toHaveLength(2);
+    expect(screen.queryByText("Payment methods")).toBeNull();
+    expect(screen.queryByLabelText("Cash amount")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
     await fireEvent.press(
@@ -991,7 +984,7 @@ describe("PosCheckoutScreen", () => {
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({
           isCreditSale: true,
-          payments: [{ amount: 40, mode_of_payment: "Cash" }],
+          payments: [],
         }),
       ),
     );

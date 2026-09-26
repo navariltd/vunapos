@@ -1683,7 +1683,7 @@ export function PosCheckoutScreen({
           values={checkoutFieldValues}
         />
 
-        {isInvoice || allowsSalesOrderAdvancePayments ? (
+        {(isInvoice && !isCreditSale) || allowsSalesOrderAdvancePayments ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>
               {isInvoice ? "Payment methods" : "Sales Order advance payment"}
