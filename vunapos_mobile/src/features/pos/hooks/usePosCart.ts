@@ -278,6 +278,7 @@ export function usePosCart({
       nextItems = itemsRef.current,
       cartCustomer = customerRef.current,
       cartPriceList = priceListRef.current,
+      rollbackData?: PosCartData,
     ): Promise<PosCartData | null> => {
       if (isOffline) {
         setError(
@@ -353,7 +354,7 @@ export function usePosCart({
               : "Could not update the cart.";
           // A failed preview must never become the cart state or the retry
           // target. Keep the last server-approved cart and retry that state.
-          const lastValidData = dataRef.current;
+          const lastValidData = rollbackData ?? dataRef.current;
           itemsRef.current = lastValidData.items;
           attemptedItemsRef.current = lastValidData.items;
           attemptedCustomerRef.current = customerRef.current;
@@ -464,7 +465,20 @@ export function usePosCart({
             : cartItem,
         )
       : [...current, toCartItem(itemForCart)];
-    const nextData = await refresh(nextItems, cartCustomer);
+    // Render the local catalogue result immediately. The following preview is
+    // still authoritative, but a slow network must not make adding an item
+    // feel like the tap was ignored.
+    const previousData = dataRef.current;
+    const optimisticData = localCart(nextItems);
+    itemsRef.current = nextItems;
+    dataRef.current = optimisticData;
+    setData(optimisticData);
+    const nextData = await refresh(
+      nextItems,
+      cartCustomer,
+      priceListRef.current,
+      previousData,
+    );
     if (nextData !== null) return initialUom.notice || true;
     const message = lastRefreshErrorRef.current;
     if (message) throw new Error(message);

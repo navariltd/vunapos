@@ -133,6 +133,51 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("shows a selected-customer addition immediately while preview runs", async () => {
+    let resolvePreview!: (value: unknown) => void;
+    const pendingPreview = new Promise((resolve) => {
+      resolvePreview = resolve;
+    });
+    mockGetVunaMethod.mockImplementationOnce(async () => pendingPreview);
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    let addPromise!: Promise<boolean | string>;
+    await act(async () => {
+      addPromise = hook.result.current.add(item);
+      await Promise.resolve();
+    });
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({ item_code: "ITEM-001", qty: 1, rate: 125 }),
+    ]);
+    expect(hook.result.current.isUpdating).toBe(true);
+
+    resolvePreview({
+      items: [
+        {
+          actual_qty: 4,
+          amount: 125,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      taxes: [],
+      totals: { grand_total: 125, net_total: 125 },
+    });
+    await act(async () => {
+      await addPromise;
+    });
+    expect(hook.result.current.items[0].available_qty).toBe(4);
+  });
+
   it("re-previews an active cart after POS configuration refresh", async () => {
     const hook = await renderHook<
       ReturnType<typeof usePosCart>,
