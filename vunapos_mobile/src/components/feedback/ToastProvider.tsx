@@ -39,6 +39,16 @@ export type ToastOptions = {
   dedupeKey?: string;
 };
 
+export const CONNECTION_TOAST_MESSAGE =
+  "Couldn’t complete that action because the connection was interrupted. Check your connection and try again.";
+
+/** Keeps transport failures recognizable after hooks expose only a message. */
+export function isConnectionFailureMessage(message: string) {
+  return /could not reach|connection unavailable|connection interrupted|network request failed|network error|failed to fetch|request timed out|timed out/i.test(
+    message,
+  );
+}
+
 type Toast = ToastOptions & { id: number; severity: ToastSeverity };
 
 type ToastContextValue = {
@@ -77,16 +87,28 @@ export function ToastProvider({ children }: PropsWithChildren) {
   }, []);
   const dismissAll = useCallback(() => setToasts([]), []);
   const show = useCallback((options: ToastOptions) => {
+    const isConnectionFailure =
+      options.severity === "error" && isConnectionFailureMessage(options.message);
     const severity = options.severity || "info";
+    const normalizedOptions = isConnectionFailure
+      ? {
+          ...options,
+          dedupeKey: options.dedupeKey || "connection-failure",
+          message: CONNECTION_TOAST_MESSAGE,
+          title: options.title || "Connection interrupted",
+        }
+      : options;
     const id = nextId.current++;
     setToasts((current) => {
-      const withoutDuplicate = options.dedupeKey
-        ? current.filter((toast) => toast.dedupeKey !== options.dedupeKey)
+      const withoutDuplicate = normalizedOptions.dedupeKey
+        ? current.filter(
+            (toast) => toast.dedupeKey !== normalizedOptions.dedupeKey,
+          )
         : current;
       return [
         ...withoutDuplicate,
         {
-          ...options,
+          ...normalizedOptions,
           duration: options.duration ?? defaultDuration[severity],
           id,
           severity,

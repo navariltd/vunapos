@@ -78,7 +78,7 @@ export function PosCloseShiftScreen({
   }
 
   function reviewCounts() {
-    if (!preview.data || connectionStatus !== "online") return;
+    if (!preview.data) return;
 
     for (const payment of preview.data.payments) {
       const rawAmount = countedAmount(
