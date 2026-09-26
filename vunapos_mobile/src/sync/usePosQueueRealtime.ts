@@ -55,17 +55,20 @@ export function usePosQueueRealtime() {
         await invalidateHeldInvoiceCache({ companyUrl, posProfile, sessionId });
       }
 
-      if (text(payload.status) !== "Submitted" || !queued || !posProfile) {
+      if (text(payload.status) !== "Submitted" || !posProfile) {
         return;
       }
 
+      // After a process restart the original cart is unavailable. Mark the
+      // affected resources stale so the normal timestamp delta repairs them;
+      // never invent a second item-details request without cart context.
       await invalidateSaleCache({ companyUrl, posProfile, sessionId });
+      if (!queued) return;
+
       await refreshSoldItemStock({
         companyUrl,
-        customer: queued.customer,
         items: queued.items,
         posProfile,
-        priceList: queued.priceList,
         sessionId,
       });
     },

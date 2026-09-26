@@ -198,10 +198,8 @@ describe("POS checkout hooks", () => {
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockRefreshSoldItemStock).toHaveBeenCalledWith({
       companyUrl: "https://vuna.example.com",
-      customer: "CUST-001",
       items: [item, { ...item, qty: 1 }],
       posProfile: "POS-001",
-      priceList: "Standard Selling",
       sessionId: "sid-1",
     });
   });

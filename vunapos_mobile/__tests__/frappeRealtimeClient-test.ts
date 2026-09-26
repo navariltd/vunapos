@@ -113,4 +113,38 @@ describe("FrappeRealtimeClient", () => {
     client.stop();
     unregister();
   });
+
+  it("queues a follow-up configuration refresh when another event arrives mid-refresh", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    let resolveFirst: (() => void) | undefined;
+    const refresh = jest
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValue(undefined);
+    const unregister = registerRealtimeRefresh(
+      "workspace-configuration",
+      refresh,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit(CONFIGURATION_EVENT, { doctype: "POS Profile" });
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    socket.emit(CONFIGURATION_EVENT, { doctype: "Item Price" });
+    resolveFirst?.();
+    await jest.runAllTimersAsync();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    client.stop();
+    unregister();
+    jest.useRealTimers();
+  });
 });

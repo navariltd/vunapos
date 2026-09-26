@@ -382,10 +382,8 @@ export function useSubmitPosCheckout() {
       } else {
         await refreshSoldItemStock({
           companyUrl,
-          customer: input.customer,
           items: input.items,
           posProfile: input.posProfile,
-          priceList: input.priceList,
           sessionId,
         });
       }

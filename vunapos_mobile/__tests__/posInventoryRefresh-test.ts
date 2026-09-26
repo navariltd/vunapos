@@ -37,13 +37,11 @@ describe("refreshSoldItemStock", () => {
 
     await refreshSoldItemStock({
       companyUrl: "https://vuna.example.com",
-      customer: "CUST-1",
       items: [
         cartItem("ITEM-A", 1),
         cartItem("ITEM-A", 2),
       ],
       posProfile: "POS-1",
-      priceList: "Standard Selling",
       sessionId: "sid-1",
     });
 
@@ -53,10 +51,8 @@ describe("refreshSoldItemStock", () => {
       "sid-1",
       "vunapos.api.item.get_item_details",
       {
-        customer: "CUST-1",
         item_code: "ITEM-A",
         pos_profile: "POS-1",
-        price_list: "Standard Selling",
       },
     );
     expect(mockPatch).toHaveBeenCalledWith({
@@ -66,8 +62,6 @@ describe("refreshSoldItemStock", () => {
         {
           actual_qty: 7,
           item_code: "ITEM-A",
-          price_list_rate: 12,
-          rate: 12,
         },
       ],
     });

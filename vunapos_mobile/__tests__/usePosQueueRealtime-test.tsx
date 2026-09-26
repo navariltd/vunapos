@@ -85,10 +85,8 @@ describe("usePosQueueRealtime", () => {
     });
     expect(mockRefreshStock).toHaveBeenCalledWith({
       companyUrl: "https://vuna.example.com",
-      customer: "Customer A",
       items,
       posProfile: "POS-1",
-      priceList: "Standard Selling",
       sessionId: "sid-1",
     });
   });
@@ -113,6 +111,30 @@ describe("usePosQueueRealtime", () => {
 
     expect(mockInvalidateHeld).toHaveBeenCalled();
     expect(mockInvalidateSale).not.toHaveBeenCalled();
+    expect(mockRefreshStock).not.toHaveBeenCalled();
+  });
+
+  it("marks a submitted queue sale stale when its cart context was lost", async () => {
+    mockTake.mockReturnValue(undefined);
+    mockInvalidateHeld.mockResolvedValue(undefined);
+    mockInvalidateSale.mockResolvedValue(undefined);
+
+    renderHook(() => usePosQueueRealtime());
+    await waitFor(() => expect(mockRegister).toHaveBeenCalled());
+    const handler = mockRegister.mock.calls[0][1] as (payload: unknown) => Promise<void>;
+    await act(async () => {
+      await handler({
+        invoice_name: "SINV-RESTARTED-001",
+        pos_profile: "POS-1",
+        status: "Submitted",
+      });
+    });
+
+    expect(mockInvalidateSale).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-1",
+      sessionId: "sid-1",
+    });
     expect(mockRefreshStock).not.toHaveBeenCalled();
   });
 });

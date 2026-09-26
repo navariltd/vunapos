@@ -5,20 +5,20 @@ import {
   PosCataloguePatch,
 } from "@/services/posCacheInvalidation";
 
-/** Refreshes only item rows affected by a committed sale. */
+/**
+ * Refreshes only stock rows affected by a committed sale. Pricing is omitted
+ * deliberately: customer/price-list rates are cart-contextual and must not
+ * overwrite the profile-default catalogue snapshot.
+ */
 export async function refreshSoldItemStock({
   companyUrl,
-  customer,
   items,
   posProfile,
-  priceList,
   sessionId,
 }: {
   companyUrl: string;
-  customer?: string;
   items: PosCartItem[];
   posProfile: string;
-  priceList?: string;
   sessionId: string;
 }) {
   const itemCodes = [...new Set(items.map((item) => item.item_code))];
@@ -29,10 +29,8 @@ export async function refreshSoldItemStock({
         sessionId,
         "vunapos.api.item.get_item_details",
         {
-          customer,
           item_code: itemCode,
           pos_profile: posProfile,
-          price_list: priceList,
         },
       ),
     ),
@@ -43,8 +41,6 @@ export async function refreshSoldItemStock({
     patches.push({
       item_code: itemCodes[index],
       actual_qty: result.value.actual_qty,
-      price_list_rate: result.value.price_list_rate,
-      rate: result.value.rate,
     });
   });
   if (!patches.length) return;
