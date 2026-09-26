@@ -5,6 +5,10 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { getVunaMethod } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
+import {
+  POS_CACHE_TTL_MS,
+  refreshRegisteredPosResources,
+} from "@/hooks/usePosCachedResource";
 
 /**
  * Runs the SPA-style reachability repair without making the device network
@@ -65,4 +69,14 @@ export function usePosRefreshTriggers() {
     });
     return () => subscription.remove();
   }, [probeAndRefresh]);
+
+  // One scheduler owns freshness for every mounted cached resource. Individual
+  // resources register their loaders but never create their own intervals.
+  useEffect(() => {
+    if (authState !== "signedIn" || connectionStatus !== "online") return;
+    const timer = setInterval(() => {
+      void refreshRegisteredPosResources();
+    }, POS_CACHE_TTL_MS);
+    return () => clearInterval(timer);
+  }, [authState, connectionStatus]);
 }

@@ -47,6 +47,16 @@ const emptyState = {
   lastUpdated: null,
 };
 
+const registeredRefreshers = new Map<string, Set<() => void>>();
+
+/** Invoked by the single app-level freshness scheduler. */
+export async function refreshRegisteredPosResources() {
+  const refreshes = [...registeredRefreshers.values()].flatMap((callbacks) =>
+    [...callbacks].map((refresh) => refresh()),
+  );
+  await Promise.allSettled(refreshes);
+}
+
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Could not refresh this data.";
 }
@@ -216,11 +226,15 @@ export function usePosCachedResource<T>({
 
   useEffect(() => {
     if (!enabled || !keyFingerprint) return;
-    const timer = setInterval(() => {
-      void loadResource(false);
-    }, ttlMs);
-    return () => clearInterval(timer);
-  }, [enabled, keyFingerprint, loadResource, ttlMs]);
+    const refresh = () => loadResource(false);
+    const refreshers = registeredRefreshers.get(keyFingerprint) ?? new Set();
+    refreshers.add(refresh);
+    registeredRefreshers.set(keyFingerprint, refreshers);
+    return () => {
+      refreshers.delete(refresh);
+      if (!refreshers.size) registeredRefreshers.delete(keyFingerprint);
+    };
+  }, [enabled, keyFingerprint, loadResource]);
 
   const refresh = useCallback(async () => {
     await loadResource(true);

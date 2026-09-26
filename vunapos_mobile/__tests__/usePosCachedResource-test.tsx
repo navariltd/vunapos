@@ -2,6 +2,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react-native
 
 import {
   PosCachedResourceClient,
+  refreshRegisteredPosResources,
   usePosCachedResource,
 } from "@/hooks/usePosCachedResource";
 import { PosCacheEntry, PosCacheKey } from "@/services/posCache";
@@ -104,8 +105,7 @@ describe("usePosCachedResource", () => {
     expect(hook.result.current.isStale).toBe(false);
   });
 
-  it("revalidates a stale resource on its freshness interval", async () => {
-    jest.useFakeTimers();
+  it("revalidates a stale resource through the app-level scheduler", async () => {
     let reads = 0;
     const cache = {
       fetch: jest.fn().mockResolvedValue(["new milk"]),
@@ -124,13 +124,9 @@ describe("usePosCachedResource", () => {
       }),
     );
 
-    await act(async () => {
-      await Promise.resolve();
-      await jest.advanceTimersByTimeAsync(100);
-    });
+    await act(async () => refreshRegisteredPosResources());
     await waitFor(() => expect(cache.fetch).toHaveBeenCalledTimes(1));
     expect(hook.result.current.data).toEqual(["new milk"]);
-    jest.useRealTimers();
   });
 
   it("shows a stale cached value while it refreshes in the background", async () => {
