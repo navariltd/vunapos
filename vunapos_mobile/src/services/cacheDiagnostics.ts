@@ -17,7 +17,17 @@ export type CacheDiagnostic = {
     | "stale"
     | "success";
   resource: string;
+  rowsWritten?: number;
   source?: "memory" | "network" | "sqlite";
+};
+
+export type CacheDiagnosticSummary = {
+  cacheHitRate: number;
+  cacheHits: number;
+  cacheMisses: number;
+  averageFetchDurationMs: number;
+  requestCount: number;
+  rowsWritten: number;
 };
 
 const MAX_DIAGNOSTICS = 100;
@@ -32,6 +42,42 @@ export function recordCacheDiagnostic(event: CacheDiagnostic) {
 
 export function getCacheDiagnostics(): CacheDiagnostic[] {
   return events.map((event) => ({ ...event }));
+}
+
+/** Produces aggregate performance counters without exposing cache contents. */
+export function summarizeCacheDiagnostics(
+  diagnostics = events,
+): CacheDiagnosticSummary {
+  const cacheHits = diagnostics.filter(
+    (event) => event.operation === "read" && event.outcome === "hit",
+  ).length;
+  const cacheMisses = diagnostics.filter(
+    (event) => event.operation === "read" && event.outcome === "miss",
+  ).length;
+  const fetches = diagnostics.filter(
+    (event) =>
+      event.operation === "fetch" &&
+      event.outcome !== "deduplicated",
+  );
+  const durations = fetches.flatMap((event) =>
+    typeof event.durationMs === "number" ? [event.durationMs] : [],
+  );
+  return {
+    averageFetchDurationMs: durations.length
+      ? durations.reduce((total, duration) => total + duration, 0) /
+        durations.length
+      : 0,
+    cacheHitRate: cacheHits + cacheMisses
+      ? cacheHits / (cacheHits + cacheMisses)
+      : 0,
+    cacheHits,
+    cacheMisses,
+    requestCount: fetches.length,
+    rowsWritten: diagnostics.reduce(
+      (total, event) => total + (event.rowsWritten ?? 0),
+      0,
+    ),
+  };
 }
 
 export function clearCacheDiagnostics() {

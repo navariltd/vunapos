@@ -2,6 +2,7 @@ import {
   clearCacheDiagnostics,
   getCacheDiagnostics,
   recordCacheDiagnostic,
+  summarizeCacheDiagnostics,
 } from "@/services/cacheDiagnostics";
 
 describe("cache diagnostics", () => {
@@ -40,5 +41,46 @@ describe("cache diagnostics", () => {
 
     clearCacheDiagnostics();
     expect(getCacheDiagnostics()).toEqual([]);
+  });
+
+  it("summarizes request count, hit rate, refresh duration, and rows written", () => {
+    recordCacheDiagnostic({
+      operation: "read",
+      outcome: "hit",
+      resource: "workspace-configuration",
+    });
+    recordCacheDiagnostic({
+      operation: "read",
+      outcome: "miss",
+      resource: "invoice-history",
+    });
+    recordCacheDiagnostic({
+      durationMs: 10,
+      operation: "fetch",
+      outcome: "success",
+      resource: "workspace-configuration",
+      rowsWritten: 500,
+    });
+    recordCacheDiagnostic({
+      durationMs: 30,
+      operation: "fetch",
+      outcome: "error",
+      resource: "invoice-history",
+      rowsWritten: 0,
+    });
+    recordCacheDiagnostic({
+      operation: "fetch",
+      outcome: "deduplicated",
+      resource: "workspace-configuration",
+    });
+
+    expect(summarizeCacheDiagnostics()).toEqual({
+      averageFetchDurationMs: 20,
+      cacheHitRate: 0.5,
+      cacheHits: 1,
+      cacheMisses: 1,
+      requestCount: 2,
+      rowsWritten: 500,
+    });
   });
 });

@@ -81,6 +81,19 @@ function utf8ByteLength(value: string) {
   return new TextEncoder().encode(value).byteLength;
 }
 
+function cachedRowCount(value: unknown) {
+  if (Array.isArray(value)) return value.length;
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const collections = ["items", "customers", "invoices", "payments"];
+  const count = collections.reduce(
+    (total, field) =>
+      total + (Array.isArray(record[field]) ? record[field].length : 0),
+    0,
+  );
+  return count || undefined;
+}
+
 export function posCacheNamespace(scope: PosCacheScope) {
   return stableJson({
     companyUrl: scope.companyUrl,
@@ -370,6 +383,7 @@ export class PosCache {
       operation: "write",
       outcome: "success",
       resource: key.resource,
+      rowsWritten: cachedRowCount(data),
       source: "sqlite",
     });
   }
@@ -388,6 +402,7 @@ export class PosCache {
 
   /** Shares the one live request for a resource between all interested views. */
   async fetch<T>(key: PosCacheKey, loader: () => Promise<T>, ttlMs: number) {
+    const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
     const existing = this.inFlight.get(cacheKey) as Promise<T> | undefined;
     if (existing) {
@@ -404,6 +419,7 @@ export class PosCache {
       .then(async (data) => {
         await this.write(key, data, ttlMs);
         recordCacheDiagnostic({
+          durationMs: Date.now() - startedAt,
           operation: "fetch",
           outcome: "success",
           resource: key.resource,
@@ -413,6 +429,7 @@ export class PosCache {
       })
       .catch((error: unknown) => {
         recordCacheDiagnostic({
+          durationMs: Date.now() - startedAt,
           operation: "fetch",
           outcome: "error",
           resource: key.resource,
