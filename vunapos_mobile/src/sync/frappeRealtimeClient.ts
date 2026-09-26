@@ -3,6 +3,7 @@ import { io } from "socket.io-client";
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
 
 export const CONFIGURATION_EVENT = "vunapos_configuration_changed";
+export const CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed";
 
 // `adb reverse` exposes the bench to an Android emulator as localhost. The
 // physical Frappe site remains meru.localhost, which is also the namespace
@@ -103,6 +104,7 @@ export class FrappeRealtimeClient {
     this.socket.on("connect", this.handleConnect);
     this.socket.on("connect_error", this.handleConnectError);
     this.socket.on(CONFIGURATION_EVENT, this.handleConfigurationChange);
+    this.socket.on(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
   }
 
   stop() {
@@ -117,6 +119,7 @@ export class FrappeRealtimeClient {
       this.socket.off("connect", this.handleConnect);
       this.socket.off("connect_error", this.handleConnectError);
       this.socket.off(CONFIGURATION_EVENT, this.handleConfigurationChange);
+      this.socket.off(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
       this.socket.disconnect();
       this.socket = undefined;
     }
@@ -140,6 +143,10 @@ export class FrappeRealtimeClient {
 
   private readonly handleConfigurationChange = (payload?: unknown) => {
     this.scheduleConfigurationRefresh(payload);
+  };
+
+  private readonly handleCheckoutQueueChange = (payload?: unknown) => {
+    void invalidateRealtimeResource("checkout-queue", payload);
   };
 
   private readonly scheduleConfigurationRefresh = (payload?: unknown) => {

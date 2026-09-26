@@ -21,11 +21,17 @@ jest.mock("@/services/frappeClient", () => ({
 }));
 
 const mockInvalidateSaleCache = jest.fn();
-const mockPatchCachedCatalogueItems = jest.fn();
 jest.mock("@/services/posCacheInvalidation", () => ({
   invalidateSaleCache: (...args: unknown[]) => mockInvalidateSaleCache(...args),
-  patchCachedCatalogueItems: (...args: unknown[]) =>
-    mockPatchCachedCatalogueItems(...args),
+}));
+const mockRefreshSoldItemStock = jest.fn();
+jest.mock("@/services/posInventoryRefresh", () => ({
+  refreshSoldItemStock: (...args: unknown[]) => mockRefreshSoldItemStock(...args),
+}));
+const mockRegisterQueuedCheckout = jest.fn();
+jest.mock("@/sync/queuedCheckoutRegistry", () => ({
+  registerQueuedCheckout: (...args: unknown[]) =>
+    mockRegisterQueuedCheckout(...args),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
@@ -55,7 +61,7 @@ describe("POS checkout hooks", () => {
     jest.clearAllMocks();
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockInvalidateSaleCache.mockResolvedValue(undefined);
-    mockPatchCachedCatalogueItems.mockResolvedValue(undefined);
+    mockRefreshSoldItemStock.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -175,11 +181,6 @@ describe("POS checkout hooks", () => {
       doctype: "Sales Invoice",
       name: "SINV-0002",
     });
-    mockGetVunaMethod.mockResolvedValue({
-      actual_qty: 2,
-      price_list_rate: 125,
-      rate: 125,
-    });
     const hook = await renderHook(() => useSubmitPosCheckout());
 
     await act(async () => {
@@ -194,30 +195,45 @@ describe("POS checkout hooks", () => {
       });
     });
 
-    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
-    expect(mockGetVunaMethod).toHaveBeenCalledWith(
-      "https://vuna.example.com",
-      "sid-1",
-      "vunapos.api.item.get_item_details",
-      {
-        customer: "CUST-001",
-        item_code: "ITEM-001",
-        pos_profile: "POS-001",
-        price_list: "Standard Selling",
-      },
-    );
-    expect(mockPatchCachedCatalogueItems).toHaveBeenCalledWith({
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(mockRefreshSoldItemStock).toHaveBeenCalledWith({
       companyUrl: "https://vuna.example.com",
+      customer: "CUST-001",
+      items: [item, { ...item, qty: 1 }],
+      posProfile: "POS-001",
+      priceList: "Standard Selling",
       sessionId: "sid-1",
-      patches: [
-        {
-          actual_qty: 2,
-          item_code: "ITEM-001",
-          price_list_rate: 125,
-          rate: 125,
-        },
-      ],
     });
+  });
+
+  it("registers queued invoice and order context for later targeted reconciliation", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Order",
+      name: "SAL-ORD-QUEUE-001",
+      queue_status: "Queued",
+    });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(mockRegisterQueuedCheckout).toHaveBeenCalledWith(
+      "SAL-ORD-QUEUE-001",
+      expect.objectContaining({
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+      }),
+    );
+    expect(mockRefreshSoldItemStock).not.toHaveBeenCalled();
   });
 
   it("applies the configured first workflow action only after the server creates a draft", async () => {

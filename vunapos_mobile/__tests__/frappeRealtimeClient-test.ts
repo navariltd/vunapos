@@ -1,4 +1,5 @@
 import {
+  CHECKOUT_QUEUE_EVENT,
   CONFIGURATION_EVENT,
   FrappeRealtimeClient,
   getFrappeRealtimeConnection,
@@ -92,5 +93,24 @@ describe("FrappeRealtimeClient", () => {
     invalidateRealtimeResource("workspace-configuration");
 
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("forwards checkout queue transitions to the app-owned resource", async () => {
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    const refresh = jest.fn();
+    const unregister = registerRealtimeRefresh("checkout-queue", refresh);
+
+    client.start("https://pos.example.com", "sid-1");
+    const payload = {
+      invoice_name: "SINV-QUEUE-001",
+      status: "Submitted",
+    };
+    socket.emit(CHECKOUT_QUEUE_EVENT, payload);
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledWith(payload);
+    client.stop();
+    unregister();
   });
 });

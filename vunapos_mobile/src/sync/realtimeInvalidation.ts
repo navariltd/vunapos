@@ -1,5 +1,8 @@
 /** Application data that can be refreshed after a Frappe realtime signal. */
-export const REALTIME_RESOURCES = ["workspace-configuration"] as const;
+export const REALTIME_RESOURCES = [
+  "workspace-configuration",
+  "checkout-queue",
+] as const;
 
 export type RealtimeResource = (typeof REALTIME_RESOURCES)[number];
 

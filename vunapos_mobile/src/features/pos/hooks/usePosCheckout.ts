@@ -5,7 +5,6 @@ import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { PaymentInput } from "@/features/pos/paymentAllocation";
 import {
   PosCartItem,
-  PosCatalogueItem,
   PosCheckoutPreview,
   PosCheckoutResult,
   PosCartSource,
@@ -18,9 +17,9 @@ import {
 } from "@/services/frappeClient";
 import {
   invalidateSaleCache,
-  patchCachedCatalogueItems,
-  PosCataloguePatch,
 } from "@/services/posCacheInvalidation";
+import { refreshSoldItemStock } from "@/services/posInventoryRefresh";
+import { registerQueuedCheckout } from "@/sync/queuedCheckoutRegistry";
 
 type PreviewInput = {
   customer?: string;
@@ -64,43 +63,6 @@ function cartPayload(items: PosCartItem[]) {
 
 function createIdempotencyKey() {
   return `mobile-checkout-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-async function refreshSoldItemStock(
-  items: PosCartItem[],
-  companyUrl: string,
-  sessionId: string,
-  posProfile: string,
-  customer?: string,
-  priceList?: string,
-) {
-  const itemCodes = [...new Set(items.map((item) => item.item_code))];
-  const results = await Promise.allSettled(
-    itemCodes.map((itemCode) =>
-      getVunaMethod<PosCatalogueItem>(
-        companyUrl,
-        sessionId,
-        "vunapos.api.item.get_item_details",
-        { customer, item_code: itemCode, pos_profile: posProfile, price_list: priceList },
-      ),
-    ),
-  );
-  const patches: PosCataloguePatch[] = [];
-  results.forEach((result, index) => {
-    if (result.status !== "fulfilled" || !result.value) return;
-    patches.push({
-      item_code: itemCodes[index],
-      actual_qty: result.value.actual_qty,
-      price_list_rate: result.value.price_list_rate,
-      rate: result.value.rate,
-    });
-  });
-  try {
-    await patchCachedCatalogueItems({ companyUrl, sessionId, patches });
-  } catch {
-    // Cache repair is best effort; the next timestamp delta remains the
-    // recovery path for a failed local write.
-  }
 }
 
 /** Fetches server-calculated invoice totals before a cashier allocates payment. */
@@ -410,14 +372,23 @@ export function useSubmitPosCheckout() {
         sessionId,
         sourceInvoice: input.sourceInvoice,
       });
-      await refreshSoldItemStock(
-        input.items,
-        companyUrl,
-        sessionId,
-        input.posProfile,
-        input.customer,
-        input.priceList,
-      );
+      if (result.queue_status === "Queued" || result.queue_status === "Processing") {
+        registerQueuedCheckout(result.name, {
+          customer: input.customer,
+          items: input.items,
+          posProfile: input.posProfile,
+          priceList: input.priceList,
+        });
+      } else {
+        await refreshSoldItemStock({
+          companyUrl,
+          customer: input.customer,
+          items: input.items,
+          posProfile: input.posProfile,
+          priceList: input.priceList,
+          sessionId,
+        });
+      }
       idempotencyKey.current = createIdempotencyKey();
       return result;
     } catch (requestError) {
