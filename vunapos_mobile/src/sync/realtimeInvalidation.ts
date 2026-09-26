@@ -3,7 +3,7 @@ export const REALTIME_RESOURCES = ["workspace-configuration"] as const;
 
 export type RealtimeResource = (typeof REALTIME_RESOURCES)[number];
 
-type RefreshHandler = () => void | Promise<void>;
+type RefreshHandler = (payload?: unknown) => void | Promise<void>;
 
 const handlers = new Map<RealtimeResource, Set<RefreshHandler>>();
 
@@ -25,12 +25,16 @@ export function registerRealtimeRefresh(
   };
 }
 
-export function invalidateRealtimeResource(resource: RealtimeResource) {
-  for (const handler of handlers.get(resource) ?? []) {
-    void Promise.resolve(handler()).catch(() => {
+export function invalidateRealtimeResource(
+  resource: RealtimeResource,
+  payload?: unknown,
+) {
+  const refreshes = [...(handlers.get(resource) ?? [])].map((handler) =>
+    Promise.resolve(handler(payload)).catch(() => {
       // A realtime notification is an acceleration path. A failed refresh is
       // surfaced by the resource that owns the request, never as an unhandled
       // rejection from the shared socket client.
-    });
-  }
+    }),
+  );
+  return Promise.all(refreshes).then(() => undefined);
 }

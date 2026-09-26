@@ -9,6 +9,7 @@ export const CONFIGURATION_EVENT = "vunapos_configuration_changed";
 // used when Frappe publishes realtime events. Keep this development bridge
 // narrow; deployed sites use their own public hostname as the site name.
 const LOCAL_BENCH_SITE_NAME = "meru.localhost";
+const CONFIGURATION_DEBOUNCE_MS = 350;
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -72,6 +73,10 @@ export function getFrappeRealtimeConnection(companyUrl: string) {
 /** One authenticated socket for the whole signed-in mobile session. */
 export class FrappeRealtimeClient {
   private connectedOnce = false;
+  private configurationRefreshInFlight = false;
+  private configurationRefreshPayload: unknown;
+  private configurationRefreshQueued = false;
+  private configurationRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private socket: SocketLike | undefined;
 
   constructor(
@@ -101,6 +106,13 @@ export class FrappeRealtimeClient {
   }
 
   stop() {
+    if (this.configurationRefreshTimer) {
+      clearTimeout(this.configurationRefreshTimer);
+      this.configurationRefreshTimer = undefined;
+    }
+    this.configurationRefreshQueued = false;
+    this.configurationRefreshPayload = undefined;
+    this.configurationRefreshInFlight = false;
     if (this.socket) {
       this.socket.off("connect", this.handleConnect);
       this.socket.off("connect_error", this.handleConnectError);
@@ -116,7 +128,7 @@ export class FrappeRealtimeClient {
     const recovered = this.connectedOnce;
     this.connectedOnce = true;
     setDiagnostics({ status: "connected", lastConnectedAt: new Date().toISOString() });
-    if (recovered) invalidateRealtimeResource("workspace-configuration");
+    if (recovered) this.scheduleConfigurationRefresh();
   };
 
   private readonly handleConnectError = (error?: unknown) => {
@@ -126,8 +138,35 @@ export class FrappeRealtimeClient {
     });
   };
 
-  private readonly handleConfigurationChange = () => {
-    invalidateRealtimeResource("workspace-configuration");
+  private readonly handleConfigurationChange = (payload?: unknown) => {
+    this.scheduleConfigurationRefresh(payload);
+  };
+
+  private readonly scheduleConfigurationRefresh = (payload?: unknown) => {
+    this.configurationRefreshPayload = payload;
+    this.configurationRefreshQueued = true;
+    if (this.configurationRefreshTimer) return;
+    this.configurationRefreshTimer = setTimeout(() => {
+      this.configurationRefreshTimer = undefined;
+      void this.flushConfigurationRefresh();
+    }, CONFIGURATION_DEBOUNCE_MS);
+  };
+
+  private readonly flushConfigurationRefresh = async () => {
+    if (this.configurationRefreshInFlight) return;
+    if (!this.configurationRefreshQueued) return;
+    const payload = this.configurationRefreshPayload;
+    this.configurationRefreshPayload = undefined;
+    this.configurationRefreshQueued = false;
+    this.configurationRefreshInFlight = true;
+    try {
+      await invalidateRealtimeResource("workspace-configuration", payload);
+    } finally {
+      this.configurationRefreshInFlight = false;
+      // If another event arrived while the refresh was running, schedule one
+      // follow-up rather than starting overlapping bootstrap requests.
+      if (this.configurationRefreshQueued) this.scheduleConfigurationRefresh();
+    }
   };
 }
 

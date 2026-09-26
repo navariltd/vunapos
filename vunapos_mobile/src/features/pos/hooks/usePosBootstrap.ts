@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCachedResource } from "@/hooks/usePosCachedResource";
@@ -20,7 +20,7 @@ type PosBootstrapState = {
   isRefreshing?: boolean;
   isStale?: boolean;
   lastUpdated?: number | null;
-  reload: () => void;
+  reload: (options?: { full?: boolean }) => void | Promise<void>;
 };
 
 const CHECKOUT_FIELD_DOCTYPES = new Set<PosCheckoutFieldDefinition["doctype"]>([
@@ -186,6 +186,7 @@ export function mergePosBootstrapDelta(
 export function usePosBootstrap(): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const forceFullRefreshRef = useRef(false);
   const cacheKey =
     companyUrl && sessionId
       ? {
@@ -207,7 +208,7 @@ export function usePosBootstrap(): PosBootstrapState {
         );
       }
       try {
-        const since = cached?.server_time;
+        const since = forceFullRefreshRef.current ? undefined : cached?.server_time;
         let data = await getVunaMethod<PosBootstrapData>(
           companyUrl,
           sessionId,
@@ -249,6 +250,18 @@ export function usePosBootstrap(): PosBootstrapState {
     load,
     ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
   });
+  const refreshResource = resource.refresh;
+  const reload = useCallback(
+    async (options?: { full?: boolean }) => {
+      forceFullRefreshRef.current = Boolean(options?.full);
+      try {
+        await refreshResource();
+      } finally {
+        forceFullRefreshRef.current = false;
+      }
+    },
+    [refreshResource],
+  );
   // Older cached bootstrap responses predate the normalized top-level field.
   // Normalize after reading the cache as well as inside `load`, so a valid
   // cached workspace immediately receives its configured default customer.
@@ -258,8 +271,10 @@ export function usePosBootstrap(): PosBootstrapState {
   );
   useEffect(
     () =>
-      registerRealtimeRefresh("workspace-configuration", resource.refresh),
-    [resource.refresh],
+      registerRealtimeRefresh("workspace-configuration", () =>
+        reload({ full: true }),
+      ),
+    [reload],
   );
 
   if (!cacheKey)
@@ -267,7 +282,7 @@ export function usePosBootstrap(): PosBootstrapState {
       data: null,
       error: "Your session is no longer available. Sign in again to continue.",
       isLoading: false,
-      reload: resource.refresh,
+      reload,
     };
 
   return {
@@ -277,6 +292,6 @@ export function usePosBootstrap(): PosBootstrapState {
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,
     lastUpdated: resource.lastUpdated,
-    reload: resource.refresh,
+    reload,
   };
 }

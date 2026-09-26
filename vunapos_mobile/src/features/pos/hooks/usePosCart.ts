@@ -101,6 +101,8 @@ type UsePosCartArgs = {
   orderType?: PosOrderType;
   posProfile?: string;
   priceList?: string;
+  /** Incremented after a POS configuration refresh to re-preview an active cart. */
+  configurationRefreshKey?: number;
 };
 
 type CartResponse = Omit<PosCartData, "items"> & {
@@ -208,6 +210,7 @@ function cartFromResponse(
 /** Session-only cart state calculated by Frappe after each cart change. */
 export function usePosCart({
   customer,
+  configurationRefreshKey = 0,
   orderType = "Invoice",
   posProfile,
   priceList,
@@ -433,7 +436,7 @@ export function usePosCart({
   useEffect(() => {
     if (itemsRef.current.length)
       void refresh(itemsRef.current, customerRef.current, priceListRef.current);
-  }, [customerKey, priceListKey, refresh]);
+  }, [configurationRefreshKey, customerKey, priceListKey, refresh]);
 
   async function add(
     item: PosCatalogueItem,

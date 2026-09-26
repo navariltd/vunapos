@@ -44,7 +44,8 @@ describe("FrappeRealtimeClient", () => {
     });
   });
 
-  it("owns one socket and invalidates configuration resources from its event", () => {
+  it("owns one socket and debounces configuration invalidation events", async () => {
+    jest.useFakeTimers();
     const socket = socketStub();
     const factory = jest.fn(() => socket);
     const client = new FrappeRealtimeClient(factory);
@@ -56,6 +57,11 @@ describe("FrappeRealtimeClient", () => {
 
     client.start("https://pos.example.com", "sid-1");
     socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
+    socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
+    expect(refresh).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledWith({ refresh: "full" });
 
     expect(factory).toHaveBeenCalledWith(
       "https://pos.example.com/pos.example.com",
@@ -72,6 +78,7 @@ describe("FrappeRealtimeClient", () => {
     client.stop();
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
     unregister();
+    jest.useRealTimers();
   });
 
   it("does not invoke removed resource handlers", () => {

@@ -367,7 +367,7 @@ export function PosHomeScreen({
         <Pressable
           accessibilityLabel="Retry loading POS catalogue"
           disabled={isOffline}
-          onPress={isOffline ? undefined : bootstrap.reload}
+          onPress={isOffline ? undefined : () => void bootstrap.reload()}
           style={[styles.retryButton, { borderColor: palette.border }]}
         >
           <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>

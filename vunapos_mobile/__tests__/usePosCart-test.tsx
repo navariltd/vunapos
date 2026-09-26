@@ -133,6 +133,38 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("re-previews an active cart after POS configuration refresh", async () => {
+    const hook = await renderHook<
+      ReturnType<typeof usePosCart>,
+      { configurationRefreshKey: number }
+    >(
+      ({ configurationRefreshKey }) =>
+        usePosCart({
+          configurationRefreshKey,
+          customer: { customer: "CUST-001", customerName: "Example customer" },
+          posProfile: "POS-001",
+        }),
+      { initialProps: { configurationRefreshKey: 0 } },
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+
+    await hook.rerender({ configurationRefreshKey: 1 });
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        customer: "CUST-001",
+        pos_profile: "POS-001",
+      }),
+    );
+  });
+
   it("previews an order as a Sales Order so tracked stock is not allocated while building it", async () => {
     const hook = await renderHook(() =>
       usePosCart({

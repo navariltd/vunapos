@@ -95,12 +95,14 @@ export function PosWorkspaceScreen() {
     useState<PosBootstrapData["pos_profile"]>();
   const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
+  const [configurationRefreshKey, setConfigurationRefreshKey] = useState(0);
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const cart = usePosCart({
     customer: saleCustomer,
     orderType,
     posProfile,
     priceList: selectedPriceList,
+    configurationRefreshKey,
   });
   useEffect(() => {
     if (
@@ -136,6 +138,7 @@ export function PosWorkspaceScreen() {
     setPosProfileConfig(bootstrap.pos_profile);
     setPosSession(bootstrap.pos_session ?? null);
     setPaymentModes(bootstrap.payment_modes);
+    setConfigurationRefreshKey((current) => current + 1);
     setOrderType((current) =>
       (!orderTypeOverrideRef.current &&
         (configuredProfileRef.current === bootstrap.pos_profile.name ||
