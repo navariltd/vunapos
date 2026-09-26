@@ -110,7 +110,6 @@ export function PosPaymentsScreen({
   paymentModes,
   posProfile,
 }: PosPaymentsScreenProps) {
-  const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
   const availableTabs = useMemo(
     () =>
@@ -186,23 +185,6 @@ export function PosPaymentsScreen({
           </Text>
         </View>
       </View>
-
-      {connectionStatus === "offline" ? (
-        <View
-          accessibilityRole="alert"
-          style={[
-            styles.notice,
-            {
-              backgroundColor: palette.errorSurface,
-              borderColor: palette.error,
-            },
-          ]}
-        >
-          <Text style={[styles.noticeText, { color: palette.onError }]}>
-            Payments require a connection. Reconnect before continuing.
-          </Text>
-        </View>
-      ) : null}
 
       <View
         accessibilityRole="tablist"
@@ -356,7 +338,7 @@ function PaymentHistoryContext({
       >
         <TextInput
           accessibilityLabel="Filter payment history by customer ID"
-          editable={!isOffline}
+          editable
           onChangeText={setCustomer}
           placeholder="Customer ID"
           placeholderTextColor={palette.onSurfaceMuted}
@@ -374,7 +356,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history from date"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActiveDatePicker("from")}
             style={[
               styles.historyDateButton,
@@ -401,7 +382,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history to date"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActiveDatePicker("to")}
             style={[
               styles.historyDateButton,
@@ -430,7 +410,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history mode"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActivePicker("mode")}
             style={[
               styles.historyDateButton,
@@ -457,7 +436,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history status"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActivePicker("status")}
             style={[
               styles.historyDateButton,
@@ -484,7 +462,7 @@ function PaymentHistoryContext({
         </View>
         <TextInput
           accessibilityLabel="Filter payment history by external reference"
-          editable={!isOffline}
+          editable
           onChangeText={setReference}
           placeholder="External reference"
           placeholderTextColor={palette.onSurfaceMuted}
@@ -501,7 +479,7 @@ function PaymentHistoryContext({
         <TextInput
           accessibilityLabel="Filter payment history by cashier email"
           autoCapitalize="none"
-          editable={!isOffline}
+          editable
           inputMode="email"
           onChangeText={setCashier}
           placeholder="Cashier email"
@@ -519,7 +497,6 @@ function PaymentHistoryContext({
         <Pressable
           accessibilityLabel="Clear payment history filters"
           accessibilityRole="button"
-          disabled={isOffline}
           onPress={clearFilters}
           style={[styles.textButton, { borderColor: palette.border }]}
         >

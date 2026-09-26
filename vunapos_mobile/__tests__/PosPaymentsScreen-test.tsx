@@ -600,7 +600,7 @@ describe("PosPaymentsScreen", () => {
     expect(screen.queryByText("Allocation preview")).toBeNull();
   });
 
-  it("shows the online-only warning without a redundant Back to POS action", async () => {
+  it("keeps payment controls available while offline and avoids a blocking warning", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
       <PosPaymentsScreen
@@ -614,11 +614,10 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
-    expect(
-      screen.getByText(
-        "Payments require a connection. Reconnect before continuing.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Receive payment")).toBeTruthy();
+    expect(screen.getByLabelText("Search payment customers").props.editable).toBe(
+      true,
+    );
     expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
     expect(onBackToPos).not.toHaveBeenCalled();
   });

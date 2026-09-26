@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosPaymentReconciliationAllocation } from "@/features/pos/types";
@@ -22,6 +22,7 @@ export function usePosPaymentReconciliation() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [error, setError] = useState<string | null>(null);
   const [isReconciling, setIsReconciling] = useState(false);
+  const reconciliationInFlight = useRef(false);
 
   function clearError() {
     setError(null);
@@ -30,6 +31,7 @@ export function usePosPaymentReconciliation() {
   async function reconcile(
     input: ReconcileInput,
   ): Promise<PosPaymentReconciliationResult | null> {
+    if (reconciliationInFlight.current) return null;
     if (!companyUrl || !sessionId) {
       setError(
         "Your session is no longer available. Sign in again to continue.",
@@ -37,6 +39,7 @@ export function usePosPaymentReconciliation() {
       return null;
     }
 
+    reconciliationInFlight.current = true;
     setError(null);
     setIsReconciling(true);
     try {
@@ -71,6 +74,7 @@ export function usePosPaymentReconciliation() {
       );
       return null;
     } finally {
+      reconciliationInFlight.current = false;
       setIsReconciling(false);
     }
   }

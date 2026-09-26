@@ -93,4 +93,33 @@ describe("usePosPaymentReconciliation", () => {
 
     expect(mockPostVunaMethod).toHaveBeenCalled();
   });
+
+  it("does not submit a second reconciliation while the first is pending", async () => {
+    let resolveRequest!: (value: { allocated_amount: number; allocations: never[] }) => void;
+    mockPostVunaMethod.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRequest = resolve;
+      }),
+    );
+    const hook = await renderHook(() => usePosPaymentReconciliation());
+    const input = {
+      customer: "CUST-001",
+      invoices: ["SINV-0001"],
+      paymentEntries: ["ACC-PAY-0001"],
+      posProfile: "POS-001",
+    };
+
+    let first!: Promise<unknown>;
+    await act(async () => {
+      first = hook.result.current.reconcile(input);
+      await Promise.resolve();
+      expect(await hook.result.current.reconcile(input)).toBeNull();
+    });
+    resolveRequest({ allocated_amount: 58, allocations: [] });
+    await act(async () => {
+      await first;
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledTimes(1);
+  });
 });

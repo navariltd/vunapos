@@ -78,7 +78,7 @@ describe("PosItemCard", () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 
-  it("keeps cached item details visible but disables adding while offline", async () => {
+  it("keeps cached item details visible and attempts adding while offline", async () => {
     const onAdd = jest.fn();
     const screen = await render(
       <PosItemCard currency="KES" isOffline item={item} onAdd={onAdd} />,
@@ -86,6 +86,6 @@ describe("PosItemCard", () => {
 
     expect(screen.getByText("ITEM-001")).toBeTruthy();
     fireEvent.press(screen.getByLabelText("Add Item with image"));
-    expect(onAdd).not.toHaveBeenCalled();
+    expect(onAdd).toHaveBeenCalledWith(item);
   });
 });

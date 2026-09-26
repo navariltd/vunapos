@@ -65,9 +65,14 @@ export function getFrappeRealtimeConnection(companyUrl: string) {
 
   return {
     siteName: isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname,
-    url: `${url.origin}/${
-      isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname
-    }`,
+    // Direct bench Socket.IO uses a site namespace. Public deployments expose
+    // the Socket.IO endpoint through the normal origin and reject that extra
+    // hostname path as an unknown namespace.
+    url: isLoopbackBench
+      ? `${url.origin}/${
+          isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname
+        }`
+      : url.origin,
   };
 }
 

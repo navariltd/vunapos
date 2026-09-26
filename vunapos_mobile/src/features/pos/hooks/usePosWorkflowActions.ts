@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -33,6 +33,7 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
   }>({ actions: [], error: null, key: null });
   const [applyError, setApplyError] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState<string | null>(null);
+  const applyInFlight = useRef<string | null>(null);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
   useEffect(() => {
@@ -84,6 +85,8 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
     async (action: string) => {
       if (!companyUrl || !sessionId || !posProfile)
         return false;
+      if (applyInFlight.current) return false;
+      applyInFlight.current = action;
       setIsApplying(action);
       setApplyError(null);
       try {
@@ -108,6 +111,7 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
         );
         return false;
       } finally {
+        applyInFlight.current = null;
         setIsApplying(null);
       }
     },

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
 import { PosCustomerSearchResult } from '@/features/pos/types';
@@ -20,8 +20,10 @@ export function useCreatePosCustomer() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [error, setError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const creationInFlight = useRef(false);
 
   async function create(customerName: string, posProfile?: string): Promise<PosCustomerSearchResult | null> {
+    if (creationInFlight.current) return null;
     const trimmedName = customerName.trim();
     if (!trimmedName) {
       setError('Enter a customer name.');
@@ -32,6 +34,7 @@ export function useCreatePosCustomer() {
       return null;
     }
 
+    creationInFlight.current = true;
     setError(null);
     setIsCreating(true);
     try {
@@ -56,6 +59,7 @@ export function useCreatePosCustomer() {
       setError(requestError instanceof Error ? requestError.message : 'Could not create the customer.');
       return null;
     } finally {
+      creationInFlight.current = false;
       setIsCreating(false);
     }
   }

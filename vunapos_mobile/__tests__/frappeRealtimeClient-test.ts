@@ -41,7 +41,7 @@ describe("FrappeRealtimeClient", () => {
       getFrappeRealtimeConnection("https://pos.example.com"),
     ).toEqual({
       siteName: "pos.example.com",
-      url: "https://pos.example.com/pos.example.com",
+      url: "https://pos.example.com",
     });
   });
 
@@ -65,7 +65,7 @@ describe("FrappeRealtimeClient", () => {
     expect(refresh).toHaveBeenCalledWith({ refresh: "full" });
 
     expect(factory).toHaveBeenCalledWith(
-      "https://pos.example.com/pos.example.com",
+      "https://pos.example.com",
       expect.objectContaining({
         extraHeaders: expect.objectContaining({
           Cookie: "sid=sid-1",

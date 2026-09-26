@@ -243,6 +243,7 @@ export function usePosCart({
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
   const holdDraftRef = useRef<PosCheckoutResult | null>(null);
+  const holdInFlightRef = useRef(false);
   const sourceInvoiceRef = useRef<PosCartSource | null>(null);
   const lastRefreshErrorRef = useRef<string | null>(null);
   const customerKey = customer?.customer || "";
@@ -576,6 +577,7 @@ export function usePosCart({
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
   async function hold(): Promise<PosCheckoutResult | null> {
+    if (holdInFlightRef.current) return null;
     const cartItems = itemsRef.current;
     if (!cartItems.length) {
       setHoldError("Add an item before holding this cart.");
@@ -588,6 +590,7 @@ export function usePosCart({
       return null;
     }
 
+    holdInFlightRef.current = true;
     setHoldError(null);
     setIsHolding(true);
     try {
@@ -648,6 +651,7 @@ export function usePosCart({
       );
       return null;
     } finally {
+      holdInFlightRef.current = false;
       setIsHolding(false);
     }
   }

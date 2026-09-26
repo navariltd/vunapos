@@ -10,7 +10,6 @@ import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoi
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { usePosInvoiceDetails } from "@/features/pos/hooks/usePosInvoiceDetails";
 import { usePosWorkflowActions } from "@/features/pos/hooks/usePosWorkflowActions";
 import {
@@ -156,8 +155,6 @@ export function PosInvoiceDetailsScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus !== "online";
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const [workflowActionsVisible, setWorkflowActionsVisible] = useState(false);
   const bootstrap = usePosBootstrap();
@@ -229,13 +226,12 @@ export function PosInvoiceDetailsScreen({
     bootstrap.data?.pos_profile.name,
   );
   const canRunWorkflowAction = Boolean(
-    invoice.docstatus === 0 && workflowActions.actions.length && !isOffline,
+    invoice.docstatus === 0 && workflowActions.actions.length,
   );
   const canEditDraft = Boolean(
     invoice.docstatus === 0 &&
     invoice.can_edit !== false &&
-    onEditDraft &&
-    !isOffline,
+    onEditDraft,
   );
 
   return (
@@ -382,7 +378,6 @@ export function PosInvoiceDetailsScreen({
             <View style={styles.customerActions}>
               <Pressable
                 accessibilityLabel="View customer"
-                disabled={isOffline}
                 onPress={() => onOpenCustomer(invoiceCustomer)}
                 style={styles.customerButton}
               >
@@ -391,7 +386,6 @@ export function PosInvoiceDetailsScreen({
               {canReceivePayment ? (
                 <Pressable
                   accessibilityLabel="Receive payment"
-                  disabled={isOffline}
                   onPress={() =>
                     onReceivePayment?.(
                       {
@@ -410,7 +404,6 @@ export function PosInvoiceDetailsScreen({
               ) : null}
               <Pressable
                 accessibilityLabel="Start new sale"
-                disabled={isOffline}
                 onPress={() =>
                   onStartSale({
                     customer: invoiceCustomer,

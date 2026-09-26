@@ -147,7 +147,7 @@ export function PosProductBundleSheet({
               styles.confirm,
               {
                 backgroundColor:
-                  !bundle || isLoading || Boolean(error) || isAdding || isOffline
+                  !bundle || isLoading || Boolean(error) || isAdding
                     ? palette.disabled
                     : palette.primary,
               },

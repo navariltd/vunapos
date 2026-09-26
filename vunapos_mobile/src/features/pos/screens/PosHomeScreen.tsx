@@ -91,7 +91,7 @@ export function PosHomeScreen({
   const bootstrap = usePosBootstrap();
   const itemSearch = usePosItemSearch({
     customer: useBootstrapCatalogue ? undefined : pricingContext?.customer,
-    enabled: !isOffline,
+    enabled: true,
     // Bootstrap rows are the local-first catalogue. The hook only falls back
     // to the server for an uncached query or an explicit pricing context,
     // matching the SPA instead of downloading the full catalogue on mount.
@@ -127,14 +127,14 @@ export function PosHomeScreen({
   });
   const templateVariants = usePosTemplateVariants({
     customer: pricingContext?.customer,
-    enabled: Boolean(variantTemplate) && !isOffline,
+    enabled: Boolean(variantTemplate),
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
     templateItemCode: variantTemplate?.item_code,
   });
   const productBundle = usePosProductBundle({
     customer: pricingContext?.customer,
-    enabled: Boolean(bundleItem) && !isOffline,
+    enabled: Boolean(bundleItem),
     itemCode: bundleItem?.item_code,
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
@@ -254,7 +254,6 @@ export function PosHomeScreen({
       !bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart ||
       !searchTerm ||
       !candidate ||
-      isOffline ||
       itemSearch.isLoading ||
       pendingItemCode ||
       autoAddedSearchKey.current === searchKey
@@ -268,7 +267,6 @@ export function PosHomeScreen({
     addItem,
     bootstrap.data?.pos_profile.automatically_add_filtered_item_to_cart,
     itemSearch.isLoading,
-    isOffline,
     visibleItems,
     pendingItemCode,
     pricingContext?.customer,
@@ -294,8 +292,6 @@ export function PosHomeScreen({
   }
 
   async function scanBarcode(barcode: string) {
-    if (isOffline)
-      return "Connection unavailable. Reconnect to scan a barcode.";
     const result = await barcodeScan.resolve(barcode);
     if (!result.ok) return result.message;
     const item = result.item;
@@ -356,8 +352,7 @@ export function PosHomeScreen({
         </Text>
         <Pressable
           accessibilityLabel="Retry loading POS catalogue"
-          disabled={isOffline}
-          onPress={isOffline ? undefined : () => void bootstrap.reload()}
+          onPress={() => void bootstrap.reload()}
           style={[styles.retryButton, { borderColor: palette.border }]}
         >
           <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>
@@ -418,8 +413,7 @@ export function PosHomeScreen({
                 </Text>
                 <Pressable
                   accessibilityLabel="Retry catalogue search"
-                  disabled={isOffline}
-                  onPress={isOffline ? undefined : itemSearch.reload}
+                  onPress={itemSearch.reload}
                   style={[styles.retryButton, { borderColor: palette.border }]}
                 >
                   <Text
@@ -483,7 +477,7 @@ export function PosHomeScreen({
         onDismiss={() => {
           if (!pendingItemCode) setVariantTemplate(null);
         }}
-        onRetry={isOffline ? () => undefined : templateVariants.reload}
+        onRetry={templateVariants.reload}
         onSelect={(variant) => void selectVariant(variant)}
         templateName={variantTemplate?.item_name}
         variants={templateVariants.data?.variants ?? []}

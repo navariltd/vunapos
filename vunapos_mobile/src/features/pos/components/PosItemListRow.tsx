@@ -123,7 +123,7 @@ export const PosItemListRow = memo(function PosItemListRow({
           styles.addButton,
           {
             backgroundColor:
-              outOfStock || isAdding || isOffline
+              outOfStock || isAdding
                 ? palette.disabled
                 : palette.primary,
           },
