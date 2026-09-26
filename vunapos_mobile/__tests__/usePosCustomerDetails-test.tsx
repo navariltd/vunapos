@@ -85,13 +85,13 @@ describe("usePosCustomerDetails", () => {
     });
   });
 
-  it("does not request customer details while offline", async () => {
+  it("attempts customer details while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const hook = await renderHook(() =>
       usePosCustomerDetails({ customer: "CUST-001", posProfile: "POS-001" }),
     );
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalled());
     expect(hook.result.current.isLoading).toBe(false);
   });
 

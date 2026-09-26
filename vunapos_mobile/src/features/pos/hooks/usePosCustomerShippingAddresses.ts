@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { PosCustomerShippingAddress } from '@/features/pos/types';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
@@ -21,11 +20,10 @@ export function usePosCustomerShippingAddresses(
   posProfile: string | undefined,
 ): PosCustomerShippingAddressesState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const activeKey = companyUrl && sessionId && customer && posProfile
     ? `${companyUrl}:${sessionId}:${posProfile}:${customer}`
     : null;
-  const requestKey = connectionStatus === 'online' ? activeKey : null;
+  const requestKey = activeKey;
   const [state, setState] = useState<PosCustomerShippingAddressesRequestState>({
     data: null,
     error: null,

@@ -81,7 +81,7 @@ describe("usePosPaymentReconciliationCandidates", () => {
     );
   });
 
-  it("does not fetch before a customer and POS profile are available or while offline", async () => {
+  it("does not fetch before context is available but attempts while offline", async () => {
     const missingContext = await renderHook(() =>
       usePosPaymentReconciliationCandidates("", undefined),
     );
@@ -94,11 +94,12 @@ describe("usePosPaymentReconciliationCandidates", () => {
     });
 
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockGetVunaMethod.mockResolvedValue({ invoices: [], payments: [] });
     const offline = await renderHook(() =>
       usePosPaymentReconciliationCandidates("CUST-001", "POS-001"),
     );
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalled());
     expect(offline.result.current.isLoading).toBe(false);
   });
 });

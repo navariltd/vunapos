@@ -71,15 +71,10 @@ describe("usePosClosingPreview", () => {
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
   });
 
-  it("does not request or expose a closing preview while offline", async () => {
+  it("attempts the live closing preview while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const hook = await renderHook(() => usePosClosingPreview("POS-001"));
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current).toMatchObject({
-      data: null,
-      error: null,
-      isLoading: false,
-    });
+    expect(mockGetVunaMethod).toHaveBeenCalled();
   });
 });

@@ -166,21 +166,18 @@ export function PosHomeScreen({
   const reloadCatalogue = itemSearch.reload;
 
   const refreshHome = useCallback(async () => {
-    if (connectionStatus !== "online") return;
     await Promise.all([
       Promise.resolve(bootstrap.reload()),
       itemSearch.reload(),
     ]);
-  }, [bootstrap, connectionStatus, itemSearch]);
+  }, [bootstrap, itemSearch]);
 
   useEffect(() => {
     if (handledRefreshKey.current === refreshKey) return;
     handledRefreshKey.current = refreshKey;
-    if (!isOffline) {
-      reloadBootstrap();
-      reloadCatalogue();
-    }
-  }, [isOffline, refreshKey, reloadBootstrap, reloadCatalogue]);
+    reloadBootstrap();
+    reloadCatalogue();
+  }, [refreshKey, reloadBootstrap, reloadCatalogue]);
 
   const isOutOfStock = useCallback(
     (item: PosCatalogueItem) =>

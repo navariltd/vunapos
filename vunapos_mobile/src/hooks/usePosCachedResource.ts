@@ -117,11 +117,13 @@ export function usePosCachedResource<T>({
         return;
       }
 
-      // At cold launch reachability is briefly unknown. Browsing may hydrate
-      // from local cache then, but no request may start until it is confirmed.
-      const canRequest = connectionStatus === "online";
       const cached = await cache.read<T>(activeKey);
       if (!isActive()) return;
+
+      // Cached rows remain usable during outages. When there is no cached row,
+      // however, let the request reach Frappe and classify the real failure
+      // instead of treating Expo Network's hint as authoritative.
+      const canRequest = connectionStatus !== "offline" || !cached;
 
       if (!forceRefresh && cached && !cached.isStale) {
         setActiveState({
@@ -144,12 +146,6 @@ export function usePosCachedResource<T>({
           isStale: cached.isStale,
           lastUpdated: cached.fetchedAt,
         });
-      } else if (connectionStatus === "offline") {
-        setActiveState({
-          ...emptyState,
-          error: "You are offline. Connect to load this data.",
-        });
-        return;
       } else if (!canRequest) {
         setActiveState({ ...emptyState, isLoading: true });
         return;

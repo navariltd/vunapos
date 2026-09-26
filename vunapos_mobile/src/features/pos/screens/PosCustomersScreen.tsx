@@ -169,7 +169,7 @@ export function PosCustomersScreen({
         refreshControl={
           <RefreshControl
             colors={[palette.primary]}
-            enabled={connectionStatus === "online"}
+            enabled
             onRefresh={() => void directory.reload()}
             refreshing={directory.isRefreshing}
             tintColor={palette.primary}

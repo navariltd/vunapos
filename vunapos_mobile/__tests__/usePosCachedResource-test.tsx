@@ -156,34 +156,35 @@ describe("usePosCachedResource", () => {
     expect(cache.fetch).not.toHaveBeenCalled();
   });
 
-  it("hydrates cached data while reachability is unknown without starting a request", async () => {
+  it("hydrates cached data while reachability is unknown and revalidates it", async () => {
     const cache = createCache(cached(["milk"], true), Promise.resolve(["fresh milk"]));
     const hook = await renderHook(() =>
       usePosCachedResource({ cache, cacheKey: key, connectionStatus: "unknown", load: jest.fn() }),
     );
 
+    await waitFor(() => expect(hook.result.current.data).toEqual(["fresh milk"]));
+    expect(cache.fetch).toHaveBeenCalled();
+  });
+
+  it("attempts uncached data while reachability is unknown", async () => {
+    const cache = createCache<string[]>(null, Promise.resolve(["milk"]));
+    const load = jest.fn().mockResolvedValue(["milk"]);
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "unknown", load }),
+    );
+
     await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
-    expect(cache.fetch).not.toHaveBeenCalled();
+    expect(cache.fetch).toHaveBeenCalled();
   });
 
-  it("waits for reachability instead of requesting uncached data while status is unknown", async () => {
-    const cache = createCache<string[]>(null, Promise.resolve(["milk"]));
+  it("classifies an uncached offline failure through the loader", async () => {
+    const cache = createCache<string[]>(null, Promise.reject(new Error("Network request failed")));
+    const load = jest.fn().mockRejectedValue(new Error("Network request failed"));
     const hook = await renderHook(() =>
-      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "unknown", load: jest.fn() }),
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "offline", load }),
     );
 
-    await waitFor(() => expect(hook.result.current.isLoading).toBe(true));
-    expect(hook.result.current.error).toBeNull();
-    expect(cache.fetch).not.toHaveBeenCalled();
-  });
-
-  it("reports a useful offline state when no cached record exists", async () => {
-    const cache = createCache<string[]>(null, Promise.resolve(["milk"]));
-    const hook = await renderHook(() =>
-      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "offline", load: jest.fn() }),
-    );
-
-    await waitFor(() => expect(hook.result.current.error).toContain("offline"));
+    await waitFor(() => expect(hook.result.current.error).toBe("Network request failed"));
     expect(hook.result.current.data).toBeNull();
   });
 

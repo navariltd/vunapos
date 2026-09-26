@@ -167,7 +167,7 @@ export function PosPaymentsScreen({
         activeTab === "history" ? (
           <RefreshControl
             colors={[palette.primary]}
-            enabled={connectionStatus === "online"}
+            enabled
             onRefresh={() => void refreshPaymentHistory()}
             refreshing={isHistoryRefreshing}
             tintColor={palette.primary}

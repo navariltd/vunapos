@@ -75,7 +75,7 @@ describe("usePosCustomerDirectory", () => {
     await waitFor(() => expect(hook.result.current.data?.limit).toBe(25));
   });
 
-  it("does not request the directory before a POS Profile is available or while offline", async () => {
+  it("does not request before a POS Profile is available but attempts while offline", async () => {
     const missingProfile = await renderHook(() =>
       usePosCustomerDirectory(undefined),
     );
@@ -85,7 +85,7 @@ describe("usePosCustomerDirectory", () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const offline = await renderHook(() => usePosCustomerDirectory("POS-001"));
     expect(offline.result.current.isLoading).toBe(false);
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalled());
   });
 
   it("requests the selected bounded directory page", async () => {
