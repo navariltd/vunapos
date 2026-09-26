@@ -208,6 +208,11 @@ export type PosDefaultCustomer = {
 };
 
 export type PosBootstrapData = {
+  /** Server watermark used by the SPA-compatible timestamp delta contract. */
+  server_time?: string;
+  bootstrap_version?: number;
+  mode?: "full" | "delta";
+  deleted?: Record<string, string[]>;
   /**
    * Normalized client field. The Frappe response nests this under
    * `pos_profile.default_customer`; `usePosBootstrap` lifts it here so the
@@ -215,6 +220,9 @@ export type PosBootstrapData = {
    */
   default_customer?: PosDefaultCustomer | null;
   items?: PosCatalogueItem[];
+  customers?: Record<string, unknown>[];
+  tax_templates?: Record<string, unknown>[];
+  item_tax_templates?: Record<string, unknown>[];
   payment_modes: PosPaymentMode[];
   pos_session?: PosSession;
   pos_profile: {

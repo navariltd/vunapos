@@ -11,6 +11,8 @@ import {
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
+export const POS_BOOTSTRAP_DELTA_TTL_MS = 60 * 1000;
+
 type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
@@ -115,6 +117,72 @@ function normalizeBootstrap(data: PosBootstrapData): PosBootstrapData {
   };
 }
 
+function rowKey(row: Record<string, unknown>) {
+  return String(row.item_code ?? row.customer ?? row.name ?? "");
+}
+
+function mergeRows<T>(
+  existing: T[] | undefined,
+  changed: T[] | undefined,
+  deleted: string[] | undefined,
+): T[] | undefined {
+  if (existing === undefined && changed === undefined) return undefined;
+  const rows = new Map<string, T>();
+  for (const row of existing ?? []) {
+    if (row && typeof row === "object") {
+      const key = rowKey(row as Record<string, unknown>);
+      if (key) rows.set(key, row);
+    }
+  }
+  for (const row of changed ?? []) {
+    if (row && typeof row === "object") {
+      const key = rowKey(row as Record<string, unknown>);
+      if (key) rows.set(key, row);
+    }
+  }
+  for (const key of deleted ?? []) rows.delete(key);
+  return [...rows.values()];
+}
+
+/**
+ * Applies the same timestamp delta shape returned by the SPA bootstrap API.
+ * A delta replaces only changed/deleted rows and keeps the cached snapshot
+ * otherwise intact; configuration values from the latest response win.
+ */
+export function mergePosBootstrapDelta(
+  cached: PosBootstrapData | null | undefined,
+  incoming: PosBootstrapData,
+): PosBootstrapData {
+  if (!cached || incoming.mode !== "delta") return incoming;
+  const deleted = incoming.deleted ?? {};
+  return {
+    ...cached,
+    ...incoming,
+    mode: "full",
+    items: mergeRows(
+      cached.items,
+      incoming.items,
+      deleted.Item,
+    ),
+    customers: mergeRows(
+      cached.customers,
+      incoming.customers,
+      deleted.Customer,
+    ),
+    tax_templates: mergeRows(
+      cached.tax_templates,
+      incoming.tax_templates,
+      deleted["Sales Taxes and Charges Template"],
+    ),
+    item_tax_templates: mergeRows(
+      cached.item_tax_templates,
+      incoming.item_tax_templates,
+      deleted["Item Tax Template"],
+    ),
+    deleted: undefined,
+  };
+}
+
 export function usePosBootstrap(): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -132,21 +200,40 @@ export function usePosBootstrap(): PosBootstrapState {
         }
       : null;
   const load = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal, cached?: PosBootstrapData | null) => {
       if (!companyUrl || !sessionId) {
         throw new Error(
           "Your session is no longer available. Sign in again to continue.",
         );
       }
       try {
-        const data = await getVunaMethod<PosBootstrapData>(
+        const since = cached?.server_time;
+        let data = await getVunaMethod<PosBootstrapData>(
           companyUrl,
           sessionId,
           "vunapos.api.pos.get_pos_bootstrap",
-          {},
+          since ? { since } : {},
           signal,
         );
-        return normalizeBootstrap(data);
+        // A schema/configuration revision invalidates the timestamp window. The
+        // second request is a normal full snapshot, matching the SPA recovery path.
+        if (
+          since &&
+          cached?.bootstrap_version !== undefined &&
+          data.bootstrap_version !== undefined &&
+          data.bootstrap_version !== cached.bootstrap_version
+        ) {
+          data = await getVunaMethod<PosBootstrapData>(
+            companyUrl,
+            sessionId,
+            "vunapos.api.pos.get_pos_bootstrap",
+            {},
+            signal,
+          );
+        }
+        return normalizeBootstrap(
+          mergePosBootstrapDelta(cached, normalizeBootstrap(data)),
+        );
       } catch (error) {
         if (error instanceof FrappeClientError && error.code === "session") {
           void invalidateSession();
@@ -160,6 +247,7 @@ export function usePosBootstrap(): PosBootstrapState {
     cacheKey,
     connectionStatus,
     load,
+    ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
   });
   // Older cached bootstrap responses predate the normalized top-level field.
   // Normalize after reading the cache as well as inside `load`, so a valid

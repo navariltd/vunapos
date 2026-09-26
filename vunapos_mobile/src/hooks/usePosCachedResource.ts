@@ -16,7 +16,8 @@ type UsePosCachedResourceArgs<T> = {
   cacheKey: PosCacheKey | null;
   connectionStatus: NetworkConnectionStatus;
   enabled?: boolean;
-  load: (signal: AbortSignal) => Promise<T>;
+  /** The cached snapshot is supplied so delta-capable loaders can use its watermark. */
+  load: (signal: AbortSignal, cached?: T | null) => Promise<T>;
   ttlMs?: number;
 };
 
@@ -149,7 +150,7 @@ export function usePosCachedResource<T>({
         const controller = new AbortController();
         const data = await cache.fetch(
           activeKey,
-          () => loadRef.current(controller.signal),
+          () => loadRef.current(controller.signal, cached?.data ?? null),
           ttlMs,
         );
         setActiveState({
