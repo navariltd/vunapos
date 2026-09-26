@@ -104,6 +104,35 @@ describe("usePosCachedResource", () => {
     expect(hook.result.current.isStale).toBe(false);
   });
 
+  it("revalidates a stale resource on its freshness interval", async () => {
+    jest.useFakeTimers();
+    let reads = 0;
+    const cache = {
+      fetch: jest.fn().mockResolvedValue(["new milk"]),
+      read: jest.fn(() => {
+        reads += 1;
+        return Promise.resolve(cached(reads > 1 ? ["old milk"] : ["milk"], reads > 1));
+      }),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({
+        cache,
+        cacheKey: key,
+        connectionStatus: "online",
+        load: jest.fn(),
+        ttlMs: 100,
+      }),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(100);
+    });
+    await waitFor(() => expect(cache.fetch).toHaveBeenCalledTimes(1));
+    expect(hook.result.current.data).toEqual(["new milk"]);
+    jest.useRealTimers();
+  });
+
   it("shows a stale cached value while it refreshes in the background", async () => {
     let resolveRefresh: ((value: string[]) => void) | undefined;
     const cache = createCache(

@@ -7,7 +7,8 @@ import {
 } from "@/services/posCache";
 import { NetworkConnectionStatus } from "@/services/NetworkStatusProvider";
 
-export const POS_CACHE_TTL_MS = 60 * 60 * 1000;
+/** Freshness is a refresh trigger; stale rows remain available while it runs. */
+export const POS_CACHE_TTL_MS = 60 * 1000;
 
 export type PosCachedResourceClient = Pick<typeof posCache, "fetch" | "read">;
 
@@ -188,6 +189,14 @@ export function usePosCachedResource<T>({
       disposed = true;
     };
   }, [enabled, keyFingerprint, loadResource]);
+
+  useEffect(() => {
+    if (!enabled || !keyFingerprint) return;
+    const timer = setInterval(() => {
+      void loadResource(false);
+    }, ttlMs);
+    return () => clearInterval(timer);
+  }, [enabled, keyFingerprint, loadResource, ttlMs]);
 
   const refresh = useCallback(async () => {
     await loadResource(true);

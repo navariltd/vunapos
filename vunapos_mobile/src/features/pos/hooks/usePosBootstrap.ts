@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { usePosCachedResource } from "@/hooks/usePosCachedResource";
+import {
+  POS_CACHE_TTL_MS,
+  usePosCachedResource,
+} from "@/hooks/usePosCachedResource";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
 import {
@@ -11,7 +14,7 @@ import {
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
-export const POS_BOOTSTRAP_DELTA_TTL_MS = 60 * 1000;
+export const POS_BOOTSTRAP_DELTA_TTL_MS = POS_CACHE_TTL_MS;
 
 type PosBootstrapState = {
   data: PosBootstrapData | null;
@@ -271,9 +274,13 @@ export function usePosBootstrap(): PosBootstrapState {
   );
   useEffect(
     () =>
-      registerRealtimeRefresh("workspace-configuration", () =>
-        reload({ full: true }),
-      ),
+      registerRealtimeRefresh("workspace-configuration", (payload) => {
+        const request =
+          payload && typeof payload === "object"
+            ? (payload as { full?: boolean })
+            : undefined;
+        return reload({ full: request?.full !== false });
+      }),
     [reload],
   );
 
