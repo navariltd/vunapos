@@ -147,4 +147,26 @@ describe("FrappeRealtimeClient", () => {
     unregister();
     jest.useRealTimers();
   });
+
+  it("repairs configuration through the timestamp delta after socket recovery", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    const unregister = registerRealtimeRefresh(
+      "workspace-configuration",
+      refresh,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit("connect");
+    socket.emit("connect");
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledWith(undefined);
+    client.stop();
+    unregister();
+    jest.useRealTimers();
+  });
 });

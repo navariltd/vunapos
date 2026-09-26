@@ -338,9 +338,14 @@ export function usePosBootstrap(): PosBootstrapState {
       registerRealtimeRefresh("workspace-configuration", (payload) => {
         const request =
           payload && typeof payload === "object"
-            ? (payload as { full?: boolean })
+            ? (payload as { full?: boolean; refresh?: string })
             : undefined;
-        return reload({ full: request?.full !== false });
+        return reload({
+          // Socket recovery has no event payload and should repair through the
+          // timestamp delta. A backend event explicitly marked full still
+          // invalidates the watermark for schema/configuration changes.
+          full: request?.full === true || request?.refresh === "full",
+        });
       }),
     [reload],
   );

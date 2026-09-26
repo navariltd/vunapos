@@ -1,7 +1,6 @@
 import { useCallback, useEffect } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   invalidateHeldInvoiceCache,
   invalidateSaleCache,
@@ -27,13 +26,11 @@ function text(value: unknown) {
  */
 export function usePosQueueRealtime() {
   const { authState, companyUrl, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
 
   const handleQueueEvent = useCallback(
     async (rawPayload?: unknown) => {
       if (
         authState !== "signedIn" ||
-        connectionStatus !== "online" ||
         !companyUrl ||
         !sessionId ||
         !rawPayload ||
@@ -72,7 +69,7 @@ export function usePosQueueRealtime() {
         sessionId,
       });
     },
-    [authState, companyUrl, connectionStatus, sessionId],
+    [authState, companyUrl, sessionId],
   );
 
   useEffect(
