@@ -90,7 +90,15 @@ function formatCurrency(amount: number, currency: string, precision = 2) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  // Delivery and due dates are calendar dates in the cashier's local
+  // timezone. Formatting through ISO first converts midnight to UTC, which
+  // makes East-African users see yesterday during the first few hours of the
+  // day.
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function dateFromInput(value: string) {

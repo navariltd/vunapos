@@ -2058,6 +2058,41 @@ describe("PosCheckoutScreen", () => {
     }
   });
 
+  it("uses the cashier's local calendar date for the default delivery date", async () => {
+    jest.useFakeTimers();
+    // At 00:30 in Nairobi this instant is still the previous UTC date. The
+    // picker must nevertheless default to the cashier's local date.
+    jest.setSystemTime(new Date("2026-09-27T00:30:00+03:00"));
+    try {
+      const screen = await render(
+        <PosCheckoutScreen
+          currency="KES"
+          items={[
+            {
+              allow_negative_stock: false,
+              available_qty: 4,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: 100,
+              uom: "Nos",
+            },
+          ]}
+          onBack={jest.fn()}
+          onComplete={onComplete}
+          orderType="Order"
+          saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+          subtotal={100}
+        />,
+      );
+
+      expect(screen.getByText("Sep 27, 2026")).toBeTruthy();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("returns to the workspace after dismissing a submitted Sales Order", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-09-01T12:00:00"));
