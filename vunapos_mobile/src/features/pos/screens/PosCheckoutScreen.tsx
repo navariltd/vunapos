@@ -268,6 +268,7 @@ export function PosCheckoutScreen({
     null,
   );
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [invalidCheckoutField, setInvalidCheckoutField] = useState<string>();
   const [completedResult, setCompletedResult] =
     useState<PosCheckoutResult | null>(null);
   const completionHandledRef = useRef(false);
@@ -612,6 +613,7 @@ export function PosCheckoutScreen({
                         : "Payment incomplete";
   const isReadyToSubmit = Boolean(
     items.length &&
+    !requiredCheckoutField &&
     !checkout.isSubmitting &&
     !isApplyingDeliveryCharge &&
     !deliveryChargeDirty &&
@@ -992,6 +994,7 @@ export function PosCheckoutScreen({
       return;
     }
     if (requiredCheckoutField) {
+      setInvalidCheckoutField(requiredCheckoutField.fieldname);
       setValidationError(
         `${requiredCheckoutField.label} is required before checkout.`,
       );
@@ -1701,11 +1704,17 @@ export function PosCheckoutScreen({
         <PosCheckoutFieldsCard
           disabled={checkout.isSubmitting}
           fields={profile?.checkout_fields}
+          invalidFieldname={invalidCheckoutField}
           onChange={(fieldname, value) =>
-            setCheckoutFieldValues((current) => ({
-              ...current,
-              [fieldname]: value,
-            }))
+            {
+              setCheckoutFieldValues((current) => ({
+                ...current,
+                [fieldname]: value,
+              }));
+              if (fieldname === invalidCheckoutField) {
+                setInvalidCheckoutField(undefined);
+              }
+            }
           }
           transactionDoctype={transactionDoctype}
           values={checkoutFieldValues}
@@ -1988,8 +1997,10 @@ export function PosCheckoutScreen({
           accessibilityLabel={
             isInvoice ? "Complete sale" : "Submit sales order"
           }
-          accessibilityState={{ disabled: !isReadyToSubmit }}
-          disabled={!isReadyToSubmit}
+          accessibilityState={{
+            disabled: !isReadyToSubmit && !requiredCheckoutField,
+          }}
+          disabled={!isReadyToSubmit && !requiredCheckoutField}
           onPress={requestSubmit}
           style={[
             styles.submitButton,

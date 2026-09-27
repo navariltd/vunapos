@@ -373,11 +373,21 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByLabelText("Complete sale"));
-
+    const submitButton = screen.getByLabelText("Complete sale");
+    expect(submitButton.props.accessibilityState).toEqual({ disabled: false });
+    await fireEvent.press(submitButton);
+    expect(screen.getByText("This field is required.")).toBeTruthy();
     expect(
       screen.getByText("Purchase order is required before checkout."),
     ).toBeTruthy();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Purchase order"),
+      "PO-001",
+    );
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState).toEqual({
+      disabled: false,
+    });
     expect(
       screen.queryByLabelText("Confirm sales invoice submission"),
     ).toBeNull();
