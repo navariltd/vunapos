@@ -135,6 +135,98 @@ describe("POS checkout hooks", () => {
     );
   });
 
+  it("keeps the last valid preview while a newer preview revalidates", async () => {
+    const initial = {
+      items: [{ item_code: "ITEM-001", item_name: "Stock item", amount: 250, qty: 2 }],
+      totals: { grand_total: 290, net_total: 250 },
+    };
+    mockGetVunaMethod.mockResolvedValueOnce(initial);
+    const hook = await renderHook(
+      ({ quantity }: { quantity: number }) =>
+        usePosCheckoutPreview({
+          customer: "CUST-001",
+          items: [{ ...item, qty: quantity }],
+          posProfile: "POS-001",
+        }),
+      { initialProps: { quantity: 2 } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(initial));
+
+    let resolveNext!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveNext = resolve;
+      }),
+    );
+    await hook.rerender({ quantity: 3 });
+
+    expect(hook.result.current.isLoading).toBe(true);
+    expect(hook.result.current.data).toEqual(initial);
+
+    resolveNext({
+      items: [{ item_code: "ITEM-001", item_name: "Stock item", amount: 375, qty: 3 }],
+      totals: { grand_total: 435, net_total: 375 },
+    });
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(435));
+    expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it("keeps the last valid preview when revalidation fails", async () => {
+    const initial = { totals: { grand_total: 290, net_total: 250 } };
+    mockGetVunaMethod.mockResolvedValueOnce(initial);
+    const hook = await renderHook(
+      ({ quantity }: { quantity: number }) =>
+        usePosCheckoutPreview({
+          customer: "CUST-001",
+          items: [{ ...item, qty: quantity }],
+          posProfile: "POS-001",
+        }),
+      { initialProps: { quantity: 2 } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(initial));
+    mockGetVunaMethod.mockRejectedValueOnce(new Error("Connection interrupted"));
+    await hook.rerender({ quantity: 3 });
+
+    await waitFor(() =>
+      expect(hook.result.current.error).toBe("Connection interrupted"),
+    );
+    expect(hook.result.current.data).toEqual(initial);
+    expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it("does not let an aborted, out-of-order preview overwrite the newer result", async () => {
+    const resolvers: Array<(value: unknown) => void> = [];
+    mockGetVunaMethod.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const hook = await renderHook(
+      ({ quantity }: { quantity: number }) =>
+        usePosCheckoutPreview({
+          customer: "CUST-001",
+          items: [{ ...item, qty: quantity }],
+          posProfile: "POS-001",
+        }),
+      { initialProps: { quantity: 2 } },
+    );
+
+    await waitFor(() => expect(resolvers).toHaveLength(1));
+    await hook.rerender({ quantity: 3 });
+    await waitFor(() => expect(resolvers).toHaveLength(2));
+
+    resolvers[1]({ totals: { grand_total: 435, net_total: 375 } });
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(435));
+
+    // Simulate a transport that resolves after AbortController has fired.
+    resolvers[0]({ totals: { grand_total: 290, net_total: 250 } });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(hook.result.current.data?.totals.grand_total).toBe(435);
+  });
+
   it("submits a checkout with serialized cart, payment allocation, and a retry-safe key", async () => {
     mockPostVunaMethod.mockResolvedValue({
       doctype: "Sales Invoice",

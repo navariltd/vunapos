@@ -368,6 +368,54 @@ describe("usePosCart", () => {
     expect(mockPosCacheWrite).not.toHaveBeenCalled();
   });
 
+  it("repairs a restored cart after connectivity returns without clearing it", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPosCacheRead.mockResolvedValue({
+      data: {
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        data: {
+          items: [{ ...item, qty: 2 }],
+          taxes: [],
+          totals: { grand_total: 250, net_total: 250 },
+        },
+        priceList: "Standard Selling",
+        sourceInvoice: null,
+      },
+      expiresAt: 1,
+      fetchedAt: 100,
+      isStale: true,
+    });
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+    await waitFor(() => expect(hook.result.current.items[0]?.qty).toBe(2));
+
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
+    mockGetVunaMethod.mockResolvedValueOnce({
+      items: [
+        {
+          actual_qty: 3,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 2,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      taxes: [],
+      totals: { grand_total: 250, net_total: 250 },
+    });
+    await hook.rerender(undefined);
+
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    expect(hook.result.current.items[0]).toEqual(
+      expect.objectContaining({ item_code: "ITEM-001", qty: 2, available_qty: 3 }),
+    );
+  });
+
   it("keeps a temporary cart until a customer is selected, then refreshes it with Frappe", async () => {
     const hook = await renderHook<
       ReturnType<typeof usePosCart>,
@@ -717,6 +765,54 @@ describe("usePosCart", () => {
     );
   });
 
+  it("treats customer and price-list changes as foreground mutations", async () => {
+    const hook = await renderHook<
+      ReturnType<typeof usePosCart>,
+      { customer: PosSaleCustomer | null; priceList?: string }
+    >(
+      ({ customer, priceList }) =>
+        usePosCart({ customer, posProfile: "POS-001", priceList }),
+      {
+        initialProps: {
+          customer: { customer: "CUST-001", customerName: "Example customer" },
+          priceList: undefined,
+        },
+      },
+    );
+    await act(async () => hook.result.current.add(item));
+
+    let resolvePreview!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
+    await hook.rerender({
+      customer: { customer: "CUST-002", customerName: "Another customer" },
+      priceList: "Wholesale",
+    });
+
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(hook.result.current.isUpdating).toBe(true);
+    expect(hook.result.current.isBackgroundRefreshing).toBe(false);
+
+    resolvePreview({
+      items: [
+        {
+          actual_qty: 4,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      taxes: [],
+      totals: { grand_total: 125, net_total: 125 },
+    });
+    await waitFor(() => expect(hook.result.current.isUpdating).toBe(false));
+  });
+
   it("refreshes the cart with a selected Item UOM and lets Frappe provide its conversion factor", async () => {
     mockGetVunaMethod.mockImplementation(
       async (_companyUrl, _sessionId, _method, params) => {
@@ -1047,6 +1143,51 @@ describe("usePosCart", () => {
         qty: 2,
       }),
     );
+  });
+
+  it("keeps background configuration repair separate from user mutation state", async () => {
+    const hook = await renderHook<
+      ReturnType<typeof usePosCart>,
+      { configurationRefreshKey: number }
+    >(
+      ({ configurationRefreshKey }) =>
+        usePosCart({
+          configurationRefreshKey,
+          customer: { customer: "CUST-001", customerName: "Example customer" },
+          posProfile: "POS-001",
+        }),
+      { initialProps: { configurationRefreshKey: 0 } },
+    );
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+
+    let resolveRefresh!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    await hook.rerender({ configurationRefreshKey: 1 });
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(hook.result.current.isUpdating).toBe(false);
+    expect(hook.result.current.isBackgroundRefreshing).toBe(true);
+
+    resolveRefresh({
+      items: [
+        {
+          actual_qty: 4,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      taxes: [],
+      totals: { grand_total: 125, net_total: 125 },
+    });
+    await waitFor(() => expect(hook.result.current.isBackgroundRefreshing).toBe(false));
   });
 
   it("clears batch and serial allocations when changing UOM", async () => {

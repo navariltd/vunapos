@@ -111,6 +111,10 @@ type CartResponse = Omit<PosCartData, "items"> & {
   })[];
 };
 
+type CartRefreshOptions = {
+  background?: boolean;
+};
+
 type RestoredInvoiceResponse = CartResponse & {
   customer?: string;
   customer_name?: string;
@@ -229,6 +233,7 @@ export function usePosCart({
   const [holdError, setHoldError] = useState<string | null>(null);
   const [isHolding, setIsHolding] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [sourceInvoice, setSourceInvoice] = useState<PosCartSource | null>(
     null,
   );
@@ -250,6 +255,8 @@ export function usePosCart({
   const customerKey = customer?.customer || "";
   const priceListRef = useRef(priceList);
   const priceListKey = priceList || "";
+  const previousConfigurationRefreshKey = useRef(configurationRefreshKey);
+  const previousOfflineState = useRef(isOffline);
   // Sales Orders must be previewed as Sales Orders. For invoices, leaving this
   // unset preserves the POS Settings-selected invoice doctype (Sales Invoice
   // or POS Invoice) on the server.
@@ -287,13 +294,17 @@ export function usePosCart({
       cartCustomer = customerRef.current,
       cartPriceList = priceListRef.current,
       rollbackData?: PosCartData,
+      options: CartRefreshOptions = {},
     ): Promise<PosCartData | null> => {
+      const background = options.background === true;
       if (!nextItems.length) {
         const emptyCart = localCart([]);
         itemsRef.current = emptyCart.items;
         dataRef.current = emptyCart;
         setData(emptyCart);
         setError(null);
+        setIsUpdating(false);
+        setIsBackgroundRefreshing(false);
         lastRefreshErrorRef.current = null;
         return { items: [], taxes: [], totals: {} };
       }
@@ -305,6 +316,7 @@ export function usePosCart({
         setError(null);
         lastRefreshErrorRef.current = null;
         setIsUpdating(false);
+        setIsBackgroundRefreshing(false);
         return nextData;
       }
       if (!companyUrl || !sessionId || !posProfile) {
@@ -320,7 +332,8 @@ export function usePosCart({
       attemptedCustomerRef.current = cartCustomer;
       itemsRef.current = nextItems;
       setError(null);
-      setIsUpdating(true);
+      if (background) setIsBackgroundRefreshing(true);
+      else setIsUpdating(true);
       try {
         const response = await getVunaMethod<CartResponse>(
           companyUrl,
@@ -364,11 +377,17 @@ export function usePosCart({
           attemptedCustomerRef.current = customerRef.current;
           setData(lastValidData);
           lastRefreshErrorRef.current = message;
-          setError(message);
+          // A background repair must not turn a healthy active cart into a
+          // blocking error. The next user mutation or explicit retry can
+          // still surface the server failure normally.
+          if (!background) setError(message);
         }
         return null;
       } finally {
-        if (request === requestNumber.current) setIsUpdating(false);
+        if (request === requestNumber.current) {
+          if (background) setIsBackgroundRefreshing(false);
+          else setIsUpdating(false);
+        }
       }
     },
     [
@@ -413,13 +432,29 @@ export function usePosCart({
         setRestoredCustomer(draft.customer);
         setRestoredPriceList(draft.priceList);
         if (!isOffline) {
-          void refresh(draft.data.items, draft.customer, draft.priceList);
+          void refresh(draft.data.items, draft.customer, draft.priceList, undefined, {
+            background: true,
+          });
         }
       });
     return () => {
       cancelled = true;
     };
   }, [cartCacheScope, isOffline, refresh]);
+
+  useEffect(() => {
+    const recovered = previousOfflineState.current && !isOffline;
+    previousOfflineState.current = isOffline;
+    if (recovered && itemsRef.current.length) {
+      void refresh(
+        itemsRef.current,
+        customerRef.current,
+        priceListRef.current,
+        undefined,
+        { background: true },
+      );
+    }
+  }, [isOffline, refresh]);
 
   useEffect(() => {
     if (
@@ -449,8 +484,17 @@ export function usePosCart({
   }, [cartCacheScope, customerKey, data, priceListKey]);
 
   useEffect(() => {
+    const configurationChanged =
+      previousConfigurationRefreshKey.current !== configurationRefreshKey;
+    previousConfigurationRefreshKey.current = configurationRefreshKey;
     if (itemsRef.current.length)
-      void refresh(itemsRef.current, customerRef.current, priceListRef.current);
+      void refresh(
+        itemsRef.current,
+        customerRef.current,
+        priceListRef.current,
+        undefined,
+        { background: configurationChanged },
+      );
   }, [configurationRefreshKey, customerKey, priceListKey, refresh]);
 
   async function add(
@@ -515,6 +559,7 @@ export function usePosCart({
     setHasPendingHold(false);
     setHoldError(null);
     setIsHolding(false);
+    setIsBackgroundRefreshing(false);
     setIsUpdating(false);
     setSourceInvoice(null);
     return true;
@@ -893,6 +938,7 @@ export function usePosCart({
     holdError,
     itemCount,
     isHolding,
+    isBackgroundRefreshing,
     isUpdating,
     items: data.items,
     refresh,

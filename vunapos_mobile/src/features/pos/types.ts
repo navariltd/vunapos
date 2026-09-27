@@ -233,6 +233,8 @@ export type PosBootstrapData = {
   pos_session?: PosSession;
   pos_profile: {
     allow_credit_sales?: boolean;
+    company?: string;
+    warehouse?: string;
     allow_customer_creation?: boolean;
     allow_customer_management?: boolean;
     allow_customer_payments?: boolean;
@@ -251,6 +253,16 @@ export type PosBootstrapData = {
     checkout_fields?: PosCheckoutFieldDefinition[];
     currency?: string;
     currency_precision?: number;
+    disable_rounded_total?: boolean;
+    smallest_currency_fraction_value?: number | null;
+    rounding_method?: string | null;
+    new_item_position?: string;
+    ignore_pricing_rule?: boolean;
+    item_prices_include_tax?: boolean;
+    allow_service_items?: boolean;
+    taxes_and_charges?: string | null;
+    print_format?: string | null;
+    background_submission?: Record<string, unknown> | null;
     delivery_charge_item?: string | null;
     default_sale_type?: "Cash Sale" | "Credit Sale";
     default_order_type?: "Sales Invoice" | "Sales Order";
@@ -307,6 +319,10 @@ export type PosSession = {
   closing_entry?: string | null;
   has_opening_entry: boolean;
   opening_entry?: string | null;
+  opened_at?: string | null;
+  cashier?: string | null;
+  pos_profile?: string | null;
+  verified_at?: string | null;
   ready: boolean;
   status?: "CLOSING" | "CLOSING_FAILED" | "OPEN" | "OPENING_REQUIRED";
 };

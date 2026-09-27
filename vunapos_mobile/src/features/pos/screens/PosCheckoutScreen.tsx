@@ -44,6 +44,7 @@ import {
 } from "@/features/pos/paymentAllocation";
 import {
   PosC2BGatewayPayment,
+  PosBootstrapData,
   PosCartData,
   PosCartItem,
   PosCartSource,
@@ -78,6 +79,8 @@ type PosCheckoutScreenProps = {
   salesperson?: PosSalespersonSession | null;
   sourceInvoice?: PosCartSource | null;
   subtotal: number;
+  /** Workspace-owned configuration; prevents checkout from creating another bootstrap owner. */
+  bootstrapData?: PosBootstrapData | null;
 };
 
 function formatCurrency(amount: number, currency: string, precision = 2) {
@@ -188,11 +191,20 @@ export function PosCheckoutScreen({
   salesperson,
   sourceInvoice,
   subtotal,
+  bootstrapData,
 }: PosCheckoutScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const bootstrap = usePosBootstrap();
+  const bootstrapResource = usePosBootstrap({ enabled: !bootstrapData });
+  const bootstrap = bootstrapData
+    ? {
+        ...bootstrapResource,
+        data: bootstrapData,
+        error: null,
+        isLoading: false,
+      }
+    : bootstrapResource;
   const profile = bootstrap.data?.pos_profile;
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
@@ -288,6 +300,13 @@ export function PosCheckoutScreen({
       });
     }
   }, [checkout.error, toast, validationError]);
+  useEffect(() => {
+    if (!preview.error || !preview.data) return;
+    toast.error(preview.error, {
+      title: "Could not refresh prices",
+      dedupeKey: `checkout-preview-error:${preview.error}`,
+    });
+  }, [preview.data, preview.error, toast]);
   useEffect(() => {
     if (holdError) toast.error(holdError, { title: "Could not hold sale" });
   }, [holdError, toast]);
@@ -614,6 +633,7 @@ export function PosCheckoutScreen({
   const isReadyToSubmit = Boolean(
     items.length &&
     !requiredCheckoutField &&
+    (!isInvoice || (!preview.isLoading && !preview.error && Boolean(preview.data))) &&
     !checkout.isSubmitting &&
     !isApplyingDeliveryCharge &&
     !deliveryChargeDirty &&
@@ -1000,7 +1020,7 @@ export function PosCheckoutScreen({
       );
       return;
     }
-    if (isInvoice && !preview.data) {
+    if (isInvoice && (preview.isLoading || preview.error || !preview.data)) {
       setValidationError(
         preview.error || "Waiting for the server to calculate this sale.",
       );
@@ -1164,7 +1184,7 @@ export function PosCheckoutScreen({
   const submissionLabel = isInvoice ? "sales invoice" : "sales order";
   const customerName = saleCustomer?.customerName || "Walk-in customer";
 
-  if (bootstrap.isLoading || (isInvoice && preview.isLoading)) {
+  if (bootstrap.isLoading || (isInvoice && preview.isLoading && !preview.data)) {
     return (
       <View style={styles.state}>
         <Text style={styles.stateText}>
@@ -1174,7 +1194,7 @@ export function PosCheckoutScreen({
     );
   }
 
-  if (bootstrap.error || (isInvoice && preview.error)) {
+  if (bootstrap.error || (isInvoice && preview.error && !preview.data)) {
     return (
       <View style={styles.state}>
         <Text style={styles.errorText}>{bootstrap.error || preview.error}</Text>
@@ -1225,6 +1245,11 @@ export function PosCheckoutScreen({
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
+        {isInvoice && preview.isLoading && preview.data ? (
+          <Text style={styles.previewRefreshing}>
+            Updating prices in the background…
+          </Text>
+        ) : null}
         {sourceInvoice ? (
           <Text style={styles.restoredDraftHint}>
             Continuing held invoice {sourceInvoice.name}. Your current cart will
@@ -3071,6 +3096,13 @@ function createStyles(palette: AppPalette) {
       color: palette.onSurfaceMuted,
       fontFamily: typography.fontFamily.regular,
       fontSize: typography.size.small,
+    },
+    previewRefreshing: {
+      color: palette.onSurfaceMuted,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.tiny,
+      marginBottom: spacing.sm,
+      textAlign: "center",
     },
     summaryLabel: {
       color: palette.onSurfaceMuted,

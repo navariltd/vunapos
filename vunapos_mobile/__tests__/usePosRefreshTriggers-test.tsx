@@ -1,4 +1,4 @@
-import { cleanup, renderHook, waitFor } from "@testing-library/react-native";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react-native";
 import { AppState } from "react-native";
 
 const mockUseAppSession = jest.fn();
@@ -6,6 +6,7 @@ const mockUseNetworkStatus = jest.fn();
 const mockGetVunaMethod = jest.fn();
 const mockValidateFrappeSession = jest.fn();
 const mockInvalidateRealtimeResource = jest.fn();
+const mockRefreshRegisteredPosResources = jest.fn();
 const mockListener = jest.fn();
 let appStateCallback: ((state: "active" | "background") => void) | undefined;
 
@@ -23,6 +24,11 @@ jest.mock("@/services/frappeClient", () => ({
 jest.mock("@/sync/realtimeInvalidation", () => ({
   invalidateRealtimeResource: (...args: unknown[]) =>
     mockInvalidateRealtimeResource(...args),
+}));
+jest.mock("@/hooks/usePosCachedResource", () => ({
+  POS_CACHE_TTL_MS: 60_000,
+  refreshRegisteredPosResources: (...args: unknown[]) =>
+    mockRefreshRegisteredPosResources(...args),
 }));
 
 import { usePosRefreshTriggers } from "@/sync/usePosRefreshTriggers";
@@ -49,6 +55,7 @@ describe("usePosRefreshTriggers", () => {
   });
 
   afterEach(async () => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
     await cleanup();
   });
@@ -58,12 +65,12 @@ describe("usePosRefreshTriggers", () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     await hook.rerender(undefined);
 
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
-    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+    await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
+    expect(mockValidateFrappeSession).toHaveBeenCalledWith(
       "https://pos.example.com",
       "sid-1",
-      "vunapos.api.pos.get_pos_bootstrap_config",
     );
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
       "workspace-configuration",
       { full: false, source: "reconnect" },
@@ -76,10 +83,23 @@ describe("usePosRefreshTriggers", () => {
     appStateCallback?.("background");
     appStateCallback?.("active");
 
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
       "workspace-configuration",
       { full: false, source: "foreground" },
     );
+  });
+
+  it("runs the app-level resource scheduler at the 60-second boundary", async () => {
+    jest.useFakeTimers();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
+    await renderHook(() => usePosRefreshTriggers());
+
+    await act(async () => {
+      jest.advanceTimersByTime(60_000);
+    });
+
+    expect(mockRefreshRegisteredPosResources).toHaveBeenCalledTimes(1);
   });
 });

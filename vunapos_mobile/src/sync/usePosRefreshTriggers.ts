@@ -3,7 +3,6 @@ import { AppState, AppStateStatus } from "react-native";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
-  getVunaMethod,
   validateFrappeSession,
 } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
@@ -87,11 +86,10 @@ export function usePosRefreshTriggers() {
     probeInFlight.current = true;
     try {
       if (!(await probeServerReachability())) return;
-      await getVunaMethod(
-        companyUrl,
-        sessionId,
-        "vunapos.api.pos.get_pos_bootstrap_config",
-      );
+      // Reachability is already established by validateFrappeSession above.
+      // Let the cache owner perform the one configuration request so a
+      // foreground/reconnect repair cannot fetch and discard an identical
+      // payload before invalidating the resource.
       await invalidateRealtimeResource("workspace-configuration", {
         full: false,
         source,
