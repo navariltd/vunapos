@@ -289,7 +289,15 @@ export function PosWorkspaceScreen() {
     setActiveTab("Payments");
   }
 
-  if (!workspaceConfig.data && workspaceConfig.isLoading) {
+  if (workspaceConfig.isHydratingCache) {
+    return <AppLaunchScreen message="Restoring your POS…" />;
+  }
+
+  if (
+    workspaceConfig.hasHydratedCache &&
+    !workspaceConfig.data &&
+    workspaceConfig.isInitialNetworkLoading
+  ) {
     return <AppLaunchScreen message="Preparing your POS settings…" />;
   }
 

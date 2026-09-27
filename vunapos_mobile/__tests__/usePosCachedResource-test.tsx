@@ -49,12 +49,65 @@ describe("usePosCachedResource", () => {
     expect(hook.result.current).toMatchObject({
       data: null,
       error: null,
+      hasHydratedCache: false,
+      isHydratingCache: true,
       isLoading: true,
     });
 
     resolveRead?.(cached(["milk"]));
     await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
     expect(hook.result.current.isLoading).toBe(false);
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
+  });
+
+  it("distinguishes a hydrated cache miss from an unresolved cache read", async () => {
+    const load = jest.fn().mockResolvedValue(["server milk"]);
+    const cache = createCache<string[]>(null, Promise.resolve(["server milk"]));
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load }),
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
+    expect(hook.result.current.isInitialNetworkLoading).toBe(false);
+    expect(cache.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a genuine cache miss as initial network loading after hydration", async () => {
+    let resolveFetch: ((value: string[]) => void) | undefined;
+    const cache = {
+      read: jest.fn().mockResolvedValue(null),
+      fetch: jest.fn(
+        () =>
+          new Promise<string[]>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      ),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.isInitialNetworkLoading).toBe(true));
+    expect(hook.result.current.isHydratingCache).toBe(false);
+    resolveFetch?.(["server milk"]);
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+  });
+
+  it("does not remain unresolved when the local cache read fails", async () => {
+    const cache = {
+      read: jest.fn().mockRejectedValue(new Error("SQLite unavailable")),
+      fetch: jest.fn().mockResolvedValue(["server milk"]),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
   });
 
   it("does not expose data from an earlier query while the next key hydrates", async () => {

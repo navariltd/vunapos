@@ -19,6 +19,9 @@ export const POS_BOOTSTRAP_DELTA_TTL_MS = POS_CACHE_TTL_MS;
 type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
+  hasHydratedCache?: boolean;
+  isHydratingCache?: boolean;
+  isInitialNetworkLoading?: boolean;
   isLoading: boolean;
   isRefreshing?: boolean;
   isStale?: boolean;
@@ -363,6 +366,9 @@ export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapSt
     data,
     error: resource.error,
     isLoading: resource.isLoading,
+    hasHydratedCache: resource.hasHydratedCache,
+    isHydratingCache: resource.isHydratingCache,
+    isInitialNetworkLoading: resource.isInitialNetworkLoading,
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,
     lastUpdated: resource.lastUpdated,
@@ -431,6 +437,9 @@ export function usePosBootstrapConfig(): PosBootstrapConfigState {
     return {
       data: null,
       error: "Your session is no longer available. Sign in again to continue.",
+      hasHydratedCache: false,
+      isHydratingCache: false,
+      isInitialNetworkLoading: false,
       isLoading: false,
       reload,
     };
