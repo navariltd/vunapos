@@ -2066,9 +2066,9 @@ describe("PosCheckoutScreen", () => {
 
   it("uses the cashier's local calendar date for the default delivery date", async () => {
     jest.useFakeTimers();
-    // At 00:30 in Nairobi this instant is still the previous UTC date. The
-    // picker must nevertheless default to the cashier's local date.
-    jest.setSystemTime(new Date("2026-09-27T00:30:00+03:00"));
+    // Construct the instant in the test runner's local timezone. The picker
+    // must use the cashier's local calendar date rather than an ISO/UTC date.
+    jest.setSystemTime(new Date(2026, 8, 27, 0, 30));
     try {
       const screen = await render(
         <PosCheckoutScreen
