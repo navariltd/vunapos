@@ -2,7 +2,6 @@ import { PropsWithChildren, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { Screen } from "@/components/layout/Screen";
-import { NetworkStatusBanner } from "@/components/network/NetworkStatusBanner";
 import { PosBottomNavigation } from "@/features/pos/components/PosBottomNavigation";
 import { PosTopBar } from "@/features/pos/components/PosTopBar";
 import { PosNavigationTab, PosOrderType } from "@/features/pos/types";
@@ -38,7 +37,6 @@ export function AppShell({
         onOrderTypeChange={onOrderTypeChange}
         orderType={orderType}
       />
-      <NetworkStatusBanner />
       <View key={localDataGeneration} style={styles.content}>
         {children}
       </View>
