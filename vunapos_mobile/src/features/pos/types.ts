@@ -141,6 +141,8 @@ export type PosCartTotals = {
 
 export type PosCartData = {
   items: PosCartItem[];
+  /** Values restored from a draft's configured checkout fields. */
+  checkout_field_values?: Record<string, string | number | boolean | null>;
   /** Price list resolved by the server for this cart/transaction. */
   selling_price_list?: string | null;
   taxes: PosCartTax[];
@@ -196,6 +198,7 @@ export type PosInvoiceListRow = {
   postedAt: string;
   status: PosInvoiceStatus;
   total: number;
+  workflowState?: string | null;
 };
 
 export type PosDefaultCustomer = {
@@ -433,6 +436,7 @@ export type PosInvoiceHistoryRow = {
   vunapos_credit_sale?: boolean;
   vunapos_opening_entry?: string;
   vunapos_session_cashier?: string;
+  workflow_state?: string | null;
 };
 
 export type PosInvoiceDetail = {

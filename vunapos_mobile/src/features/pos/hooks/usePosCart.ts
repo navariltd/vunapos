@@ -117,6 +117,7 @@ type RestoredInvoiceResponse = CartResponse & {
   doctype: string;
   name: string;
   selling_price_list?: string;
+  checkout_field_values?: Record<string, string | number | boolean | null>;
 };
 
 function toCartPayload(items: PosCartItem[]) {

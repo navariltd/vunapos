@@ -71,6 +71,7 @@ type PosCheckoutScreenProps = {
   onComplete: (result: PosCheckoutResult) => void;
   onHold?: () => Promise<{ name: string } | null>;
   onSalespersonTokenExpired?: () => void;
+  initialCheckoutFieldValues?: PosCheckoutFieldValues;
   orderType: PosOrderType;
   priceList?: string;
   saleCustomer: PosSaleCustomer | null;
@@ -179,6 +180,7 @@ export function PosCheckoutScreen({
   onClear,
   onComplete,
   onHold,
+  initialCheckoutFieldValues,
   onSalespersonTokenExpired,
   orderType,
   priceList,
@@ -199,7 +201,7 @@ export function PosCheckoutScreen({
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [checkoutFieldValues, setCheckoutFieldValues] =
-    useState<PosCheckoutFieldValues>({});
+    useState<PosCheckoutFieldValues>(initialCheckoutFieldValues ?? {});
   const [deliveryChargeAmount, setDeliveryChargeAmount] = useState<
     string | null
   >(null);

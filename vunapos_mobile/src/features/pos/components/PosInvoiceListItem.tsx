@@ -86,6 +86,13 @@ export function PosInvoiceListItem({
           ) : null}
         </View>
         <View style={styles.badges}>
+          {invoice.doctype === "Sales Order" && invoice.workflowState ? (
+            <View style={styles.workflowBadge}>
+              <Text numberOfLines={1} style={styles.workflowLabel}>
+                {invoice.workflowState}
+              </Text>
+            </View>
+          ) : null}
           {invoice.creditSale ? (
             <View style={styles.creditSaleBadge}>
               <Text style={styles.creditSaleLabel}>Credit sale</Text>
@@ -208,6 +215,20 @@ function createStyles(palette: AppPalette) {
     creditSaleLabel: {
       color: palette.onSurface,
       fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
+    },
+    workflowBadge: {
+      backgroundColor: palette.surfaceContainerHigh,
+      borderColor: palette.border,
+      borderRadius: radii.pill,
+      borderWidth: 1,
+      maxWidth: 180,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 4,
+    },
+    workflowLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.tiny,
     },
     dueDate: {

@@ -21,6 +21,7 @@ import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
 import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
 import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScreen";
+import type { PosCheckoutFieldValues } from "@/features/pos/components/PosCheckoutFieldsCard";
 import {
   PosBootstrapData,
   PosInvoicePaymentEntry,
@@ -86,6 +87,8 @@ export function PosWorkspaceScreen() {
   const [selectedSaleCustomer, setSelectedSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
+  const [draftCheckoutFieldValues, setDraftCheckoutFieldValues] =
+    useState<PosCheckoutFieldValues>({});
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   // A selected customer belongs to the active cart only. The POS Profile
@@ -221,9 +224,18 @@ export function PosWorkspaceScreen() {
 
   useEffect(() => {
     if (!selectedPriceList || !posProfileConfig) return;
+    // A restored draft owns the price list used by that transaction. It may be
+    // a customer/context-specific list that is not in the profile's switcher,
+    // but it must remain intact while the draft is being edited.
+    if (cart.sourceInvoice) return;
     const permitted =
       posProfileConfig.allowed_price_lists?.map(({ name }) => name) || [];
-    if (permitted.includes(selectedPriceList)) return;
+    if (
+      !permitted.length ||
+      permitted.includes(selectedPriceList) ||
+      selectedPriceList === posProfileConfig.price_list
+    )
+      return;
     const fallback = setTimeout(() => {
       setSelectedPriceList(undefined);
       toast.warning(
@@ -232,7 +244,7 @@ export function PosWorkspaceScreen() {
       );
     }, 0);
     return () => clearTimeout(fallback);
-  }, [posProfileConfig, selectedPriceList, toast]);
+  }, [cart.sourceInvoice, posProfileConfig, selectedPriceList, toast]);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -247,6 +259,7 @@ export function PosWorkspaceScreen() {
   function startSale(customer: PosSaleCustomer) {
     if (!cart.clear()) return;
     setSelectedPriceList(undefined);
+    setDraftCheckoutFieldValues({});
     setSelectedSaleCustomer(customer);
     setSelectedCustomer(null);
     setSelectedInvoice(null);
@@ -363,6 +376,13 @@ export function PosWorkspaceScreen() {
               restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
             );
             setSelectedPriceList(restored.selling_price_list);
+            setDraftCheckoutFieldValues(
+              Object.fromEntries(
+                Object.entries(restored.checkout_field_values ?? {})
+                  .filter(([, value]) => value !== null && value !== undefined)
+                  .map(([fieldname, value]) => [fieldname, String(value)]),
+              ),
+            );
             setSelectedSaleCustomer(
               restored.customer
                 ? {
@@ -403,12 +423,14 @@ export function PosWorkspaceScreen() {
           onClear={() => {
             if (!cart.clear()) return;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             setCheckoutVisible(false);
             setCartVisible(false);
           }}
           onComplete={(result) => {
             cart.clear();
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             // A user override applies only to the sale that was just
             // submitted. Start the next sale from the POS Profile default.
@@ -441,6 +463,7 @@ export function PosWorkspaceScreen() {
             const heldInvoice = await cart.hold();
             if (heldInvoice) {
               setSelectedPriceList(undefined);
+              setDraftCheckoutFieldValues({});
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
@@ -455,6 +478,7 @@ export function PosWorkspaceScreen() {
           onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}
           priceList={selectedPriceList}
+          initialCheckoutFieldValues={draftCheckoutFieldValues}
           saleCustomer={saleCustomer}
           salesperson={salespersonPin.session}
           sourceInvoice={cart.sourceInvoice}
@@ -484,6 +508,7 @@ export function PosWorkspaceScreen() {
           onClear={() => {
             if (!cart.clear()) return false;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             return true;
           }}
@@ -491,6 +516,7 @@ export function PosWorkspaceScreen() {
             const heldInvoice = await cart.hold();
             if (heldInvoice) {
               setSelectedPriceList(undefined);
+              setDraftCheckoutFieldValues({});
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
@@ -511,6 +537,7 @@ export function PosWorkspaceScreen() {
             const wasRemoved = await cart.remove(itemCode);
             if (!wasRemoved || !isRemovingLastItem) return;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
           }}
           onSelectSaleCustomer={(customer) => {
@@ -607,6 +634,13 @@ export function PosWorkspaceScreen() {
               restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
             );
             setSelectedPriceList(restored.selling_price_list);
+            setDraftCheckoutFieldValues(
+              Object.fromEntries(
+                Object.entries(restored.checkout_field_values ?? {})
+                  .filter(([, value]) => value !== null && value !== undefined)
+                  .map(([fieldname, value]) => [fieldname, String(value)]),
+              ),
+            );
             setSelectedSaleCustomer(
               restored.customer
                 ? {

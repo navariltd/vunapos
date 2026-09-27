@@ -68,6 +68,7 @@ function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
     postedAt: formatPostedAt(row),
     status: row.status,
     total: row.rounded_total || row.grand_total,
+    workflowState: row.workflow_state,
   };
 }
 
