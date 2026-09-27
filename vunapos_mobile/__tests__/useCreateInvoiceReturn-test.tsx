@@ -84,7 +84,7 @@ describe('useCreateInvoiceReturn', () => {
     await waitFor(() => expect(hook.result.current.error).toBe('No active POS shift.'));
   });
 
-  it('does not submit a return until reachability is confirmed', async () => {
+  it('attempts a return until the server reports its actual result', async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'unknown' });
     const hook = await renderHook(() => useCreateInvoiceReturn());
 
@@ -92,6 +92,6 @@ describe('useCreateInvoiceReturn', () => {
       await hook.result.current.create({ invoiceName: 'POS-INV-0001', items: [{ qty: 1, row_name: 'row-1' }], posProfile: 'POS-001', reason: 'Damaged' });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 });

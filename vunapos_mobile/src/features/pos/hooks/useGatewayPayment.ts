@@ -1,7 +1,6 @@
 import { useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import {
   PosC2BGatewayPayment,
   PosCustomerContactPhone,
@@ -22,15 +21,10 @@ type InitiateGatewayPaymentInput = {
 /** Starts and checks an online gateway payment; gateway links remain server-authoritative. */
 export function useGatewayPayment() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
 
   async function request<T>(method: string, payload: Record<string, string | number | undefined>, isGet = false): Promise<T | null> {
-    if (connectionStatus !== 'online') {
-      setError('Connection unavailable. Reconnect before contacting the payment gateway.');
-      return null;
-    }
     if (!companyUrl || !sessionId) {
       setError('Your session is no longer available. Sign in again to continue.');
       return null;

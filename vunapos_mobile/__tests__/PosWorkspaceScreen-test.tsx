@@ -88,22 +88,22 @@ jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
   SalespersonPinLock: () => null,
 }));
 
-let mockSetBootstrapData: ((data: unknown) => void) | undefined;
+let mockSetConfigData: ((data: unknown) => void) | undefined;
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
-  usePosBootstrap: () => {
-    const { useState } = require("react");
-    const [data, setData] = useState(null);
-    mockSetBootstrapData = setData;
-    return {
-      data,
-      error: null,
-      isLoading: false,
-      isRefreshing: false,
-      isStale: false,
-      lastUpdated: null,
-      reload: jest.fn(),
-    };
-  },
+  usePosBootstrapConfig: () => ({
+    data: (() => {
+      const { useState } = require("react");
+      const [data, setData] = useState(null);
+      mockSetConfigData = setData;
+      return data;
+    })(),
+    error: null,
+    isLoading: false,
+    isRefreshing: false,
+    isStale: false,
+    lastUpdated: null,
+    reload: jest.fn(),
+  }),
 }));
 
 jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
@@ -125,7 +125,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: { name: "POS-001" },
               pos_session: {
@@ -141,7 +141,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               default_customer: {
                 customer: "WALK-IN",
                 customer_name: "Walk-in customer",
@@ -157,7 +157,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 default_order_type: "Sales Invoice",
@@ -171,7 +171,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 default_order_type: "Sales Order",
@@ -185,7 +185,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: { allow_customer_management: true, name: "POS-001" },
             })
@@ -196,7 +196,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 allow_customer_management: false,
@@ -417,18 +417,13 @@ jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosInvoicesScreen", () => ({
   PosInvoicesScreen: ({
-    onBackToPos,
     onOpenInvoice,
   }: {
-    onBackToPos: () => void;
     onOpenInvoice: (invoice: { name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
       <>
-        <Pressable accessibilityRole="button" onPress={onBackToPos}>
-          <Text>Back to POS</Text>
-        </Pressable>
         <Pressable
           accessibilityRole="button"
           onPress={() => onOpenInvoice({ name: "POS-INV-0001" })}
@@ -540,18 +535,14 @@ describe("PosWorkspaceScreen", () => {
     await cleanup();
   });
 
-  it("returns from invoice history to the POS home screen", async () => {
+  it("does not render a redundant back-to-POS action in invoice history", async () => {
     const screen = await render(<PosWorkspaceScreen />);
 
     expect(screen.getByText("POS home")).toBeTruthy();
     await fireEvent.press(
       screen.getByRole("button", { name: "Open invoices" }),
     );
-    expect(screen.getByRole("button", { name: "Back to POS" })).toBeTruthy();
-
-    await fireEvent.press(screen.getByRole("button", { name: "Back to POS" }));
-
-    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Back to POS" })).toBeNull();
   });
 
   it("starts a fresh POS sale with the invoice customer selected", async () => {

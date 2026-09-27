@@ -3,7 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosPaymentReconciliationCandidates } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type ReconciliationCandidatesState = {
   data: PosPaymentReconciliationCandidates | null;
@@ -25,23 +24,22 @@ export function usePosPaymentReconciliationCandidates(
   posProfile?: string,
 ): ReconciliationCandidatesState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const activeKey =
     companyUrl && sessionId && customer && posProfile
       ? `${companyUrl}:${sessionId}:${posProfile}:${customer}:${reloadKey}`
       : null;
-  const requestKey = connectionStatus === "online" ? activeKey : null;
+  const requestKey = activeKey;
   const [state, setState] = useState<RequestState>({
     data: null,
     error: null,
     requestKey: null,
   });
   const reload = useCallback(() => {
-    if (connectionStatus === "online" && customer && posProfile) {
+    if (customer && posProfile) {
       setReloadKey((current) => current + 1);
     }
-  }, [connectionStatus, customer, posProfile]);
+  }, [customer, posProfile]);
 
   useEffect(() => {
     if (!companyUrl || !sessionId || !posProfile || !customer || !requestKey)

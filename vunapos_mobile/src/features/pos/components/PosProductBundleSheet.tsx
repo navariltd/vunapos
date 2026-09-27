@@ -141,13 +141,13 @@ export function PosProductBundleSheet({
           )}
           <Pressable
             accessibilityLabel="Confirm add bundle"
-            disabled={!bundle || isLoading || Boolean(error) || isAdding || isOffline}
+            disabled={!bundle || isLoading || Boolean(error) || isAdding}
             onPress={onConfirm}
             style={[
               styles.confirm,
               {
                 backgroundColor:
-                  !bundle || isLoading || Boolean(error) || isAdding || isOffline
+                  !bundle || isLoading || Boolean(error) || isAdding
                     ? palette.disabled
                     : palette.primary,
               },

@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,14 +16,14 @@ import { formatPosCurrency } from "@/features/pos/currency";
 import { useClosePosShift } from "@/features/pos/hooks/useClosePosShift";
 import { usePosClosingPreview } from "@/features/pos/hooks/usePosClosingPreview";
 import { PosClosingPreviewInvoice, PosSession } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
 type PosCloseShiftScreenProps = {
   currency?: string;
   currencyPrecision?: number;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   onShiftClosed?: (session: PosSession) => void;
   posProfile?: string;
 };
@@ -34,13 +35,11 @@ type PosCloseShiftScreenProps = {
 export function PosCloseShiftScreen({
   currency = "KES",
   currencyPrecision = 2,
-  onBackToPos,
   onShiftClosed,
   posProfile,
 }: PosCloseShiftScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   const preview = usePosClosingPreview(posProfile);
   const closeShift = useClosePosShift();
   const [countedAmounts, setCountedAmounts] = useState<Record<string, string>>(
@@ -77,7 +76,7 @@ export function PosCloseShiftScreen({
   }
 
   function reviewCounts() {
-    if (!preview.data || connectionStatus !== "online") return;
+    if (!preview.data) return;
 
     for (const payment of preview.data.payments) {
       const rawAmount = countedAmount(
@@ -137,31 +136,9 @@ export function PosCloseShiftScreen({
               Reconcile the till and close {posProfile}.
             </Text>
           </View>
-          <Pressable
-            accessibilityLabel="Back to POS"
-            accessibilityRole="button"
-            onPress={onBackToPos}
-            style={[styles.backButton, { borderColor: palette.border }]}
-          >
-            <Text
-              style={[styles.backButtonLabel, { color: palette.onSurface }]}
-            >
-              Back to POS
-            </Text>
-          </Pressable>
         </View>
 
-        {connectionStatus !== "online" ? (
-          <StateCard
-            message={
-              connectionStatus === "offline"
-                ? "Reconnect to the server before closing this shift."
-                : "Checking the server connection before closing this shift."
-            }
-            palette={palette}
-            tone="error"
-          />
-        ) : preview.isLoading ? (
+        {preview.isLoading ? (
           <View style={styles.loadingState}>
             <ActivityIndicator color={palette.primary} />
             <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -443,33 +420,45 @@ export function PosCloseShiftScreen({
                 </Text>
               )}
             </View>
-            <Pressable
-              accessibilityLabel="Review shift counts"
-              accessibilityRole="button"
-              onPress={reviewCounts}
-              style={[
-                styles.reviewButton,
-                { backgroundColor: palette.primary },
-              ]}
-            >
-              <Text
-                style={[styles.reviewButtonLabel, { color: palette.onPrimary }]}
+            <View style={styles.actionRow}>
+              <Pressable
+                accessibilityLabel="Refresh shift totals"
+                accessibilityRole="button"
+                onPress={preview.reload}
+                style={[
+                  styles.refreshButton,
+                  styles.actionButton,
+                  { borderColor: palette.border },
+                ]}
               >
-                Review shift counts
-              </Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel="Refresh shift totals"
-              accessibilityRole="button"
-              onPress={preview.reload}
-              style={[styles.refreshButton, { borderColor: palette.border }]}
-            >
-              <Text
-                style={[styles.backButtonLabel, { color: palette.onSurface }]}
+                <MaterialCommunityIcons
+                  color={palette.onSurface}
+                  name="refresh"
+                  size={18}
+                />
+                <Text
+                  style={[styles.backButtonLabel, { color: palette.onSurface }]}
+                >
+                  Refresh totals
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Close POS shift"
+                accessibilityRole="button"
+                onPress={reviewCounts}
+                style={[
+                  styles.reviewButton,
+                  styles.actionButton,
+                  { backgroundColor: palette.error },
+                ]}
               >
-                Refresh totals
-              </Text>
-            </Pressable>
+                <Text
+                  style={[styles.reviewButtonLabel, { color: palette.onPrimary }]}
+                >
+                  Close POS Shift
+                </Text>
+              </Pressable>
+            </View>
           </>
         ) : (
           <StateCard
@@ -493,7 +482,6 @@ export function PosCloseShiftScreen({
           error={closeShift.error}
           grandTotal={preview.data.grand_total}
           invoiceCount={preview.data.invoice_count}
-          isOffline={connectionStatus !== "online"}
           isClosing={closeShift.isClosing}
           onConfirm={() => void confirmClose()}
           onDismiss={() => setConfirmationVisible(false)}
@@ -644,7 +632,6 @@ function CloseShiftCountConfirmationDialog({
   error,
   grandTotal,
   invoiceCount,
-  isOffline,
   isClosing,
   onConfirm,
   onDismiss,
@@ -660,7 +647,6 @@ function CloseShiftCountConfirmationDialog({
   error: string | null;
   grandTotal: number;
   invoiceCount: number;
-  isOffline: boolean;
   isClosing: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
@@ -693,10 +679,11 @@ function CloseShiftCountConfirmationDialog({
           <Text
             style={[styles.confirmationTitle, { color: palette.onSurface }]}
           >
-            Review shift counts
+            Close this POS shift?
           </Text>
           <Text style={[styles.description, { color: palette.onSurfaceMuted }]}>
-            Confirm the totals below before closing this POS shift.
+            Review the shift summary before closing. A new POS Opening Entry
+            will be required before making another sale.
           </Text>
           <View style={styles.confirmationSummary}>
             <ConfirmationValue label="Invoices" value={String(invoiceCount)} />
@@ -767,26 +754,22 @@ function CloseShiftCountConfirmationDialog({
           ) : null}
           <View style={styles.confirmationActions}>
             <Pressable
-              accessibilityLabel="Back to shift counts"
+              accessibilityLabel="Cancel closing POS shift"
               accessibilityRole="button"
               onPress={onDismiss}
               style={[styles.backButton, { borderColor: palette.border }]}
             >
-              <Text
-                style={[styles.backButtonLabel, { color: palette.onSurface }]}
-              >
-                Back to counts
-              </Text>
+              <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>Cancel</Text>
             </Pressable>
             <Pressable
               accessibilityLabel="Close POS Shift"
               accessibilityRole="button"
-              disabled={isClosing || isOffline}
+              disabled={isClosing}
               onPress={onConfirm}
               style={[
                 styles.closeButton,
                 { backgroundColor: palette.error },
-                (isClosing || isOffline) && styles.disabled,
+                isClosing && styles.disabled,
               ]}
             >
               {isClosing ? (
@@ -870,7 +853,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   content: { flexGrow: 1, gap: spacing.lg, padding: spacing.md },
-  confirmationActions: { alignItems: "flex-end" },
+  confirmationActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
   confirmationDialog: {
     borderRadius: radii.lg,
     borderWidth: 1,
@@ -959,9 +947,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
+  actionButton: { flex: 1, minHeight: 44 },
+  actionRow: { flexDirection: "row", gap: spacing.sm },
   refreshButton: {
     alignItems: "center",
-    alignSelf: "flex-end",
+    flexDirection: "row",
+    gap: spacing.xs,
     borderRadius: radii.md,
     borderWidth: 1,
     justifyContent: "center",
@@ -979,7 +970,6 @@ const styles = StyleSheet.create({
   },
   reviewButton: {
     alignItems: "center",
-    alignSelf: "flex-end",
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 44,

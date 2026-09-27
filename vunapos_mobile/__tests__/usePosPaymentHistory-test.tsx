@@ -64,11 +64,11 @@ describe("usePosPaymentHistory", () => {
     );
   });
 
-  it("does not request payment history while offline", async () => {
+  it("attempts payment history while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const hook = await renderHook(() => usePosPaymentHistory("POS-001"));
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalled());
     expect(hook.result.current.isLoading).toBe(false);
   });
 

@@ -10,6 +10,8 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 }));
 
 const mockUseNetworkStatus = jest.fn();
+const mockPosCacheRead = jest.fn();
+const mockPosCacheWrite = jest.fn();
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
@@ -30,8 +32,8 @@ jest.mock("@/services/posCacheInvalidation", () => ({
 jest.mock("@/services/posCache", () => ({
   posCache: {
     clearResource: jest.fn(),
-    read: jest.fn().mockResolvedValue(null),
-    write: jest.fn(),
+    read: (...args: unknown[]) => mockPosCacheRead(...args),
+    write: (...args: unknown[]) => mockPosCacheWrite(...args),
   },
 }));
 
@@ -56,6 +58,7 @@ const item = {
 describe("usePosCart", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPosCacheRead.mockResolvedValue(null);
     mockInvalidateHeldInvoiceCache.mockResolvedValue(undefined);
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockUseAppSession.mockReturnValue({
@@ -133,6 +136,83 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("shows a selected-customer addition immediately while preview runs", async () => {
+    let resolvePreview!: (value: unknown) => void;
+    const pendingPreview = new Promise((resolve) => {
+      resolvePreview = resolve;
+    });
+    mockGetVunaMethod.mockImplementationOnce(async () => pendingPreview);
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    let addPromise!: Promise<boolean | string>;
+    await act(async () => {
+      addPromise = hook.result.current.add(item);
+      await Promise.resolve();
+    });
+    expect(hook.result.current.items).toEqual([
+      expect.objectContaining({ item_code: "ITEM-001", qty: 1, rate: 125 }),
+    ]);
+    expect(hook.result.current.isUpdating).toBe(true);
+
+    resolvePreview({
+      items: [
+        {
+          actual_qty: 4,
+          amount: 125,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 125,
+          uom: "Nos",
+        },
+      ],
+      taxes: [],
+      totals: { grand_total: 125, net_total: 125 },
+    });
+    await act(async () => {
+      await addPromise;
+    });
+    expect(hook.result.current.items[0].available_qty).toBe(4);
+  });
+
+  it("re-previews an active cart after POS configuration refresh", async () => {
+    const hook = await renderHook<
+      ReturnType<typeof usePosCart>,
+      { configurationRefreshKey: number }
+    >(
+      ({ configurationRefreshKey }) =>
+        usePosCart({
+          configurationRefreshKey,
+          customer: { customer: "CUST-001", customerName: "Example customer" },
+          posProfile: "POS-001",
+        }),
+      { initialProps: { configurationRefreshKey: 0 } },
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+
+    await hook.rerender({ configurationRefreshKey: 1 });
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(mockGetVunaMethod).toHaveBeenLastCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        customer: "CUST-001",
+        pos_profile: "POS-001",
+      }),
+    );
+  });
+
   it("previews an order as a Sales Order so tracked stock is not allocated while building it", async () => {
     const hook = await renderHook(() =>
       usePosCart({
@@ -199,7 +279,7 @@ describe("usePosCart", () => {
     );
   });
 
-  it("keeps the current cart intact and makes no request when explicitly offline", async () => {
+  it("keeps cart editing local while server previews are attempted offline", async () => {
     const hook = await renderHook(() =>
       usePosCart({
         customer: { customer: "CUST-001", customerName: "Example customer" },
@@ -221,14 +301,71 @@ describe("usePosCart", () => {
     await act(async () => {
       wasCleared = hook.result.current.clear();
     });
-    expect(wasCleared).toBe(false);
+    expect(wasCleared).toBe(true);
     await act(async () => {
       await hook.result.current.hold();
     });
 
-    expect(hook.result.current.items).toHaveLength(1);
-    expect(mockGetVunaMethod).toHaveBeenCalledTimes(requestCount);
+    expect(hook.result.current.items).toHaveLength(0);
+    expect(mockGetVunaMethod.mock.calls.length).toBeGreaterThanOrEqual(requestCount);
     expect(mockPostVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it("attempts delivery-charge preview while offline so the request classifies the failure", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockGetVunaMethod.mockRejectedValueOnce(new Error("Network unavailable"));
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    let result: unknown;
+    await act(async () => {
+      result = await hook.result.current.applyDeliveryCharge("DELIVERY", 50);
+    });
+
+    expect(result).toBeNull();
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.item.get_item_details",
+      expect.objectContaining({ item_code: "DELIVERY" }),
+    );
+    expect(hook.result.current.error).toBe("Network unavailable");
+  });
+
+  it("restores a stale durable cart offline without making it look fresh or writing it back", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPosCacheRead.mockResolvedValue({
+      data: {
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        data: {
+          items: [{ ...item, qty: 1 }],
+          taxes: [],
+          totals: { grand_total: 125, net_total: 125 },
+        },
+        priceList: "Standard Selling",
+        sourceInvoice: null,
+      },
+      expiresAt: 1,
+      fetchedAt: 100,
+      isStale: true,
+    });
+
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        posProfile: "POS-001",
+      }),
+    );
+
+    await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
+    expect(hook.result.current.cartCacheIsStale).toBe(true);
+    expect(hook.result.current.cartCacheLastUpdated).toBe(100);
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(mockPosCacheWrite).not.toHaveBeenCalled();
   });
 
   it("keeps a temporary cart until a customer is selected, then refreshes it with Frappe", async () => {

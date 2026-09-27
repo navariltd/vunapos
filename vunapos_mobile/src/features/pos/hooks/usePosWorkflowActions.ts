@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   FrappeClientError,
   getVunaMethod,
@@ -15,10 +14,9 @@ type Args = { doctype: string; name: string; posProfile?: string };
 /** Reads the server-authorized actions for one draft and applies one action. */
 export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const requestKey =
-    connectionStatus === "online" && companyUrl && sessionId && posProfile
+    companyUrl && sessionId && posProfile
       ? JSON.stringify({
           companyUrl,
           doctype,
@@ -35,6 +33,7 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
   }>({ actions: [], error: null, key: null });
   const [applyError, setApplyError] = useState<string | null>(null);
   const [isApplying, setIsApplying] = useState<string | null>(null);
+  const applyInFlight = useRef<string | null>(null);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
 
   useEffect(() => {
@@ -84,13 +83,10 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
 
   const apply = useCallback(
     async (action: string) => {
-      if (
-        connectionStatus !== "online" ||
-        !companyUrl ||
-        !sessionId ||
-        !posProfile
-      )
+      if (!companyUrl || !sessionId || !posProfile)
         return false;
+      if (applyInFlight.current) return false;
+      applyInFlight.current = action;
       setIsApplying(action);
       setApplyError(null);
       try {
@@ -115,12 +111,12 @@ export function usePosWorkflowActions({ doctype, name, posProfile }: Args) {
         );
         return false;
       } finally {
+        applyInFlight.current = null;
         setIsApplying(null);
       }
     },
     [
       companyUrl,
-      connectionStatus,
       doctype,
       invalidateSession,
       name,

@@ -72,7 +72,7 @@ export function PosUomPickerSheet({
             return (
               <Pressable
                 accessibilityLabel={`Use unit ${option.uom}`}
-                disabled={isOffline}
+                disabled={false}
                 key={option.uom}
                 onPress={() => onSelect(option.uom)}
                 style={[styles.option, active && styles.optionActive]}

@@ -45,10 +45,14 @@ describe("useFrappeRealtime", () => {
     await waitFor(() => expect(mockStop).toHaveBeenCalledTimes(1));
   });
 
-  it("does not connect while offline or signed out", async () => {
+  it("keeps the authenticated socket running while the device reports offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     renderHook(() => useFrappeRealtime());
-    expect(mockStart).not.toHaveBeenCalled();
-    await waitFor(() => expect(mockStop).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockStart).toHaveBeenCalledWith(
+        "https://pos.example.com",
+        "sid-1",
+      ),
+    );
   });
 });

@@ -3,7 +3,6 @@ import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 
 import { useAppSession } from '@/features/auth/AppSessionProvider';
-import { useNetworkStatus } from '@/services/NetworkStatusProvider';
 import { FrappeClientError, getVunaMethod } from '@/services/frappeClient';
 
 type InvoiceReceipt = {
@@ -32,7 +31,6 @@ function messageFor(error: unknown) {
 /** Requests the server's receipt HTML, then hands it to the platform print or share UI. */
 export function useInvoiceReceipt(): UseInvoiceReceiptResult {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
 
@@ -53,10 +51,6 @@ export function useInvoiceReceipt(): UseInvoiceReceiptResult {
 
   async function perform(request: ReceiptRequest, action: 'print' | 'share') {
     if (isWorking) return;
-    if (connectionStatus === 'offline') {
-      setError('Connection unavailable. Reconnect before preparing a receipt.');
-      return;
-    }
     setError(null);
     setIsWorking(true);
 

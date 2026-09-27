@@ -3,12 +3,14 @@ import { io } from "socket.io-client";
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
 
 export const CONFIGURATION_EVENT = "vunapos_configuration_changed";
+export const CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed";
 
 // `adb reverse` exposes the bench to an Android emulator as localhost. The
 // physical Frappe site remains meru.localhost, which is also the namespace
 // used when Frappe publishes realtime events. Keep this development bridge
 // narrow; deployed sites use their own public hostname as the site name.
 const LOCAL_BENCH_SITE_NAME = "meru.localhost";
+const CONFIGURATION_DEBOUNCE_MS = 350;
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -63,15 +65,24 @@ export function getFrappeRealtimeConnection(companyUrl: string) {
 
   return {
     siteName: isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname,
-    url: `${url.origin}/${
-      isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname
-    }`,
+    // Direct bench Socket.IO uses a site namespace. Public deployments expose
+    // the Socket.IO endpoint through the normal origin and reject that extra
+    // hostname path as an unknown namespace.
+    url: isLoopbackBench
+      ? `${url.origin}/${
+          isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname
+        }`
+      : url.origin,
   };
 }
 
 /** One authenticated socket for the whole signed-in mobile session. */
 export class FrappeRealtimeClient {
   private connectedOnce = false;
+  private configurationRefreshInFlight = false;
+  private configurationRefreshPayload: unknown;
+  private configurationRefreshQueued = false;
+  private configurationRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private socket: SocketLike | undefined;
 
   constructor(
@@ -98,13 +109,22 @@ export class FrappeRealtimeClient {
     this.socket.on("connect", this.handleConnect);
     this.socket.on("connect_error", this.handleConnectError);
     this.socket.on(CONFIGURATION_EVENT, this.handleConfigurationChange);
+    this.socket.on(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
   }
 
   stop() {
+    if (this.configurationRefreshTimer) {
+      clearTimeout(this.configurationRefreshTimer);
+      this.configurationRefreshTimer = undefined;
+    }
+    this.configurationRefreshQueued = false;
+    this.configurationRefreshPayload = undefined;
+    this.configurationRefreshInFlight = false;
     if (this.socket) {
       this.socket.off("connect", this.handleConnect);
       this.socket.off("connect_error", this.handleConnectError);
       this.socket.off(CONFIGURATION_EVENT, this.handleConfigurationChange);
+      this.socket.off(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
       this.socket.disconnect();
       this.socket = undefined;
     }
@@ -116,7 +136,7 @@ export class FrappeRealtimeClient {
     const recovered = this.connectedOnce;
     this.connectedOnce = true;
     setDiagnostics({ status: "connected", lastConnectedAt: new Date().toISOString() });
-    if (recovered) invalidateRealtimeResource("workspace-configuration");
+    if (recovered) this.scheduleConfigurationRefresh();
   };
 
   private readonly handleConnectError = (error?: unknown) => {
@@ -126,8 +146,39 @@ export class FrappeRealtimeClient {
     });
   };
 
-  private readonly handleConfigurationChange = () => {
-    invalidateRealtimeResource("workspace-configuration");
+  private readonly handleConfigurationChange = (payload?: unknown) => {
+    this.scheduleConfigurationRefresh(payload);
+  };
+
+  private readonly handleCheckoutQueueChange = (payload?: unknown) => {
+    void invalidateRealtimeResource("checkout-queue", payload);
+  };
+
+  private readonly scheduleConfigurationRefresh = (payload?: unknown) => {
+    this.configurationRefreshPayload = payload;
+    this.configurationRefreshQueued = true;
+    if (this.configurationRefreshTimer) return;
+    this.configurationRefreshTimer = setTimeout(() => {
+      this.configurationRefreshTimer = undefined;
+      void this.flushConfigurationRefresh();
+    }, CONFIGURATION_DEBOUNCE_MS);
+  };
+
+  private readonly flushConfigurationRefresh = async () => {
+    if (this.configurationRefreshInFlight) return;
+    if (!this.configurationRefreshQueued) return;
+    const payload = this.configurationRefreshPayload;
+    this.configurationRefreshPayload = undefined;
+    this.configurationRefreshQueued = false;
+    this.configurationRefreshInFlight = true;
+    try {
+      await invalidateRealtimeResource("workspace-configuration", payload);
+    } finally {
+      this.configurationRefreshInFlight = false;
+      // If another event arrived while the refresh was running, schedule one
+      // follow-up rather than starting overlapping bootstrap requests.
+      if (this.configurationRefreshQueued) this.scheduleConfigurationRefresh();
+    }
   };
 }
 

@@ -1,4 +1,5 @@
 import {
+  CHECKOUT_QUEUE_EVENT,
   CONFIGURATION_EVENT,
   FrappeRealtimeClient,
   getFrappeRealtimeConnection,
@@ -40,11 +41,12 @@ describe("FrappeRealtimeClient", () => {
       getFrappeRealtimeConnection("https://pos.example.com"),
     ).toEqual({
       siteName: "pos.example.com",
-      url: "https://pos.example.com/pos.example.com",
+      url: "https://pos.example.com",
     });
   });
 
-  it("owns one socket and invalidates configuration resources from its event", () => {
+  it("owns one socket and debounces configuration invalidation events", async () => {
+    jest.useFakeTimers();
     const socket = socketStub();
     const factory = jest.fn(() => socket);
     const client = new FrappeRealtimeClient(factory);
@@ -56,9 +58,14 @@ describe("FrappeRealtimeClient", () => {
 
     client.start("https://pos.example.com", "sid-1");
     socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
+    socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
+    expect(refresh).not.toHaveBeenCalled();
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledWith({ refresh: "full" });
 
     expect(factory).toHaveBeenCalledWith(
-      "https://pos.example.com/pos.example.com",
+      "https://pos.example.com",
       expect.objectContaining({
         extraHeaders: expect.objectContaining({
           Cookie: "sid=sid-1",
@@ -72,6 +79,7 @@ describe("FrappeRealtimeClient", () => {
     client.stop();
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
     unregister();
+    jest.useRealTimers();
   });
 
   it("does not invoke removed resource handlers", () => {
@@ -85,5 +93,80 @@ describe("FrappeRealtimeClient", () => {
     invalidateRealtimeResource("workspace-configuration");
 
     expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("forwards checkout queue transitions to the app-owned resource", async () => {
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    const refresh = jest.fn();
+    const unregister = registerRealtimeRefresh("checkout-queue", refresh);
+
+    client.start("https://pos.example.com", "sid-1");
+    const payload = {
+      invoice_name: "SINV-QUEUE-001",
+      status: "Submitted",
+    };
+    socket.emit(CHECKOUT_QUEUE_EVENT, payload);
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledWith(payload);
+    client.stop();
+    unregister();
+  });
+
+  it("queues a follow-up configuration refresh when another event arrives mid-refresh", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    let resolveFirst: (() => void) | undefined;
+    const refresh = jest
+      .fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockResolvedValue(undefined);
+    const unregister = registerRealtimeRefresh(
+      "workspace-configuration",
+      refresh,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit(CONFIGURATION_EVENT, { doctype: "POS Profile" });
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    socket.emit(CONFIGURATION_EVENT, { doctype: "Item Price" });
+    resolveFirst?.();
+    await jest.runAllTimersAsync();
+    expect(refresh).toHaveBeenCalledTimes(2);
+
+    client.stop();
+    unregister();
+    jest.useRealTimers();
+  });
+
+  it("repairs configuration through the timestamp delta after socket recovery", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    const refresh = jest.fn().mockResolvedValue(undefined);
+    const unregister = registerRealtimeRefresh(
+      "workspace-configuration",
+      refresh,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit("connect");
+    socket.emit("connect");
+    jest.advanceTimersByTime(350);
+    await Promise.resolve();
+
+    expect(refresh).toHaveBeenCalledWith(undefined);
+    client.stop();
+    unregister();
+    jest.useRealTimers();
   });
 });

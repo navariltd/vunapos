@@ -439,7 +439,7 @@ describe("PosCustomerDetailsScreen", () => {
     expect(screen.queryByLabelText("Receive payment")).toBeNull();
   });
 
-  it("keeps Start new sale unavailable offline and explains why", async () => {
+  it("keeps Start new sale available offline and explains server confirmation", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const screen = await render(
       <PosCustomerDetailsScreen
@@ -451,13 +451,12 @@ describe("PosCustomerDetailsScreen", () => {
 
     expect(
       screen.getByText(
-        "Reconnect to the server to start a sale or receive payment for this customer.",
+        "Server confirmation is required before starting a sale or receiving payment.",
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByLabelText("Start new sale").props.accessibilityState?.disabled,
-    ).toBe(true);
     await fireEvent.press(screen.getByLabelText("Start new sale"));
-    expect(onStartSale).not.toHaveBeenCalled();
+    expect(onStartSale).toHaveBeenCalledWith(
+      expect.objectContaining({ customer: "CUST-001" }),
+    );
   });
 });

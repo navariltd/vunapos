@@ -68,6 +68,7 @@ function toListRow(row: PosInvoiceHistoryRow): PosInvoiceListRow {
     postedAt: formatPostedAt(row),
     status: row.status,
     total: row.rounded_total || row.grand_total,
+    workflowState: row.workflow_state,
   };
 }
 
@@ -119,7 +120,8 @@ function SummaryCard({ label, value }: SummaryCardProps) {
 
 type PosInvoicesScreenProps = {
   heldRefreshKey?: number;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   onOpenInvoice: (invoice: { doctype?: string; name: string }) => void;
   onRestoreHeld: (invoice: PosHeldInvoice) => Promise<void>;
 };
@@ -138,7 +140,6 @@ function formatModified(value?: string | null) {
 
 export function PosInvoicesScreen({
   heldRefreshKey = 0,
-  onBackToPos,
   onOpenInvoice,
   onRestoreHeld,
 }: PosInvoicesScreenProps) {
@@ -323,13 +324,6 @@ export function PosInvoicesScreen({
             <View style={styles.heading}>
               <View style={styles.titleRow}>
                 <Text style={styles.title}>Invoices</Text>
-                <Pressable
-                  accessibilityLabel="Back to POS"
-                  onPress={onBackToPos}
-                  style={styles.backToPosButton}
-                >
-                  <Text style={styles.backToPosButtonLabel}>Back to POS</Text>
-                </Pressable>
               </View>
               <Text style={styles.subtitle}>
                 Resume an online invoice without creating another draft.
@@ -479,13 +473,6 @@ export function PosInvoicesScreen({
             <View style={styles.heading}>
               <View style={styles.titleRow}>
                 <Text style={styles.title}>Invoices</Text>
-                <Pressable
-                  accessibilityLabel="Back to POS"
-                  onPress={onBackToPos}
-                  style={styles.backToPosButton}
-                >
-                  <Text style={styles.backToPosButtonLabel}>Back to POS</Text>
-                </Pressable>
               </View>
               <Text style={styles.subtitle}>
                 {filters.documentType === "Draft Order"
@@ -608,18 +595,6 @@ export function PosInvoicesScreen({
 
 function createStyles(palette: AppPalette) {
   return StyleSheet.create({
-    backToPosButton: {
-      borderColor: palette.border,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      paddingHorizontal: spacing.sm,
-      paddingVertical: 7,
-    },
-    backToPosButtonLabel: {
-      color: palette.onSurface,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.tiny,
-    },
     content: {
       padding: spacing.md,
       paddingBottom: spacing.xxl,

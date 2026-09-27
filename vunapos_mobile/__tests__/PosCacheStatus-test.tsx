@@ -1,44 +1,37 @@
 import { render } from "@testing-library/react-native";
 
-import {
-  formatCacheTimestamp,
-  PosCacheStatus,
-} from "@/features/pos/components/PosCacheStatus";
+jest.mock("@/theme/AppearanceProvider", () => ({
+  useAppearance: () => ({
+    palette: { onSurfaceMuted: "#777" },
+  }),
+}));
+
+import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 
 describe("PosCacheStatus", () => {
-  it("formats freshness timestamps compactly", () => {
-    expect(formatCacheTimestamp(Date.UTC(2026, 8, 13, 19, 5))).toMatch(
-      /13\/09\/2026, \d{2}:05/,
-    );
-  });
-
-  it("shows cached freshness at the bottom of a normal catalogue", async () => {
+  it("keeps stale and refresh state in the natural page flow", async () => {
     const screen = await render(
       <PosCacheStatus
         isOffline={false}
-        lastUpdated={Date.UTC(2026, 8, 13, 19, 5)}
+        isRefreshing
+        isStale
+        lastUpdated={new Date("2026-09-26T09:30:00Z").getTime()}
       />,
     );
 
-    expect(
-      screen.getByText(
-        `Updated ${formatCacheTimestamp(Date.UTC(2026, 8, 13, 19, 5))}`,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/Refreshing · Updated/)).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
   });
 
-  it("makes offline cached browsing explicit", async () => {
+  it("shows the last update when cached data is usable offline", async () => {
     const screen = await render(
       <PosCacheStatus
         isOffline
-        lastUpdated={Date.UTC(2026, 8, 13, 19, 5)}
+        isStale
+        lastUpdated={new Date("2026-09-26T09:30:00Z").getTime()}
       />,
     );
 
-    expect(
-      screen.getByText(
-        `Offline · Updated ${formatCacheTimestamp(Date.UTC(2026, 8, 13, 19, 5))}`,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(/Offline · Updated/)).toBeTruthy();
   });
 });

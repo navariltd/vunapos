@@ -86,6 +86,7 @@ def _get_sales_order_history(
 		"advance_paid",
 		"total_qty",
 		"delivery_date",
+		"workflow_state",
 		"docstatus",
 		"creation",
 	]
@@ -172,6 +173,7 @@ def _get_sales_order_history(
 				"vunapos_closing_entry": row.get("vunapos_closing_entry"),
 				"payments": payments,
 				"status": row_status,
+				"workflow_state": row.get("workflow_state"),
 			}
 		)
 	active_rows = [row for row in result if row["docstatus"] == 1]

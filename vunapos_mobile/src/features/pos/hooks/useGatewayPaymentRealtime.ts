@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { io } from "socket.io-client";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { getFrappeRealtimeConnection } from "@/sync/frappeRealtimeClient";
 import { PosGatewayPaymentLink } from "@/features/pos/types";
 
@@ -16,10 +15,9 @@ export function useGatewayPaymentRealtime(
   onChange: (payment: PosGatewayPaymentLink) => void,
 ) {
   const { companyUrl, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
 
   useEffect(() => {
-    if (connectionStatus !== "online" || !companyUrl || !sessionId) return;
+    if (!companyUrl || !sessionId) return;
     const connection = getFrappeRealtimeConnection(companyUrl);
     const socket = io(connection.url, {
       extraHeaders: {
@@ -36,5 +34,5 @@ export function useGatewayPaymentRealtime(
       socket.off(GATEWAY_PAYMENT_EVENT, onChange);
       socket.disconnect();
     };
-  }, [companyUrl, connectionStatus, onChange, sessionId]);
+  }, [companyUrl, onChange, sessionId]);
 }

@@ -47,7 +47,7 @@ describe("gateway payment realtime hook", () => {
 
     await waitFor(() =>
       expect(mockIo).toHaveBeenCalledWith(
-        "https://vuna.example.com/vuna.example.com",
+        "https://vuna.example.com",
         expect.objectContaining({
           extraHeaders: {
             Cookie: "sid=sid-1",

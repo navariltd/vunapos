@@ -93,4 +93,29 @@ describe("useOpenPosShift", () => {
       ),
     );
   });
+
+  it("does not submit a second opening while the first request is pending", async () => {
+    let resolve!: (value: unknown) => void;
+    mockPostFrappeJsonMethod.mockReturnValueOnce(
+      new Promise((nextResolve) => {
+        resolve = nextResolve;
+      }),
+    );
+    const hook = await renderHook(() => useOpenPosShift());
+    const input = {
+      openingBalances: [{ mode_of_payment: "Cash", opening_amount: 0 }],
+      posProfile: "POS-001",
+    };
+
+    let first!: Promise<unknown>;
+    await act(async () => {
+      first = hook.result.current.open(input);
+      await hook.result.current.open(input);
+    });
+    expect(mockPostFrappeJsonMethod).toHaveBeenCalledTimes(1);
+    resolve({ name: "POS-OPEN-001", pos_profile: "POS-001", success: true });
+    await act(async () => {
+      await first;
+    });
+  });
 });

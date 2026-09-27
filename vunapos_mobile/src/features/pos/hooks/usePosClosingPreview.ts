@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosClosingPreview } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
 type PosClosingPreviewState = {
@@ -27,23 +26,22 @@ export function usePosClosingPreview(
   posProfile: string | undefined,
 ): PosClosingPreviewState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const activeKey =
     companyUrl && sessionId && posProfile
       ? JSON.stringify({ companyUrl, posProfile, reloadKey, sessionId })
       : null;
-  const requestKey = connectionStatus === "online" ? activeKey : null;
+  const requestKey = activeKey;
   const [state, setState] = useState<PosClosingPreviewRequestState>({
     data: null,
     error: null,
     requestKey: null,
   });
   const reload = useCallback(() => {
-    if (connectionStatus === "online" && posProfile) {
+    if (posProfile) {
       setReloadKey((current) => current + 1);
     }
-  }, [connectionStatus, posProfile]);
+  }, [posProfile]);
 
   useEffect(() => {
     if (!companyUrl || !sessionId || !posProfile || !requestKey) return;
@@ -76,7 +74,7 @@ export function usePosClosingPreview(
     return () => controller.abort();
   }, [companyUrl, invalidateSession, posProfile, requestKey, sessionId]);
 
-  if (!activeKey || connectionStatus !== "online") {
+  if (!activeKey) {
     return { data: null, error: null, isLoading: false, reload };
   }
 

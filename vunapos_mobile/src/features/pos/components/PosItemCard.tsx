@@ -64,14 +64,12 @@ export const PosItemCard = memo(function PosItemCard({
     >
       <Pressable
         accessibilityHint={
-          isOffline
-            ? "Reconnect to add items"
-            : outOfStock
+          outOfStock
             ? "This item is out of stock"
             : "Adds this item to the cart"
         }
         accessibilityLabel={item.item_name}
-        disabled={outOfStock || isAdding || isOffline}
+        disabled={outOfStock || isAdding}
         onPress={() => onAdd(item)}
         style={[
           styles.previewArea,
@@ -145,9 +143,7 @@ export const PosItemCard = memo(function PosItemCard({
           </View>
           <Pressable
             accessibilityHint={
-              isOffline
-                ? "Reconnect to add items"
-                : outOfStock
+              outOfStock
                 ? "This item is out of stock"
                 : isAdding
                   ? "This item is being added to the cart"
@@ -156,13 +152,13 @@ export const PosItemCard = memo(function PosItemCard({
             accessibilityLabel={
               isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
             }
-            disabled={outOfStock || isAdding || isOffline}
+            disabled={outOfStock || isAdding}
             onPress={() => onAdd(item)}
             style={[
               styles.addButton,
               {
                 backgroundColor:
-                  outOfStock || isAdding || isOffline
+                  outOfStock || isAdding
                     ? palette.disabled
                     : palette.primary,
               },

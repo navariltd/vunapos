@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
 import { AppShell } from "@/features/shell/components/AppShell";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
@@ -20,6 +21,7 @@ import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
 import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
 import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScreen";
+import type { PosCheckoutFieldValues } from "@/features/pos/components/PosCheckoutFieldsCard";
 import {
   PosBootstrapData,
   PosInvoicePaymentEntry,
@@ -30,7 +32,7 @@ import {
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useToast } from "@/components/feedback/ToastProvider";
-import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
+import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
 
@@ -57,7 +59,10 @@ export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
-  const workspaceBootstrap = usePosBootstrap();
+  // The shell configuration is intentionally loaded independently of the
+  // catalogue. This lets the POS/session gate render while items hydrate in
+  // the background, matching the SPA startup sequence.
+  const workspaceConfig = usePosBootstrapConfig();
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
@@ -82,6 +87,8 @@ export function PosWorkspaceScreen() {
   const [selectedSaleCustomer, setSelectedSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
+  const [draftCheckoutFieldValues, setDraftCheckoutFieldValues] =
+    useState<PosCheckoutFieldValues>({});
   const [defaultSaleCustomer, setDefaultSaleCustomer] =
     useState<PosSaleCustomer | null>(null);
   // A selected customer belongs to the active cart only. The POS Profile
@@ -95,12 +102,17 @@ export function PosWorkspaceScreen() {
     useState<PosBootstrapData["pos_profile"]>();
   const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
+  const [configurationRefreshKey, setConfigurationRefreshKey] = useState(0);
+  const appliedConfigurationFingerprintRef = useRef<string | undefined>(
+    undefined,
+  );
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const cart = usePosCart({
     customer: saleCustomer,
     orderType,
     posProfile,
     priceList: selectedPriceList,
+    configurationRefreshKey,
   });
   useEffect(() => {
     if (
@@ -125,6 +137,18 @@ export function PosWorkspaceScreen() {
   ]);
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
+    // The configuration endpoint can be refreshed independently from the
+    // catalogue. Do not cause a cart re-preview unless the effective POS
+    // configuration actually changed; server timestamps and object identity
+    // are not meaningful configuration changes.
+    const fingerprint = JSON.stringify({
+      defaultCustomer: bootstrap.default_customer,
+      paymentModes: bootstrap.payment_modes,
+      posProfile: bootstrap.pos_profile,
+      posSession: bootstrap.pos_session,
+    });
+    if (appliedConfigurationFingerprintRef.current === fingerprint) return;
+    appliedConfigurationFingerprintRef.current = fingerprint;
     const defaultCustomer = bootstrap.default_customer;
     const profileOrderType = configuredOrderType(bootstrap.pos_profile);
     const isNewProfile =
@@ -136,6 +160,7 @@ export function PosWorkspaceScreen() {
     setPosProfileConfig(bootstrap.pos_profile);
     setPosSession(bootstrap.pos_session ?? null);
     setPaymentModes(bootstrap.payment_modes);
+    setConfigurationRefreshKey((current) => current + 1);
     setOrderType((current) =>
       (!orderTypeOverrideRef.current &&
         (configuredProfileRef.current === bootstrap.pos_profile.name ||
@@ -158,13 +183,13 @@ export function PosWorkspaceScreen() {
     );
   }, []);
   useEffect(() => {
-    if (!workspaceBootstrap.data) return;
+    if (!workspaceConfig.data) return;
     const sync = setTimeout(
-      () => receivePosProfile(workspaceBootstrap.data!),
+      () => receivePosProfile(workspaceConfig.data!),
       0,
     );
     return () => clearTimeout(sync);
-  }, [receivePosProfile, workspaceBootstrap.data]);
+  }, [receivePosProfile, workspaceConfig.data]);
   const handleShiftOpened = useCallback(
     async (result: OpenPosShiftResult) => {
       if (companyUrl && sessionId) {
@@ -199,9 +224,18 @@ export function PosWorkspaceScreen() {
 
   useEffect(() => {
     if (!selectedPriceList || !posProfileConfig) return;
+    // A restored draft owns the price list used by that transaction. It may be
+    // a customer/context-specific list that is not in the profile's switcher,
+    // but it must remain intact while the draft is being edited.
+    if (cart.sourceInvoice) return;
     const permitted =
       posProfileConfig.allowed_price_lists?.map(({ name }) => name) || [];
-    if (permitted.includes(selectedPriceList)) return;
+    if (
+      !permitted.length ||
+      permitted.includes(selectedPriceList) ||
+      selectedPriceList === posProfileConfig.price_list
+    )
+      return;
     const fallback = setTimeout(() => {
       setSelectedPriceList(undefined);
       toast.warning(
@@ -210,7 +244,7 @@ export function PosWorkspaceScreen() {
       );
     }, 0);
     return () => clearTimeout(fallback);
-  }, [posProfileConfig, selectedPriceList, toast]);
+  }, [cart.sourceInvoice, posProfileConfig, selectedPriceList, toast]);
 
   function changeTab(tab: PosNavigationTab) {
     setSelectedInvoice(null);
@@ -223,9 +257,9 @@ export function PosWorkspaceScreen() {
   }
 
   function startSale(customer: PosSaleCustomer) {
-    if (isOffline) return;
     if (!cart.clear()) return;
     setSelectedPriceList(undefined);
+    setDraftCheckoutFieldValues({});
     setSelectedSaleCustomer(customer);
     setSelectedCustomer(null);
     setSelectedInvoice(null);
@@ -236,7 +270,7 @@ export function PosWorkspaceScreen() {
   }
 
   function openReceivePayment(customer: PosSaleCustomer, invoice?: string) {
-    if (isOffline || !allowsCustomerPayments) return;
+    if (!allowsCustomerPayments) return;
     setSelectedInvoice(null);
     setSelectedCustomer(null);
     setSelectedPaymentEntry(null);
@@ -244,6 +278,10 @@ export function PosWorkspaceScreen() {
     setCheckoutVisible(false);
     setReceivePaymentContext({ customer, invoice });
     setActiveTab("Payments");
+  }
+
+  if (!workspaceConfig.data && workspaceConfig.isLoading) {
+    return <AppLaunchScreen message="Preparing your POS settings…" />;
   }
 
   return (
@@ -338,6 +376,13 @@ export function PosWorkspaceScreen() {
               restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
             );
             setSelectedPriceList(restored.selling_price_list);
+            setDraftCheckoutFieldValues(
+              Object.fromEntries(
+                Object.entries(restored.checkout_field_values ?? {})
+                  .filter(([, value]) => value !== null && value !== undefined)
+                  .map(([fieldname, value]) => [fieldname, String(value)]),
+              ),
+            );
             setSelectedSaleCustomer(
               restored.customer
                 ? {
@@ -378,32 +423,47 @@ export function PosWorkspaceScreen() {
           onClear={() => {
             if (!cart.clear()) return;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             setCheckoutVisible(false);
             setCartVisible(false);
           }}
           onComplete={(result) => {
             cart.clear();
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             // A user override applies only to the sale that was just
             // submitted. Start the next sale from the POS Profile default.
             orderTypeOverrideRef.current = false;
             setOrderType(configuredOrderType(posProfileConfig));
-            setPostSaleRefreshKey((current) => current + 1);
             setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)
               salespersonPin.lock();
             setCheckoutVisible(false);
             setCartVisible(false);
             setSelectedInvoice({ doctype: result.doctype, name: result.name });
-            toast.success(
-              `${result.doctype} ${result.name} submitted successfully.`,
-            );
+            const label = result.doctype === "Sales Order" ? "Sales order" : "Sales invoice";
+            if (result.queue_status === "Queued" || result.queue_status === "Processing") {
+              toast.info(`${label} ${result.name} is queued for server submission.`, {
+                title: "Submission queued",
+                dedupeKey: `checkout-queued:${result.doctype}:${result.name}`,
+              });
+            } else if (result.docstatus === 0) {
+              toast.info(`${label} ${result.name} was saved as a draft.`, {
+                title: "Draft saved",
+                dedupeKey: `checkout-draft:${result.doctype}:${result.name}`,
+              });
+            } else {
+              toast.success(`${label} ${result.name} submitted successfully.`, {
+                dedupeKey: `checkout-submitted:${result.doctype}:${result.name}`,
+              });
+            }
           }}
           onHold={async () => {
             const heldInvoice = await cart.hold();
             if (heldInvoice) {
               setSelectedPriceList(undefined);
+              setDraftCheckoutFieldValues({});
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
@@ -418,6 +478,7 @@ export function PosWorkspaceScreen() {
           onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}
           priceList={selectedPriceList}
+          initialCheckoutFieldValues={draftCheckoutFieldValues}
           saleCustomer={saleCustomer}
           salesperson={salespersonPin.session}
           sourceInvoice={cart.sourceInvoice}
@@ -428,10 +489,13 @@ export function PosWorkspaceScreen() {
           allowCustomerCreation={Boolean(
             posProfileConfig?.allow_customer_creation,
           )}
+          cartCacheIsStale={cart.cartCacheIsStale}
+          cartCacheLastUpdated={cart.cartCacheLastUpdated}
           allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
           currencyPrecision={posProfileConfig?.currency_precision}
+          defaultPriceList={posProfileConfig?.price_list}
           hasPendingHold={cart.hasPendingHold}
           holdError={cart.holdError}
           isOffline={isOffline}
@@ -444,6 +508,7 @@ export function PosWorkspaceScreen() {
           onClear={() => {
             if (!cart.clear()) return false;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             return true;
           }}
@@ -451,6 +516,7 @@ export function PosWorkspaceScreen() {
             const heldInvoice = await cart.hold();
             if (heldInvoice) {
               setSelectedPriceList(undefined);
+              setDraftCheckoutFieldValues({});
               setSelectedSaleCustomer(null);
               setPostSaleRefreshKey((current) => current + 1);
               setHeldRefreshKey((current) => current + 1);
@@ -463,7 +529,6 @@ export function PosWorkspaceScreen() {
             return null;
           }}
           onClearSaleCustomer={() => {
-            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(null);
           }}
@@ -472,15 +537,14 @@ export function PosWorkspaceScreen() {
             const wasRemoved = await cart.remove(itemCode);
             if (!wasRemoved || !isRemovingLastItem) return;
             setSelectedPriceList(undefined);
+            setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
           }}
           onSelectSaleCustomer={(customer) => {
-            if (isOffline) return;
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(customer);
           }}
           onSelectPriceList={(priceList) => {
-            if (isOffline) return;
             setSelectedPriceList(priceList);
           }}
           onUpdateBatchAllocations={cart.updateBatchAllocations}
@@ -493,6 +557,7 @@ export function PosWorkspaceScreen() {
           posProfile={posProfile}
           priceList={selectedPriceList}
           priceListOptions={posProfileConfig?.allowed_price_lists}
+          resolvedPriceList={cart.sellingPriceList}
           requireManagerPinForItemRemoval={Boolean(
             posProfileConfig?.require_manager_pin_item_removal,
           )}
@@ -526,6 +591,7 @@ export function PosWorkspaceScreen() {
             priceList: selectedPriceList,
           }}
           refreshKey={postSaleRefreshKey}
+          useBootstrapCatalogue={!selectedSaleCustomer && !selectedPriceList}
         />
       ) : activeTab === "Payments" ? (
         <PosPaymentsScreen
@@ -538,7 +604,6 @@ export function PosWorkspaceScreen() {
           currencyPrecision={posProfileConfig?.currency_precision ?? 2}
           initialReceiveCustomer={receivePaymentContext?.customer}
           initialReceiveInvoice={receivePaymentContext?.invoice}
-          onBackToPos={() => changeTab("Home")}
           paymentModes={paymentModes}
           posProfile={posProfile}
         />
@@ -547,7 +612,6 @@ export function PosWorkspaceScreen() {
           customerManagementEnabled={allowsCustomerManagement}
           currencyPrecision={posProfileConfig?.currency_precision}
           directoryState={customerDirectoryState}
-          onBackToPos={() => changeTab("Home")}
           onDirectoryStateChange={setCustomerDirectoryState}
           onOpenCustomer={setSelectedCustomer}
           posProfile={posProfile}
@@ -556,14 +620,12 @@ export function PosWorkspaceScreen() {
         <PosCloseShiftScreen
           currency={posProfileConfig?.currency}
           currencyPrecision={posProfileConfig?.currency_precision}
-          onBackToPos={() => changeTab("Home")}
           onShiftClosed={setPosSession}
           posProfile={posProfile}
         />
       ) : (
         <PosInvoicesScreen
           heldRefreshKey={heldRefreshKey}
-          onBackToPos={() => changeTab("Home")}
           onOpenInvoice={setSelectedInvoice}
           onRestoreHeld={async (invoice) => {
             const restored = await cart.restoreHeldInvoice(invoice);
@@ -572,6 +634,13 @@ export function PosWorkspaceScreen() {
               restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
             );
             setSelectedPriceList(restored.selling_price_list);
+            setDraftCheckoutFieldValues(
+              Object.fromEntries(
+                Object.entries(restored.checkout_field_values ?? {})
+                  .filter(([, value]) => value !== null && value !== undefined)
+                  .map(([fieldname, value]) => [fieldname, String(value)]),
+              ),
+            );
             setSelectedSaleCustomer(
               restored.customer
                 ? {

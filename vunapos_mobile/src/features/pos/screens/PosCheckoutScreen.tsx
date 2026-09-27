@@ -21,7 +21,6 @@ import {
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
@@ -72,6 +71,7 @@ type PosCheckoutScreenProps = {
   onComplete: (result: PosCheckoutResult) => void;
   onHold?: () => Promise<{ name: string } | null>;
   onSalespersonTokenExpired?: () => void;
+  initialCheckoutFieldValues?: PosCheckoutFieldValues;
   orderType: PosOrderType;
   priceList?: string;
   saleCustomer: PosSaleCustomer | null;
@@ -91,7 +91,15 @@ function formatCurrency(amount: number, currency: string, precision = 2) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  // Delivery and due dates are calendar dates in the cashier's local
+  // timezone. Formatting through ISO first converts midnight to UTC, which
+  // makes East-African users see yesterday during the first few hours of the
+  // day.
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function dateFromInput(value: string) {
@@ -172,6 +180,7 @@ export function PosCheckoutScreen({
   onClear,
   onComplete,
   onHold,
+  initialCheckoutFieldValues,
   onSalespersonTokenExpired,
   orderType,
   priceList,
@@ -183,8 +192,6 @@ export function PosCheckoutScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap();
   const profile = bootstrap.data?.pos_profile;
   const isInvoice = orderType === "Invoice";
@@ -194,7 +201,7 @@ export function PosCheckoutScreen({
   const [isApplyingLoyalty, setIsApplyingLoyalty] = useState(false);
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [checkoutFieldValues, setCheckoutFieldValues] =
-    useState<PosCheckoutFieldValues>({});
+    useState<PosCheckoutFieldValues>(initialCheckoutFieldValues ?? {});
   const [deliveryChargeAmount, setDeliveryChargeAmount] = useState<
     string | null
   >(null);
@@ -263,6 +270,7 @@ export function PosCheckoutScreen({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [completedResult, setCompletedResult] =
     useState<PosCheckoutResult | null>(null);
+  const completionHandledRef = useRef(false);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] =
     useState(false);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
@@ -284,18 +292,27 @@ export function PosCheckoutScreen({
   }, [holdError, toast]);
 
   useEffect(() => {
-    const message =
-      deliveryChargeError ||
-      loyaltyError ||
-      gatewayPhoneError ||
-      gatewayPayment.error;
+    const message = deliveryChargeError || loyaltyError;
     if (message) {
       toast.error(message, {
         title: "Checkout needs attention",
         dedupeKey: `checkout-field-error:${message}`,
       });
     }
-  }, [deliveryChargeError, gatewayPayment.error, gatewayPhoneError, loyaltyError, toast]);
+  }, [deliveryChargeError, loyaltyError, toast]);
+
+  // Customer phone resolution runs quietly while checkout opens so a cashier
+  // can still choose cash, cheque, or another non-gateway payment. Surface a
+  // missing number only after an STK gateway is actually opened; the same
+  // message remains beside the phone field for contextual guidance.
+  useEffect(() => {
+    if (!activeGatewayMode || gatewayMethod !== "STK" || !gatewayPhoneError)
+      return;
+    toast.error(gatewayPhoneError, {
+      title: "Gateway payment needs attention",
+      dedupeKey: `gateway-phone-error:${activeGatewayMode.mode_of_payment}:${gatewayPhoneError}`,
+    });
+  }, [activeGatewayMode, gatewayMethod, gatewayPhoneError, toast]);
 
   useEffect(() => {
     const customerName = saleCustomer?.customer;
@@ -323,8 +340,7 @@ export function PosCheckoutScreen({
 
     if (
       resolvedPhoneCustomerRef.current === customerName ||
-      !profile?.name ||
-      isOffline
+      !profile?.name
     ) {
       return;
     }
@@ -368,7 +384,6 @@ export function PosCheckoutScreen({
       cancelled = true;
     };
   }, [
-    isOffline,
     profile?.name,
     saleCustomer?.customer,
     saleCustomer?.mobile,
@@ -916,12 +931,6 @@ export function PosCheckoutScreen({
   }
 
   async function applyLoyaltyPoints(points: number) {
-    if (isOffline) {
-      setLoyaltyError(
-        "Connection unavailable. Reconnect before redeeming loyalty points.",
-      );
-      return;
-    }
     if (points < 0 || points > maximumLoyaltyPoints) {
       setLoyaltyError(
         `Enter between 1 and ${maximumLoyaltyPoints.toLocaleString()} points.`,
@@ -1090,7 +1099,7 @@ export function PosCheckoutScreen({
   }
 
   async function holdCheckout() {
-    if (!onHold || isHolding || isOffline) return;
+    if (!onHold || isHolding) return;
     setHoldError(null);
     setIsHolding(true);
     try {
@@ -1138,6 +1147,14 @@ export function PosCheckoutScreen({
         invoiceDoctype: result.doctype,
         invoiceName: result.name,
       });
+    }
+    // The workspace owns the transaction lifecycle. Leave checkout as soon as
+    // the server has accepted the request, including an intentional queued
+    // response; the result modal is retained only for isolated screen usage
+    // and tests where the parent does not unmount immediately.
+    if (!completionHandledRef.current) {
+      completionHandledRef.current = true;
+      onComplete(result);
     }
   }
 
@@ -1485,7 +1502,7 @@ export function PosCheckoutScreen({
             <View style={styles.loyaltyInputRow}>
               <TextInput
                 accessibilityLabel="Loyalty points to redeem"
-                editable={!isOffline}
+                editable
                 inputMode="numeric"
                 keyboardType="number-pad"
                 onChangeText={setLoyaltyInput}
@@ -1497,12 +1514,12 @@ export function PosCheckoutScreen({
               <Pressable
                 accessibilityLabel="Redeem maximum loyalty points"
                 disabled={
-                  isOffline || !maximumLoyaltyPoints || isApplyingLoyalty
+                  !maximumLoyaltyPoints || isApplyingLoyalty
                 }
                 onPress={() => void applyLoyaltyPoints(maximumLoyaltyPoints)}
                 style={[
                   styles.secondaryButton,
-                  (isOffline || !maximumLoyaltyPoints || isApplyingLoyalty) &&
+                  (!maximumLoyaltyPoints || isApplyingLoyalty) &&
                     styles.secondaryButtonDisabled,
                 ]}
               >
@@ -1513,16 +1530,14 @@ export function PosCheckoutScreen({
                 disabled={
                   Boolean(loyaltyInputError) ||
                   !loyaltyInputPoints ||
-                  isApplyingLoyalty ||
-                  isOffline
+                  isApplyingLoyalty
                 }
                 onPress={() => void applyLoyaltyPoints(loyaltyInputPoints || 0)}
                 style={[
                   styles.secondaryButton,
                   (Boolean(loyaltyInputError) ||
                     !loyaltyInputPoints ||
-                    isApplyingLoyalty ||
-                    isOffline) &&
+                    isApplyingLoyalty) &&
                     styles.secondaryButtonDisabled,
                 ]}
               >
@@ -1556,7 +1571,7 @@ export function PosCheckoutScreen({
                 </Text>
                 <Pressable
                   accessibilityLabel="Remove loyalty redemption"
-                  disabled={isOffline || isApplyingLoyalty}
+                  disabled={isApplyingLoyalty}
                   onPress={() => void applyLoyaltyPoints(0)}
                 >
                   <Text style={styles.loyaltyRemoveLabel}>Remove</Text>
@@ -1653,11 +1668,11 @@ export function PosCheckoutScreen({
             <Text style={styles.cardTitle}>Shipping address</Text>
             <Pressable
               accessibilityLabel="Choose shipping address"
-              disabled={isOffline || customerShippingAddresses.isLoading}
+              disabled={customerShippingAddresses.isLoading}
               onPress={() => setIsShippingAddressPickerVisible(true)}
               style={[
                 styles.shippingAddressSelector,
-                (isOffline || customerShippingAddresses.isLoading) &&
+                customerShippingAddresses.isLoading &&
                   styles.secondaryButtonDisabled,
               ]}
             >
@@ -1696,7 +1711,7 @@ export function PosCheckoutScreen({
           values={checkoutFieldValues}
         />
 
-        {isInvoice || allowsSalesOrderAdvancePayments ? (
+        {(isInvoice && !isCreditSale) || allowsSalesOrderAdvancePayments ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>
               {isInvoice ? "Payment methods" : "Sales Order advance payment"}
@@ -1939,11 +1954,11 @@ export function PosCheckoutScreen({
           {onClear ? (
             <Pressable
               accessibilityLabel="Clear checkout"
-              disabled={checkout.isSubmitting || isHolding || isOffline}
+              disabled={checkout.isSubmitting || isHolding}
               onPress={() => setClearConfirmationVisible(true)}
               style={[
                 styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding || isOffline) &&
+                (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
@@ -1953,11 +1968,11 @@ export function PosCheckoutScreen({
           {onHold && isInvoice ? (
             <Pressable
               accessibilityLabel="Hold checkout"
-              disabled={checkout.isSubmitting || isHolding || isOffline}
+              disabled={checkout.isSubmitting || isHolding}
               onPress={() => void holdCheckout()}
               style={[
                 styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding || isOffline) &&
+                (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
@@ -2350,7 +2365,7 @@ export function PosCheckoutScreen({
                   return (
                     <Pressable
                       accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
-                      disabled={isOffline}
+                      disabled={false}
                       accessibilityState={{ selected }}
                       key={address.name}
                       onPress={() => {
@@ -2394,7 +2409,10 @@ export function PosCheckoutScreen({
           onRequestClose={() => {
             if (checkout.isSubmitting) return;
             if (completedResult) {
-              onComplete(completedResult);
+              if (!completionHandledRef.current) {
+                completionHandledRef.current = true;
+                onComplete(completedResult);
+              }
             } else {
               setIsSubmitConfirmationVisible(false);
             }
@@ -2410,7 +2428,10 @@ export function PosCheckoutScreen({
               disabled={checkout.isSubmitting}
               onPress={() => {
                 if (completedResult) {
-                  onComplete(completedResult);
+                  if (!completionHandledRef.current) {
+                    completionHandledRef.current = true;
+                    onComplete(completedResult);
+                  }
                 } else {
                   setIsSubmitConfirmationVisible(false);
                 }
@@ -2463,7 +2484,11 @@ export function PosCheckoutScreen({
                   </Text>
                   <Pressable
                     accessibilityLabel={`View submitted ${submissionLabel}`}
-                    onPress={() => onComplete(completedResult)}
+                    onPress={() => {
+                      if (completionHandledRef.current) return;
+                      completionHandledRef.current = true;
+                      onComplete(completedResult);
+                    }}
                     style={styles.confirmConfirmationButton}
                   >
                     <Text style={styles.confirmConfirmationLabel}>
@@ -2533,7 +2558,7 @@ export function PosCheckoutScreen({
 
         {onClear ? (
           <ClearCartConfirmationDialog
-            isOffline={isOffline || checkout.isSubmitting || isHolding}
+            isOffline={checkout.isSubmitting || isHolding}
             onConfirm={() => {
               onClear();
               setClearConfirmationVisible(false);

@@ -51,7 +51,7 @@ export function ClearCartConfirmationDialog({
             </Pressable>
             <Pressable
               accessibilityLabel="Confirm clear cart"
-              disabled={isOffline}
+              disabled={false}
               onPress={onConfirm}
               style={styles.clearButton}
             >

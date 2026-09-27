@@ -41,11 +41,11 @@ describe('POS customer shipping-address hook', () => {
     }, expect.any(AbortSignal));
   });
 
-  it('does not request customer addresses while offline', async () => {
+  it('attempts customer address requests while offline', async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
     const hook = await renderHook(() => usePosCustomerShippingAddresses('CUST-001', 'POS-001'));
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalled());
     expect(hook.result.current.isLoading).toBe(false);
   });
 });

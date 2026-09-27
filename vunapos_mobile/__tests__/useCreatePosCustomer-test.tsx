@@ -58,13 +58,14 @@ describe('useCreatePosCustomer', () => {
     await waitFor(() => expect(hook.result.current.error).toBe('Enter a customer name.'));
   });
 
-  it('does not create a customer while offline', async () => {
+  it('attempts customer creation while offline and surfaces the request failure', async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    mockPostVunaMethod.mockRejectedValue(new Error('Network request failed'));
     const hook = await renderHook(() => useCreatePosCustomer());
 
     await act(async () => { await hook.result.current.create('Acme Stores', 'POS-001'); });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe('Connection unavailable. Reconnect before creating a customer.');
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+    expect(hook.result.current.error).toBe('Network request failed');
   });
 });

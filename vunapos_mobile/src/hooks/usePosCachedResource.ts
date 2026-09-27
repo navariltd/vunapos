@@ -7,16 +7,23 @@ import {
 } from "@/services/posCache";
 import { NetworkConnectionStatus } from "@/services/NetworkStatusProvider";
 
-export const POS_CACHE_TTL_MS = 60 * 60 * 1000;
+/** Freshness is a refresh trigger; stale rows remain available while it runs. */
+export const POS_CACHE_TTL_MS = 60 * 1000;
 
-export type PosCachedResourceClient = Pick<typeof posCache, "fetch" | "read">;
+export type PosCachedResourceClient = Pick<
+  typeof posCache,
+  "fetch" | "read"
+> & {
+  subscribe?: (key: PosCacheKey, listener: () => void) => () => void;
+};
 
 type UsePosCachedResourceArgs<T> = {
   cache?: PosCachedResourceClient;
   cacheKey: PosCacheKey | null;
   connectionStatus: NetworkConnectionStatus;
   enabled?: boolean;
-  load: (signal: AbortSignal) => Promise<T>;
+  /** The cached snapshot is supplied so delta-capable loaders can use its watermark. */
+  load: (signal: AbortSignal, cached?: T | null) => Promise<T>;
   ttlMs?: number;
 };
 
@@ -39,6 +46,16 @@ const emptyState = {
   keyFingerprint: null,
   lastUpdated: null,
 };
+
+const registeredRefreshers = new Map<string, Set<() => void>>();
+
+/** Invoked by the single app-level freshness scheduler. */
+export async function refreshRegisteredPosResources() {
+  const refreshes = [...registeredRefreshers.values()].flatMap((callbacks) =>
+    [...callbacks].map((refresh) => refresh()),
+  );
+  await Promise.allSettled(refreshes);
+}
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Could not refresh this data.";
@@ -100,11 +117,13 @@ export function usePosCachedResource<T>({
         return;
       }
 
-      // At cold launch reachability is briefly unknown. Browsing may hydrate
-      // from local cache then, but no request may start until it is confirmed.
-      const canRequest = connectionStatus === "online";
       const cached = await cache.read<T>(activeKey);
       if (!isActive()) return;
+
+      // Cached rows remain usable during outages. When there is no cached row,
+      // however, let the request reach Frappe and classify the real failure
+      // instead of treating Expo Network's hint as authoritative.
+      const canRequest = connectionStatus !== "offline" || !cached;
 
       if (!forceRefresh && cached && !cached.isStale) {
         setActiveState({
@@ -127,12 +146,6 @@ export function usePosCachedResource<T>({
           isStale: cached.isStale,
           lastUpdated: cached.fetchedAt,
         });
-      } else if (connectionStatus === "offline") {
-        setActiveState({
-          ...emptyState,
-          error: "You are offline. Connect to load this data.",
-        });
-        return;
       } else if (!canRequest) {
         setActiveState({ ...emptyState, isLoading: true });
         return;
@@ -149,7 +162,7 @@ export function usePosCachedResource<T>({
         const controller = new AbortController();
         const data = await cache.fetch(
           activeKey,
-          () => loadRef.current(controller.signal),
+          () => loadRef.current(controller.signal, cached?.data ?? null),
           ttlMs,
         );
         setActiveState({
@@ -185,6 +198,37 @@ export function usePosCachedResource<T>({
     });
     return () => {
       disposed = true;
+    };
+  }, [enabled, keyFingerprint, loadResource]);
+
+  useEffect(() => {
+    if (!keyFingerprint || !cache.subscribe || !cacheKey) return;
+    const unsubscribe = cache.subscribe(cacheKey, () => {
+      void cache.read<T>(cacheKey).then((cached) => {
+        if (!cached || posCacheKey(cacheKey) !== keyFingerprint) return;
+        setState({
+          data: cached.data,
+          error: null,
+          isLoading: false,
+          isRefreshing: false,
+          isStale: cached.isStale,
+          keyFingerprint,
+          lastUpdated: cached.fetchedAt,
+        });
+      });
+    });
+    return unsubscribe;
+  }, [cache, cacheKey, keyFingerprint]);
+
+  useEffect(() => {
+    if (!enabled || !keyFingerprint) return;
+    const refresh = () => loadResource(false);
+    const refreshers = registeredRefreshers.get(keyFingerprint) ?? new Set();
+    refreshers.add(refresh);
+    registeredRefreshers.set(keyFingerprint, refreshers);
+    return () => {
+      refreshers.delete(refresh);
+      if (!refreshers.size) registeredRefreshers.delete(keyFingerprint);
     };
   }, [enabled, keyFingerprint, loadResource]);
 

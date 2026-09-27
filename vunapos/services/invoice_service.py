@@ -22,7 +22,10 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
-from vunapos.services.checkout_field_service import apply_checkout_field_values
+from vunapos.services.checkout_field_service import (
+	apply_checkout_field_values,
+	get_global_checkout_fields,
+)
 from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_PROCESSING,
 	QUEUE_STATUS_QUEUED,
@@ -1378,7 +1381,14 @@ def restore_invoice(invoice_doctype, invoice_name):
 	require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
-	return invoice_to_dict(doc)
+	result = invoice_to_dict(doc)
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
+	result["checkout_field_values"] = {
+		field["fieldname"]: doc.get(field["fieldname"])
+		for field in get_global_checkout_fields(profile)
+		if field["doctype"] == doc.doctype and doc.get(field["fieldname"]) is not None
+	}
+	return result
 
 
 def clear_invoice(invoice_doctype, invoice_name):
@@ -1643,7 +1653,12 @@ def submit_invoice(
 	if doc.doctype != "Sales Order":
 		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
-		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+		doc,
+		payments,
+		profile,
+		is_credit_sale=is_credit_sale,
+		opening_entry=opening_entry,
+		allow_partial_override=doc.doctype in SUPPORTED_ORDER_DOCTYPES,
 	)
 	gateway_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
@@ -1746,7 +1761,12 @@ def _prepare_invoice_for_checkout(
 	if doc.doctype != "Sales Order":
 		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
-		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+		doc,
+		payments,
+		profile,
+		is_credit_sale=is_credit_sale,
+		opening_entry=opening_entry,
+		allow_partial_override=doc.doctype in SUPPORTED_ORDER_DOCTYPES,
 	)
 	doc.flags.vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)

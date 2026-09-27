@@ -95,4 +95,25 @@ describe('gateway payment hook', () => {
       transaction_reference: 'TXN-001',
     });
   });
+
+  it('attempts gateway initiation while offline and surfaces the request failure', async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
+    mockPostVunaMethod.mockRejectedValue(new Error('Network request failed'));
+    const hook = await renderHook(() => useGatewayPayment());
+
+    await act(async () => {
+      await hook.result.current.initiate({
+        amount: 116,
+        currency: 'KES',
+        customer: 'CUST-001',
+        idempotencyKey: 'gateway-key',
+        modeOfPayment: 'M-Pesa',
+        phoneNumber: '0712345678',
+        posProfile: 'POS-001',
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+    expect(hook.result.current.error).toBe('Network request failed');
+  });
 });

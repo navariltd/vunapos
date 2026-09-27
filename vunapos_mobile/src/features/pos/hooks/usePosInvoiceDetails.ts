@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { PosInvoiceDetail } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 
 type PosInvoiceDetailsState = {
@@ -33,7 +32,6 @@ export function usePosInvoiceDetails({
   refreshKey = 0,
 }: UsePosInvoiceDetailsArgs): PosInvoiceDetailsState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
   const requestKey =
@@ -56,7 +54,6 @@ export function usePosInvoiceDetails({
 
   useEffect(() => {
     if (
-      connectionStatus === "offline" ||
       !companyUrl ||
       !sessionId ||
       !posProfile ||
@@ -98,7 +95,6 @@ export function usePosInvoiceDetails({
     return () => controller.abort();
   }, [
     companyUrl,
-    connectionStatus,
     invalidateSession,
     invoiceDoctype,
     invoiceName,
@@ -109,10 +105,6 @@ export function usePosInvoiceDetails({
   ]);
 
   if (!requestKey) return { data: null, error: null, isLoading: false, reload };
-
-  if (connectionStatus === "offline") {
-    return { data: state.data, error: null, isLoading: false, reload };
-  }
 
   return {
     ...state,

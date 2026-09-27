@@ -40,11 +40,10 @@ describe('POS customer loyalty hook', () => {
     }, expect.any(AbortSignal));
   });
 
-  it('does not load loyalty balances while offline', async () => {
+  it('attempts to load loyalty balances while offline', async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
     const hook = await renderHook(() => usePosCustomerLoyalty('CUST-001', 'POS-001'));
 
-    expect(mockGetVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.isLoading).toBe(false);
+    expect(mockGetVunaMethod).toHaveBeenCalled();
   });
 });

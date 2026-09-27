@@ -52,11 +52,10 @@ describe('salesperson PIN session', () => {
     expect(hook.result.current.session).toBeNull();
   });
 
-  it('does not verify a PIN while explicitly offline', async () => {
+  it('attempts PIN verification while explicitly offline', async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: 'offline' });
     const hook = await renderHook(() => useSalespersonPin());
     await act(async () => { await hook.result.current.verify('POS-001', 'SP-001', '1234'); });
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe('Connection unavailable. Reconnect before verifying a salesperson PIN.');
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 });

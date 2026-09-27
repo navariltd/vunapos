@@ -32,7 +32,7 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding || isOffline}
+        disabled={isAdding}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -60,7 +60,7 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding || isOffline}
+        disabled={isAdding}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -269,13 +269,22 @@ describe("PosHomeScreen", () => {
     expect(screen.getByText("Card: Live catalogue item")).toBeTruthy();
     expect(screen.getByText("Image: none")).toBeTruthy();
     expect(mockUsePosItemSearch).toHaveBeenCalledWith(
-      expect.objectContaining({ loadAll: true, posProfile: "POS-001" }),
+      expect.objectContaining({
+        initialItems: [{
+          actual_qty: 3,
+          item_code: "LIVE-001",
+          item_name: "Live catalogue item",
+          rate: 150,
+        }],
+        loadAll: true,
+        posProfile: "POS-001",
+      }),
     );
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
   });
 
-  it("keeps cached catalogue browsing local and blocks server actions while offline", async () => {
+  it("keeps cached browsing available while allowing server actions to classify failures", async () => {
     const item = {
       actual_qty: 3,
       item_code: "OFFLINE-001",
@@ -305,14 +314,14 @@ describe("PosHomeScreen", () => {
 
     expect(screen.getByText("Card: Cached catalogue item")).toBeTruthy();
     expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ enabled: false }),
+      expect.objectContaining({ enabled: true }),
     );
     await fireEvent.press(screen.getByText("Card: Cached catalogue item"));
     await fireEvent.press(screen.getByLabelText("Search for one item"));
     await fireEvent.press(screen.getByLabelText("Submit barcode lookup"));
 
-    expect(onAddToCart).not.toHaveBeenCalled();
-    expect(mockResolveBarcode).not.toHaveBeenCalled();
+    expect(onAddToCart).toHaveBeenCalledWith(item, "KES");
+    expect(mockResolveBarcode).toHaveBeenCalled();
   });
 
   it("renders compact catalogue rows when the POS profile hides item images", async () => {

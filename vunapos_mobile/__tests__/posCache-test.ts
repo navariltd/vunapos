@@ -4,6 +4,7 @@ import {
   PosCacheScope,
   posCacheKey,
 } from "@/services/posCache";
+import { clearCacheDiagnostics, getCacheDiagnostics } from "@/services/cacheDiagnostics";
 
 type StoredEntry = {
   accessedAt: number;
@@ -109,6 +110,20 @@ class FailingStorage extends MemoryStorage {
   }
 }
 
+class FailingPruneStorage extends MemoryStorage {
+  failPrune = false;
+
+  override async prune(
+    namespace: string,
+    maximumEntries: number,
+    maximumBytes: number,
+    now: number,
+  ) {
+    if (this.failPrune) throw new Error("Cache prune interrupted");
+    return super.prune(namespace, maximumEntries, maximumBytes, now);
+  }
+}
+
 const scope: PosCacheScope = {
   companyUrl: "https://acme.example.com",
   posProfile: "Main POS",
@@ -125,6 +140,7 @@ describe("PosCache", () => {
     now = 1_000;
     storage = new MemoryStorage();
     cache = new PosCache(storage, { now: () => now, maximumEntriesPerNamespace: 2 });
+    clearCacheDiagnostics();
   });
 
   it("creates stable keys and isolates companies, users, profiles, and queries", () => {
@@ -165,6 +181,41 @@ describe("PosCache", () => {
       fetchedAt: 1_000,
       isStale: false,
     });
+  });
+
+  it("hydrates from durable storage after the in-memory process cache is replaced", async () => {
+    await cache.write(key, { items: ["persisted milk"] }, 3_600);
+
+    // A new PosCache instance represents a process restart while SQLite remains.
+    const restartedCache = new PosCache(storage, { now: () => now });
+
+    await expect(restartedCache.read<{ items: string[] }>(key)).resolves.toMatchObject({
+      data: { items: ["persisted milk"] },
+      isStale: false,
+    });
+  });
+
+  it("reports safe hit, miss, and request-deduplication diagnostics", async () => {
+    await expect(cache.read(key)).resolves.toBeNull();
+    await cache.write(key, { items: ["milk"] }, 3_600);
+    await expect(cache.read(key)).resolves.toMatchObject({ data: { items: ["milk"] } });
+
+    let resolveRequest: ((value: string[]) => void) | undefined;
+    const loader = jest.fn(
+      () => new Promise<string[]>((resolve) => { resolveRequest = resolve; }),
+    );
+    const first = cache.fetch({ ...key, query: "milk" }, loader, 1_000);
+    const second = cache.fetch({ ...key, query: "milk" }, loader, 1_000);
+    resolveRequest?.(["milk"]);
+    await expect(Promise.all([first, second])).resolves.toEqual([["milk"], ["milk"]]);
+
+    expect(getCacheDiagnostics()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ operation: "read", outcome: "miss", resource: "catalogue" }),
+      expect.objectContaining({ operation: "read", outcome: "hit", resource: "catalogue" }),
+      expect.objectContaining({ operation: "fetch", outcome: "deduplicated", resource: "catalogue" }),
+      expect.objectContaining({ operation: "fetch", outcome: "success", resource: "catalogue" }),
+    ]));
+    expect(JSON.stringify(getCacheDiagnostics())).not.toContain("milk");
   });
 
   it("keeps a stale record available for stale-while-revalidate views", async () => {
@@ -231,6 +282,64 @@ describe("PosCache", () => {
       "live catalogue",
     ]);
     expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the previous snapshot when replacing it fails durably", async () => {
+    await cache.write(key, { items: ["approved"] }, 3_600);
+    const failingStorage = new FailingStorage();
+    await failingStorage.write({
+      accessedAt: now,
+      cacheKey: posCacheKey(key),
+      expiresAt: now + 3_600,
+      fetchedAt: now,
+      namespace: JSON.stringify(scope),
+      payload: JSON.stringify({ items: ["approved"] }),
+      resource: key.resource,
+      schemaVersion: 1,
+    });
+    const failingCache = new PosCache(failingStorage, { now: () => now });
+    await failingCache.read(key);
+    failingStorage.failWrites = true;
+
+    await failingCache.write(key, { items: ["uncommitted"] }, 3_600);
+
+    await expect(failingCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+    const restartedCache = new PosCache(failingStorage, { now: () => now });
+    await expect(restartedCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+  });
+
+  it("rolls back a durable write when pruning is interrupted", async () => {
+    const interruptedStorage = new FailingPruneStorage();
+    const interruptedCache = new PosCache(interruptedStorage, { now: () => now });
+    await interruptedCache.write(key, { items: ["approved"] }, 3_600);
+    interruptedStorage.failPrune = true;
+
+    await interruptedCache.write(key, { items: ["interrupted"] }, 3_600);
+
+    const restartedCache = new PosCache(interruptedStorage, { now: () => now });
+    await expect(restartedCache.read(key)).resolves.toMatchObject({
+      data: { items: ["approved"] },
+    });
+  });
+
+  it("notifies readers only after a durable replacement succeeds", async () => {
+    const interruptedStorage = new FailingPruneStorage();
+    const interruptedCache = new PosCache(interruptedStorage, { now: () => now });
+    const listener = jest.fn();
+    const unsubscribe = interruptedCache.subscribe(key, listener);
+
+    interruptedStorage.failPrune = true;
+    await interruptedCache.write(key, { items: ["rejected"] }, 3_600);
+    expect(listener).not.toHaveBeenCalled();
+
+    interruptedStorage.failPrune = false;
+    await interruptedCache.write(key, { items: ["approved"] }, 3_600);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
   });
 
   it("bounds durable records and clears only the requested namespace", async () => {

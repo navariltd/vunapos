@@ -305,7 +305,6 @@ export function PosCustomerDetailsScreen({
         <Pressable
           accessibilityLabel="Retry customer details"
           accessibilityRole="button"
-          disabled={isOffline}
           onPress={() => {
             bootstrap.reload();
             details.reload();
@@ -313,7 +312,6 @@ export function PosCustomerDetailsScreen({
           style={[
             styles.backButton,
             { borderColor: palette.border },
-            isOffline && styles.actionDisabled,
           ]}
         >
           <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
@@ -487,12 +485,10 @@ export function PosCustomerDetailsScreen({
       {canReceivePayment ? (
         <Pressable
           accessibilityLabel="Receive payment"
-          disabled={isOffline}
           onPress={() => onReceivePayment?.(saleCustomer)}
           style={[
             styles.receivePaymentButton,
             { borderColor: palette.border },
-            isOffline && styles.actionDisabled,
           ]}
         >
           <Text
@@ -505,12 +501,10 @@ export function PosCustomerDetailsScreen({
 
       <Pressable
         accessibilityLabel="Start new sale"
-        disabled={isOffline}
         onPress={() => onStartSale(saleCustomer)}
         style={[
           styles.startSaleButton,
           { backgroundColor: palette.primary },
-          isOffline && styles.actionDisabled,
         ]}
       >
         <Text style={[styles.startSaleButtonLabel, { color: palette.onPrimary }]}>
@@ -522,7 +516,7 @@ export function PosCustomerDetailsScreen({
           accessibilityRole="alert"
           style={[styles.offlineNotice, { color: palette.onSurfaceMuted }]}
         >
-          Reconnect to the server to start a sale or receive payment for this customer.
+          Server confirmation is required before starting a sale or receiving payment.
         </Text>
       ) : null}
       </ScrollView>

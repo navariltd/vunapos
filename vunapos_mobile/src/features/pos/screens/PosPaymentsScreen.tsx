@@ -55,7 +55,8 @@ type PosPaymentsScreenProps = {
   currencyPrecision: number;
   initialReceiveCustomer?: PosSaleCustomer;
   initialReceiveInvoice?: string;
-  onBackToPos: () => void;
+  /** Retained for call-site compatibility; Home navigation is used instead. */
+  onBackToPos?: () => void;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
 };
@@ -106,11 +107,9 @@ export function PosPaymentsScreen({
   currencyPrecision,
   initialReceiveCustomer,
   initialReceiveInvoice,
-  onBackToPos,
   paymentModes,
   posProfile,
 }: PosPaymentsScreenProps) {
-  const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
   const availableTabs = useMemo(
     () =>
@@ -167,7 +166,7 @@ export function PosPaymentsScreen({
         activeTab === "history" ? (
           <RefreshControl
             colors={[palette.primary]}
-            enabled={connectionStatus === "online"}
+            enabled
             onRefresh={() => void refreshPaymentHistory()}
             refreshing={isHistoryRefreshing}
             tintColor={palette.primary}
@@ -185,34 +184,7 @@ export function PosPaymentsScreen({
             Receive and reconcile customer payments.
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to POS"
-          onPress={onBackToPos}
-          style={[styles.backButton, { borderColor: palette.border }]}
-        >
-          <Text style={[styles.backButtonLabel, { color: palette.onSurface }]}>
-            Back to POS
-          </Text>
-        </Pressable>
       </View>
-
-      {connectionStatus === "offline" ? (
-        <View
-          accessibilityRole="alert"
-          style={[
-            styles.notice,
-            {
-              backgroundColor: palette.errorSurface,
-              borderColor: palette.error,
-            },
-          ]}
-        >
-          <Text style={[styles.noticeText, { color: palette.onError }]}>
-            Payments require a connection. Reconnect before continuing.
-          </Text>
-        </View>
-      ) : null}
 
       <View
         accessibilityRole="tablist"
@@ -366,7 +338,7 @@ function PaymentHistoryContext({
       >
         <TextInput
           accessibilityLabel="Filter payment history by customer ID"
-          editable={!isOffline}
+          editable
           onChangeText={setCustomer}
           placeholder="Customer ID"
           placeholderTextColor={palette.onSurfaceMuted}
@@ -384,7 +356,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history from date"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActiveDatePicker("from")}
             style={[
               styles.historyDateButton,
@@ -411,7 +382,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history to date"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActiveDatePicker("to")}
             style={[
               styles.historyDateButton,
@@ -440,7 +410,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history mode"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActivePicker("mode")}
             style={[
               styles.historyDateButton,
@@ -467,7 +436,6 @@ function PaymentHistoryContext({
           <Pressable
             accessibilityLabel="Choose payment history status"
             accessibilityRole="button"
-            disabled={isOffline}
             onPress={() => setActivePicker("status")}
             style={[
               styles.historyDateButton,
@@ -494,7 +462,7 @@ function PaymentHistoryContext({
         </View>
         <TextInput
           accessibilityLabel="Filter payment history by external reference"
-          editable={!isOffline}
+          editable
           onChangeText={setReference}
           placeholder="External reference"
           placeholderTextColor={palette.onSurfaceMuted}
@@ -511,7 +479,7 @@ function PaymentHistoryContext({
         <TextInput
           accessibilityLabel="Filter payment history by cashier email"
           autoCapitalize="none"
-          editable={!isOffline}
+          editable
           inputMode="email"
           onChangeText={setCashier}
           placeholder="Cashier email"
@@ -529,7 +497,6 @@ function PaymentHistoryContext({
         <Pressable
           accessibilityLabel="Clear payment history filters"
           accessibilityRole="button"
-          disabled={isOffline}
           onPress={clearFilters}
           style={[styles.textButton, { borderColor: palette.border }]}
         >
@@ -1023,9 +990,7 @@ function ReceivePaymentContext({
   posProfile?: string;
 }) {
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
-  const isOffline = connectionStatus !== "online";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(initialCustomer ?? null);
@@ -1054,7 +1019,7 @@ function ReceivePaymentContext({
   const [isC2bSearching, setIsC2bSearching] = useState(false);
   const [hasC2bSearched, setHasC2bSearched] = useState(false);
   const gatewayIdempotencyKey = useRef<string | null>(null);
-  const customerSearch = usePosCustomerSearch(query, !isOffline, posProfile);
+  const customerSearch = usePosCustomerSearch(query, true, posProfile);
   const customerDetails = usePosCustomerDetails({
     customer: selectedCustomer?.customer || "",
     posProfile,
@@ -1108,7 +1073,6 @@ function ReceivePaymentContext({
     !requiresReference || Boolean(referenceNo.trim() && referenceDate);
   const isGatewayVerified = gatewayLink?.status === "Paid";
   const canSubmit = Boolean(
-    !isOffline &&
     !receivePayment.isSubmitting &&
     selectedCustomer &&
     posProfile &&
@@ -1384,7 +1348,7 @@ function ReceivePaymentContext({
           <Pressable
             accessibilityLabel="Change payment customer"
             accessibilityRole="button"
-            disabled={isOffline}
+            disabled={false}
             onPress={() => {
               setSelectedCustomer(null);
               setSelectedInvoice(null);
@@ -1404,7 +1368,7 @@ function ReceivePaymentContext({
         <>
           <TextInput
             accessibilityLabel="Search payment customers"
-            editable={!isOffline}
+            editable
             onChangeText={setQuery}
             placeholder="Search customer, phone, or email"
             placeholderTextColor={palette.onSurfaceMuted}
@@ -1431,8 +1395,7 @@ function ReceivePaymentContext({
               {customerSearch.error}
             </Text>
           ) : null}
-          {!isOffline &&
-          !customerSearch.isLoading &&
+          {!customerSearch.isLoading &&
           !customerSearch.error &&
           customerSearch.rows.length ? (
             <View style={styles.searchResults}>
@@ -2157,9 +2120,7 @@ function ReconcilePaymentContext({
   posProfile?: string;
 }) {
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   const { palette } = useAppearance();
-  const isOffline = connectionStatus !== "online";
   const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(null);
@@ -2168,7 +2129,7 @@ function ReconcilePaymentContext({
   const [allocationPreview, setAllocationPreview] = useState<
     PosPaymentReconciliationAllocation[]
   >([]);
-  const customerSearch = usePosCustomerSearch(query, !isOffline, posProfile);
+  const customerSearch = usePosCustomerSearch(query, true, posProfile);
   const allocation = usePosPaymentReconciliationAllocation();
   const reconciliation = usePosPaymentReconciliation();
   const candidates = usePosPaymentReconciliationCandidates(
@@ -2236,7 +2197,6 @@ function ReconcilePaymentContext({
   }
 
   const canAllocate = Boolean(
-    !isOffline &&
     !allocation.isAllocating &&
     posProfile &&
     selectedCustomer &&
@@ -2244,7 +2204,6 @@ function ReconcilePaymentContext({
     selectedInvoices.length,
   );
   const canReconcile = Boolean(
-    !isOffline &&
     !reconciliation.isReconciling &&
     selectedCustomer &&
     posProfile &&
@@ -2332,7 +2291,7 @@ function ReconcilePaymentContext({
           <Pressable
             accessibilityLabel="Change reconciliation customer"
             accessibilityRole="button"
-            disabled={isOffline}
+            disabled={false}
             onPress={changeCustomer}
             style={[styles.textButton, { borderColor: palette.border }]}
           >
@@ -2347,7 +2306,7 @@ function ReconcilePaymentContext({
         <>
           <TextInput
             accessibilityLabel="Search reconciliation customers"
-            editable={!isOffline}
+            editable
             onChangeText={setQuery}
             placeholder="Search customer, phone, or email"
             placeholderTextColor={palette.onSurfaceMuted}
@@ -2374,8 +2333,7 @@ function ReconcilePaymentContext({
               {customerSearch.error}
             </Text>
           ) : null}
-          {!isOffline &&
-          !customerSearch.isLoading &&
+          {!customerSearch.isLoading &&
           !customerSearch.error &&
           customerSearch.rows.length ? (
             <View style={styles.searchResults}>

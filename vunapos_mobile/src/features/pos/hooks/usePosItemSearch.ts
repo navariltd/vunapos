@@ -9,6 +9,7 @@ import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 type UsePosItemSearchArgs = {
   customer?: string;
   enabled?: boolean;
+  initialItems?: PosCatalogueItem[];
   loadAll?: boolean;
   posProfile: string | undefined;
   priceList?: string;
@@ -27,6 +28,15 @@ type PosItemSearchResult = {
   reload: () => void | Promise<void>;
 };
 
+function mergeCatalogueRows(
+  cached: PosCatalogueItem[],
+  incoming: PosCatalogueItem[],
+) {
+  const rows = new Map(cached.map((item) => [item.item_code, item]));
+  for (const item of incoming) rows.set(item.item_code, item);
+  return [...rows.values()];
+}
+
 /**
  * Searches the live, profile-scoped catalogue after a short typing pause.
  *
@@ -37,6 +47,7 @@ type PosItemSearchResult = {
 export function usePosItemSearch({
   customer,
   enabled = true,
+  initialItems,
   loadAll = false,
   posProfile,
   priceList,
@@ -47,13 +58,33 @@ export function usePosItemSearch({
   const [debouncedQuery, setDebouncedQuery] = useState(query.trim());
   const normalizedQuery = query.trim();
 
+  // Bootstrap rows are the SPA-equivalent local catalogue. They already carry
+  // the profile-default rate/UOM/availability, so use them for the default
+  // context and only ask the server when the local catalogue cannot answer a
+  // non-empty query. Customer or explicit price-list contexts still require a
+  // server response because their pricing is contextual.
+  const canUseInitialItems = !customer && !priceList;
+  const initialMatches = canUseInitialItems
+    ? (initialItems ?? []).filter((item) => {
+        const needle = normalizedQuery.toLowerCase();
+        if (!needle) return true;
+        return `${item.item_name} ${item.item_code} ${item.barcode || ""}`
+          .toLowerCase()
+          .includes(needle);
+      })
+    : [];
+
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedQuery(normalizedQuery), 300);
     return () => clearTimeout(timeout);
   }, [normalizedQuery]);
 
+  const needsServerRequest = canUseInitialItems
+    ? Boolean(debouncedQuery || loadAll) &&
+      (loadAll || initialMatches.length === 0)
+    : Boolean(debouncedQuery || loadAll || initialItems !== undefined);
   const cacheKey =
-    companyUrl && sessionId && posProfile && (debouncedQuery || loadAll)
+    companyUrl && sessionId && posProfile && needsServerRequest
       ? {
           query: {
             customer: customer || null,
@@ -105,17 +136,31 @@ export function usePosItemSearch({
     enabled,
     load,
   });
+  const serverItems = resource.data ?? [];
+  const localRows = normalizedQuery
+    ? initialMatches
+    : initialItems ?? [];
+  const mergedItems = canUseInitialItems
+    ? mergeCatalogueRows(localRows, serverItems)
+    : serverItems;
 
   return {
-    cachedItems: !debouncedQuery && loadAll ? resource.data ?? [] : [],
+    cachedItems:
+      !debouncedQuery && canUseInitialItems && initialItems !== undefined
+        ? initialItems ?? []
+        : !debouncedQuery && loadAll
+          ? resource.data ?? []
+          : [],
     error: resource.error,
-    hasLoaded: resource.data !== null,
+    hasLoaded:
+      resource.data !== null ||
+      (canUseInitialItems && initialItems !== undefined),
     isLoading:
       Boolean(cacheKey) &&
       (normalizedQuery !== debouncedQuery || resource.isLoading),
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,
-    items: resource.data ?? [],
+    items: resource.data ? mergedItems : initialMatches,
     lastUpdated: resource.lastUpdated,
     reload: resource.refresh,
   };

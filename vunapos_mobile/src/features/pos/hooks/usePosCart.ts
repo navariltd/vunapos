@@ -101,6 +101,8 @@ type UsePosCartArgs = {
   orderType?: PosOrderType;
   posProfile?: string;
   priceList?: string;
+  /** Incremented after a POS configuration refresh to re-preview an active cart. */
+  configurationRefreshKey?: number;
 };
 
 type CartResponse = Omit<PosCartData, "items"> & {
@@ -115,6 +117,7 @@ type RestoredInvoiceResponse = CartResponse & {
   doctype: string;
   name: string;
   selling_price_list?: string;
+  checkout_field_values?: Record<string, string | number | boolean | null>;
 };
 
 function toCartPayload(items: PosCartItem[]) {
@@ -208,6 +211,7 @@ function cartFromResponse(
 /** Session-only cart state calculated by Frappe after each cart change. */
 export function usePosCart({
   customer,
+  configurationRefreshKey = 0,
   orderType = "Invoice",
   posProfile,
   priceList,
@@ -231,6 +235,8 @@ export function usePosCart({
   const [restoredCustomer, setRestoredCustomer] =
     useState<PosSaleCustomer | null>(null);
   const [restoredPriceList, setRestoredPriceList] = useState<string>();
+  const [cartCacheIsStale, setCartCacheIsStale] = useState(false);
+  const [cartCacheLastUpdated, setCartCacheLastUpdated] = useState<number | null>(null);
   const requestNumber = useRef(0);
   const attemptedItemsRef = useRef<PosCartItem[]>([]);
   const attemptedCustomerRef = useRef<PosSaleCustomer | null>(customer);
@@ -238,6 +244,7 @@ export function usePosCart({
   const itemsRef = useRef(data.items);
   const customerRef = useRef(customer);
   const holdDraftRef = useRef<PosCheckoutResult | null>(null);
+  const holdInFlightRef = useRef(false);
   const sourceInvoiceRef = useRef<PosCartSource | null>(null);
   const lastRefreshErrorRef = useRef<string | null>(null);
   const customerKey = customer?.customer || "";
@@ -256,6 +263,10 @@ export function usePosCart({
   );
   const hydrationStartedRef = useRef<string | null>(null);
   const hydratedScopeRef = useRef<string | null>(null);
+  // Reading a durable cart must not rewrite its fetchedAt/expiry metadata before
+  // the server re-preview completes. Otherwise an offline, stale cart would be
+  // made to look fresh merely by being restored into React state.
+  const restoredCachePendingWriteRef = useRef(false);
 
   useEffect(() => {
     itemsRef.current = data.items;
@@ -275,13 +286,8 @@ export function usePosCart({
       nextItems = itemsRef.current,
       cartCustomer = customerRef.current,
       cartPriceList = priceListRef.current,
+      rollbackData?: PosCartData,
     ): Promise<PosCartData | null> => {
-      if (isOffline) {
-        setError(
-          "Connection unavailable. Reconnect before changing this cart.",
-        );
-        return null;
-      }
       if (!nextItems.length) {
         const emptyCart = localCart([]);
         itemsRef.current = emptyCart.items;
@@ -333,6 +339,8 @@ export function usePosCart({
           itemsRef.current = nextData.items;
           dataRef.current = nextData;
           setData(nextData);
+          setCartCacheIsStale(false);
+          setCartCacheLastUpdated(Date.now());
           lastRefreshErrorRef.current = null;
         }
         return nextData;
@@ -350,7 +358,7 @@ export function usePosCart({
               : "Could not update the cart.";
           // A failed preview must never become the cart state or the retry
           // target. Keep the last server-approved cart and retry that state.
-          const lastValidData = dataRef.current;
+          const lastValidData = rollbackData ?? dataRef.current;
           itemsRef.current = lastValidData.items;
           attemptedItemsRef.current = lastValidData.items;
           attemptedCustomerRef.current = customerRef.current;
@@ -367,7 +375,6 @@ export function usePosCart({
       companyUrl,
       invalidateSession,
       invoiceDoctype,
-      isOffline,
       posProfile,
       sessionId,
     ],
@@ -387,7 +394,14 @@ export function usePosCart({
       .then((cached) => {
         if (cancelled) return;
         hydratedScopeRef.current = scopeKey;
-        if (!cached?.data?.data?.items?.length) return;
+        if (!cached?.data?.data?.items?.length) {
+          setCartCacheIsStale(false);
+          setCartCacheLastUpdated(null);
+          return;
+        }
+        restoredCachePendingWriteRef.current = true;
+        setCartCacheIsStale(cached.isStale);
+        setCartCacheLastUpdated(cached.fetchedAt);
         const draft = cached.data;
         itemsRef.current = draft.data.items;
         dataRef.current = draft.data;
@@ -413,6 +427,10 @@ export function usePosCart({
       hydratedScopeRef.current !== JSON.stringify(cartCacheScope)
     )
       return;
+    if (restoredCachePendingWriteRef.current) {
+      restoredCachePendingWriteRef.current = false;
+      return;
+    }
     if (!data.items.length) {
       void posCache.clearResource(cartCacheScope, ACTIVE_CART_RESOURCE);
       return;
@@ -433,7 +451,7 @@ export function usePosCart({
   useEffect(() => {
     if (itemsRef.current.length)
       void refresh(itemsRef.current, customerRef.current, priceListRef.current);
-  }, [customerKey, priceListKey, refresh]);
+  }, [configurationRefreshKey, customerKey, priceListKey, refresh]);
 
   async function add(
     item: PosCatalogueItem,
@@ -461,7 +479,20 @@ export function usePosCart({
             : cartItem,
         )
       : [...current, toCartItem(itemForCart)];
-    const nextData = await refresh(nextItems, cartCustomer);
+    // Render the local catalogue result immediately. The following preview is
+    // still authoritative, but a slow network must not make adding an item
+    // feel like the tap was ignored.
+    const previousData = dataRef.current;
+    const optimisticData = localCart(nextItems);
+    itemsRef.current = nextItems;
+    dataRef.current = optimisticData;
+    setData(optimisticData);
+    const nextData = await refresh(
+      nextItems,
+      cartCustomer,
+      priceListRef.current,
+      previousData,
+    );
     if (nextData !== null) return initialUom.notice || true;
     const message = lastRefreshErrorRef.current;
     if (message) throw new Error(message);
@@ -469,10 +500,6 @@ export function usePosCart({
   }
 
   function clear() {
-    if (isOffline) {
-      setError("Connection unavailable. Reconnect before clearing this cart.");
-      return false;
-    }
     requestNumber.current += 1;
     const emptyCart = { items: [], taxes: [], totals: {} };
     itemsRef.current = emptyCart.items;
@@ -481,6 +508,8 @@ export function usePosCart({
     holdDraftRef.current = null;
     sourceInvoiceRef.current = null;
     setData(emptyCart);
+    setCartCacheIsStale(false);
+    setCartCacheLastUpdated(null);
     setError(null);
     lastRefreshErrorRef.current = null;
     setHasPendingHold(false);
@@ -495,11 +524,6 @@ export function usePosCart({
   async function restoreHeldInvoice(
     heldInvoice: PosHeldInvoice,
   ): Promise<PosRestoredInvoice> {
-    if (isOffline) {
-      throw new Error(
-        "Connection unavailable. Reconnect before restoring a held invoice.",
-      );
-    }
     if (!companyUrl || !sessionId || !posProfile) {
       throw new Error(
         "Your POS session is not ready. Try again once the workspace has loaded.",
@@ -554,10 +578,7 @@ export function usePosCart({
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
   async function hold(): Promise<PosCheckoutResult | null> {
-    if (isOffline) {
-      setHoldError("Connection unavailable. Reconnect before holding this cart.");
-      return null;
-    }
+    if (holdInFlightRef.current) return null;
     const cartItems = itemsRef.current;
     if (!cartItems.length) {
       setHoldError("Add an item before holding this cart.");
@@ -570,6 +591,7 @@ export function usePosCart({
       return null;
     }
 
+    holdInFlightRef.current = true;
     setHoldError(null);
     setIsHolding(true);
     try {
@@ -630,6 +652,7 @@ export function usePosCart({
       );
       return null;
     } finally {
+      holdInFlightRef.current = false;
       setIsHolding(false);
     }
   }
@@ -778,12 +801,6 @@ export function usePosCart({
     itemCode: string,
     amount?: number,
   ): Promise<PosCartData | null> {
-    if (isOffline) {
-      setError(
-        "Connection unavailable. Reconnect before changing the delivery charge.",
-      );
-      return null;
-    }
     if (amount === undefined || amount <= 0) {
       return refresh(
         itemsRef.current.filter((item) => item.item_code !== itemCode),
@@ -881,9 +898,12 @@ export function usePosCart({
     refresh,
     restoredCustomer,
     restoredPriceList,
+    sellingPriceList: data.selling_price_list || undefined,
     remove,
     restoreHeldInvoice,
     requiresCustomer,
+    cartCacheIsStale,
+    cartCacheLastUpdated,
     retry,
     subtotal,
     sourceInvoice,

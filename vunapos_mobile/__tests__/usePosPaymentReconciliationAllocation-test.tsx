@@ -74,7 +74,7 @@ describe("usePosPaymentReconciliationAllocation", () => {
     );
   });
 
-  it("does not request an allocation preview while offline", async () => {
+  it("attempts an allocation preview while offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     const hook = await renderHook(() =>
       usePosPaymentReconciliationAllocation(),
@@ -89,9 +89,6 @@ describe("usePosPaymentReconciliationAllocation", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
-    expect(hook.result.current.error).toBe(
-      "Connection unavailable. Reconnect before allocating payments.",
-    );
+    expect(mockPostVunaMethod).toHaveBeenCalled();
   });
 });

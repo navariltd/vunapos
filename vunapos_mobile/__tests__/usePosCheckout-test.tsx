@@ -24,6 +24,15 @@ const mockInvalidateSaleCache = jest.fn();
 jest.mock("@/services/posCacheInvalidation", () => ({
   invalidateSaleCache: (...args: unknown[]) => mockInvalidateSaleCache(...args),
 }));
+const mockRefreshSoldItemStock = jest.fn();
+jest.mock("@/services/posInventoryRefresh", () => ({
+  refreshSoldItemStock: (...args: unknown[]) => mockRefreshSoldItemStock(...args),
+}));
+const mockRegisterQueuedCheckout = jest.fn();
+jest.mock("@/sync/queuedCheckoutRegistry", () => ({
+  registerQueuedCheckout: (...args: unknown[]) =>
+    mockRegisterQueuedCheckout(...args),
+}));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -52,6 +61,7 @@ describe("POS checkout hooks", () => {
     jest.clearAllMocks();
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
     mockInvalidateSaleCache.mockResolvedValue(undefined);
+    mockRefreshSoldItemStock.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({
       companyUrl: "https://vuna.example.com",
       invalidateSession,
@@ -166,6 +176,64 @@ describe("POS checkout hooks", () => {
     });
   });
 
+  it("refreshes only sold item rows after a successful submission", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-0002",
+    });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item, { ...item, qty: 1 }],
+        orderType: "Invoice",
+        payments: [{ amount: 375, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+        priceList: "Standard Selling",
+      });
+    });
+
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+    expect(mockRefreshSoldItemStock).toHaveBeenCalledWith({
+      companyUrl: "https://vuna.example.com",
+      items: [item, { ...item, qty: 1 }],
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
+  });
+
+  it("registers queued invoice and order context for later targeted reconciliation", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Order",
+      name: "SAL-ORD-QUEUE-001",
+      queue_status: "Queued",
+    });
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(mockRegisterQueuedCheckout).toHaveBeenCalledWith(
+      "SAL-ORD-QUEUE-001",
+      expect.objectContaining({
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+      }),
+    );
+    expect(mockRefreshSoldItemStock).not.toHaveBeenCalled();
+  });
+
   it("applies the configured first workflow action only after the server creates a draft", async () => {
     mockPostVunaMethod
       .mockResolvedValueOnce({
@@ -240,7 +308,7 @@ describe("POS checkout hooks", () => {
     );
   });
 
-  it("waits for confirmed reachability before submitting a sale", async () => {
+  it("attempts submission when reachability is unknown and lets the client classify failure", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
     const hook = await renderHook(() => useSubmitPosCheckout());
 
@@ -255,7 +323,47 @@ describe("POS checkout hooks", () => {
       });
     });
 
-    expect(mockPostVunaMethod).not.toHaveBeenCalled();
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+  });
+
+  it("attempts submission while offline and keeps the checkout key for a safe retry", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPostVunaMethod.mockRejectedValue(new Error("Network request failed"));
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+    const firstKey = (mockPostVunaMethod.mock.calls[0]?.[3] as Record<string, unknown>)
+      .idempotency_key;
+
+    expect(mockPostVunaMethod).toHaveBeenCalled();
+    expect(hook.result.current.error).toBe("Network request failed");
+
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-RETRY-001",
+    });
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect((mockPostVunaMethod.mock.calls[1]?.[3] as Record<string, unknown>)
+      .idempotency_key).toBe(firstKey);
   });
 
   it("serializes configured checkout values only when the cashier supplied them", async () => {

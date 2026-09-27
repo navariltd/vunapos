@@ -128,4 +128,42 @@ describe("PosInvoiceListItem", () => {
     expect(screen.getByText("No customer")).toBeTruthy();
     expect(screen.getByText("No deposit")).toBeTruthy();
   });
+
+  it("shows workflow state only for applicable sales orders", async () => {
+    const salesOrder = await render(
+      <PosInvoiceListItem
+        invoice={makeInvoice({
+          doctype: "Sales Order",
+          workflowState: "Pending Payment Confirmation",
+        })}
+        onPress={onPress}
+      />,
+    );
+
+    expect(salesOrder.getByText("Pending Payment Confirmation")).toBeTruthy();
+
+    const invoice = await render(
+      <PosInvoiceListItem
+        invoice={makeInvoice({
+          doctype: "POS Invoice",
+          workflowState: "Approved",
+        })}
+        onPress={onPress}
+      />,
+    );
+
+    expect(invoice.queryByText("Approved")).toBeNull();
+  });
+
+  it("does not render an empty workflow badge for a sales order without a state", async () => {
+    const screen = await render(
+      <PosInvoiceListItem
+        invoice={makeInvoice({ doctype: "Sales Order" })}
+        onPress={onPress}
+      />,
+    );
+
+    expect(screen.queryByText("Pending Payment Confirmation")).toBeNull();
+    expect(screen.queryByText("Approved")).toBeNull();
+  });
 });

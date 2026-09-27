@@ -15,7 +15,6 @@ import {
   useOpenPosShift,
 } from "@/features/pos/hooks/useOpenPosShift";
 import { PosPaymentMode, PosSession } from "@/features/pos/types";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import { radii, spacing, typography } from "@/theme/tokens";
 
@@ -48,7 +47,6 @@ export function PosSessionGateScreen({
 }: PosSessionGateScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   const opening = useOpenPosShift();
   const [amounts, setAmounts] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -80,7 +78,6 @@ export function PosSessionGateScreen({
     openingRequired &&
     Boolean(posProfile) &&
     paymentModes.length > 0 &&
-    connectionStatus === "online" &&
     !opening.isOpening;
 
   async function submitOpening() {
@@ -212,11 +209,6 @@ export function PosSessionGateScreen({
           <Text style={[styles.message, { color: palette.error }]}>
             No payment modes are configured for this POS Profile. Ask an
             administrator to configure them before opening a shift.
-          </Text>
-        ) : null}
-        {connectionStatus !== "online" ? (
-          <Text style={[styles.message, { color: palette.error }]}>
-            Reconnect to the server before opening this shift.
           </Text>
         ) : null}
         {validationError || opening.error ? (

@@ -1,7 +1,6 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   FrappeClientError,
   postFrappeJsonMethod,
@@ -22,9 +21,9 @@ export type OpenPosShiftResult = {
 /** Creates a server-authorized POS Opening Entry for the signed-in cashier. */
 export function useOpenPosShift() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
   const [error, setError] = useState<string | null>(null);
   const [isOpening, setIsOpening] = useState(false);
+  const openingInFlight = useRef(false);
 
   function clearError() {
     setError(null);
@@ -33,10 +32,7 @@ export function useOpenPosShift() {
   async function open(
     input: OpenPosShiftInput,
   ): Promise<OpenPosShiftResult | null> {
-    if (connectionStatus !== "online") {
-      setError("Reconnect to the server before opening this POS shift.");
-      return null;
-    }
+    if (openingInFlight.current) return null;
     if (!companyUrl || !sessionId) {
       setError(
         "Your session is no longer available. Sign in again to continue.",
@@ -44,6 +40,7 @@ export function useOpenPosShift() {
       return null;
     }
 
+    openingInFlight.current = true;
     setError(null);
     setIsOpening(true);
     try {
@@ -70,6 +67,7 @@ export function useOpenPosShift() {
       );
       return null;
     } finally {
+      openingInFlight.current = false;
       setIsOpening(false);
     }
   }

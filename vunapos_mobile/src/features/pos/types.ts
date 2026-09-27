@@ -141,6 +141,10 @@ export type PosCartTotals = {
 
 export type PosCartData = {
   items: PosCartItem[];
+  /** Values restored from a draft's configured checkout fields. */
+  checkout_field_values?: Record<string, string | number | boolean | null>;
+  /** Price list resolved by the server for this cart/transaction. */
+  selling_price_list?: string | null;
   taxes: PosCartTax[];
   totals: PosCartTotals;
 };
@@ -194,6 +198,7 @@ export type PosInvoiceListRow = {
   postedAt: string;
   status: PosInvoiceStatus;
   total: number;
+  workflowState?: string | null;
 };
 
 export type PosDefaultCustomer = {
@@ -206,6 +211,14 @@ export type PosDefaultCustomer = {
 };
 
 export type PosBootstrapData = {
+  /** Server watermark used by the SPA-compatible timestamp delta contract. */
+  server_time?: string;
+  /** Explicit SPA-compatible sync metadata persisted with the snapshot. */
+  lastFullSync?: string;
+  lastDeltaSync?: string;
+  bootstrap_version?: number;
+  mode?: "full" | "delta";
+  deleted?: Record<string, string[]>;
   /**
    * Normalized client field. The Frappe response nests this under
    * `pos_profile.default_customer`; `usePosBootstrap` lifts it here so the
@@ -213,6 +226,9 @@ export type PosBootstrapData = {
    */
   default_customer?: PosDefaultCustomer | null;
   items?: PosCatalogueItem[];
+  customers?: Record<string, unknown>[];
+  tax_templates?: Record<string, unknown>[];
+  item_tax_templates?: Record<string, unknown>[];
   payment_modes: PosPaymentMode[];
   pos_session?: PosSession;
   pos_profile: {
@@ -420,6 +436,7 @@ export type PosInvoiceHistoryRow = {
   vunapos_credit_sale?: boolean;
   vunapos_opening_entry?: string;
   vunapos_session_cashier?: string;
+  workflow_state?: string | null;
 };
 
 export type PosInvoiceDetail = {
@@ -445,6 +462,7 @@ export type PosInvoiceDetail = {
   posting_time?: string;
   returns?: PosInvoiceReturn[];
   status: PosInvoiceStatus;
+  selling_price_list?: string | null;
   taxes?: PosInvoiceDetailTax[];
   totals: {
     grand_total?: number;

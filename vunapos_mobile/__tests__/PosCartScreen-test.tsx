@@ -215,7 +215,7 @@ describe("PosCartScreen", () => {
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the cart readable but disables cart mutations and checkout offline", async () => {
+  it("keeps cart actions available offline so the request can report its real failure", async () => {
     const screen = await render(
       <PosCartScreen
         allowCustomerCreation={false}
@@ -260,8 +260,8 @@ describe("PosCartScreen", () => {
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
     await fireEvent.press(screen.getByLabelText("Clear cart"));
 
-    expect(onUpdateQuantity).not.toHaveBeenCalled();
-    expect(onCheckout).not.toHaveBeenCalled();
+    expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 2);
+    expect(onCheckout).toHaveBeenCalled();
     expect(onClear).not.toHaveBeenCalled();
   });
 
@@ -547,7 +547,6 @@ describe("PosCartScreen", () => {
     expect(mockUsePosCustomerLoyalty).toHaveBeenCalledWith(
       "CUST-001",
       "POS-001",
-      true,
     );
     expect(screen.getByLabelText("Customer loyalty status")).toBeTruthy();
     expect(screen.getByText("Vuna Rewards · Gold")).toBeTruthy();

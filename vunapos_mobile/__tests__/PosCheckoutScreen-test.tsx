@@ -195,6 +195,12 @@ describe("PosCheckoutScreen", () => {
         invoiceName: "SINV-0001",
       }),
     );
+    // Completion is handed to the workspace immediately; the result surface
+    // must not keep the active cart/checkout alive until it is dismissed.
+    expect(onComplete).toHaveBeenCalledWith({
+      doctype: "Sales Invoice",
+      name: "SINV-0001",
+    });
     expect(screen.getByText("Sales invoice SINV-0001 submitted.")).toBeTruthy();
     await fireEvent.press(
       screen.getByLabelText("View submitted sales invoice"),
@@ -942,7 +948,7 @@ describe("PosCheckoutScreen", () => {
     expect(clearError).toHaveBeenCalled();
   });
 
-  it("accepts a credit-sale deposit and submits its outstanding balance as credit", async () => {
+  it("hides payment methods and submits no payments for a credit sale", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0004" });
     const screen = await render(
       <PosCheckoutScreen
@@ -972,15 +978,8 @@ describe("PosCheckoutScreen", () => {
       "valueChange",
       true,
     );
-    await fireEvent.changeText(screen.getByLabelText("Cash amount"), "40");
-
-    expect(
-      screen.getByText(
-        "Optionally record a deposit. The remaining balance will be recorded as credit.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByText("Deposit + credit")).toBeTruthy();
-    expect(screen.getAllByText("Outstanding")).toHaveLength(2);
+    expect(screen.queryByText("Payment methods")).toBeNull();
+    expect(screen.queryByLabelText("Cash amount")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
     await fireEvent.press(
@@ -991,7 +990,7 @@ describe("PosCheckoutScreen", () => {
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({
           isCreditSale: true,
-          payments: [{ amount: 40, mode_of_payment: "Cash" }],
+          payments: [],
         }),
       ),
     );
@@ -2060,6 +2059,41 @@ describe("PosCheckoutScreen", () => {
           }),
         ),
       );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("uses the cashier's local calendar date for the default delivery date", async () => {
+    jest.useFakeTimers();
+    // Construct the instant in the test runner's local timezone. The picker
+    // must use the cashier's local calendar date rather than an ISO/UTC date.
+    jest.setSystemTime(new Date(2026, 8, 27, 0, 30));
+    try {
+      const screen = await render(
+        <PosCheckoutScreen
+          currency="KES"
+          items={[
+            {
+              allow_negative_stock: false,
+              available_qty: 4,
+              is_stock_item: true,
+              item_code: "ITEM-001",
+              item_name: "Stock item",
+              qty: 1,
+              rate: 100,
+              uom: "Nos",
+            },
+          ]}
+          onBack={jest.fn()}
+          onComplete={onComplete}
+          orderType="Order"
+          saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+          subtotal={100}
+        />,
+      );
+
+      expect(screen.getByText("Sep 27, 2026")).toBeTruthy();
     } finally {
       jest.useRealTimers();
     }

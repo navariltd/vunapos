@@ -38,7 +38,7 @@ export function PosPriceListPickerSheet({ defaultPriceList, isOffline = false, o
         <Text style={styles.subtitle}>Prices in the cart and catalogue will refresh from the server.</Text>
         {priceLists.map((priceList) => {
           const active = activePriceList === priceList.name;
-          return <Pressable accessibilityLabel={`Use price list ${priceList.name}`} disabled={isOffline} key={priceList.name} onPress={() => select(priceList.name)} style={[styles.option, active && styles.optionActive]}><View style={styles.optionContent}><Text style={styles.optionName}>{priceList.name}{priceList.name === defaultPriceList ? ' (Default)' : ''}</Text>{priceList.currency ? <Text style={styles.optionMeta}>{priceList.currency}</Text> : null}</View><Text style={styles.optionCheck}>{active ? '✓' : ''}</Text></Pressable>;
+          return <Pressable accessibilityLabel={`Use price list ${priceList.name}`} key={priceList.name} onPress={() => select(priceList.name)} style={[styles.option, active && styles.optionActive]}><View style={styles.optionContent}><Text style={styles.optionName}>{priceList.name}{priceList.name === defaultPriceList ? ' (Default)' : ''}</Text>{priceList.currency ? <Text style={styles.optionMeta}>{priceList.currency}</Text> : null}</View><Text style={styles.optionCheck}>{active ? '✓' : ''}</Text></Pressable>;
         })}
       </View>
     </View>
