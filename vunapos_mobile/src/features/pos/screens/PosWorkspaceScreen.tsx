@@ -31,10 +31,7 @@ import {
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useToast } from "@/components/feedback/ToastProvider";
-import {
-  usePosBootstrap,
-  usePosBootstrapConfig,
-} from "@/features/pos/hooks/usePosBootstrap";
+import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
 
@@ -61,7 +58,6 @@ export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
-  const workspaceBootstrap = usePosBootstrap();
   // The shell configuration is intentionally loaded independently of the
   // catalogue. This lets the POS/session gate render while items hydrate in
   // the background, matching the SPA startup sequence.
@@ -104,6 +100,9 @@ export function PosWorkspaceScreen() {
   const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
   const [configurationRefreshKey, setConfigurationRefreshKey] = useState(0);
+  const appliedConfigurationFingerprintRef = useRef<string | undefined>(
+    undefined,
+  );
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const cart = usePosCart({
     customer: saleCustomer,
@@ -135,6 +134,18 @@ export function PosWorkspaceScreen() {
   ]);
   const salespersonPin = useSalespersonPin();
   const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
+    // The configuration endpoint can be refreshed independently from the
+    // catalogue. Do not cause a cart re-preview unless the effective POS
+    // configuration actually changed; server timestamps and object identity
+    // are not meaningful configuration changes.
+    const fingerprint = JSON.stringify({
+      defaultCustomer: bootstrap.default_customer,
+      paymentModes: bootstrap.payment_modes,
+      posProfile: bootstrap.pos_profile,
+      posSession: bootstrap.pos_session,
+    });
+    if (appliedConfigurationFingerprintRef.current === fingerprint) return;
+    appliedConfigurationFingerprintRef.current = fingerprint;
     const defaultCustomer = bootstrap.default_customer;
     const profileOrderType = configuredOrderType(bootstrap.pos_profile);
     const isNewProfile =
@@ -176,14 +187,6 @@ export function PosWorkspaceScreen() {
     );
     return () => clearTimeout(sync);
   }, [receivePosProfile, workspaceConfig.data]);
-  useEffect(() => {
-    if (!workspaceBootstrap.data) return;
-    const sync = setTimeout(
-      () => receivePosProfile(workspaceBootstrap.data!),
-      0,
-    );
-    return () => clearTimeout(sync);
-  }, [receivePosProfile, workspaceBootstrap.data]);
   const handleShiftOpened = useCallback(
     async (result: OpenPosShiftResult) => {
       if (companyUrl && sessionId) {
@@ -417,9 +420,22 @@ export function PosWorkspaceScreen() {
             setCheckoutVisible(false);
             setCartVisible(false);
             setSelectedInvoice({ doctype: result.doctype, name: result.name });
-            toast.success(
-              `${result.doctype} ${result.name} submitted successfully.`,
-            );
+            const label = result.doctype === "Sales Order" ? "Sales order" : "Sales invoice";
+            if (result.queue_status === "Queued" || result.queue_status === "Processing") {
+              toast.info(`${label} ${result.name} is queued for server submission.`, {
+                title: "Submission queued",
+                dedupeKey: `checkout-queued:${result.doctype}:${result.name}`,
+              });
+            } else if (result.docstatus === 0) {
+              toast.info(`${label} ${result.name} was saved as a draft.`, {
+                title: "Draft saved",
+                dedupeKey: `checkout-draft:${result.doctype}:${result.name}`,
+              });
+            } else {
+              toast.success(`${label} ${result.name} submitted successfully.`, {
+                dedupeKey: `checkout-submitted:${result.doctype}:${result.name}`,
+              });
+            }
           }}
           onHold={async () => {
             const heldInvoice = await cart.hold();

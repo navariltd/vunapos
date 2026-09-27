@@ -195,6 +195,12 @@ describe("PosCheckoutScreen", () => {
         invoiceName: "SINV-0001",
       }),
     );
+    // Completion is handed to the workspace immediately; the result surface
+    // must not keep the active cart/checkout alive until it is dismissed.
+    expect(onComplete).toHaveBeenCalledWith({
+      doctype: "Sales Invoice",
+      name: "SINV-0001",
+    });
     expect(screen.getByText("Sales invoice SINV-0001 submitted.")).toBeTruthy();
     await fireEvent.press(
       screen.getByLabelText("View submitted sales invoice"),

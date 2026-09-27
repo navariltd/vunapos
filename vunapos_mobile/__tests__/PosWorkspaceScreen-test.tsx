@@ -88,24 +88,15 @@ jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
   SalespersonPinLock: () => null,
 }));
 
-let mockSetBootstrapData: ((data: unknown) => void) | undefined;
+let mockSetConfigData: ((data: unknown) => void) | undefined;
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
-  usePosBootstrap: () => {
-    const { useState } = require("react");
-    const [data, setData] = useState(null);
-    mockSetBootstrapData = setData;
-    return {
-      data,
-      error: null,
-      isLoading: false,
-      isRefreshing: false,
-      isStale: false,
-      lastUpdated: null,
-      reload: jest.fn(),
-    };
-  },
   usePosBootstrapConfig: () => ({
-    data: null,
+    data: (() => {
+      const { useState } = require("react");
+      const [data, setData] = useState(null);
+      mockSetConfigData = setData;
+      return data;
+    })(),
     error: null,
     isLoading: false,
     isRefreshing: false,
@@ -134,7 +125,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: { name: "POS-001" },
               pos_session: {
@@ -150,7 +141,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               default_customer: {
                 customer: "WALK-IN",
                 customer_name: "Walk-in customer",
@@ -166,7 +157,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 default_order_type: "Sales Invoice",
@@ -180,7 +171,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 default_order_type: "Sales Order",
@@ -194,7 +185,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: { allow_customer_management: true, name: "POS-001" },
             })
@@ -205,7 +196,7 @@ jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
         <Pressable
           accessibilityRole="button"
           onPress={() =>
-            mockSetBootstrapData?.({
+            mockSetConfigData?.({
               payment_modes: [],
               pos_profile: {
                 allow_customer_management: false,

@@ -268,6 +268,7 @@ export function PosCheckoutScreen({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [completedResult, setCompletedResult] =
     useState<PosCheckoutResult | null>(null);
+  const completionHandledRef = useRef(false);
   const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] =
     useState(false);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
@@ -289,18 +290,27 @@ export function PosCheckoutScreen({
   }, [holdError, toast]);
 
   useEffect(() => {
-    const message =
-      deliveryChargeError ||
-      loyaltyError ||
-      gatewayPhoneError ||
-      gatewayPayment.error;
+    const message = deliveryChargeError || loyaltyError;
     if (message) {
       toast.error(message, {
         title: "Checkout needs attention",
         dedupeKey: `checkout-field-error:${message}`,
       });
     }
-  }, [deliveryChargeError, gatewayPayment.error, gatewayPhoneError, loyaltyError, toast]);
+  }, [deliveryChargeError, loyaltyError, toast]);
+
+  // Customer phone resolution runs quietly while checkout opens so a cashier
+  // can still choose cash, cheque, or another non-gateway payment. Surface a
+  // missing number only after an STK gateway is actually opened; the same
+  // message remains beside the phone field for contextual guidance.
+  useEffect(() => {
+    if (!activeGatewayMode || gatewayMethod !== "STK" || !gatewayPhoneError)
+      return;
+    toast.error(gatewayPhoneError, {
+      title: "Gateway payment needs attention",
+      dedupeKey: `gateway-phone-error:${activeGatewayMode.mode_of_payment}:${gatewayPhoneError}`,
+    });
+  }, [activeGatewayMode, gatewayMethod, gatewayPhoneError, toast]);
 
   useEffect(() => {
     const customerName = saleCustomer?.customer;
@@ -1135,6 +1145,14 @@ export function PosCheckoutScreen({
         invoiceDoctype: result.doctype,
         invoiceName: result.name,
       });
+    }
+    // The workspace owns the transaction lifecycle. Leave checkout as soon as
+    // the server has accepted the request, including an intentional queued
+    // response; the result modal is retained only for isolated screen usage
+    // and tests where the parent does not unmount immediately.
+    if (!completionHandledRef.current) {
+      completionHandledRef.current = true;
+      onComplete(result);
     }
   }
 
@@ -2389,7 +2407,10 @@ export function PosCheckoutScreen({
           onRequestClose={() => {
             if (checkout.isSubmitting) return;
             if (completedResult) {
-              onComplete(completedResult);
+              if (!completionHandledRef.current) {
+                completionHandledRef.current = true;
+                onComplete(completedResult);
+              }
             } else {
               setIsSubmitConfirmationVisible(false);
             }
@@ -2405,7 +2426,10 @@ export function PosCheckoutScreen({
               disabled={checkout.isSubmitting}
               onPress={() => {
                 if (completedResult) {
-                  onComplete(completedResult);
+                  if (!completionHandledRef.current) {
+                    completionHandledRef.current = true;
+                    onComplete(completedResult);
+                  }
                 } else {
                   setIsSubmitConfirmationVisible(false);
                 }
@@ -2458,7 +2482,11 @@ export function PosCheckoutScreen({
                   </Text>
                   <Pressable
                     accessibilityLabel={`View submitted ${submissionLabel}`}
-                    onPress={() => onComplete(completedResult)}
+                    onPress={() => {
+                      if (completionHandledRef.current) return;
+                      completionHandledRef.current = true;
+                      onComplete(completedResult);
+                    }}
                     style={styles.confirmConfirmationButton}
                   >
                     <Text style={styles.confirmConfirmationLabel}>
