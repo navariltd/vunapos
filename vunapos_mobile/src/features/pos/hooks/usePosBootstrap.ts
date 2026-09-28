@@ -19,6 +19,9 @@ export const POS_BOOTSTRAP_DELTA_TTL_MS = POS_CACHE_TTL_MS;
 type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
+  hasHydratedCache?: boolean;
+  isHydratingCache?: boolean;
+  isInitialNetworkLoading?: boolean;
   isLoading: boolean;
   isRefreshing?: boolean;
   isStale?: boolean;
@@ -231,9 +234,10 @@ function withSyncMetadata(
   };
 }
 
-export function usePosBootstrap(): PosBootstrapState {
+export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const enabled = options?.enabled !== false;
   const forceFullRefreshRef = useRef(false);
   const cacheKey =
     companyUrl && sessionId
@@ -312,6 +316,7 @@ export function usePosBootstrap(): PosBootstrapState {
     cacheKey,
     connectionStatus,
     load,
+    enabled,
     ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
   });
   const refreshResource = resource.refresh;
@@ -334,20 +339,19 @@ export function usePosBootstrap(): PosBootstrapState {
     [resource.data],
   );
   useEffect(
-    () =>
-      registerRealtimeRefresh("workspace-configuration", (payload) => {
+    () => {
+      if (!enabled) return;
+      return registerRealtimeRefresh("workspace-configuration", (payload) => {
         const request =
           payload && typeof payload === "object"
             ? (payload as { full?: boolean; refresh?: string })
             : undefined;
         return reload({
-          // Socket recovery has no event payload and should repair through the
-          // timestamp delta. A backend event explicitly marked full still
-          // invalidates the watermark for schema/configuration changes.
           full: request?.full === true || request?.refresh === "full",
         });
-      }),
-    [reload],
+      });
+    },
+    [enabled, reload],
   );
 
   if (!cacheKey)
@@ -362,6 +366,9 @@ export function usePosBootstrap(): PosBootstrapState {
     data,
     error: resource.error,
     isLoading: resource.isLoading,
+    hasHydratedCache: resource.hasHydratedCache,
+    isHydratingCache: resource.isHydratingCache,
+    isInitialNetworkLoading: resource.isInitialNetworkLoading,
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,
     lastUpdated: resource.lastUpdated,
@@ -430,6 +437,9 @@ export function usePosBootstrapConfig(): PosBootstrapConfigState {
     return {
       data: null,
       error: "Your session is no longer available. Sign in again to continue.",
+      hasHydratedCache: false,
+      isHydratingCache: false,
+      isInitialNetworkLoading: false,
       isLoading: false,
       reload,
     };

@@ -157,7 +157,13 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
       },
       controller.signal,
     )
-      .then((data) => setState({ data, error: null, key: requestKey }))
+      .then((data) => {
+        // AbortController normally rejects fetch, but keep the state guard as
+        // well: adapters, mocks, and cached transports may resolve after an
+        // abort. An obsolete preview must never replace a newer one.
+        if (controller.signal.aborted) return;
+        setState({ data, error: null, key: requestKey });
+      })
       .catch((requestError: unknown) => {
         if (controller.signal.aborted) return;
         if (
@@ -167,14 +173,17 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
           void invalidateSession();
           return;
         }
-        setState({
-          data: null,
+        setState((current) => ({
+          // Keep the last server-approved preview visible while this
+          // revalidation fails. The cashier must never lose the active form
+          // merely because a background calculation was interrupted.
+          data: current.data,
           error:
             requestError instanceof Error
               ? requestError.message
               : "Could not calculate this sale.",
           key: requestKey,
-        });
+        }));
       });
     return () => controller.abort();
   }, [
@@ -191,7 +200,10 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   ]);
 
   return {
-    data: state.key === activeKey ? state.data : null,
+    // A previous preview is valid display data while a newer preview is in
+    // flight. The caller decides whether submission must wait for the newer
+    // key, but the form remains mounted throughout.
+    data: activeKey ? state.data : null,
     error: state.key === activeKey ? state.error : null,
     isLoading: Boolean(requestKey && state.key !== activeKey),
     previewLoyalty,

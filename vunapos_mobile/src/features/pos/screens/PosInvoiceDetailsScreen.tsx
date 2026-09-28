@@ -303,47 +303,53 @@ export function PosInvoiceDetailsScreen({
           <SummaryValue label="Items" value={String(itemCount)} />
         </View>
 
-        <PosInvoiceReceiptActions
-          invoiceDoctype={invoice.doctype}
-          invoiceName={invoice.name}
-        />
-        {canEditDraft ? (
-          <Pressable
-            accessibilityLabel="Edit draft invoice"
-            onPress={() =>
-              void onEditDraft?.({
-                doctype: invoice.doctype,
-                name: invoice.name,
-              })
-            }
-            style={styles.editDraftButton}
-          >
-            <MaterialCommunityIcons
-              color={palette.onSurface}
-              name="pencil-outline"
-              size={17}
-            />
-            <Text style={styles.editDraftButtonLabel}>Edit draft</Text>
-          </Pressable>
-        ) : null}
-        {canRunWorkflowAction ? (
-          <Pressable
-            accessibilityLabel="Open workflow actions"
-            onPress={() => setWorkflowActionsVisible(true)}
-            style={styles.workflowActionsButton}
-          >
-            <Text style={styles.workflowActionsButtonLabel}>Actions</Text>
-            <MaterialCommunityIcons
-              color={palette.onPrimary}
-              name="chevron-down"
-              size={18}
-            />
-          </Pressable>
+        <View style={styles.secondaryActionRow}>
+          <PosInvoiceReceiptActions
+            invoiceDoctype={invoice.doctype}
+            invoiceName={invoice.name}
+          />
+          <PosErpNextRecordLink doctype={invoice.doctype} name={invoice.name} />
+        </View>
+        {canEditDraft || canRunWorkflowAction ? (
+          <View style={styles.primaryActionRow}>
+            {canEditDraft ? (
+              <Pressable
+                accessibilityLabel="Edit draft invoice"
+                onPress={() =>
+                  void onEditDraft?.({
+                    doctype: invoice.doctype,
+                    name: invoice.name,
+                  })
+                }
+                style={styles.editDraftButton}
+              >
+                <MaterialCommunityIcons
+                  color={palette.onSurface}
+                  name="pencil-outline"
+                  size={17}
+                />
+                <Text style={styles.editDraftButtonLabel}>Edit draft</Text>
+              </Pressable>
+            ) : null}
+            {canRunWorkflowAction ? (
+              <Pressable
+                accessibilityLabel="Open workflow actions"
+                onPress={() => setWorkflowActionsVisible(true)}
+                style={styles.workflowActionsButton}
+              >
+                <Text style={styles.workflowActionsButtonLabel}>Actions</Text>
+                <MaterialCommunityIcons
+                  color={palette.onPrimary}
+                  name="chevron-down"
+                  size={18}
+                />
+              </Pressable>
+            ) : null}
+          </View>
         ) : null}
         {workflowActions.error ? (
           <Text style={styles.workflowError}>{workflowActions.error}</Text>
         ) : null}
-        <PosErpNextRecordLink doctype={invoice.doctype} name={invoice.name} />
         {canStartReturn ? (
           <Pressable
             accessibilityLabel="Return items"
@@ -758,6 +764,12 @@ function createStyles(palette: AppPalette) {
       paddingHorizontal: spacing.md,
       paddingVertical: spacing.sm,
     },
+    primaryActionRow: {
+      alignItems: "center",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
     editDraftButtonLabel: {
       color: palette.onSurface,
       fontFamily: typography.fontFamily.semibold,
@@ -881,6 +893,12 @@ function createStyles(palette: AppPalette) {
       fontSize: typography.size.tiny,
     },
     screen: { flex: 1 },
+    secondaryActionRow: {
+      alignItems: "flex-start",
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: spacing.sm,
+    },
     returnCancelled: { color: palette.error },
     returnList: { gap: spacing.sm },
     returnMain: { flex: 1, gap: 2 },

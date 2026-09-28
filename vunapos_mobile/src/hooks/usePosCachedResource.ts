@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  PosCacheEntry,
   PosCacheKey,
   posCache,
   posCacheKey,
@@ -30,6 +31,7 @@ type UsePosCachedResourceArgs<T> = {
 type PosCachedResourceState<T> = {
   data: T | null;
   error: string | null;
+  hasHydratedCache: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
   isStale: boolean;
@@ -40,6 +42,7 @@ type PosCachedResourceState<T> = {
 const emptyState = {
   data: null,
   error: null,
+  hasHydratedCache: false,
   isLoading: false,
   isRefreshing: false,
   isStale: false,
@@ -100,24 +103,49 @@ export function usePosCachedResource<T>({
       };
 
       if (!enabled) {
-        const cached = await cache.read<T>(activeKey);
+        let cached: PosCacheEntry<T> | null = null;
+        try {
+          cached = await cache.read<T>(activeKey);
+        } catch (error) {
+          if (!isActive()) return;
+          setActiveState({
+            ...emptyState,
+            error: errorMessage(error),
+            hasHydratedCache: true,
+          });
+          return;
+        }
         if (!isActive()) return;
         setActiveState(
           cached
             ? {
                 data: cached.data,
                 error: null,
+                hasHydratedCache: true,
                 isLoading: false,
                 isRefreshing: false,
                 isStale: cached.isStale,
                 lastUpdated: cached.fetchedAt,
               }
-            : emptyState,
+            : { ...emptyState, hasHydratedCache: true },
         );
         return;
       }
 
-      const cached = await cache.read<T>(activeKey);
+      let cached: PosCacheEntry<T> | null = null;
+      try {
+        cached = await cache.read<T>(activeKey);
+      } catch (error) {
+        // A local read failure must not leave the resource permanently in the
+        // unresolved hydration state. Treat it as a cache miss and let the
+        // normal server request provide the recovery path.
+        if (!isActive()) return;
+        setActiveState({
+          ...emptyState,
+          error: errorMessage(error),
+          hasHydratedCache: true,
+        });
+      }
       if (!isActive()) return;
 
       // Cached rows remain usable during outages. When there is no cached row,
@@ -129,6 +157,7 @@ export function usePosCachedResource<T>({
         setActiveState({
           data: cached.data,
           error: null,
+          hasHydratedCache: true,
           isLoading: false,
           isRefreshing: false,
           isStale: false,
@@ -141,17 +170,19 @@ export function usePosCachedResource<T>({
         setActiveState({
           data: cached.data,
           error: null,
+          hasHydratedCache: true,
           isLoading: false,
           isRefreshing: canRequest,
           isStale: cached.isStale,
           lastUpdated: cached.fetchedAt,
         });
       } else if (!canRequest) {
-        setActiveState({ ...emptyState, isLoading: true });
+        setActiveState({ ...emptyState, hasHydratedCache: true, isLoading: true });
         return;
       } else {
         setActiveState({
           ...emptyState,
+          hasHydratedCache: true,
           isLoading: true,
         });
       }
@@ -168,6 +199,7 @@ export function usePosCachedResource<T>({
         setActiveState({
           data,
           error: null,
+          hasHydratedCache: true,
           isLoading: false,
           isRefreshing: false,
           isStale: false,
@@ -209,6 +241,7 @@ export function usePosCachedResource<T>({
         setState({
           data: cached.data,
           error: null,
+          hasHydratedCache: true,
           isLoading: false,
           isRefreshing: false,
           isStale: cached.isStale,
@@ -238,11 +271,20 @@ export function usePosCachedResource<T>({
 
   const isCurrentKey = state.keyFingerprint === keyFingerprint;
   const currentState = isCurrentKey ? state : emptyState;
-  const isHydrating = Boolean(keyFingerprint && !isCurrentKey);
+  const isHydratingCache = Boolean(
+    keyFingerprint && (!isCurrentKey || !currentState.hasHydratedCache),
+  );
+  const hasHydratedCache = Boolean(
+    keyFingerprint && isCurrentKey && currentState.hasHydratedCache,
+  );
 
   return {
     ...currentState,
-    isLoading: currentState.isLoading || isHydrating,
+    isLoading: currentState.isLoading || isHydratingCache,
+    isHydratingCache,
+    hasHydratedCache,
+    isInitialNetworkLoading:
+      hasHydratedCache && currentState.isLoading && !currentState.data,
     refresh,
   };
 }

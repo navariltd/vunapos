@@ -33,6 +33,10 @@ import {
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
+import {
+  effectivePosConfigurationFingerprint,
+  transactionConfigurationFingerprint,
+} from "@/features/pos/posConfiguration";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
 
@@ -106,6 +110,9 @@ export function PosWorkspaceScreen() {
   const appliedConfigurationFingerprintRef = useRef<string | undefined>(
     undefined,
   );
+  const appliedTransactionFingerprintRef = useRef<string | undefined>(
+    undefined,
+  );
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
   const cart = usePosCart({
     customer: saleCustomer,
@@ -141,14 +148,14 @@ export function PosWorkspaceScreen() {
     // catalogue. Do not cause a cart re-preview unless the effective POS
     // configuration actually changed; server timestamps and object identity
     // are not meaningful configuration changes.
-    const fingerprint = JSON.stringify({
-      defaultCustomer: bootstrap.default_customer,
-      paymentModes: bootstrap.payment_modes,
-      posProfile: bootstrap.pos_profile,
-      posSession: bootstrap.pos_session,
-    });
+    const fingerprint = effectivePosConfigurationFingerprint(bootstrap);
     if (appliedConfigurationFingerprintRef.current === fingerprint) return;
     appliedConfigurationFingerprintRef.current = fingerprint;
+    const transactionFingerprint = transactionConfigurationFingerprint(bootstrap);
+    const transactionChanged =
+      appliedTransactionFingerprintRef.current !== undefined &&
+      appliedTransactionFingerprintRef.current !== transactionFingerprint;
+    appliedTransactionFingerprintRef.current = transactionFingerprint;
     const defaultCustomer = bootstrap.default_customer;
     const profileOrderType = configuredOrderType(bootstrap.pos_profile);
     const isNewProfile =
@@ -160,7 +167,9 @@ export function PosWorkspaceScreen() {
     setPosProfileConfig(bootstrap.pos_profile);
     setPosSession(bootstrap.pos_session ?? null);
     setPaymentModes(bootstrap.payment_modes);
-    setConfigurationRefreshKey((current) => current + 1);
+    if (transactionChanged) {
+      setConfigurationRefreshKey((current) => current + 1);
+    }
     setOrderType((current) =>
       (!orderTypeOverrideRef.current &&
         (configuredProfileRef.current === bootstrap.pos_profile.name ||
@@ -280,7 +289,15 @@ export function PosWorkspaceScreen() {
     setActiveTab("Payments");
   }
 
-  if (!workspaceConfig.data && workspaceConfig.isLoading) {
+  if (workspaceConfig.isHydratingCache) {
+    return <AppLaunchScreen message="Restoring your POS…" />;
+  }
+
+  if (
+    workspaceConfig.hasHydratedCache &&
+    !workspaceConfig.data &&
+    workspaceConfig.isInitialNetworkLoading
+  ) {
     return <AppLaunchScreen message="Preparing your POS settings…" />;
   }
 
@@ -483,6 +500,7 @@ export function PosWorkspaceScreen() {
           salesperson={salespersonPin.session}
           sourceInvoice={cart.sourceInvoice}
           subtotal={cart.subtotal}
+          bootstrapData={workspaceConfig.data}
         />
       ) : cartVisible ? (
         <PosCartScreen

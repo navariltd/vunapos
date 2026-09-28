@@ -80,6 +80,13 @@ const printReceipt = jest.fn();
 const submit = jest.fn();
 const onComplete = jest.fn();
 
+function localDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 describe("PosCheckoutScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -373,11 +380,21 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByLabelText("Complete sale"));
-
+    const submitButton = screen.getByLabelText("Complete sale");
+    expect(submitButton.props.accessibilityState).toEqual({ disabled: false });
+    await fireEvent.press(submitButton);
+    expect(screen.getByText("This field is required.")).toBeTruthy();
     expect(
       screen.getByText("Purchase order is required before checkout."),
     ).toBeTruthy();
+
+    await fireEvent.changeText(
+      screen.getByLabelText("Purchase order"),
+      "PO-001",
+    );
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState).toEqual({
+      disabled: false,
+    });
     expect(
       screen.queryByLabelText("Confirm sales invoice submission"),
     ).toBeNull();
@@ -901,6 +918,134 @@ describe("PosCheckoutScreen", () => {
     ).toBeTruthy();
   });
 
+  it("keeps the checkout form mounted during background preview revalidation", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: "Cash" }],
+        pos_profile: {
+          allow_credit_sales: true,
+          checkout_fields: [
+            {
+              doctype: "Sales Invoice",
+              fieldname: "customer_note",
+              fieldtype: "Data",
+              label: "Customer note",
+            },
+          ],
+          name: "POS-001",
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: {
+        items: [
+          {
+            amount: 100,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            row_name: "row-1",
+          },
+        ],
+        totals: { grand_total: 116, net_total: 100 },
+      },
+      error: null,
+      isLoading: true,
+      previewLoyalty: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    const note = screen.getByLabelText("Customer note");
+    await fireEvent.changeText(note, "Keep this value");
+    expect(screen.queryByText("Confirming current prices and stock…")).toBeNull();
+    expect(screen.getByLabelText("Complete sale")).toBeTruthy();
+    expect(screen.getByDisplayValue("Keep this value")).toBeTruthy();
+  });
+
+  it("blocks submission during preview revalidation and allows it after success", async () => {
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: true,
+      previewLoyalty: jest.fn(),
+    });
+    const props = {
+      currency: "KES",
+      items: [
+        {
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        },
+      ],
+      onBack: jest.fn(),
+      onComplete,
+      orderType: "Invoice" as const,
+      saleCustomer: { customer: "CUST-001", customerName: "ABC Corps" },
+      subtotal: 100,
+    };
+    const screen = await render(<PosCheckoutScreen {...props} />);
+
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).not.toHaveBeenCalled();
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: false,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState).toEqual({
+      disabled: false,
+    });
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await fireEvent.press(screen.getByLabelText("Confirm sales invoice submission"));
+    await waitFor(() => expect(submit).toHaveBeenCalled());
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: "Connection interrupted",
+      isLoading: false,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState).toEqual({
+      disabled: true,
+    });
+  });
+
   it("sends the selected credit sale due date and clears old submission errors", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0002" });
     const screen = await render(
@@ -939,7 +1084,7 @@ describe("PosCheckoutScreen", () => {
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({
-          dueDate: new Date().toISOString().slice(0, 10),
+          dueDate: localDateString(),
           isCreditSale: true,
           payments: [],
         }),
@@ -1324,7 +1469,7 @@ describe("PosCheckoutScreen", () => {
             {
               amount: 116,
               mode_of_payment: "Bank transfer",
-              reference_date: new Date().toISOString().slice(0, 10),
+              reference_date: localDateString(),
               reference_no: "RCP-001",
             },
           ],

@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -22,6 +22,7 @@ export type PosCheckoutFieldValues = Record<string, string>;
 type Props = {
   disabled?: boolean;
   fields?: PosCheckoutFieldDefinition[];
+  invalidFieldname?: string;
   onChange: (fieldname: string, value: string) => void;
   transactionDoctype: PosCheckoutFieldDefinition["doctype"];
   values: PosCheckoutFieldValues;
@@ -51,6 +52,7 @@ function formatDate(value: string) {
 export function PosCheckoutFieldsCard({
   disabled,
   fields,
+  invalidFieldname,
   onChange,
   transactionDoctype,
   values,
@@ -70,6 +72,12 @@ export function PosCheckoutFieldsCard({
   );
   const [dateField, setDateField] = useState<PosCheckoutFieldDefinition>();
   const [selectField, setSelectField] = useState<PosCheckoutFieldDefinition>();
+  const inputRefs = useRef<Record<string, TextInput | null>>({});
+
+  useEffect(() => {
+    if (!invalidFieldname) return;
+    inputRefs.current[invalidFieldname]?.focus();
+  }, [invalidFieldname]);
 
   if (!configuredFields.length) return null;
 
@@ -91,6 +99,7 @@ export function PosCheckoutFieldsCard({
         const isSelect = field.fieldtype === "Select";
         const isLongText = field.fieldtype === "Long Text";
         const isLink = field.fieldtype === "Link";
+        const hasRequiredError = invalidFieldname === field.fieldname;
 
         return (
           <View
@@ -98,27 +107,37 @@ export function PosCheckoutFieldsCard({
             style={styles.field}
           >
             {isCheck ? (
-              <View style={styles.checkRow}>
-                <View style={styles.checkText}>
-                  <Text style={styles.fieldLabel}>
-                    {field.label}
-                    {field.required ? " *" : ""}
-                  </Text>
-                  {field.help_text ? (
-                    <Text style={styles.fieldHelp}>{field.help_text}</Text>
-                  ) : null}
+              <>
+                <View
+                  style={[
+                    styles.checkRow,
+                    hasRequiredError && styles.invalidField,
+                  ]}
+                >
+                  <View style={styles.checkText}>
+                    <Text style={styles.fieldLabel}>
+                      {field.label}
+                      {field.required ? " *" : ""}
+                    </Text>
+                    {field.help_text ? (
+                      <Text style={styles.fieldHelp}>{field.help_text}</Text>
+                    ) : null}
+                  </View>
+                  <Switch
+                    accessibilityLabel={`Enable ${field.label}`}
+                    disabled={disabled}
+                    onValueChange={(checked) =>
+                      onChange(field.fieldname, checked ? "1" : "0")
+                    }
+                    thumbColor={palette.onSurface}
+                    trackColor={{ false: palette.border, true: palette.success }}
+                    value={value === "1" || value === "true"}
+                  />
                 </View>
-                <Switch
-                  accessibilityLabel={`Enable ${field.label}`}
-                  disabled={disabled}
-                  onValueChange={(checked) =>
-                    onChange(field.fieldname, checked ? "1" : "0")
-                  }
-                  thumbColor={palette.onSurface}
-                  trackColor={{ false: palette.border, true: palette.success }}
-                  value={value === "1" || value === "true"}
-                />
-              </View>
+                {hasRequiredError ? (
+                  <Text style={styles.errorText}>This field is required.</Text>
+                ) : null}
+              </>
             ) : (
               <>
                 <Text style={styles.fieldLabel}>
@@ -130,7 +149,11 @@ export function PosCheckoutFieldsCard({
                     accessibilityLabel={`Choose ${field.label}`}
                     disabled={disabled}
                     onPress={() => setDateField(field)}
-                    style={[styles.selectButton, disabled && styles.disabled]}
+                    style={[
+                      styles.selectButton,
+                      disabled && styles.disabled,
+                      hasRequiredError && styles.invalidField,
+                    ]}
                   >
                     <MaterialCommunityIcons
                       color={palette.onSurfaceMuted}
@@ -148,7 +171,11 @@ export function PosCheckoutFieldsCard({
                     accessibilityLabel={`Choose ${field.label}`}
                     disabled={disabled}
                     onPress={() => setSelectField(field)}
-                    style={[styles.selectButton, disabled && styles.disabled]}
+                    style={[
+                      styles.selectButton,
+                      disabled && styles.disabled,
+                      hasRequiredError && styles.invalidField,
+                    ]}
                   >
                     <Text style={styles.selectButtonLabel}>
                       {value || field.placeholder || `Select ${field.label}`}
@@ -163,6 +190,7 @@ export function PosCheckoutFieldsCard({
                   <PosCheckoutLinkComboBox
                     disabled={disabled}
                     field={field}
+                    invalid={hasRequiredError}
                     onChange={onChange}
                     value={value}
                   />
@@ -177,12 +205,22 @@ export function PosCheckoutFieldsCard({
                     }
                     placeholder={field.placeholder || `Enter ${field.label}`}
                     placeholderTextColor={palette.onSurfaceMuted}
-                    style={[styles.input, isLongText && styles.longTextInput]}
+                    style={[
+                      styles.input,
+                      isLongText && styles.longTextInput,
+                      hasRequiredError && styles.invalidField,
+                    ]}
+                    ref={(input) => {
+                      inputRefs.current[field.fieldname] = input;
+                    }}
                     value={value}
                   />
                 )}
                 {field.help_text ? (
                   <Text style={styles.fieldHelp}>{field.help_text}</Text>
+                ) : null}
+                {hasRequiredError ? (
+                  <Text style={styles.errorText}>This field is required.</Text>
                 ) : null}
               </>
             )}
@@ -254,11 +292,13 @@ export function PosCheckoutFieldsCard({
 function PosCheckoutLinkComboBox({
   disabled,
   field,
+  invalid,
   onChange,
   value,
 }: {
   disabled?: boolean;
   field: PosCheckoutFieldDefinition;
+  invalid?: boolean;
   onChange: (fieldname: string, value: string) => void;
   value: string;
 }) {
@@ -282,7 +322,11 @@ function PosCheckoutLinkComboBox({
         accessibilityLabel={`Choose ${field.label}`}
         disabled={disabled}
         onPress={() => setIsVisible(true)}
-        style={[styles.selectButton, disabled && styles.disabled]}
+        style={[
+          styles.selectButton,
+          disabled && styles.disabled,
+          invalid && styles.invalidField,
+        ]}
       >
         <Text style={styles.selectButtonLabel}>
           {value || field.placeholder || `Select ${field.label}`}
@@ -431,6 +475,11 @@ function createStyles(palette: AppPalette) {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
+  },
+  invalidField: {
+    borderColor: palette.error,
+    borderWidth: 1,
+    borderRadius: radii.md,
   },
   input: {
     borderColor: palette.border,

@@ -49,12 +49,65 @@ describe("usePosCachedResource", () => {
     expect(hook.result.current).toMatchObject({
       data: null,
       error: null,
+      hasHydratedCache: false,
+      isHydratingCache: true,
       isLoading: true,
     });
 
     resolveRead?.(cached(["milk"]));
     await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
     expect(hook.result.current.isLoading).toBe(false);
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
+  });
+
+  it("distinguishes a hydrated cache miss from an unresolved cache read", async () => {
+    const load = jest.fn().mockResolvedValue(["server milk"]);
+    const cache = createCache<string[]>(null, Promise.resolve(["server milk"]));
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load }),
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
+    expect(hook.result.current.isInitialNetworkLoading).toBe(false);
+    expect(cache.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks a genuine cache miss as initial network loading after hydration", async () => {
+    let resolveFetch: ((value: string[]) => void) | undefined;
+    const cache = {
+      read: jest.fn().mockResolvedValue(null),
+      fetch: jest.fn(
+        () =>
+          new Promise<string[]>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      ),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.isInitialNetworkLoading).toBe(true));
+    expect(hook.result.current.isHydratingCache).toBe(false);
+    resolveFetch?.(["server milk"]);
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+  });
+
+  it("does not remain unresolved when the local cache read fails", async () => {
+    const cache = {
+      read: jest.fn().mockRejectedValue(new Error("SQLite unavailable")),
+      fetch: jest.fn().mockResolvedValue(["server milk"]),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() =>
+      usePosCachedResource({ cache, cacheKey: key, connectionStatus: "online", load: jest.fn() }),
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["server milk"]));
+    expect(hook.result.current.hasHydratedCache).toBe(true);
+    expect(hook.result.current.isHydratingCache).toBe(false);
   });
 
   it("does not expose data from an earlier query while the next key hydrates", async () => {
@@ -90,6 +143,50 @@ describe("usePosCachedResource", () => {
 
     resolveSecondRead?.(cached(["bread"]));
     await waitFor(() => expect(hook.result.current.data).toEqual(["bread"]));
+  });
+
+  it("does not flash a previous company or POS profile while the new scope hydrates", async () => {
+    let resolveSecondRead: ((value: PosCacheEntry<string[]> | null) => void) | undefined;
+    const secondKey: PosCacheKey = {
+      ...key,
+      scope: {
+        ...key.scope,
+        companyUrl: "https://other.example.com",
+        posProfile: "Secondary POS",
+        userId: "other-session",
+      },
+    };
+    const cache = {
+      fetch: jest.fn(),
+      read: jest.fn((requestedKey: PosCacheKey) => {
+        if (requestedKey.scope.companyUrl === secondKey.scope.companyUrl) {
+          return new Promise<PosCacheEntry<string[]> | null>((resolve) => {
+            resolveSecondRead = resolve;
+          });
+        }
+        return Promise.resolve(cached(["company A item"]));
+      }),
+    } as PosCachedResourceClient;
+    const hook = await renderHook<
+      ReturnType<typeof usePosCachedResource<string[]>>,
+      { cacheKey: PosCacheKey }
+    >(
+      ({ cacheKey }) =>
+        usePosCachedResource({
+          cache,
+          cacheKey,
+          connectionStatus: "online",
+          load: jest.fn(),
+        }),
+      { initialProps: { cacheKey: key } },
+    );
+
+    await waitFor(() => expect(hook.result.current.data).toEqual(["company A item"]));
+    await hook.rerender({ cacheKey: secondKey });
+    expect(hook.result.current).toMatchObject({ data: null, isLoading: true });
+
+    resolveSecondRead?.(cached(["company B item"]));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["company B item"]));
   });
 
   it("uses a fresh cached value without making a server request", async () => {
