@@ -28,8 +28,11 @@ def get_global_checkout_fields(profile=None):
 	"""Return global defaults merged with independent POS Profile fields."""
 	settings = frappe.get_single("POS Settings")
 	result = []
+	# Existing sites can have this newly added child-table field stored as NULL
+	# until someone opens and saves POS Settings. Treat that exactly like no
+	# configured fields so bootstrap remains available.
 	seen_global = set()
-	for row in settings.get("vunapos_checkout_fields", []):
+	for row in settings.get("vunapos_checkout_fields") or []:
 		if not row.get("enabled"):
 			continue
 		doctype = row.get("target_doctype")
@@ -50,7 +53,7 @@ def get_global_checkout_fields(profile=None):
 	if profile:
 		overrides = {
 			(row.get("target_doctype"), (row.get("fieldname") or "").strip()): row
-			for row in profile.get("vunapos_checkout_fields", [])
+			for row in profile.get("vunapos_checkout_fields") or []
 		}
 		for index, definition in enumerate(result):
 			row = overrides.get((definition["doctype"], definition["fieldname"]))
@@ -85,7 +88,7 @@ def validate_global_checkout_fields(doc, method=None):
 		# duplicate rows (even when one is disabled) makes the profile ambiguous
 		# when the workflow metadata is evaluated.
 		seen_workflow_doctypes = set()
-		for row in doc.get("vunapos_workflow_configuration", []):
+		for row in doc.get("vunapos_workflow_configuration") or []:
 			doctype = (row.get("transaction_doctype") or "").strip()
 			if not doctype:
 				continue
@@ -98,7 +101,7 @@ def validate_global_checkout_fields(doc, method=None):
 			seen_workflow_doctypes.add(doctype)
 
 	seen_checkout_fields = set()
-	for row in doc.get("vunapos_checkout_fields", []):
+	for row in doc.get("vunapos_checkout_fields") or []:
 		doctype = row.get("target_doctype")
 		fieldname = (row.get("fieldname") or "").strip()
 		key = (doctype, fieldname)

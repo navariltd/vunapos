@@ -74,7 +74,7 @@ def get_pos_workflow_metadata(profile):
 	"""Return active workflow metadata for the transaction types used by this profile."""
 	configured = {
 		row.get("transaction_doctype")
-		for row in profile.get("vunapos_workflow_configuration", [])
+		for row in profile.get("vunapos_workflow_configuration") or []
 		if row.get("apply_workflow")
 	}
 	if not configured:

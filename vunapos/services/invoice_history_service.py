@@ -86,6 +86,7 @@ def _get_sales_order_history(
 		"advance_paid",
 		"total_qty",
 		"delivery_date",
+		"workflow_state",
 		"docstatus",
 		"creation",
 	]
@@ -172,6 +173,7 @@ def _get_sales_order_history(
 				"vunapos_closing_entry": row.get("vunapos_closing_entry"),
 				"payments": payments,
 				"status": row_status,
+				"workflow_state": row.get("workflow_state"),
 			}
 		)
 	active_rows = [row for row in result if row["docstatus"] == 1]
@@ -294,7 +296,7 @@ def get_invoice_history(
 		payment_child = frappe.get_meta(doctype).get_field("payments").options
 		payment_child_meta = frappe.get_meta(payment_child)
 		payment_fields = ["parent", "mode_of_payment", "amount"]
-		for fieldname in ("ke_transaction_id", "ke_transaction_date", "ke_payment_request"):
+		for fieldname in ("ke_transaction_id", "ke_transaction_date", "ke_payment_request", "reference_no"):
 			if payment_child_meta.has_field(fieldname):
 				payment_fields.append(fieldname)
 		for payment in frappe.get_all(
@@ -307,7 +309,7 @@ def get_invoice_history(
 				{
 					"mode_of_payment": payment.mode_of_payment,
 					"amount": flt(payment.amount),
-					"transaction_reference": payment.get("ke_transaction_id"),
+					"transaction_reference": payment.get("ke_transaction_id") or payment.get("reference_no"),
 					"transaction_date": payment.get("ke_transaction_date"),
 					"ke_payment_request": payment.get("ke_payment_request"),
 				}

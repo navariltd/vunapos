@@ -11,7 +11,7 @@ from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry impor
 from erpnext.stock.get_item_details import get_item_details, get_item_tax_map
 from erpnext.stock.utils import get_stock_balance
 from frappe import _
-from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate
+from frappe.utils import cint, cstr, flt, get_datetime, getdate, now_datetime, nowdate, sbool
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.batch_service import allocate_batches as allocate_item_batches
@@ -22,7 +22,10 @@ from vunapos.services.batch_service import (
 	validate_batch_allocation,
 	validate_serial_allocation,
 )
-from vunapos.services.checkout_field_service import apply_checkout_field_values
+from vunapos.services.checkout_field_service import (
+	apply_checkout_field_values,
+	get_global_checkout_fields,
+)
 from vunapos.services.checkout_queue_service import (
 	QUEUE_STATUS_PROCESSING,
 	QUEUE_STATUS_QUEUED,
@@ -349,6 +352,17 @@ def _payment_mode_type(mode_of_payment):
 	return frappe.get_cached_value("Mode of Payment", mode_of_payment, "type") or "General"
 
 
+def _payment_mode_requires_reference(profile, mode_of_payment):
+	if not profile or not profile.company:
+		return False
+	account = frappe.db.get_value(
+		"Mode of Payment Account",
+		{"parent": mode_of_payment, "company": profile.company},
+		"default_account",
+	)
+	return bool(account and frappe.get_cached_value("Account", account, "account_type") == "Bank")
+
+
 def _has_gateway_payment_rows(payments, profile):
 	rows = _payment_rows(payments)
 	if not rows or not profile:
@@ -358,8 +372,17 @@ def _has_gateway_payment_rows(payments, profile):
 	)
 
 
+def _normalize_credit_sale_flag(is_credit_sale):
+	if isinstance(is_credit_sale, bool):
+		return is_credit_sale
+	normalized = sbool(cstr(is_credit_sale).strip().lower())
+	if isinstance(normalized, bool):
+		return normalized
+	_throw("INVALID_CREDIT_SALE_FLAG", _("Credit sale must be true or false"))
+
+
 def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
-	is_credit_sale = bool(cint(is_credit_sale))
+	is_credit_sale = _normalize_credit_sale_flag(is_credit_sale)
 	if not is_credit_sale:
 		return False
 	if not profile or not profile.get("vunapos_allow_credit_sales"):
@@ -370,6 +393,7 @@ def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
 
 
 def _validate_credit_due_date(is_credit_sale, due_date=None, posting_date=None):
+	is_credit_sale = _normalize_credit_sale_flag(is_credit_sale)
 	if not is_credit_sale:
 		return None
 	if not due_date:
@@ -486,6 +510,31 @@ def validate_payment_rows(
 				_("Payment mode {0} can only be used once").format(mode_of_payment),
 			)
 		payment_gateway = payment_mode_gateway(profile, mode_of_payment) if profile else None
+		reference_no = cstr(row.get("reference_no") or "").strip() or None
+		reference_date = row.get("reference_date")
+		if not payment_gateway and _payment_mode_requires_reference(profile, mode_of_payment):
+			if not reference_no:
+				_throw(
+					"PAYMENT_REFERENCE_REQUIRED",
+					_("A transaction reference is required for bank payment mode {0}").format(
+						mode_of_payment
+					),
+				)
+			if not reference_date:
+				_throw(
+					"PAYMENT_REFERENCE_DATE_REQUIRED",
+					_("A transaction date is required for bank payment mode {0}").format(mode_of_payment),
+				)
+			try:
+				reference_date = str(getdate(reference_date))
+			except (TypeError, ValueError):
+				_throw(
+					"PAYMENT_REFERENCE_DATE_INVALID",
+					_("Enter a valid transaction date for bank payment mode {0}").format(mode_of_payment),
+				)
+		else:
+			reference_no = None
+			reference_date = None
 
 		raw_amount = row.get("amount")
 		storage_amount = None
@@ -532,6 +581,8 @@ def validate_payment_rows(
 				"amount": storage_amount,
 				"default": row.get("default"),
 				"gateway_payment_link": gateway_link.name if gateway_link else None,
+				"reference_no": reference_no,
+				"reference_date": reference_date,
 			}
 		)
 
@@ -1330,7 +1381,14 @@ def restore_invoice(invoice_doctype, invoice_name):
 	require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
-	return invoice_to_dict(doc)
+	result = invoice_to_dict(doc)
+	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
+	result["checkout_field_values"] = {
+		field["fieldname"]: doc.get(field["fieldname"])
+		for field in get_global_checkout_fields(profile)
+		if field["doctype"] == doc.doctype and doc.get(field["fieldname"]) is not None
+	}
+	return result
 
 
 def clear_invoice(invoice_doctype, invoice_name):
@@ -1537,6 +1595,8 @@ def set_payment_rows(doc, payments=None, profile=None, is_credit_sale=False):
 			"amount": flt(payment.get("amount")),
 			"default": payment.get("default"),
 		}
+		if payment.get("reference_no") and frappe.get_meta(payment_child_doctype).has_field("reference_no"):
+			row["reference_no"] = payment.get("reference_no")
 		_apply_gateway_metadata_to_payment_row(row, payment, payment_child_doctype)
 		doc.append("payments", row)
 	return doc
@@ -1593,7 +1653,12 @@ def submit_invoice(
 	if doc.doctype != "Sales Order":
 		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
-		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+		doc,
+		payments,
+		profile,
+		is_credit_sale=is_credit_sale,
+		opening_entry=opening_entry,
+		allow_partial_override=doc.doctype in SUPPORTED_ORDER_DOCTYPES,
 	)
 	gateway_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
@@ -1696,7 +1761,12 @@ def _prepare_invoice_for_checkout(
 	if doc.doctype != "Sales Order":
 		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
-		doc, payments, profile, is_credit_sale=is_credit_sale, opening_entry=opening_entry
+		doc,
+		payments,
+		profile,
+		is_credit_sale=is_credit_sale,
+		opening_entry=opening_entry,
+		allow_partial_override=doc.doctype in SUPPORTED_ORDER_DOCTYPES,
 	)
 	doc.flags.vunapos_gateway_payment_links = _gateway_payment_links(payment_rows)
 	set_payment_rows(doc, payment_rows, profile=profile, is_credit_sale=is_credit_sale)
@@ -1844,7 +1914,7 @@ def create_and_submit_invoice(
 				"CHECKOUT_IDEMPOTENCY_REQUIRED",
 				_("An idempotency key is required when background invoice submission is enabled"),
 			)
-		_validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
+		is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, customer or profile.customer)
 		_validate_credit_due_date(is_credit_sale, due_date, nowdate())
 		draft = create_invoice_from_cart(
 			pos_profile=profile.name,
@@ -1988,6 +2058,8 @@ def create_and_submit_sales_order(
 						allocated_amount=amount,
 						idempotency_key=f"{idempotency_key}:advance:{index}",
 						gateway_payment_link=payment.get("gateway_payment_link"),
+						reference_no=payment.get("reference_no"),
+						reference_date=payment.get("reference_date"),
 					)
 				)
 		result = invoice_to_dict(doc)
