@@ -29,7 +29,7 @@ from vunapos.services.gateway_payment_service import (
 	attach_c2b_gateway_payment,
 	search_c2b_gateway_payments,
 )
-from vunapos.services.invoice_service import validate_payment_rows
+from vunapos.services.invoice_service import create_draft_invoice, validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
 	ensure_item_tax_template,
@@ -73,6 +73,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		)
 		currency = frappe.db.get_value("Company", company, "default_currency") or "KES"
 		account_name = f"{gateway} - {currency} - {frappe.db.get_value('Company', company, 'abbr')}"
+		if not frappe.db.exists("Payment Gateway", gateway):
+			frappe.get_doc({"doctype": "Payment Gateway", "name": gateway, "gateway": gateway}).insert(
+				ignore_permissions=True
+			)
 		if not frappe.db.exists("Payment Gateway Account", account_name):
 			account = frappe.db.get_value(
 				"Account",
@@ -104,6 +108,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 	def _make_ke_payment_request(self, gateway, amount, currency="KES"):
 		if not frappe.db.table_exists("KE Payment Request"):
 			self.skipTest("navari_ke_payments is not installed")
+		gateway = frappe.db.get_value("Payment Gateway Account", gateway, "payment_gateway") or gateway
 		doc = frappe.get_doc(
 			{
 				"doctype": "KE Payment Request",
@@ -1539,7 +1544,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
 		set_invoice_mode("Sales Order")
-		order = create_invoice(pos_profile=profile)["data"]
+		order = create_draft_invoice(pos_profile=profile, invoice_doctype="Sales Order")
 		order = add_item(order["doctype"], order["name"], item_code, 1)["data"]
 		response = hold_invoice(order["doctype"], order["name"])
 		self.assertTrue(response["ok"], response)

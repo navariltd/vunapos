@@ -1317,7 +1317,7 @@ def get_invoice(invoice_doctype, invoice_name):
 
 def hold_invoice(invoice_doctype, invoice_name):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
-	opening_entry = require_open_pos_session(doc.get("pos_profile"))
+	opening_entry = require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 1)
