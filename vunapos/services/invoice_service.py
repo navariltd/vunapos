@@ -1328,7 +1328,6 @@ def hold_invoice(invoice_doctype, invoice_name):
 def restore_invoice(invoice_doctype, invoice_name):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
-	_set_if_has_field(doc, HELD_FIELD, 0)
 	doc.save(ignore_permissions=True)
 	return invoice_to_dict(doc)
 
@@ -1358,6 +1357,7 @@ def update_invoice_from_cart(
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
 	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	assert_pos_workflow_editable(doc, profile)
+	held_before_update = bool(doc.get(HELD_FIELD))
 	cart_items = _cart_item_rows(items)
 	validate_cart_items(cart_items, profile, validate_stock=doc.doctype != "Sales Order")
 
@@ -1373,7 +1373,7 @@ def update_invoice_from_cart(
 	_apply_loyalty_redemption(doc, loyalty_points)
 
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
-	_set_if_has_field(doc, HELD_FIELD, 0)
+	_set_if_has_field(doc, HELD_FIELD, int(held_before_update))
 	_save_invoice(doc)
 	return invoice_to_dict(doc)
 
@@ -1397,7 +1397,9 @@ def _held_invoice_row(doctype, row):
 def list_held_invoices(pos_profile=None, limit=20):
 	limit = min(int(limit or 20), 100)
 	rows = []
-	for doctype in SUPPORTED_INVOICE_DOCTYPES + SUPPORTED_ORDER_DOCTYPES:
+	# Held invoices are restored through the invoice workflow. Sales Orders have
+	# their own history and must not appear in this invoice-only list.
+	for doctype in SUPPORTED_INVOICE_DOCTYPES:
 		if not frappe.db.table_exists(doctype):
 			continue
 		require_read(doctype)
@@ -1683,6 +1685,9 @@ def _prepare_invoice_for_checkout(
 	checkout_fields=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
+	# Preserve the original intentional-hold marker when a held draft is checked
+	# out directly. Editing/restoring a draft clears the active marker separately.
+	held_before_checkout = bool(doc.get(HELD_FIELD))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
 	validate_cart_items(
@@ -1707,7 +1712,7 @@ def _prepare_invoice_for_checkout(
 	_stamp_salesperson(doc, profile, salesperson, salesperson_token)
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
-	_set_if_has_field(doc, HELD_FIELD, 0)
+	_set_if_has_field(doc, HELD_FIELD, int(held_before_checkout))
 	if idempotency_key:
 		_set_if_has_field(doc, IDEMPOTENCY_FIELD, idempotency_key)
 	if hasattr(doc, "set_paid_amount"):

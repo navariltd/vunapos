@@ -540,6 +540,12 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(item["conversion_factor"], 18)
 		self.assertEqual(item["batch_allocations"][0]["qty"], 18)
 
+		held = hold_invoice(response["data"]["doctype"], response["data"]["name"])
+		self.assertTrue(held["ok"], held)
+		restored = restore_invoice(response["data"]["doctype"], response["data"]["name"])
+		self.assertTrue(restored["ok"], restored)
+		self.assertEqual(restored["data"]["items"][0]["batch_allocations"][0]["qty"], 18)
+
 	def test_sales_order_does_not_allocate_batches(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Sales Order Batch Item")
 		ensure_batch_stock(item_code, warehouse, [("VUNA-SO-BATCH-A", 5, add_days(nowdate(), 30))])
@@ -1521,13 +1527,26 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		response = restore_invoice(invoice["doctype"], invoice["name"])
 		self.assertTrue(response["ok"], response)
-		self.assertFalse(response["data"]["is_held"])
+		self.assertTrue(response["data"]["is_held"])
 		self.assertEqual(len(response["data"]["items"]), 1)
 
 		response = clear_invoice(invoice["doctype"], invoice["name"])
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
 		self.assertEqual(response["data"]["totals"]["grand_total"], 0)
+
+	def test_held_invoice_list_excludes_sales_orders(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Order")
+		order = create_invoice(pos_profile=profile)["data"]
+		order = add_item(order["doctype"], order["name"], item_code, 1)["data"]
+		response = hold_invoice(order["doctype"], order["name"])
+		self.assertTrue(response["ok"], response)
+
+		response = list_held_invoices(pos_profile=profile)
+		self.assertTrue(response["ok"], response)
+		self.assertNotIn(order["name"], [row["name"] for row in response["data"]])
 
 	def test_update_invoice_from_cart_replaces_draft_items(self):
 		profile = ensure_test_pos_profile()
