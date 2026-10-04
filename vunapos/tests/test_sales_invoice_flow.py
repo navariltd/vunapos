@@ -68,6 +68,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		ensure_open_pos_opening_entry(profile)
 
 	def _ensure_payment_gateway(self, gateway="_Test VunaPOS Gateway"):
+		if not frappe.db.exists("DocType", "Payment Gateway"):
+			self.skipTest("vuna_payments is not installed")
 		company = frappe.defaults.get_defaults().company or frappe.db.get_single_value(
 			"Global Defaults", "default_company"
 		)
@@ -107,7 +109,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	def _make_ke_payment_request(self, gateway, amount, currency="KES"):
 		if not frappe.db.table_exists("KE Payment Request"):
-			self.skipTest("navari_ke_payments is not installed")
+			self.skipTest("vuna_payments is not installed")
 		gateway = frappe.db.get_value("Payment Gateway Account", gateway, "payment_gateway") or gateway
 		doc = frappe.get_doc(
 			{
@@ -126,7 +128,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	def _make_c2b_payment(self, gateway, mode_of_payment, amount, currency="KES", customer=None, submit=True):
 		if not frappe.db.table_exists("KE C2B Payment Register"):
-			self.skipTest("navari_ke_payments is not installed")
+			self.skipTest("vuna_payments is not installed")
 		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
 		source = frappe.get_doc(
 			{

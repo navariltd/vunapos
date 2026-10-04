@@ -335,6 +335,9 @@ def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
 
 
 def ensure_test_batch_item(item_code="_Test Vuna Batch Item", has_serial_no=0):
+	# ERPNext rejects tracked items unless stock settings explicitly enable
+	# serial/batch tracking. CI sites start with the default disabled value.
+	frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
 	if frappe.db.exists("Item", item_code):
 		item = frappe.get_doc("Item", item_code)
 	else:
