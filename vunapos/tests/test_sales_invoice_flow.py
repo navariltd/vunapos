@@ -29,7 +29,7 @@ from vunapos.services.gateway_payment_service import (
 	attach_c2b_gateway_payment,
 	search_c2b_gateway_payments,
 )
-from vunapos.services.invoice_service import validate_payment_rows
+from vunapos.services.invoice_service import create_draft_invoice, validate_payment_rows
 from vunapos.tests.helpers import (
 	ensure_batch_stock,
 	ensure_item_tax_template,
@@ -68,11 +68,17 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		ensure_open_pos_opening_entry(profile)
 
 	def _ensure_payment_gateway(self, gateway="_Test VunaPOS Gateway"):
+		if not frappe.db.exists("DocType", "Payment Gateway"):
+			self.skipTest("vuna_payments is not installed")
 		company = frappe.defaults.get_defaults().company or frappe.db.get_single_value(
 			"Global Defaults", "default_company"
 		)
 		currency = frappe.db.get_value("Company", company, "default_currency") or "KES"
 		account_name = f"{gateway} - {currency} - {frappe.db.get_value('Company', company, 'abbr')}"
+		if not frappe.db.exists("Payment Gateway", gateway):
+			frappe.get_doc({"doctype": "Payment Gateway", "name": gateway, "gateway": gateway}).insert(
+				ignore_permissions=True
+			)
 		if not frappe.db.exists("Payment Gateway Account", account_name):
 			account = frappe.db.get_value(
 				"Account",
@@ -103,7 +109,8 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	def _make_ke_payment_request(self, gateway, amount, currency="KES"):
 		if not frappe.db.table_exists("KE Payment Request"):
-			self.skipTest("navari_ke_payments is not installed")
+			self.skipTest("vuna_payments is not installed")
+		gateway = frappe.db.get_value("Payment Gateway Account", gateway, "payment_gateway") or gateway
 		doc = frappe.get_doc(
 			{
 				"doctype": "KE Payment Request",
@@ -121,7 +128,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	def _make_c2b_payment(self, gateway, mode_of_payment, amount, currency="KES", customer=None, submit=True):
 		if not frappe.db.table_exists("KE C2B Payment Register"):
-			self.skipTest("navari_ke_payments is not installed")
+			self.skipTest("vuna_payments is not installed")
 		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
 		source = frappe.get_doc(
 			{
@@ -575,6 +582,12 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertEqual(item["uom"], "Box")
 		self.assertEqual(item["conversion_factor"], 18)
 		self.assertEqual(item["batch_allocations"][0]["qty"], 18)
+
+		held = hold_invoice(response["data"]["doctype"], response["data"]["name"])
+		self.assertTrue(held["ok"], held)
+		restored = restore_invoice(response["data"]["doctype"], response["data"]["name"])
+		self.assertTrue(restored["ok"], restored)
+		self.assertEqual(restored["data"]["items"][0]["batch_allocations"][0]["qty"], 18)
 
 	def test_sales_order_does_not_allocate_batches(self):
 		profile, warehouse, item_code = self._batch_profile_and_item("_Test Vuna Sales Order Batch Item")
@@ -1632,13 +1645,26 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		response = restore_invoice(invoice["doctype"], invoice["name"])
 		self.assertTrue(response["ok"], response)
-		self.assertFalse(response["data"]["is_held"])
+		self.assertTrue(response["data"]["is_held"])
 		self.assertEqual(len(response["data"]["items"]), 1)
 
 		response = clear_invoice(invoice["doctype"], invoice["name"])
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
 		self.assertEqual(response["data"]["totals"]["grand_total"], 0)
+
+	def test_held_invoice_list_excludes_sales_orders(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		set_invoice_mode("Sales Order")
+		order = create_draft_invoice(pos_profile=profile, invoice_doctype="Sales Order")
+		order = add_item(order["doctype"], order["name"], item_code, 1)["data"]
+		response = hold_invoice(order["doctype"], order["name"])
+		self.assertTrue(response["ok"], response)
+
+		response = list_held_invoices(pos_profile=profile)
+		self.assertTrue(response["ok"], response)
+		self.assertNotIn(order["name"], [row["name"] for row in response["data"]])
 
 	def test_update_invoice_from_cart_replaces_draft_items(self):
 		profile = ensure_test_pos_profile()
