@@ -1,6 +1,7 @@
-import { ArchiveRestore, RefreshCw } from "lucide-react";
+import { Pencil, ShoppingCart } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
+import { navigateToInvoice } from "../../../lib/stores/navigationStore";
 import type { HeldInvoiceDTO } from "../types";
 import { formatCurrency } from "../utils";
 
@@ -8,8 +9,8 @@ type HeldInvoicesPanelProps = {
   currency?: string;
   heldInvoices?: HeldInvoiceDTO[];
   isLoading?: boolean;
-  onRefresh: () => void;
-  onRestore: (invoice: HeldInvoiceDTO) => void;
+  onEdit: (invoice: HeldInvoiceDTO) => void;
+  onCheckout: (invoice: HeldInvoiceDTO) => void;
 };
 
 function formatModified(value?: string) {
@@ -32,77 +33,85 @@ export function HeldInvoicesPanel({
   currency,
   heldInvoices,
   isLoading,
-  onRefresh,
-  onRestore,
+  onEdit,
+  onCheckout,
 }: HeldInvoicesPanelProps) {
   return (
-    <div className="mt-3 rounded-md border border-outline-variant bg-surface-container-low p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-on-surface">Held Invoices</p>
-          <p className="text-xs text-on-surface-variant">
-            {heldInvoices?.length
-              ? `${heldInvoices.length} waiting`
-              : "No held invoices"}
+    <div className="flex flex-col gap-4">
+      {isLoading ? (
+        <p className="py-10 text-center text-sm text-on-surface-variant">
+          Loading draft invoices...
+        </p>
+      ) : heldInvoices?.length ? (
+        <div className="overflow-x-auto rounded-lg border border-outline-variant">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead className="bg-surface-container-low text-xs text-on-surface-variant">
+              <tr>
+                <th className="px-4 py-3">Invoice</th>
+                <th>Customer</th>
+                <th>Held at</th>
+                <th>Total</th>
+                <th className="px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {heldInvoices.map((invoice) => (
+                <tr
+                  key={`${invoice.doctype}-${invoice.name}`}
+                  className="border-t border-outline-variant"
+                >
+                  <td className="px-4 py-3">
+                    <a
+                      className="font-medium text-primary hover:underline"
+                      href={`/vunapos/invoices/${encodeURIComponent(invoice.name)}`}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        navigateToInvoice(invoice.name);
+                      }}
+                    >
+                      {invoice.name}
+                    </a>
+                    <span className="block text-xs text-on-surface-variant">
+                      {invoice.doctype}
+                    </span>
+                  </td>
+                  <td>
+                    {invoice.customer_name || invoice.customer || "No customer"}
+                    {invoice.customer_name && invoice.customer ? (
+                      <span className="block text-xs text-on-surface-variant">
+                        {invoice.customer}
+                      </span>
+                    ) : null}
+                  </td>
+                  <td>{formatModified(invoice.modified || invoice.posting_date) || "-"}</td>
+                  <td className="font-medium">
+                    {formatCurrency(invoice.total ?? invoice.rounded_total ?? invoice.grand_total, invoice.currency || currency)}
+                  </td>
+                  <td className="px-4 text-right">
+                    <div className="flex justify-end gap-1">
+                      <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(invoice)}>
+                        <Pencil className="mr-1 size-4" />
+                        Edit
+                      </Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => onCheckout(invoice)}>
+                        <ShoppingCart className="mr-1 size-4" />
+                        Checkout
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-dashed border-outline-variant p-10 text-center">
+          <p className="font-medium">No draft invoices</p>
+          <p className="mt-1 text-sm text-on-surface-variant">
+            Draft invoices will appear here until they are restored.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="h-9 w-9 p-0"
-          disabled={isLoading}
-          onClick={onRefresh}
-          aria-label="Refresh held invoices"
-        >
-          <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-        </Button>
-      </div>
-
-      {heldInvoices?.length ? (
-        <div className="mt-3 max-h-44 space-y-2 overflow-y-auto pr-1">
-          {heldInvoices.map((invoice) => {
-            return (
-              <button
-                key={`${invoice.doctype}-${invoice.name}`}
-                type="button"
-                className="w-full rounded-md border border-outline-variant bg-surface p-3 text-left hover:bg-surface-container"
-                onClick={() => onRestore(invoice)}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">
-                      {invoice.name}
-                    </p>
-                    <p className="truncate text-xs text-on-surface-variant">
-                      {invoice.customer_name ||
-                        invoice.customer ||
-                        "No customer"}
-                    </p>
-                    {invoice.modified ? (
-                      <p className="mt-1 text-xs text-on-surface-variant">
-                        {formatModified(invoice.modified)}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="text-sm font-semibold">
-                      {formatCurrency(
-                        invoice.total,
-                        invoice.currency || currency,
-                      )}
-                    </p>
-                    <div className="mt-1 inline-flex items-center gap-1 text-xs text-primary">
-                      <ArchiveRestore className="size-3" />
-                      Restore
-                    </div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -32,7 +32,9 @@ def _batch_allocations(row):
 		return [
 			{
 				"batch_no": row.get("batch_no"),
-				"qty": row.get("qty"),
+				# The invoice row quantity is expressed in its selected UOM,
+				# while batch allocations are always expressed in stock UOM.
+				"qty": row.get("qty") * (row.get("conversion_factor") or 1),
 				"expiry_date": frappe.db.get_value("Batch", row.get("batch_no"), "expiry_date"),
 				"available_qty": None,
 			}
