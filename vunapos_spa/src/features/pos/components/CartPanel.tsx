@@ -8,6 +8,7 @@ import type {
   BatchAllocationDTO,
   CustomerDTO,
   CustomerLoyaltyDTO,
+  CustomerAddressDTO,
   ItemBatchesDTO,
   PricingOverrideDTO,
   SerialAllocationDTO,
@@ -28,6 +29,10 @@ type CartPanelProps = {
   customerLoyalty?: CustomerLoyaltyDTO | null;
   customerLoyaltyError?: string | null;
   isCustomerLoyaltyLoading?: boolean;
+  customerAddresses?: CustomerAddressDTO[];
+  customerAddressesLoading?: boolean;
+  shippingAddressName?: string;
+  onSelectShippingAddress: (addressName: string) => void;
   defaultPriceList?: string;
   onCheckout: () => void;
   onClearCustomer: () => void;
@@ -77,6 +82,10 @@ export function CartPanel({
   customerLoyalty,
   customerLoyaltyError,
   isCustomerLoyaltyLoading,
+  customerAddresses = [],
+  customerAddressesLoading = false,
+  shippingAddressName = "",
+  onSelectShippingAddress,
   defaultPriceList,
   onCheckout,
   onClearCustomer,
@@ -131,6 +140,25 @@ export function CartPanel({
           error={customerLoyaltyError}
           isLoading={isCustomerLoyaltyLoading}
         />
+        {customerAddressesLoading || customerAddresses.length ? (
+          <label className="mt-2 block text-sm font-medium text-on-surface">
+            Shipping address
+            <select
+              aria-label="Shipping address"
+              value={shippingAddressName}
+              disabled={customerAddressesLoading}
+              onChange={(event) => onSelectShippingAddress(event.target.value)}
+              className="mt-1 h-10 w-full rounded-md border border-outline-variant bg-surface px-3 text-sm outline-none focus:border-primary"
+            >
+              {customerAddresses.map((address) => (
+                <option key={address.name} value={address.name}>
+                  {address.address_title || address.name}
+                  {address.city ? ` · ${address.city}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
         {allowPriceListSwitching && allowedPriceLists.length ? (
           <select
             aria-label="Price list for this sale"

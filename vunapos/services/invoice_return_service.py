@@ -85,6 +85,8 @@ def _apply_erpnext_desk_return_payments(return_doc, original):
 
 def get_return_preview(pos_profile=None, invoice_name=None):
 	profile = resolve_pos_profile(pos_profile)
+	if not bool(profile.get("vunapos_allow_returns", 1)):
+		_fail("RETURNS_DISABLED", _("Returns are disabled for this POS Profile"))
 	doctype = get_invoice_mode()
 	original = _validate_original(profile, doctype, invoice_name)
 	_return_doc, available = _mapped_return(doctype, original.name)
@@ -116,6 +118,8 @@ def create_invoice_return(
 	idempotency_key=None,
 ):
 	profile = resolve_pos_profile(pos_profile)
+	if not bool(profile.get("vunapos_allow_returns", 1)):
+		_fail("RETURNS_DISABLED", _("Returns are disabled for this POS Profile"))
 	doctype = get_invoice_mode()
 	opening = require_open_pos_session(profile.name)
 	require_create(doctype)

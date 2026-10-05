@@ -59,6 +59,7 @@ export function useBootstrapData() {
 			allow_sales_order_payments: profile.allow_sales_order_payments,
 			allow_payment_reconciliation: profile.allow_payment_reconciliation,
 			allow_payment_history: profile.allow_payment_history,
+			allow_returns: profile.allow_returns,
 			enable_salesperson_pin: profile.enable_salesperson_pin,
 			require_manager_pin_item_removal: profile.require_manager_pin_item_removal,
 			require_pin_before_every_sale: profile.require_pin_before_every_sale,

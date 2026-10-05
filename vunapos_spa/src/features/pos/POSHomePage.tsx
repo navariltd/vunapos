@@ -180,6 +180,7 @@ export function POSHomePage({
   const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
   const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
   const [customerAddressesCustomer, setCustomerAddressesCustomer] = useState<string | null>(null);
+  const [shippingAddressName, setShippingAddressName] = useState<string>("");
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -255,7 +256,14 @@ export function POSHomePage({
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
-    if (!isCheckoutOpen || !activeCustomerName) return;
+    if (!activeCustomerName) {
+      setCustomerAddresses([]);
+      setCustomerAddressesCustomer(null);
+      setShippingAddressName("");
+      setCustomerAddressesLoading(false);
+      return;
+    }
+    setCustomerAddressesLoading(true);
     let cancelled = false;
     void getCustomerAddresses(customerAddressesCall.call, {
       pos_profile: bootstrap.data?.pos_profile,
@@ -266,6 +274,11 @@ export function POSHomePage({
         if (!cancelled) {
           setCustomerAddresses(addresses);
           setCustomerAddressesCustomer(activeCustomerName);
+          setShippingAddressName((current) =>
+            addresses.some((address) => address.name === current)
+              ? current
+              : addresses.find((address) => address.is_default)?.name || addresses[0]?.name || "",
+          );
         }
       })
       .catch(() => {
@@ -280,7 +293,7 @@ export function POSHomePage({
     return () => {
       cancelled = true;
     };
-  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
+  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call]);
 
   const handleRemoveItem = useCallback(
     (rowName: string) => {
@@ -309,6 +322,7 @@ export function POSHomePage({
     reportError = true,
   ) => {
     setSelectedCustomer(customer);
+    setShippingAddressName("");
     if (!isReachable || navigator.onLine === false) return;
     try {
       await cartActions.refreshCustomerPricing(customer);
@@ -713,9 +727,6 @@ export function POSHomePage({
         return;
       }
       setIsCartOpen(false);
-      setCustomerAddresses([]);
-      setCustomerAddressesCustomer(null);
-      setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
       showToast({
@@ -738,9 +749,6 @@ export function POSHomePage({
           tax_id: draft.tax_id,
         });
       }
-      setCustomerAddresses([]);
-      setCustomerAddressesCustomer(null);
-      setCustomerAddressesLoading(checkout);
       navigateToPosPage("Home");
       if (checkout) setIsCheckoutOpen(true);
       else setIsCartOpen(true);
@@ -986,6 +994,7 @@ export function POSHomePage({
             invoice={getInvoiceFromPath(currentPath) || ""}
             invoiceDoctype={getInvoiceDoctypeFromPath(currentPath)}
             posProfile={bootstrap.data?.pos_profile}
+            allowReturns={bootstrap.data?.allow_returns !== false}
             isOnline={isReachable && navigator.onLine !== false}
             onStartSale={(customer) => {
               void handleSelectCustomer(customer);
@@ -1123,6 +1132,14 @@ export function POSHomePage({
             onLoadBatches={cartActions.loadItemBatches}
             onRemoveItem={handleRemoveItem}
             onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+            customerAddresses={
+              customerAddressesCustomer === activeCustomer?.customer
+                ? customerAddresses
+                : []
+            }
+            customerAddressesLoading={customerAddressesLoading}
+            shippingAddressName={shippingAddressName}
+            onSelectShippingAddress={setShippingAddressName}
             onSelectPriceList={(priceList) =>
               void handleSelectPriceList(priceList)
             }
@@ -1212,6 +1229,14 @@ export function POSHomePage({
               onSelectCustomer={(customer) =>
                 void handleSelectCustomer(customer)
               }
+              customerAddresses={
+                customerAddressesCustomer === activeCustomer?.customer
+                  ? customerAddresses
+                  : []
+              }
+              customerAddressesLoading={customerAddressesLoading}
+              shippingAddressName={shippingAddressName}
+              onSelectShippingAddress={setShippingAddressName}
               onSelectPriceList={(priceList) =>
                 void handleSelectPriceList(priceList)
               }
@@ -1249,6 +1274,8 @@ export function POSHomePage({
             : []
         }
         customerAddressesLoading={customerAddressesLoading}
+        shippingAddressName={shippingAddressName}
+        onShippingAddressChange={setShippingAddressName}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
         isOpen={isCheckoutOpen}
