@@ -58,6 +58,8 @@ type CheckoutDialogProps = {
   customer?: CustomerDTO | null;
   customerAddresses?: CustomerAddressDTO[];
   customerAddressesLoading?: boolean;
+  shippingAddressName?: string;
+  onShippingAddressChange?: (addressName: string) => void;
   customerLoyalty?: CustomerLoyaltyDTO | null;
   checkoutFields?: CheckoutFieldDefinition[];
   workflow?: { enabled: boolean; workflows: Record<string, { name: string; state_field: string; transitions: Array<{ action: string; next_state: string }> }> };
@@ -150,6 +152,8 @@ export function CheckoutDialog({
   customer,
   customerAddresses,
   customerAddressesLoading,
+  shippingAddressName: selectedShippingAddressName,
+  onShippingAddressChange,
   customerLoyalty,
   checkoutFields,
   workflow,
@@ -192,6 +196,8 @@ export function CheckoutDialog({
       customer={customer}
       customerAddresses={customerAddresses}
       customerAddressesLoading={customerAddressesLoading}
+      shippingAddressName={selectedShippingAddressName}
+      onShippingAddressChange={onShippingAddressChange}
       customerLoyalty={customerLoyalty}
       checkoutFields={checkoutFields}
       workflow={workflow}
@@ -230,6 +236,8 @@ function CheckoutDialogContent({
   customer,
   customerAddresses,
   customerAddressesLoading,
+  shippingAddressName: selectedShippingAddressName,
+  onShippingAddressChange,
   customerLoyalty,
   defaultSaleType,
   error,
@@ -315,7 +323,7 @@ function CheckoutDialogContent({
   );
   const today = useMemo(() => todayInputValue(), []);
   const [dueDate, setDueDate] = useState(invoice?.due_date || today);
-	const [shippingAddressName, setShippingAddressName] = useState<string>("");
+	const [localShippingAddressName, setLocalShippingAddressName] = useState<string>("");
   const [additionalFields, setAdditionalFields] = useState<Record<string, string>>({});
   const [linkOptions, setLinkOptions] = useState<Record<string, Array<{ value: string; label: string }>>>({});
   const [activeLinkField, setActiveLinkField] = useState<string | null>(null);
@@ -338,8 +346,11 @@ function CheckoutDialogContent({
 
   useEffect(() => {
     const defaultAddress = customerAddresses?.find((address) => address.is_default);
-    setShippingAddressName(defaultAddress?.name || customerAddresses?.[0]?.name || "");
-  }, [customer?.customer, customerAddresses]);
+		const nextAddress = selectedShippingAddressName || defaultAddress?.name || customerAddresses?.[0]?.name || "";
+		setLocalShippingAddressName(nextAddress);
+		if (nextAddress && nextAddress !== selectedShippingAddressName) onShippingAddressChange?.(nextAddress);
+	}, [customer?.customer, customerAddresses, onShippingAddressChange, selectedShippingAddressName]);
+  const shippingAddressName = selectedShippingAddressName ?? localShippingAddressName;
   const selectedShippingAddress = customerAddresses?.find(
     (address) => address.name === shippingAddressName,
   );
@@ -1013,7 +1024,10 @@ function CheckoutDialogContent({
                       aria-label="Shipping address"
                       value={shippingAddressName}
                       disabled={customerAddressesLoading}
-                      onChange={(event) => setShippingAddressName(event.target.value)}
+                      onChange={(event) => {
+                        setLocalShippingAddressName(event.target.value);
+                        onShippingAddressChange?.(event.target.value);
+                      }}
                       className="mt-1 h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm"
                     >
                       {customerAddresses?.map((address) => (
