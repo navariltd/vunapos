@@ -69,6 +69,7 @@ type Props = {
 	invoice: string;
 	invoiceDoctype?: string;
   posProfile?: string;
+  allowReturns?: boolean;
   isOnline: boolean;
   onStartSale: (customer: CustomerDTO) => void;
   onEdit?: () => void;
@@ -79,6 +80,7 @@ export function InvoiceDetailsPage({
 	invoice,
 	invoiceDoctype,
   posProfile,
+  allowReturns = true,
   isOnline,
   onStartSale,
 	onEdit,
@@ -308,7 +310,7 @@ export function InvoiceDetailsPage({
                 ) : null}
               </div>
             ) : null}
-            {details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
+            {allowReturns && details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
               <Button
                 variant="secondary"
                 disabled={!isOnline}
