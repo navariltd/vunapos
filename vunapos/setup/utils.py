@@ -10,6 +10,16 @@ def ensure_vunapos_custom_fields():
 		if frappe.db.exists("Custom Field", custom_field):
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
 	custom_fields = {
+		"POS Profile": [
+			{
+				"fieldname": "vunapos_allow_returns",
+				"label": "Allow Returns",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_allow_payment_history",
+				"description": "Allow cashiers using this POS Profile to create returns and credit notes.",
+				"default": "1",
+			}
+		],
 		"POS Settings": [
 			{
 				"fieldname": "vunapos_checkout_section",

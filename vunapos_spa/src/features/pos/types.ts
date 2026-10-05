@@ -227,6 +227,7 @@ export type BootstrapData = {
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
+	allow_returns?: boolean;
 	default_customer?: CustomerDTO | string | null;
 	modes_of_payment?: ModeOfPaymentDTO[];
 	mode_of_payments?: ModeOfPaymentDTO[];

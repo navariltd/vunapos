@@ -986,6 +986,7 @@ export function POSHomePage({
             invoice={getInvoiceFromPath(currentPath) || ""}
             invoiceDoctype={getInvoiceDoctypeFromPath(currentPath)}
             posProfile={bootstrap.data?.pos_profile}
+            allowReturns={bootstrap.data?.allow_returns !== false}
             isOnline={isReachable && navigator.onLine !== false}
             onStartSale={(customer) => {
               void handleSelectCustomer(customer);
