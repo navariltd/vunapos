@@ -7,6 +7,9 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
 }));
+jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
+  usePosBootstrap: jest.fn(() => ({ data: { site_name: "vuna.example.com" } })),
+}));
 
 jest.mock("socket.io-client", () => ({
   io: jest.fn(),
@@ -66,7 +69,9 @@ describe("gateway payment realtime hook", () => {
   });
 
   it("uses the Bench Socket.IO port only for a loopback development site", () => {
-    expect(getGatewayRealtimeConnection("http://vuna.localhost:8000")).toEqual({
+    expect(
+      getGatewayRealtimeConnection("http://vuna.localhost:8000", "vuna.localhost"),
+    ).toEqual({
       siteName: "vuna.localhost",
       url: "http://vuna.localhost:9000/vuna.localhost",
     });

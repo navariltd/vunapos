@@ -211,6 +211,8 @@ export type PosDefaultCustomer = {
 };
 
 export type PosBootstrapData = {
+  /** Authoritative Frappe Socket.IO namespace for this API site. */
+  site_name?: string;
   /** Server watermark used by the SPA-compatible timestamp delta contract. */
   server_time?: string;
   /** Explicit SPA-compatible sync metadata persisted with the snapshot. */

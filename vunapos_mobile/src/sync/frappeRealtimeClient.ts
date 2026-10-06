@@ -29,12 +29,17 @@ export function parsePosDomainResource(payload: unknown): PosDomainResource {
   return POS_REFERENCE_DATA_RESOURCE;
 }
 
-// `adb reverse` exposes the bench to an Android emulator as localhost. The
-// physical Frappe site remains meru.localhost, which is also the namespace
-// used when Frappe publishes realtime events. Keep this development bridge
-// narrow; deployed sites use their own public hostname as the site name.
-const LOCAL_BENCH_SITE_NAME = "meru.localhost";
+// `adb reverse` and Android's 10.0.2.2 alias expose the bench HTTP service to
+// the emulator. The Socket.IO namespace is supplied by the backend bootstrap,
+// so this client does not assume a particular developer site name.
 const CONFIGURATION_DEBOUNCE_MS = 350;
+
+type FrappeRealtimeConnection = {
+  siteName: string;
+  url: string;
+  hostHeader?: string;
+  originHeader?: string;
+};
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
@@ -73,31 +78,46 @@ export function subscribeRealtimeDiagnostics(listener: () => void) {
  * Deployed Frappe sites proxy Socket.IO through their normal public origin.
  * Only conventional loopback bench sites expose Socket.IO directly on :9000.
  */
-export function getFrappeRealtimeConnection(companyUrl: string) {
+export function getFrappeRealtimeConnection(
+  companyUrl: string,
+  siteName?: string,
+): FrappeRealtimeConnection {
   const url = new URL(companyUrl);
-  const isAdbReversedBench =
+  const isAndroidEmulatorBench =
     url.protocol === "http:" &&
     url.port === "8000" &&
-    (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    url.hostname === "10.0.2.2";
   const isLoopbackBench =
     url.protocol === "http:" &&
     url.port === "8000" &&
     (url.hostname === "localhost" ||
       url.hostname === "127.0.0.1" ||
-      url.hostname.endsWith(".localhost"));
+      url.hostname.endsWith(".localhost") ||
+      url.hostname === "10.0.2.2");
   if (isLoopbackBench) url.port = "9000";
 
-  return {
-    siteName: isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname,
+  const connection = {
+    siteName: siteName?.trim() || url.hostname,
     // Direct bench Socket.IO uses a site namespace. Public deployments expose
     // the Socket.IO endpoint through the normal origin and reject that extra
     // hostname path as an unknown namespace.
     url: isLoopbackBench
       ? `${url.origin}/${
-          isAdbReversedBench ? LOCAL_BENCH_SITE_NAME : url.hostname
+          siteName?.trim() || url.hostname
         }`
       : url.origin,
   };
+  if (isAndroidEmulatorBench) {
+    return {
+      ...connection,
+      // Android's 10.0.2.2 alias reaches the host machine but is not the
+      // bench's virtual host. Set these headers so Frappe's Socket.IO handshake
+      // reaches the backend-provided Frappe site namespace.
+      hostHeader: "localhost:9000",
+      originHeader: "http://localhost:8000",
+    };
+  }
+  return connection;
 }
 
 /** One authenticated socket for the whole signed-in mobile session. */
@@ -113,15 +133,16 @@ export class FrappeRealtimeClient {
     private readonly socketFactory: SocketFactory = (url, options) => io(url, options),
   ) {}
 
-  start(companyUrl: string, sessionId: string) {
+  start(companyUrl: string, sessionId: string, siteName?: string) {
     this.stop();
-    const connection = getFrappeRealtimeConnection(companyUrl);
+    const connection = getFrappeRealtimeConnection(companyUrl, siteName);
     setDiagnostics({ status: "connecting" });
     this.socket = this.socketFactory(connection.url, {
       autoConnect: true,
       extraHeaders: {
         Cookie: `sid=${encodeURIComponent(sessionId)}`,
-        Origin: companyUrl,
+        ...(connection.hostHeader ? { Host: connection.hostHeader } : {}),
+        Origin: connection.originHeader ?? companyUrl,
         "X-Frappe-Site-Name": connection.siteName,
       },
       reconnection: true,

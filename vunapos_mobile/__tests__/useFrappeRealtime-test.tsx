@@ -10,6 +10,9 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
 }));
+jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
+  usePosBootstrap: jest.fn(() => ({ data: { site_name: "meru.localhost" } })),
+}));
 
 jest.mock("@/sync/frappeRealtimeClient", () => ({
   frappeRealtimeClient: { start: jest.fn(), stop: jest.fn() },
@@ -39,6 +42,7 @@ describe("useFrappeRealtime", () => {
       expect(mockStart).toHaveBeenCalledWith(
         "https://pos.example.com",
         "sid-1",
+        "meru.localhost",
       ),
     );
     await cleanup();
@@ -52,6 +56,7 @@ describe("useFrappeRealtime", () => {
       expect(mockStart).toHaveBeenCalledWith(
         "https://pos.example.com",
         "sid-1",
+        "meru.localhost",
       ),
     );
   });

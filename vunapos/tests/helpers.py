@@ -81,17 +81,26 @@ def ensure_test_payment_mode(mode_of_payment="_Test Vuna M-Pesa", payment_type="
 
 
 def ensure_test_customer():
-	if frappe.db.exists("Customer", "_Test Customer"):
-		return "_Test Customer"
-	customer = frappe.get_doc(
-		{
-			"doctype": "Customer",
-			"customer_name": "_Test Customer",
-			"customer_type": "Individual",
-			"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
-			"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
-		}
-	)
+	existing_customer = frappe.db.get_value("Customer", {"customer_name": "_Test Customer"}, "name")
+	if existing_customer:
+		return existing_customer
+	values = {
+		"doctype": "Customer",
+		"customer_name": "_Test Customer",
+		"customer_type": "Individual",
+		"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
+		"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
+	}
+	# Keep this fixture valid when the site has an additional required
+	# Customer Link, while allowing sites without that custom field.
+	if frappe.get_meta("Customer").has_field("custom_order_type"):
+		order_type = frappe.db.get_value("Customer Order Type", {}, "name")
+		if not order_type:
+			order_type = frappe.get_doc(
+				{"doctype": "Customer Order Type", "name1": "_Test VunaPOS Order Type"}
+			).insert(ignore_permissions=True).name
+		values["custom_order_type"] = order_type
+	customer = frappe.get_doc(values)
 	customer.insert(ignore_permissions=True)
 	return customer.name
 
@@ -244,21 +253,27 @@ def set_profile_tax_template(pos_profile, tax_template=None):
 
 
 def ensure_test_item():
-	if frappe.db.exists("Item", "_Test VunaPOS Item"):
-		item = frappe.get_doc("Item", "_Test VunaPOS Item")
+	# Some sites assign Item names from a series, so item_code is not the
+	# document name. The unique fixture barcode identifies an existing row.
+	existing_item = frappe.db.get_value("Item Barcode", {"barcode": "VUNA-POS-BARCODE"}, "parent")
+	if existing_item:
+		item = frappe.get_doc("Item", existing_item)
 	else:
-		item = frappe.get_doc(
-			{
-				"doctype": "Item",
-				"item_code": "_Test VunaPOS Item",
-				"item_name": "_Test VunaPOS Item",
-				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
-				"stock_uom": frappe.db.get_value("UOM", {}, "name"),
-				"is_sales_item": 1,
-				"is_stock_item": 0,
-				"standard_rate": 100,
-			}
-		)
+		values = {
+			"doctype": "Item",
+			"item_code": "_Test VunaPOS Item",
+			"item_name": "_Test VunaPOS Item",
+			"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+			"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+			"is_sales_item": 1,
+			"is_stock_item": 0,
+			"standard_rate": 100,
+		}
+		# This test item is not submitted to eTIMS. Sites with Kenya compliance
+		# otherwise require seven unrelated registration fields during insertion.
+		if frappe.get_meta("Item").has_field("etims_prevent_etims_registration"):
+			values["etims_prevent_etims_registration"] = 1
+		item = frappe.get_doc(values)
 		item.insert(ignore_permissions=True)
 
 	if not frappe.db.exists("Item Barcode", {"parent": item.name, "barcode": "VUNA-POS-BARCODE"}):

@@ -27,17 +27,23 @@ function socketStub() {
 
 describe("FrappeRealtimeClient", () => {
   it("uses the direct Socket.IO port only for loopback bench sites", () => {
-    expect(getFrappeRealtimeConnection("http://localhost:8000")).toEqual({
+    expect(getFrappeRealtimeConnection("http://localhost:8000", "meru.localhost")).toEqual({
       siteName: "meru.localhost",
       url: "http://localhost:9000/meru.localhost",
     });
-    expect(getFrappeRealtimeConnection("http://127.0.0.1:8000")).toEqual({
+    expect(getFrappeRealtimeConnection("http://127.0.0.1:8000", "meru.localhost")).toEqual({
       siteName: "meru.localhost",
       url: "http://127.0.0.1:9000/meru.localhost",
     });
-    expect(getFrappeRealtimeConnection("http://vuna.localhost:8000")).toEqual({
+    expect(getFrappeRealtimeConnection("http://vuna.localhost:8000", "vuna.localhost")).toEqual({
       siteName: "vuna.localhost",
       url: "http://vuna.localhost:9000/vuna.localhost",
+    });
+    expect(getFrappeRealtimeConnection("http://10.0.2.2:8000", "meru.localhost")).toEqual({
+      siteName: "meru.localhost",
+      url: "http://10.0.2.2:9000/meru.localhost",
+      hostHeader: "localhost:9000",
+      originHeader: "http://localhost:8000",
     });
     expect(
       getFrappeRealtimeConnection("https://pos.example.com"),
@@ -45,6 +51,27 @@ describe("FrappeRealtimeClient", () => {
       siteName: "pos.example.com",
       url: "https://pos.example.com",
     });
+  });
+
+  it("sends the bench host and site namespace headers for Android emulator access", () => {
+    const socket = socketStub();
+    const factory = jest.fn(() => socket);
+    const client = new FrappeRealtimeClient(factory);
+
+    client.start("http://10.0.2.2:8000", "sid-1", "meru.localhost");
+
+    expect(factory).toHaveBeenCalledWith(
+      "http://10.0.2.2:9000/meru.localhost",
+      expect.objectContaining({
+        extraHeaders: expect.objectContaining({
+          Cookie: "sid=sid-1",
+          Host: "localhost:9000",
+          Origin: "http://localhost:8000",
+          "X-Frappe-Site-Name": "meru.localhost",
+        }),
+      }),
+    );
+    client.stop();
   });
 
   it("owns one socket and debounces configuration invalidation events", async () => {
