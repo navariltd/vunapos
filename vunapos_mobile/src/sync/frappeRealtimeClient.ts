@@ -1,6 +1,7 @@
 import { io } from "socket.io-client";
 
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 
 export const DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed";
 export const CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT;
@@ -173,7 +174,7 @@ export class FrappeRealtimeClient {
     this.configurationRefreshQueued = false;
     this.configurationRefreshInFlight = true;
     try {
-      await invalidateRealtimeResource("workspace-configuration", payload);
+      await invalidateRealtimeResource(POS_WORKSPACE_RESOURCE, payload);
     } finally {
       this.configurationRefreshInFlight = false;
       // If another event arrived while the refresh was running, schedule one

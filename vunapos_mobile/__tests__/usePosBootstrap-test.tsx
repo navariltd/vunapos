@@ -19,6 +19,8 @@ const mockRegisterRealtimeRefresh = jest.fn(
 jest.mock("@/sync/realtimeInvalidation", () => ({
   registerRealtimeRefresh: (resource: unknown, callback: unknown) =>
     mockRegisterRealtimeRefresh(resource, callback),
+  registerRealtimeControlRefresh: (resource: unknown, callback: unknown) =>
+    mockRegisterRealtimeRefresh(resource, callback),
 }));
 
 jest.mock("@/services/frappeClient", () => ({

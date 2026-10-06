@@ -7,6 +7,7 @@ import {
 } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 import {
   POS_CACHE_TTL_MS,
   refreshRegisteredPosResources,
@@ -90,7 +91,7 @@ export function usePosRefreshTriggers() {
       // Let the cache owner perform the one configuration request so a
       // foreground/reconnect repair cannot fetch and discard an identical
       // payload before invalidating the resource.
-      await invalidateRealtimeResource("workspace-configuration", {
+      await invalidateRealtimeResource(POS_WORKSPACE_RESOURCE, {
         full: false,
         source,
       });

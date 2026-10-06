@@ -6,7 +6,8 @@ import {
   usePosCachedResource,
 } from "@/hooks/usePosCachedResource";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
+import { registerRealtimeControlRefresh } from "@/sync/realtimeInvalidation";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 import {
   PosBootstrapData,
   PosCheckoutFieldDefinition,
@@ -248,7 +249,7 @@ export function usePosBootstrap(options?: {
   const cacheKey =
     companyUrl && sessionId
       ? {
-          resource: "workspace-configuration",
+          resource: POS_WORKSPACE_RESOURCE,
           scope: {
             companyUrl,
             // Frappe's SID is the currently authenticated account context.
@@ -348,7 +349,7 @@ export function usePosBootstrap(options?: {
   useEffect(
     () => {
       if (!enabled || !subscribeRealtime) return;
-      return registerRealtimeRefresh("workspace-configuration", (payload) => {
+      return registerRealtimeControlRefresh(POS_WORKSPACE_RESOURCE, (payload) => {
         const request =
           payload && typeof payload === "object"
             ? (payload as { full?: boolean; refresh?: string })

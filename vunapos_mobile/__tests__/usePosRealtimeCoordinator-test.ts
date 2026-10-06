@@ -14,6 +14,8 @@ const mockRegisterRealtimeRefresh = jest.fn(
 jest.mock("@/sync/realtimeInvalidation", () => ({
   registerRealtimeRefresh: (resource: unknown, handler: unknown) =>
     mockRegisterRealtimeRefresh(resource, handler),
+  registerRealtimeControlRefresh: (resource: unknown, handler: unknown) =>
+    mockRegisterRealtimeRefresh(resource, handler),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";

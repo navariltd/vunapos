@@ -2,7 +2,8 @@ import { useEffect, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
-import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
+import { registerRealtimeControlRefresh } from "@/sync/realtimeInvalidation";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 
 type ConfigurationSignal = {
   full?: boolean;
@@ -39,7 +40,7 @@ export function usePosRealtimeCoordinator() {
 
   useEffect(() => {
     if (!enabled) return;
-    return registerRealtimeRefresh("workspace-configuration", (payload) => {
+    return registerRealtimeControlRefresh(POS_WORKSPACE_RESOURCE, (payload) => {
       const full = isFullRefreshSignal(payload);
       return Promise.resolve(reloadCatalogue.current({ full })).then(() => undefined);
     });

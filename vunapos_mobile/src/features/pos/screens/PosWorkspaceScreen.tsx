@@ -41,6 +41,7 @@ import {
 } from "@/features/pos/posConfiguration";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { posCache } from "@/services/posCache";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -230,7 +231,7 @@ export function PosWorkspaceScreen() {
             posProfile: "workspace",
             userId: sessionId,
           },
-          "workspace-configuration",
+          POS_WORKSPACE_RESOURCE,
         );
       }
       setPosSession({

@@ -6,6 +6,7 @@ import {
 } from "@/sync/frappeRealtimeClient";
 import {
   invalidateRealtimeResource,
+  registerRealtimeControlRefresh,
   registerRealtimeRefresh,
 } from "@/sync/realtimeInvalidation";
 
@@ -51,7 +52,7 @@ describe("FrappeRealtimeClient", () => {
     const factory = jest.fn(() => socket);
     const client = new FrappeRealtimeClient(factory);
     const refresh = jest.fn();
-    const unregister = registerRealtimeRefresh(
+    const unregister = registerRealtimeControlRefresh(
       "workspace-configuration",
       refresh,
     );
@@ -84,7 +85,7 @@ describe("FrappeRealtimeClient", () => {
 
   it("does not invoke removed resource handlers", () => {
     const refresh = jest.fn();
-    const unregister = registerRealtimeRefresh(
+    const unregister = registerRealtimeControlRefresh(
       "workspace-configuration",
       refresh,
     );
@@ -127,7 +128,7 @@ describe("FrappeRealtimeClient", () => {
         }),
       )
       .mockResolvedValue(undefined);
-    const unregister = registerRealtimeRefresh(
+    const unregister = registerRealtimeControlRefresh(
       "workspace-configuration",
       refresh,
     );
@@ -153,7 +154,7 @@ describe("FrappeRealtimeClient", () => {
     const socket = socketStub();
     const client = new FrappeRealtimeClient(() => socket);
     const refresh = jest.fn().mockResolvedValue(undefined);
-    const unregister = registerRealtimeRefresh(
+    const unregister = registerRealtimeControlRefresh(
       "workspace-configuration",
       refresh,
     );
