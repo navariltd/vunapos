@@ -153,7 +153,9 @@ describe("usePosBootstrap", () => {
       payment_modes: [],
       pos_profile: { name: "POS-001" },
     });
-    const hook = await renderHook(() => usePosBootstrap());
+    const hook = await renderHook(() =>
+      usePosBootstrap({ subscribeRealtime: true }),
+    );
     await waitFor(() => expect(hook.result.current.data).not.toBeNull());
 
     const refresh = mockRegisterRealtimeRefresh.mock.calls.at(-1)?.[1] as
@@ -164,7 +166,7 @@ describe("usePosBootstrap", () => {
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
   });
 
-  it("measures the separate workspace and catalogue realtime handlers", async () => {
+  it("does not let feature bootstrap hooks own realtime subscriptions", async () => {
     mockGetVunaMethod.mockImplementation(async (_companyUrl, _sessionId, method) =>
       method === "vunapos.api.pos.get_pos_bootstrap_config"
         ? { payment_modes: [], pos_profile: { name: "POS-001" } }
@@ -179,16 +181,7 @@ describe("usePosBootstrap", () => {
     const handlers = mockRegisterRealtimeRefresh.mock.calls
       .filter(([resource]) => resource === "workspace-configuration")
       .map(([, callback]) => callback as () => Promise<void>);
-    expect(handlers).toHaveLength(2);
-
-    await act(async () => {
-      await Promise.all(handlers.map((handler) => handler()));
-    });
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(4));
-    expect(mockGetVunaMethod.mock.calls.slice(2).map((call) => call[2])).toEqual([
-      "vunapos.api.pos.get_pos_bootstrap_config",
-      "vunapos.api.pos.get_pos_bootstrap",
-    ]);
+    expect(handlers).toHaveLength(0);
   });
 
   it("maps the profile default customer from a cached server payload", async () => {

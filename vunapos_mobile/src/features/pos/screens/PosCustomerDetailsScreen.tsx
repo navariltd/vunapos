@@ -268,7 +268,10 @@ export function PosCustomerDetailsScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const isOffline = connectionStatus !== "online";
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const details = usePosCustomerDetails({
     customer,
     posProfile: bootstrap.data?.pos_profile.name,

@@ -92,7 +92,10 @@ export function PosHomeScreen({
     null,
   );
   const [bundleItem, setBundleItem] = useState<PosCatalogueItem | null>(null);
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const itemSearch = usePosItemSearch({
     customer: useBootstrapCatalogue ? undefined : pricingContext?.customer,
     enabled: true,

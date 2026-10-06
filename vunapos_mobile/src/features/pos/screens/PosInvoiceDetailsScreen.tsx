@@ -157,7 +157,10 @@ export function PosInvoiceDetailsScreen({
   const styles = createStyles(palette);
   const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const [workflowActionsVisible, setWorkflowActionsVisible] = useState(false);
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const details = usePosInvoiceDetails({
     invoiceDoctype,
     invoiceName,

@@ -202,7 +202,11 @@ export function PosCheckoutScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const bootstrapResource = usePosBootstrap({ enabled: !bootstrapData });
+  const bootstrapResource = usePosBootstrap({
+    enabled: !bootstrapData,
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const bootstrap = bootstrapData
     ? {
         ...bootstrapResource,

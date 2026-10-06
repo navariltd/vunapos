@@ -156,7 +156,10 @@ export function PosInvoicesScreen({
   const [draftFilters, setDraftFilters] =
     useState<PosInvoiceHistoryFilters>(initialFilters);
   const [start, setStart] = useState(0);
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const history = usePosInvoiceHistory({
     filters,
     posProfile: bootstrap.data?.pos_profile.name,

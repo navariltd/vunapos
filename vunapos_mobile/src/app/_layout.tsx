@@ -20,6 +20,7 @@ import { NetworkStatusProvider } from "@/services/NetworkStatusProvider";
 import { useFrappeRealtime } from "@/sync/useFrappeRealtime";
 import { usePosQueueRealtime } from "@/sync/usePosQueueRealtime";
 import { usePosRefreshTriggers } from "@/sync/usePosRefreshTriggers";
+import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
 import { AppearanceProvider, useAppearance } from "@/theme/AppearanceProvider";
 
 SplashScreen.preventAutoHideAsync();
@@ -51,6 +52,7 @@ export default function RootLayout() {
 
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   useFrappeRealtime();
+  usePosRealtimeCoordinator();
   usePosQueueRealtime();
   usePosRefreshTriggers();
   const { isBootstrapping } = useAppSession();

@@ -25,6 +25,8 @@ type UsePosCachedResourceArgs<T> = {
   enabled?: boolean;
   /** The cached snapshot is supplied so delta-capable loaders can use its watermark. */
   load: (signal: AbortSignal, cached?: T | null) => Promise<T>;
+  /** Only app-owned resources should participate in the global freshness scheduler. */
+  manageFreshness?: boolean;
   ttlMs?: number;
 };
 
@@ -74,6 +76,7 @@ export function usePosCachedResource<T>({
   connectionStatus,
   enabled = true,
   load,
+  manageFreshness = true,
   ttlMs = POS_CACHE_TTL_MS,
 }: UsePosCachedResourceArgs<T>) {
   const loadRef = useRef(load);
@@ -254,7 +257,7 @@ export function usePosCachedResource<T>({
   }, [cache, cacheKey, keyFingerprint]);
 
   useEffect(() => {
-    if (!enabled || !keyFingerprint) return;
+    if (!enabled || !manageFreshness || !keyFingerprint) return;
     const refresh = () => loadResource(false);
     const refreshers = registeredRefreshers.get(keyFingerprint) ?? new Set();
     refreshers.add(refresh);
@@ -263,7 +266,7 @@ export function usePosCachedResource<T>({
       refreshers.delete(refresh);
       if (!refreshers.size) registeredRefreshers.delete(keyFingerprint);
     };
-  }, [enabled, keyFingerprint, loadResource]);
+  }, [enabled, keyFingerprint, loadResource, manageFreshness]);
 
   const refresh = useCallback(async () => {
     await loadResource(true);

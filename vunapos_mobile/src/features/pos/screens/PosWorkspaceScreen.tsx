@@ -68,7 +68,10 @@ export function PosWorkspaceScreen() {
   // The shell configuration is intentionally loaded independently of the
   // catalogue. This lets the POS/session gate render while items hydrate in
   // the background, matching the SPA startup sequence.
-  const workspaceConfig = usePosBootstrapConfig();
+  const workspaceConfig = usePosBootstrapConfig({
+    manageFreshness: false,
+    subscribeRealtime: false,
+  });
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);

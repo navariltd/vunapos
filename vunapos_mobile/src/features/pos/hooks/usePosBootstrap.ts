@@ -234,10 +234,18 @@ function withSyncMetadata(
   };
 }
 
-export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapState {
+export function usePosBootstrap(options?: {
+  enabled?: boolean;
+  /** Only the app-level POS sync coordinator should subscribe to realtime. */
+  subscribeRealtime?: boolean;
+  /** Only the app-level POS sync coordinator should schedule freshness. */
+  manageFreshness?: boolean;
+}): PosBootstrapState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const enabled = options?.enabled !== false;
+  const subscribeRealtime = options?.subscribeRealtime === true;
+  const manageFreshness = options?.manageFreshness === true;
   const forceFullRefreshRef = useRef(false);
   const cacheKey =
     companyUrl && sessionId
@@ -317,6 +325,7 @@ export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapSt
     connectionStatus,
     load,
     enabled,
+    manageFreshness,
     ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
   });
   const refreshResource = resource.refresh;
@@ -340,7 +349,7 @@ export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapSt
   );
   useEffect(
     () => {
-      if (!enabled) return;
+      if (!enabled || !subscribeRealtime) return;
       return registerRealtimeRefresh("workspace-configuration", (payload) => {
         const request =
           payload && typeof payload === "object"
@@ -351,7 +360,7 @@ export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapSt
         });
       });
     },
-    [enabled, reload],
+    [enabled, reload, subscribeRealtime],
   );
 
   if (!cacheKey)
@@ -381,9 +390,18 @@ export function usePosBootstrap(options?: { enabled?: boolean }): PosBootstrapSt
  * catalogue.  Keeping this in the same cache/resource path gives mobile the
  * same two-stage startup contract without inventing a new backend response.
  */
-export function usePosBootstrapConfig(): PosBootstrapConfigState {
+export function usePosBootstrapConfig(options?: {
+  enabled?: boolean;
+  /** Only the app-level POS sync coordinator should subscribe to realtime. */
+  subscribeRealtime?: boolean;
+  /** Only the app-level POS sync coordinator should schedule freshness. */
+  manageFreshness?: boolean;
+}): PosBootstrapConfigState {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const enabled = options?.enabled !== false;
+  const subscribeRealtime = options?.subscribeRealtime === true;
+  const manageFreshness = options?.manageFreshness === true;
   const cacheKey =
     companyUrl && sessionId
       ? {
@@ -423,14 +441,18 @@ export function usePosBootstrapConfig(): PosBootstrapConfigState {
     cacheKey,
     connectionStatus,
     load,
+    enabled,
+    manageFreshness,
     ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
   });
   const reloadResource = resource.refresh;
   const reload = useCallback(() => reloadResource(), [reloadResource]);
   useEffect(
-    () =>
-      registerRealtimeRefresh("workspace-configuration", () => reload()),
-    [reload],
+    () => {
+      if (!enabled || !subscribeRealtime) return;
+      return registerRealtimeRefresh("workspace-configuration", () => reload());
+    },
+    [enabled, reload, subscribeRealtime],
   );
 
   if (!cacheKey) {
