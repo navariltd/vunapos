@@ -6,7 +6,6 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
   usePosBootstrap: jest.fn(),
-  usePosBootstrapConfig: jest.fn(),
 }));
 
 const mockRegisterRealtimeRefresh = jest.fn(
@@ -18,23 +17,17 @@ jest.mock("@/sync/realtimeInvalidation", () => ({
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import {
-  usePosBootstrap,
-  usePosBootstrapConfig,
-} from "@/features/pos/hooks/usePosBootstrap";
+import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
 
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
-const mockUsePosBootstrapConfig = jest.mocked(usePosBootstrapConfig);
 const catalogueReload = jest.fn();
-const configurationReload = jest.fn();
 
 describe("usePosRealtimeCoordinator", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     catalogueReload.mockResolvedValue(undefined);
-    configurationReload.mockResolvedValue(undefined);
     mockUseAppSession.mockReturnValue({ authState: "signedIn" } as never);
     mockUsePosBootstrap.mockReturnValue({
       data: null,
@@ -42,15 +35,9 @@ describe("usePosRealtimeCoordinator", () => {
       isLoading: false,
       reload: catalogueReload,
     });
-    mockUsePosBootstrapConfig.mockReturnValue({
-      data: null,
-      error: null,
-      isLoading: false,
-      reload: configurationReload,
-    });
   });
 
-  it("registers one app-owned handler and refreshes both projections once", async () => {
+  it("registers one app-owned handler and refreshes the shared projection once", async () => {
     renderHook(() => usePosRealtimeCoordinator());
 
     await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(1));
@@ -64,7 +51,6 @@ describe("usePosRealtimeCoordinator", () => {
     ) => Promise<void>;
     await act(async () => handler({ refresh: "full" }));
 
-    expect(configurationReload).toHaveBeenCalledTimes(1);
     expect(catalogueReload).toHaveBeenCalledWith({ full: true });
   });
 

@@ -2,7 +2,8 @@ import { io } from "socket.io-client";
 
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
 
-export const CONFIGURATION_EVENT = "vunapos_configuration_changed";
+export const DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed";
+export const CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT;
 export const CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed";
 
 // `adb reverse` exposes the bench to an Android emulator as localhost. The

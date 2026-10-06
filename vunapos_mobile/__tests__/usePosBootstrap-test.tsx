@@ -53,8 +53,9 @@ describe("usePosBootstrap", () => {
     } as unknown as ReturnType<typeof useAppSession>);
   });
 
-  it("loads shell configuration independently from the catalogue bootstrap", async () => {
+  it("shares one authoritative snapshot between shell and catalogue consumers", async () => {
     mockGetVunaMethod.mockResolvedValue({
+      items: [{ item_code: "ITEM-001", item_name: "Item" }],
       payment_modes: [{ mode_of_payment: "Cash", default: true }],
       pos_profile: { currency: "KES", name: "POS-001" },
       pos_session: { ready: true },
@@ -66,24 +67,22 @@ describe("usePosBootstrap", () => {
     await waitFor(() =>
       expect(hook.result.current.data?.pos_profile.name).toBe("POS-001"),
     );
-    expect(hook.result.current.data?.items).toBeUndefined();
+    expect(hook.result.current.data?.items).toHaveLength(1);
     expect(mockGetVunaMethod).toHaveBeenCalledWith(
       "https://vuna.example.com",
       "sid-1",
-      "vunapos.api.pos.get_pos_bootstrap_config",
+      "vunapos.api.pos.get_pos_bootstrap",
       {},
       expect.any(AbortSignal),
     );
   });
 
-  it("keeps configuration usable when catalogue hydration fails", async () => {
-    mockGetVunaMethod
-      .mockResolvedValueOnce({
-        payment_modes: [],
-        pos_profile: { name: "POS-001" },
-        pos_session: { ready: true },
-      })
-      .mockRejectedValueOnce(new Error("catalogue unavailable"));
+  it("deduplicates shell and catalogue consumers on the shared cache key", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    });
 
     const hook = await renderHook(() => ({
       config: usePosBootstrapConfig(),
@@ -93,10 +92,8 @@ describe("usePosBootstrap", () => {
     await waitFor(() =>
       expect(hook.result.current.config.data?.pos_profile.name).toBe("POS-001"),
     );
-    await waitFor(() =>
-      expect(hook.result.current.catalogue.error).toBe("catalogue unavailable"),
-    );
-    expect(hook.result.current.config.error).toBeNull();
+    await waitFor(() => expect(hook.result.current.catalogue.data).not.toBeNull());
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
   });
 
   afterEach(async () => {
@@ -167,16 +164,16 @@ describe("usePosBootstrap", () => {
   });
 
   it("does not let feature bootstrap hooks own realtime subscriptions", async () => {
-    mockGetVunaMethod.mockImplementation(async (_companyUrl, _sessionId, method) =>
-      method === "vunapos.api.pos.get_pos_bootstrap_config"
-        ? { payment_modes: [], pos_profile: { name: "POS-001" } }
-        : { items: [], payment_modes: [], pos_profile: { name: "POS-001" } },
-    );
+    mockGetVunaMethod.mockResolvedValue({
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    });
     await renderHook(() => ({
       config: usePosBootstrapConfig(),
       catalogue: usePosBootstrap(),
     }));
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
 
     const handlers = mockRegisterRealtimeRefresh.mock.calls
       .filter(([resource]) => resource === "workspace-configuration")

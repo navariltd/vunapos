@@ -1,10 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
-import {
-  usePosBootstrap,
-  usePosBootstrapConfig,
-} from "@/features/pos/hooks/usePosBootstrap";
+import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
 
 type ConfigurationSignal = {
@@ -29,22 +26,12 @@ function isFullRefreshSignal(payload: unknown) {
 export function usePosRealtimeCoordinator() {
   const { authState } = useAppSession();
   const enabled = authState === "signedIn";
-  const configuration = usePosBootstrapConfig({
-    enabled,
-    manageFreshness: true,
-    subscribeRealtime: false,
-  });
   const catalogue = usePosBootstrap({
     enabled,
     manageFreshness: true,
     subscribeRealtime: false,
   });
-  const reloadConfiguration = useRef(configuration.reload);
   const reloadCatalogue = useRef(catalogue.reload);
-
-  useEffect(() => {
-    reloadConfiguration.current = configuration.reload;
-  }, [configuration.reload]);
 
   useEffect(() => {
     reloadCatalogue.current = catalogue.reload;
@@ -54,10 +41,7 @@ export function usePosRealtimeCoordinator() {
     if (!enabled) return;
     return registerRealtimeRefresh("workspace-configuration", (payload) => {
       const full = isFullRefreshSignal(payload);
-      return Promise.all([
-        reloadConfiguration.current(),
-        reloadCatalogue.current({ full }),
-      ]).then(() => undefined);
+      return Promise.resolve(reloadCatalogue.current({ full })).then(() => undefined);
     });
   }, [enabled]);
 }

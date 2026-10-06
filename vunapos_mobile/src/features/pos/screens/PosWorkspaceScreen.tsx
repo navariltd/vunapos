@@ -65,9 +65,8 @@ export function PosWorkspaceScreen() {
   const { companyUrl, sessionId } = useAppSession();
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
-  // The shell configuration is intentionally loaded independently of the
-  // catalogue. This lets the POS/session gate render while items hydrate in
-  // the background, matching the SPA startup sequence.
+  // Shell and catalogue consumers read the same root-owned snapshot. This
+  // keeps profile state coherent while the app-level coordinator refreshes it.
   const workspaceConfig = usePosBootstrapConfig({
     manageFreshness: false,
     subscribeRealtime: false,

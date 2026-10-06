@@ -29,10 +29,8 @@ type PosBootstrapState = {
   reload: (options?: { full?: boolean }) => void | Promise<void>;
 };
 
-/** The small, configuration-first response used to render the POS shell. */
-export type PosBootstrapConfigState = Omit<PosBootstrapState, "data"> & {
-  data: PosBootstrapData | null;
-};
+/** Alias kept for shell consumers; configuration and catalogue share one snapshot. */
+export type PosBootstrapConfigState = PosBootstrapState;
 
 const CHECKOUT_FIELD_DOCTYPES = new Set<PosCheckoutFieldDefinition["doctype"]>([
   "POS Invoice",
@@ -386,9 +384,11 @@ export function usePosBootstrap(options?: {
 }
 
 /**
- * Loads the SPA-equivalent configuration snapshot independently of the
- * catalogue.  Keeping this in the same cache/resource path gives mobile the
- * same two-stage startup contract without inventing a new backend response.
+ * Reads the app-owned bootstrap snapshot for shell consumers.
+ *
+ * This intentionally shares the exact cache key and loader with
+ * usePosBootstrap. The root coordinator therefore has one authoritative
+ * refresh and screens cannot create a second configuration projection.
  */
 export function usePosBootstrapConfig(options?: {
   enabled?: boolean;
@@ -397,74 +397,5 @@ export function usePosBootstrapConfig(options?: {
   /** Only the app-level POS sync coordinator should schedule freshness. */
   manageFreshness?: boolean;
 }): PosBootstrapConfigState {
-  const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const { connectionStatus } = useNetworkStatus();
-  const enabled = options?.enabled !== false;
-  const subscribeRealtime = options?.subscribeRealtime === true;
-  const manageFreshness = options?.manageFreshness === true;
-  const cacheKey =
-    companyUrl && sessionId
-      ? {
-          resource: "workspace-config",
-          scope: { companyUrl, userId: sessionId, posProfile: "workspace" },
-        }
-      : null;
-  const load = useCallback(
-    async (signal: AbortSignal) => {
-      if (!companyUrl || !sessionId) {
-        throw new Error(
-          "Your session is no longer available. Sign in again to continue.",
-        );
-      }
-      try {
-        return normalizeBootstrap(
-          requireBootstrapPayload(
-            await getVunaMethod<PosBootstrapData>(
-              companyUrl,
-              sessionId,
-              "vunapos.api.pos.get_pos_bootstrap_config",
-              {},
-              signal,
-            ),
-          ),
-        );
-      } catch (error) {
-        if (error instanceof FrappeClientError && error.code === "session") {
-          void invalidateSession();
-        }
-        throw error;
-      }
-    },
-    [companyUrl, invalidateSession, sessionId],
-  );
-  const resource = usePosCachedResource({
-    cacheKey,
-    connectionStatus,
-    load,
-    enabled,
-    manageFreshness,
-    ttlMs: POS_BOOTSTRAP_DELTA_TTL_MS,
-  });
-  const reloadResource = resource.refresh;
-  const reload = useCallback(() => reloadResource(), [reloadResource]);
-  useEffect(
-    () => {
-      if (!enabled || !subscribeRealtime) return;
-      return registerRealtimeRefresh("workspace-configuration", () => reload());
-    },
-    [enabled, reload, subscribeRealtime],
-  );
-
-  if (!cacheKey) {
-    return {
-      data: null,
-      error: "Your session is no longer available. Sign in again to continue.",
-      hasHydratedCache: false,
-      isHydratingCache: false,
-      isInitialNetworkLoading: false,
-      isLoading: false,
-      reload,
-    };
-  }
-  return { ...resource, reload };
+  return usePosBootstrap(options);
 }
