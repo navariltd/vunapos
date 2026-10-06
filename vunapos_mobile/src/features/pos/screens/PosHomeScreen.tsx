@@ -27,6 +27,7 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosCatalogueItem,
+  PosOrderType,
   PosTemplateVariant,
 } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -60,6 +61,7 @@ type PosHomeScreenProps = {
     currency: string,
   ) => Promise<boolean | string | void> | boolean | string | void;
   onOpenCart: () => void;
+  orderType?: PosOrderType;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
   useBootstrapCatalogue?: boolean;
@@ -69,6 +71,7 @@ export function PosHomeScreen({
   cartItemCount,
   onAddToCart,
   onOpenCart,
+  orderType = "Invoice",
   pricingContext,
   refreshKey = 0,
   useBootstrapCatalogue = false,
@@ -78,6 +81,7 @@ export function PosHomeScreen({
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
+  const isSalesOrder = orderType === "Order";
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
@@ -181,12 +185,13 @@ export function PosHomeScreen({
 
   const isOutOfStock = useCallback(
     (item: PosCatalogueItem) =>
+      !isSalesOrder &&
       Boolean(item.is_stock_item) &&
       !item.has_variants &&
       !item.is_product_bundle &&
       !item.allow_negative_stock &&
       Number(item.actual_qty || 0) <= 0,
-    [],
+    [isSalesOrder],
   );
 
   const visibleItems = hideUnavailableItems
@@ -474,6 +479,7 @@ export function PosHomeScreen({
         isOffline={isOffline}
         isLoading={templateVariants.isLoading}
         isSelecting={Boolean(pendingItemCode)}
+        ignoreStock={isSalesOrder}
         onDismiss={() => {
           if (!pendingItemCode) setVariantTemplate(null);
         }}

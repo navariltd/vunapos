@@ -853,7 +853,7 @@ describe("PosCheckoutScreen", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByText("Kilimani, Nairobi, Kenya")).toBeTruthy(),
+      expect(screen.getByText("Select shipping address")).toBeTruthy(),
     );
     await fireEvent.press(screen.getByLabelText("Choose shipping address"));
     expect(screen.getByLabelText("Back to checkout")).toBeTruthy();
@@ -1517,12 +1517,17 @@ describe("PosCheckoutScreen", () => {
       isLoading: false,
       reload: jest.fn(),
     });
+    const materializeGatewayDraft = jest.fn().mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-DRAFT-001",
+    });
     const screen = await render(
       <PosCheckoutScreen
         currency="KES"
         items={[]}
         onBack={jest.fn()}
         onComplete={onComplete}
+        onMaterializeGatewayDraft={materializeGatewayDraft}
         orderType="Invoice"
         saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
         subtotal={100}
@@ -1545,9 +1550,13 @@ describe("PosCheckoutScreen", () => {
 
     await waitFor(() =>
       expect(initiate).toHaveBeenCalledWith(
-        expect.objectContaining({ phoneNumber: "0712345678" }),
+        expect.objectContaining({
+          accountReference: "SINV-DRAFT-001",
+          phoneNumber: "0712345678",
+        }),
       ),
     );
+    expect(materializeGatewayDraft).toHaveBeenCalledTimes(1);
   });
 
   it("explains when gateway phone resolution cannot find a number", async () => {

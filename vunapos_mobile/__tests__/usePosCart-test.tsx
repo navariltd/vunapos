@@ -279,6 +279,47 @@ describe("usePosCart", () => {
     );
   });
 
+  it("keeps the selected sales UOM for Sales Orders even when stock is insufficient", async () => {
+    const catalogueItem = {
+      actual_qty: 22,
+      conversion_factor: 24,
+      is_stock_item: true,
+      item_code: "F61",
+      item_name: "Dairy Joy 200ml",
+      price_list_rate: 240,
+      rate: 240,
+      stock_uom: "Pcs",
+      uom: "Carton",
+      uoms: [
+        { conversion_factor: 1, rate: 10, uom: "Pcs" },
+        { conversion_factor: 24, rate: 240, uom: "Carton" },
+      ],
+    };
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        orderType: "Order",
+        posProfile: "POS-001",
+      }),
+    );
+
+    let result: boolean | string = false;
+    await act(async () => {
+      result = await hook.result.current.add(catalogueItem);
+    });
+
+    expect(result).toBe(true);
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        items: '[{"item_code":"F61","qty":1,"conversion_factor":24,"uom":"Carton"}]',
+      }),
+    );
+  });
+
   it("keeps cart editing local while server previews are attempted offline", async () => {
     const hook = await renderHook(() =>
       usePosCart({
@@ -522,7 +563,7 @@ describe("usePosCart", () => {
         "vunapos.api.sales.preview_invoice",
         expect.objectContaining({
           customer: "ABC-CORPS",
-          items: '[{"item_code":"F61","qty":1,"uom":"Carton"}]',
+          items: '[{"item_code":"F61","qty":1,"conversion_factor":24,"uom":"Carton"}]',
         }),
       ),
     );

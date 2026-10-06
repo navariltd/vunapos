@@ -124,6 +124,7 @@ type PosInvoicesScreenProps = {
   onBackToPos?: () => void;
   onOpenInvoice: (invoice: { doctype?: string; name: string }) => void;
   onRestoreHeld: (invoice: PosHeldInvoice) => Promise<void>;
+  onCheckoutHeld?: (invoice: PosHeldInvoice) => Promise<void>;
 };
 
 function formatModified(value?: string | null) {
@@ -142,6 +143,7 @@ export function PosInvoicesScreen({
   heldRefreshKey = 0,
   onOpenInvoice,
   onRestoreHeld,
+  onCheckoutHeld,
 }: PosInvoicesScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
@@ -232,6 +234,23 @@ export function PosInvoicesScreen({
     }
   }
 
+  async function checkoutHeld(invoice: PosHeldInvoice) {
+    if (!onCheckoutHeld) return;
+    setRestoreError(null);
+    setRestoringName(invoice.name);
+    try {
+      await onCheckoutHeld(invoice);
+    } catch (error) {
+      setRestoreError(
+        error instanceof Error
+          ? error.message
+          : "Could not open this draft for checkout.",
+      );
+    } finally {
+      setRestoringName(null);
+    }
+  }
+
   const historyError = bootstrap.error ?? history.error;
   const heldError = bootstrap.error ?? held.error ?? restoreError;
   useEffect(() => {
@@ -284,7 +303,7 @@ export function PosInvoicesScreen({
       />
       <DocumentTab
         active={activeTab === "held"}
-        label="Held invoices"
+        label="Draft invoices"
         onPress={() => setActiveTab("held")}
       />
     </View>
@@ -307,7 +326,7 @@ export function PosInvoicesScreen({
             </Text>
           ) : heldError ? null : (
             <Text style={styles.emptyState}>
-              No invoices are currently held.
+              No draft invoices are currently held.
             </Text>
           )
         }
@@ -326,7 +345,7 @@ export function PosInvoicesScreen({
                 <Text style={styles.title}>Invoices</Text>
               </View>
               <Text style={styles.subtitle}>
-                Resume an online invoice without creating another draft.
+                Review draft invoices and continue editing or checkout.
               </Text>
             </View>
             {tabs}
@@ -363,9 +382,14 @@ export function PosInvoicesScreen({
         renderItem={({ item }) => (
           <View style={styles.heldInvoiceCard}>
             <View style={styles.heldInvoiceMain}>
-              <Text numberOfLines={1} style={styles.heldInvoiceName}>
-                {item.name}
-              </Text>
+              <Pressable
+                accessibilityLabel={`Open ${item.name}`}
+                onPress={() => onOpenInvoice({ doctype: item.doctype, name: item.name })}
+              >
+                <Text numberOfLines={1} style={styles.heldInvoiceName}>
+                  {item.name}
+                </Text>
+              </Pressable>
               <Text numberOfLines={1} style={styles.heldInvoiceCustomer}>
                 {item.customer_name || item.customer || "No customer"}
               </Text>
@@ -382,19 +406,31 @@ export function PosInvoicesScreen({
                   item.currency || currency,
                 )}
               </Text>
-              <Pressable
-                accessibilityLabel={`Restore ${item.name}`}
-                disabled={Boolean(restoringName)}
-                onPress={() => void restoreHeld(item)}
-                style={[
-                  styles.restoreButton,
-                  restoringName && styles.paginationButtonDisabled,
-                ]}
-              >
-                <Text style={styles.restoreButtonLabel}>
-                  {restoringName === item.name ? "Restoring…" : "Continue"}
-                </Text>
-              </Pressable>
+              <View style={styles.draftActions}>
+                <Pressable
+                  accessibilityLabel={`Edit ${item.name}`}
+                  disabled={Boolean(restoringName)}
+                  onPress={() => void restoreHeld(item)}
+                  style={[
+                    styles.restoreButton,
+                    restoringName && styles.paginationButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.restoreButtonLabel}>
+                    {restoringName === item.name ? "Opening…" : "Edit"}
+                  </Text>
+                </Pressable>
+                {onCheckoutHeld ? (
+                  <Pressable
+                    accessibilityLabel={`Checkout ${item.name}`}
+                    disabled={Boolean(restoringName)}
+                    onPress={() => void checkoutHeld(item)}
+                    style={styles.checkoutDraftButton}
+                  >
+                    <Text style={styles.checkoutDraftButtonLabel}>Checkout</Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </View>
           </View>
         )}
@@ -667,6 +703,21 @@ function createStyles(palette: AppPalette) {
     heldInvoiceAside: {
       alignItems: "flex-end",
       gap: spacing.sm,
+    },
+    draftActions: {
+      flexDirection: "row",
+      gap: spacing.xs,
+    },
+    checkoutDraftButton: {
+      backgroundColor: palette.primary,
+      borderRadius: radii.sm,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xs,
+    },
+    checkoutDraftButtonLabel: {
+      color: palette.onPrimary,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.tiny,
     },
     heldInvoiceCard: {
       backgroundColor: palette.surfaceContainer,

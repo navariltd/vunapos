@@ -24,6 +24,7 @@ import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScree
 import type { PosCheckoutFieldValues } from "@/features/pos/components/PosCheckoutFieldsCard";
 import {
   PosBootstrapData,
+  PosHeldInvoice,
   PosInvoicePaymentEntry,
   PosNavigationTab,
   PosOrderType,
@@ -31,6 +32,7 @@ import {
   PosSession,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
 import {
@@ -73,6 +75,10 @@ export function PosWorkspaceScreen() {
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [cartCurrency, setCartCurrency] = useState("KES");
   const [orderType, setOrderType] = useState<PosOrderType>("Invoice");
+  const [shippingAddressSelection, setShippingAddressSelection] = useState<{
+    customer?: string;
+    addressName: string;
+  }>({ addressName: "" });
   const configuredProfileRef = useRef<string | undefined>(undefined);
   const orderTypeOverrideRef = useRef(false);
   const [selectedInvoice, setSelectedInvoice] =
@@ -114,6 +120,20 @@ export function PosWorkspaceScreen() {
     undefined,
   );
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
+  const customerShippingAddresses = usePosCustomerShippingAddresses(
+    saleCustomer?.customer,
+    posProfile,
+  );
+  const shippingAddressName =
+    shippingAddressSelection.customer === saleCustomer?.customer
+      ? shippingAddressSelection.addressName
+      : "";
+  function setShippingAddressName(addressName: string) {
+    setShippingAddressSelection({
+      customer: saleCustomer?.customer,
+      addressName,
+    });
+  }
   const cart = usePosCart({
     customer: saleCustomer,
     orderType,
@@ -289,6 +309,35 @@ export function PosWorkspaceScreen() {
     setActiveTab("Payments");
   }
 
+  async function restoreDraft(invoice: PosHeldInvoice, checkout = false) {
+    const restored = await cart.restoreHeldInvoice(invoice);
+    orderTypeOverrideRef.current = true;
+    setOrderType(
+      restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
+    );
+    setSelectedPriceList(restored.selling_price_list);
+    setDraftCheckoutFieldValues(
+      Object.fromEntries(
+        Object.entries(restored.checkout_field_values ?? {})
+          .filter(([, value]) => value !== null && value !== undefined)
+          .map(([fieldname, value]) => [fieldname, String(value)]),
+      ),
+    );
+    setSelectedSaleCustomer(
+      restored.customer
+        ? {
+            customer: restored.customer,
+            customerName: restored.customer_name || restored.customer,
+          }
+        : null,
+    );
+    setCheckoutVisible(checkout);
+    setCartVisible(!checkout);
+    setShippingAddressName("");
+    setActiveTab("Home");
+    setHeldRefreshKey((current) => current + 1);
+  }
+
   if (workspaceConfig.isHydratingCache) {
     return <AppLaunchScreen message="Restoring your POS…" />;
   }
@@ -437,6 +486,8 @@ export function PosWorkspaceScreen() {
           items={cart.items}
           onApplyDeliveryCharge={cart.applyDeliveryCharge}
           onBack={() => setCheckoutVisible(false)}
+          shippingAddressName={shippingAddressName}
+          onShippingAddressChange={setShippingAddressName}
           onClear={() => {
             if (!cart.clear()) return;
             setSelectedPriceList(undefined);
@@ -447,6 +498,7 @@ export function PosWorkspaceScreen() {
           }}
           onComplete={(result) => {
             cart.clear();
+            setShippingAddressName("");
             setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             // A user override applies only to the sale that was just
@@ -492,6 +544,7 @@ export function PosWorkspaceScreen() {
             }
             return heldInvoice ? { name: heldInvoice.name } : null;
           }}
+          onMaterializeGatewayDraft={() => cart.materializeDraft(orderType)}
           onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}
           priceList={selectedPriceList}
@@ -525,6 +578,7 @@ export function PosWorkspaceScreen() {
           }}
           onClear={() => {
             if (!cart.clear()) return false;
+            setShippingAddressName("");
             setSelectedPriceList(undefined);
             setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
@@ -562,6 +616,10 @@ export function PosWorkspaceScreen() {
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(customer);
           }}
+          customerShippingAddresses={customerShippingAddresses.data ?? []}
+          customerShippingAddressesLoading={customerShippingAddresses.isLoading}
+          shippingAddressName={shippingAddressName}
+          onSelectShippingAddress={setShippingAddressName}
           onSelectPriceList={(priceList) => {
             setSelectedPriceList(priceList);
           }}
@@ -604,6 +662,7 @@ export function PosWorkspaceScreen() {
             return cart.add(item);
           }}
           onOpenCart={() => setCartVisible(true)}
+          orderType={orderType}
           pricingContext={{
             customer: saleCustomer?.customer,
             priceList: selectedPriceList,
@@ -645,33 +704,8 @@ export function PosWorkspaceScreen() {
         <PosInvoicesScreen
           heldRefreshKey={heldRefreshKey}
           onOpenInvoice={setSelectedInvoice}
-          onRestoreHeld={async (invoice) => {
-            const restored = await cart.restoreHeldInvoice(invoice);
-            orderTypeOverrideRef.current = true;
-            setOrderType(
-              restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
-            );
-            setSelectedPriceList(restored.selling_price_list);
-            setDraftCheckoutFieldValues(
-              Object.fromEntries(
-                Object.entries(restored.checkout_field_values ?? {})
-                  .filter(([, value]) => value !== null && value !== undefined)
-                  .map(([fieldname, value]) => [fieldname, String(value)]),
-              ),
-            );
-            setSelectedSaleCustomer(
-              restored.customer
-                ? {
-                    customer: restored.customer,
-                    customerName: restored.customer_name || restored.customer,
-                  }
-                : null,
-            );
-            setCheckoutVisible(false);
-            setCartVisible(true);
-            setActiveTab("Home");
-            setHeldRefreshKey((current) => current + 1);
-          }}
+          onRestoreHeld={(invoice) => restoreDraft(invoice)}
+          onCheckoutHeld={(invoice) => restoreDraft(invoice, true)}
         />
       )}
       <SalespersonPinLock

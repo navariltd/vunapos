@@ -134,6 +134,10 @@ function toCartPayload(items: PosCartItem[]) {
     item_note: item.item_note || undefined,
     pricing_override: item.pricing_override,
     qty: item.qty,
+    conversion_factor:
+      Number(item.conversion_factor || 1) !== 1
+        ? item.conversion_factor
+        : undefined,
     serial_allocations: item.serial_allocations,
     uom: item.uom || undefined,
   }));
@@ -250,6 +254,7 @@ export function usePosCart({
   const customerRef = useRef(customer);
   const holdDraftRef = useRef<PosCheckoutResult | null>(null);
   const holdInFlightRef = useRef(false);
+  const materializeDraftRef = useRef<Promise<PosCartSource | null> | null>(null);
   const sourceInvoiceRef = useRef<PosCartSource | null>(null);
   const lastRefreshErrorRef = useRef<string | null>(null);
   const customerKey = customer?.customer || "";
@@ -501,7 +506,8 @@ export function usePosCart({
     item: PosCatalogueItem,
     cartCustomer = customerRef.current,
   ): Promise<boolean | string> {
-    const initialUom = selectAvailableInitialUom(item);
+    const initialUom =
+      orderType === "Order" ? { item } : selectAvailableInitialUom(item);
     const itemForCart = initialUom.item;
     const current = itemsRef.current;
     const existing = current.find(
@@ -622,6 +628,53 @@ export function usePosCart({
   }
 
   /** Creates and immediately holds an online Frappe draft, retaining it for a safe retry if holding fails. */
+  async function materializeDraft(
+    requestedOrderType: PosOrderType = orderType,
+  ): Promise<PosCartSource | null> {
+    if (sourceInvoiceRef.current) return sourceInvoiceRef.current;
+    if (materializeDraftRef.current) return materializeDraftRef.current;
+    const cartItems = itemsRef.current;
+    if (!cartItems.length || !companyUrl || !sessionId || !posProfile) {
+      return null;
+    }
+    const cartRequestNumber = requestNumber.current;
+
+    const promise = (async () => {
+      try {
+        const draft = await postVunaMethod<PosCheckoutResult>(
+          companyUrl,
+          sessionId,
+          "vunapos.api.sales.create_invoice_from_cart",
+          {
+            customer: customerRef.current?.customer,
+            items: JSON.stringify(toCartPayload(cartItems)),
+            invoice_doctype:
+              requestedOrderType === "Order" ? "Sales Order" : undefined,
+            pos_profile: posProfile,
+            price_list: priceListRef.current,
+          },
+        );
+        if (cartRequestNumber !== requestNumber.current) return null;
+        const source = { doctype: draft.doctype, name: draft.name };
+        sourceInvoiceRef.current = source;
+        setSourceInvoice(source);
+        return source;
+      } catch (requestError) {
+        if (
+          requestError instanceof FrappeClientError &&
+          requestError.code === "session"
+        ) {
+          void invalidateSession();
+        }
+        throw requestError;
+      } finally {
+        materializeDraftRef.current = null;
+      }
+    })();
+    materializeDraftRef.current = promise;
+    return promise;
+  }
+
   async function hold(): Promise<PosCheckoutResult | null> {
     if (holdInFlightRef.current) return null;
     const cartItems = itemsRef.current;
@@ -935,6 +988,7 @@ export function usePosCart({
     error,
     hasPendingHold,
     hold,
+    materializeDraft,
     holdError,
     itemCount,
     isHolding,

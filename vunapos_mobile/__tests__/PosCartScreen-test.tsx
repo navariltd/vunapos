@@ -215,6 +215,57 @@ describe("PosCartScreen", () => {
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
   });
 
+  it("shows and lets the cashier choose a customer shipping address in the cart", async () => {
+    const onSelectShippingAddress = jest.fn();
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        customerShippingAddresses={[
+          {
+            address_line1: "1 Main Street",
+            address_title: "Main shop",
+            city: "Nairobi",
+            is_default: true,
+            name: "ADDR-001",
+          },
+          {
+            address_line1: "2 Market Road",
+            address_title: "Market branch",
+            city: "Nairobi",
+            name: "ADDR-002",
+          },
+        ]}
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[{ allow_negative_stock: true, available_qty: null, is_stock_item: false, item_code: "ITEM-001", item_name: "Stock item", qty: 1, rate: 10, uom: "Nos" }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onSelectShippingAddress={onSelectShippingAddress}
+        onClear={onClear}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={{ customer: "CUST-001", customerName: "Example customer" }}
+        subtotal={10}
+        taxes={[]}
+        totals={{ grand_total: 10, net_total: 10 }}
+      />,
+    );
+
+    expect(screen.getByText("Select shipping address")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    await fireEvent.press(
+      screen.getByLabelText("Select shipping address Market branch"),
+    );
+    expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-002");
+  });
+
   it("keeps cart actions available offline so the request can report its real failure", async () => {
     const screen = await render(
       <PosCartScreen

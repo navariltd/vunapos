@@ -652,7 +652,7 @@ def initiate_stk_gateway_payment(
 	precision = get_currency_precision() or 2
 	amount = _normalize_amount(amount, precision)
 	currency = currency or profile.currency
-	account_reference = (account_reference or idempotency_key or "").strip()
+	account_reference = (account_reference or "VUNAPOS").strip()
 
 	existing = _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key)
 	if existing:

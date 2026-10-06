@@ -97,6 +97,7 @@ def profile_to_dict(profile, invoice_mode):
 		and enabled("vunapos_allow_payment_reconciliation"),
 		"allow_payment_history": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_payment_history"),
+		"allow_returns": enabled("vunapos_allow_returns"),
 		"enable_salesperson_pin": bool(profile.get("vunapos_enable_salesperson_pin")),
 		"require_manager_pin_item_removal": bool(profile.get("vunapos_require_manager_pin_item_removal")),
 		"pin_max_attempts": max(cint(profile.get("vunapos_pin_max_attempts")) or 5, 1),

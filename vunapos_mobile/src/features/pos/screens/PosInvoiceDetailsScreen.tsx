@@ -223,7 +223,8 @@ export function PosInvoiceDetailsScreen({
     invoice.docstatus === 1 &&
     invoice.doctype !== "Sales Order" &&
     !invoice.is_return &&
-    bootstrap.data?.pos_profile.name,
+    bootstrap.data?.pos_profile.name &&
+    bootstrap.data?.pos_profile.allow_returns !== false,
   );
   const canRunWorkflowAction = Boolean(
     invoice.docstatus === 0 && workflowActions.actions.length,

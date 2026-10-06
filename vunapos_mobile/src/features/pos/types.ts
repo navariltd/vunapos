@@ -239,6 +239,7 @@ export type PosBootstrapData = {
     allow_customer_management?: boolean;
     allow_customer_payments?: boolean;
     allow_payment_history?: boolean;
+    allow_returns?: boolean;
     allow_payment_reconciliation?: boolean;
     allow_delivery_charge_change?: boolean;
     allow_delivery_charges?: boolean;

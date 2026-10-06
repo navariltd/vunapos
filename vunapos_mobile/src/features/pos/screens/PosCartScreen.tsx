@@ -1,7 +1,8 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
@@ -22,6 +23,7 @@ import {
   PosCartItem,
   PosCartTax,
   PosCartTotals,
+  PosCustomerShippingAddress,
   PosCustomerSearchResult,
   PosOrderType,
   PosPricingOverride,
@@ -51,6 +53,10 @@ type PosCartScreenProps = {
   onCheckout: () => void;
   onClearSaleCustomer: () => void;
   onSelectSaleCustomer: (customer: PosCustomerSearchResult) => void;
+  customerShippingAddresses?: PosCustomerShippingAddress[];
+  customerShippingAddressesLoading?: boolean;
+  shippingAddressName?: string;
+  onSelectShippingAddress?: (addressName: string) => void;
   onSelectPriceList?: (priceList?: string) => void;
   onClear: () => void;
   onHold?: () => Promise<{ name: string } | null>;
@@ -86,6 +92,16 @@ type PosCartScreenProps = {
 
 function formatCurrency(amount: number, currency: string, precision = 2) {
   return formatPosCurrency(amount, currency, precision);
+}
+
+function shippingAddressText(address?: PosCustomerShippingAddress) {
+  if (!address) return "";
+  return (
+    address.formatted_address ||
+    [address.address_line1, address.city, address.state]
+      .filter(Boolean)
+      .join(", ")
+  );
 }
 
 function pricingRuleLabel(pricingRules: PosCartItem["pricing_rules"]) {
@@ -287,11 +303,13 @@ function PricingEditor({
 
 function BatchAllocationEditor({
   disabled,
+  ignoreStock = false,
   item,
   onSave,
   posProfile,
 }: {
   disabled: boolean;
+  ignoreStock?: boolean;
   item: PosCartItem;
   onSave: (allocations: PosBatchAllocation[]) => void;
   posProfile?: string;
@@ -334,7 +352,7 @@ function BatchAllocationEditor({
     (row) =>
       !Number.isFinite(row.qty) ||
       row.qty < 0 ||
-      row.qty > Number(row.available_qty || 0),
+      (!ignoreStock && row.qty > Number(row.available_qty || 0)),
   );
   const isComplete =
     !hasInvalidQuantity &&
@@ -681,6 +699,7 @@ function CartLine({
   currencyPrecision,
   disabled,
   item,
+  orderType,
   onOpenUomPicker,
   onRemove,
   onUpdateBatchAllocations,
@@ -696,6 +715,7 @@ function CartLine({
   currencyPrecision: number;
   disabled: boolean;
   item: PosCartItem;
+  orderType: PosOrderType;
   onOpenUomPicker: () => void;
   onRemove: () => void;
   onUpdateBatchAllocations: (allocations: PosBatchAllocation[]) => void;
@@ -874,6 +894,7 @@ function CartLine({
               {batchExpanded ? (
                 <BatchAllocationEditor
                   disabled={itemDisabled}
+                  ignoreStock={orderType === "Order"}
                   item={item}
                   key={`${item.qty}-${item.conversion_factor || 1}-${JSON.stringify(item.batch_allocations || [])}`}
                   onSave={onUpdateBatchAllocations}
@@ -1099,6 +1120,10 @@ export function PosCartScreen({
   onRetry,
   onSelectPriceList,
   onSelectSaleCustomer,
+  customerShippingAddresses = [],
+  customerShippingAddressesLoading = false,
+  shippingAddressName = "",
+  onSelectShippingAddress,
   onUpdateBatchAllocations,
   onUpdateItemNote,
   onUpdatePricing,
@@ -1142,6 +1167,8 @@ export function PosCartScreen({
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+  const [shippingAddressPickerVisible, setShippingAddressPickerVisible] =
+    useState(false);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
   const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
@@ -1159,6 +1186,10 @@ export function PosCartScreen({
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
   const activePriceList =
     resolvedPriceList || priceList || defaultPriceList || profileDefaultPriceList;
+  const selectedShippingAddress =
+    customerShippingAddresses.find(
+      (address) => address.name === shippingAddressName,
+    );
   const isCartBusy = isUpdating || isHolding || hasPendingHold;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 
@@ -1245,6 +1276,35 @@ export function PosCartScreen({
               </Text>
             </Pressable>
           ) : null}
+          {customerShippingAddressesLoading || customerShippingAddresses.length ? (
+            <Pressable
+              accessibilityLabel="Choose shipping address"
+              disabled={isCartBusy || customerShippingAddressesLoading}
+              onPress={() => setShippingAddressPickerVisible(true)}
+              style={[
+                styles.shippingAddressSelector,
+                (isCartBusy || customerShippingAddressesLoading) &&
+                  styles.controlDisabled,
+              ]}
+            >
+              <View style={styles.customerSelectorMain}>
+                <Text style={styles.shippingAddressLabel}>
+                  Shipping address
+                </Text>
+                <Text numberOfLines={2} style={styles.customerSelectorMeta}>
+                  {customerShippingAddressesLoading
+                    ? "Loading shipping addresses…"
+                    : shippingAddressText(selectedShippingAddress) ||
+                      "Select shipping address"}
+                </Text>
+              </View>
+              <MaterialCommunityIcons
+                color={palette.onSurfaceMuted}
+                name="chevron-right"
+                size={20}
+              />
+            </Pressable>
+          ) : null}
           {saleCustomer && customerLoyalty.isLoading ? (
             <Text style={styles.loyaltyLoading}>Checking loyalty balance…</Text>
           ) : null}
@@ -1316,6 +1376,7 @@ export function PosCartScreen({
                 currencyPrecision={currencyPrecision}
                 disabled={isCartBusy}
                 item={item}
+                orderType={orderType}
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
                 onRemove={() =>
@@ -1526,6 +1587,51 @@ export function PosCartScreen({
         posProfile={posProfile}
         visible={customerPickerVisible}
       />
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setShippingAddressPickerVisible(false)}
+        visible={shippingAddressPickerVisible}
+      >
+        <SafeAreaView
+          edges={["top", "bottom"]}
+          style={styles.shippingAddressModal}
+        >
+          <View style={styles.shippingAddressModalHeader}>
+            <Text style={styles.title}>Shipping address</Text>
+            <Pressable
+              accessibilityLabel="Close shipping address picker"
+              onPress={() => setShippingAddressPickerVisible(false)}
+              style={styles.clearCustomerButton}
+            >
+              <Text style={styles.clearCustomerButtonLabel}>Close</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.shippingAddressOptions}>
+            {customerShippingAddresses.map((address) => (
+              <Pressable
+                accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                key={address.name}
+                onPress={() => {
+                  onSelectShippingAddress?.(address.name);
+                  setShippingAddressPickerVisible(false);
+                }}
+                style={[
+                  styles.shippingAddressOption,
+                  address.name === selectedShippingAddress?.name &&
+                    styles.shippingAddressOptionSelected,
+                ]}
+              >
+                <Text style={styles.shippingAddressTitle}>
+                  {address.address_title || address.name}
+                </Text>
+                <Text style={styles.customerSelectorMeta}>
+                  {shippingAddressText(address)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
       <PosPriceListPickerSheet
         defaultPriceList={defaultPriceList}
         isOffline={false}
@@ -1861,6 +1967,51 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.tiny,
   },
   customerSelectorValue: {
+    color: palette.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
+  shippingAddressLabel: {
+    color: palette.onSurface,
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  shippingAddressSelector: {
+    alignItems: "center",
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 54,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  shippingAddressModal: {
+    backgroundColor: palette.surface,
+    flex: 1,
+    padding: spacing.md,
+  },
+  shippingAddressModalHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  shippingAddressOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
+  shippingAddressOption: {
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  shippingAddressOptionSelected: {
+    backgroundColor: palette.surfaceContainerHigh,
+    borderColor: palette.primary,
+  },
+  shippingAddressTitle: {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,

@@ -46,4 +46,25 @@ describe("PosVariantPickerSheet", () => {
     fireEvent.press(screen.getByLabelText("Add variant Vuna shirt · Blue · M"));
     expect(onSelect).toHaveBeenCalledWith(variant);
   });
+
+  it("allows an unavailable variant to be selected when stock is bypassed for Sales Orders", async () => {
+    const onSelect = jest.fn();
+    const screen = await render(
+      <PosVariantPickerSheet
+        currency="KES"
+        error={null}
+        ignoreStock
+        isLoading={false}
+        onDismiss={jest.fn()}
+        onRetry={jest.fn()}
+        onSelect={onSelect}
+        templateName="Vuna shirt"
+        variants={[{ ...variant, actual_qty: 0 }]}
+        visible
+      />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Add variant Vuna shirt · Blue · M"));
+    expect(onSelect).toHaveBeenCalledWith({ ...variant, actual_qty: 0 });
+  });
 });
