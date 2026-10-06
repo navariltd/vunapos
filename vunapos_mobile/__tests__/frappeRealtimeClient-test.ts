@@ -3,6 +3,7 @@ import {
   CONFIGURATION_EVENT,
   FrappeRealtimeClient,
   getFrappeRealtimeConnection,
+  parsePosDomainResource,
 } from "@/sync/frappeRealtimeClient";
 import {
   invalidateRealtimeResource,
@@ -53,17 +54,17 @@ describe("FrappeRealtimeClient", () => {
     const client = new FrappeRealtimeClient(factory);
     const refresh = jest.fn();
     const unregister = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       refresh,
     );
 
     client.start("https://pos.example.com", "sid-1");
-    socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
-    socket.emit(CONFIGURATION_EVENT, { refresh: "full" });
+    socket.emit(CONFIGURATION_EVENT, { resource: "referenceDataChanged" });
+    socket.emit(CONFIGURATION_EVENT, { resource: "referenceDataChanged" });
     expect(refresh).not.toHaveBeenCalled();
     jest.advanceTimersByTime(350);
     await Promise.resolve();
-    expect(refresh).toHaveBeenCalledWith({ refresh: "full" });
+    expect(refresh).toHaveBeenCalledWith({ resource: "referenceDataChanged" });
 
     expect(factory).toHaveBeenCalledWith(
       "https://pos.example.com",
@@ -86,12 +87,12 @@ describe("FrappeRealtimeClient", () => {
   it("does not invoke removed resource handlers", () => {
     const refresh = jest.fn();
     const unregister = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       refresh,
     );
     unregister();
 
-    invalidateRealtimeResource("workspace-configuration");
+    invalidateRealtimeResource("referenceDataChanged");
 
     expect(refresh).not.toHaveBeenCalled();
   });
@@ -128,24 +129,31 @@ describe("FrappeRealtimeClient", () => {
         }),
       )
       .mockResolvedValue(undefined);
+    const profileRefresh = jest.fn().mockResolvedValue(undefined);
     const unregister = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       refresh,
+    );
+    const unregisterProfile = registerRealtimeControlRefresh(
+      "posProfileChanged",
+      profileRefresh,
     );
 
     client.start("https://pos.example.com", "sid-1");
-    socket.emit(CONFIGURATION_EVENT, { doctype: "POS Profile" });
+    socket.emit(CONFIGURATION_EVENT, { resource: "referenceDataChanged" });
     jest.advanceTimersByTime(350);
     await Promise.resolve();
     expect(refresh).toHaveBeenCalledTimes(1);
 
-    socket.emit(CONFIGURATION_EVENT, { doctype: "Item Price" });
+    socket.emit(CONFIGURATION_EVENT, { resource: "posProfileChanged" });
     resolveFirst?.();
     await jest.runAllTimersAsync();
-    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(profileRefresh).toHaveBeenCalledTimes(1);
 
     client.stop();
     unregister();
+    unregisterProfile();
     jest.useRealTimers();
   });
 
@@ -155,7 +163,7 @@ describe("FrappeRealtimeClient", () => {
     const client = new FrappeRealtimeClient(() => socket);
     const refresh = jest.fn().mockResolvedValue(undefined);
     const unregister = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       refresh,
     );
 
@@ -169,5 +177,20 @@ describe("FrappeRealtimeClient", () => {
     client.stop();
     unregister();
     jest.useRealTimers();
+  });
+
+  it("routes profile scope changes separately from ordinary reference changes", () => {
+    expect(parsePosDomainResource({ resource: "referenceDataChanged" })).toBe(
+      "referenceDataChanged",
+    );
+    expect(parsePosDomainResource({ resource: "posProfileChanged" })).toBe(
+      "posProfileChanged",
+    );
+    expect(parsePosDomainResource({ doctype: "Item Price", refresh: "full" })).toBe(
+      "referenceDataChanged",
+    );
+    expect(parsePosDomainResource({ resource: "unknown" })).toBe(
+      "referenceDataChanged",
+    );
   });
 });

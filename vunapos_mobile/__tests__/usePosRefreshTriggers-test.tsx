@@ -72,7 +72,7 @@ describe("usePosRefreshTriggers", () => {
     );
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
-      "workspace-configuration",
+      "referenceDataChanged",
       { full: false, source: "reconnect" },
     );
   });
@@ -86,7 +86,7 @@ describe("usePosRefreshTriggers", () => {
     await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
-      "workspace-configuration",
+      "referenceDataChanged",
       { full: false, source: "foreground" },
     );
   });

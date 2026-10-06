@@ -11,11 +11,15 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
 const mockRegisterRealtimeRefresh = jest.fn(
   (_resource: unknown, _handler: unknown) => jest.fn(),
 );
+const mockClearResource = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/sync/realtimeInvalidation", () => ({
   registerRealtimeRefresh: (resource: unknown, handler: unknown) =>
     mockRegisterRealtimeRefresh(resource, handler),
   registerRealtimeControlRefresh: (resource: unknown, handler: unknown) =>
     mockRegisterRealtimeRefresh(resource, handler),
+}));
+jest.mock("@/services/posCache", () => ({
+  posCache: { clearResource: (...args: unknown[]) => mockClearResource(...args) },
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
@@ -30,7 +34,11 @@ describe("usePosRealtimeCoordinator", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     catalogueReload.mockResolvedValue(undefined);
-    mockUseAppSession.mockReturnValue({ authState: "signedIn" } as never);
+    mockUseAppSession.mockReturnValue({
+      authState: "signedIn",
+      companyUrl: "https://pos.example.com",
+      sessionId: "sid-1",
+    } as never);
     mockUsePosBootstrap.mockReturnValue({
       data: null,
       error: null,
@@ -42,9 +50,15 @@ describe("usePosRealtimeCoordinator", () => {
   it("registers one app-owned handler and refreshes the shared projection once", async () => {
     renderHook(() => usePosRealtimeCoordinator());
 
-    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(1));
-    expect(mockRegisterRealtimeRefresh).toHaveBeenCalledWith(
-      "workspace-configuration",
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    expect(mockRegisterRealtimeRefresh).toHaveBeenNthCalledWith(
+      1,
+      "referenceDataChanged",
+      expect.any(Function),
+    );
+    expect(mockRegisterRealtimeRefresh).toHaveBeenNthCalledWith(
+      2,
+      "posProfileChanged",
       expect.any(Function),
     );
 
@@ -62,5 +76,24 @@ describe("usePosRealtimeCoordinator", () => {
     renderHook(() => usePosRealtimeCoordinator());
 
     expect(mockRegisterRealtimeRefresh).not.toHaveBeenCalled();
+  });
+
+  it("clears the scoped workspace before handling a profile scope change", async () => {
+    renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+
+    const profileHandler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () =>
+      Promise<void>;
+    await act(async () => profileHandler());
+
+    expect(mockClearResource).toHaveBeenCalledWith(
+      {
+        companyUrl: "https://pos.example.com",
+        userId: "sid-1",
+        posProfile: "workspace",
+      },
+      "workspace-configuration",
+    );
+    expect(catalogueReload).toHaveBeenCalledWith({ full: true });
   });
 });

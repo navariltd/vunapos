@@ -8,11 +8,11 @@ describe("realtime invalidation ownership", () => {
   it("delivers control events without any mounted feature handler", async () => {
     const rootRefresh = jest.fn();
     const unregister = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       rootRefresh,
     );
 
-    await invalidateRealtimeResource("workspace-configuration", {
+    await invalidateRealtimeResource("referenceDataChanged", {
       resource: "referenceDataChanged",
     });
 
@@ -26,15 +26,15 @@ describe("realtime invalidation ownership", () => {
     const screenRefresh = jest.fn();
     const rootRefresh = jest.fn();
     const unregisterScreen = registerRealtimeRefresh(
-      "workspace-configuration",
+      "posProfileChanged",
       screenRefresh,
     );
     const unregisterRoot = registerRealtimeControlRefresh(
-      "workspace-configuration",
+      "referenceDataChanged",
       rootRefresh,
     );
 
-    await invalidateRealtimeResource("workspace-configuration");
+    await invalidateRealtimeResource("referenceDataChanged");
 
     expect(rootRefresh).toHaveBeenCalledTimes(1);
     expect(screenRefresh).not.toHaveBeenCalled();
@@ -42,4 +42,3 @@ describe("realtime invalidation ownership", () => {
     unregisterRoot();
   });
 });
-

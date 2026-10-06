@@ -1,14 +1,19 @@
-import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
+import {
+  POS_PROFILE_CHANGED_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+} from "@/sync/posResourceKeys";
 
 /** Application data that can be refreshed after a Frappe realtime signal. */
 export const REALTIME_RESOURCES = [
-  POS_WORKSPACE_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_PROFILE_CHANGED_RESOURCE,
   "checkout-queue",
 ] as const;
 
 /** Control signals are owned by the authenticated app root, never by screens. */
 export const CONTROL_REALTIME_RESOURCES = [
-  POS_WORKSPACE_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_PROFILE_CHANGED_RESOURCE,
 ] as const;
 
 export type RealtimeResource = (typeof REALTIME_RESOURCES)[number];

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -6,7 +6,6 @@ import {
   usePosCachedResource,
 } from "@/hooks/usePosCachedResource";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { registerRealtimeControlRefresh } from "@/sync/realtimeInvalidation";
 import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 import {
   PosBootstrapData,
@@ -243,7 +242,6 @@ export function usePosBootstrap(options?: {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const enabled = options?.enabled !== false;
-  const subscribeRealtime = options?.subscribeRealtime === true;
   const manageFreshness = options?.manageFreshness === true;
   const forceFullRefreshRef = useRef(false);
   const cacheKey =
@@ -346,22 +344,6 @@ export function usePosBootstrap(options?: {
     () => (resource.data ? normalizeBootstrap(resource.data) : null),
     [resource.data],
   );
-  useEffect(
-    () => {
-      if (!enabled || !subscribeRealtime) return;
-      return registerRealtimeControlRefresh(POS_WORKSPACE_RESOURCE, (payload) => {
-        const request =
-          payload && typeof payload === "object"
-            ? (payload as { full?: boolean; refresh?: string })
-            : undefined;
-        return reload({
-          full: request?.full === true || request?.refresh === "full",
-        });
-      });
-    },
-    [enabled, reload, subscribeRealtime],
-  );
-
   if (!cacheKey)
     return {
       data: null,

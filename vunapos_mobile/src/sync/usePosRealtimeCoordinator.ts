@@ -3,7 +3,12 @@ import { useEffect, useRef } from "react";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { registerRealtimeControlRefresh } from "@/sync/realtimeInvalidation";
-import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
+import {
+  POS_PROFILE_CHANGED_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_WORKSPACE_RESOURCE,
+} from "@/sync/posResourceKeys";
+import { posCache } from "@/services/posCache";
 
 type ConfigurationSignal = {
   full?: boolean;
@@ -25,7 +30,7 @@ function isFullRefreshSignal(payload: unknown) {
  * routed through several mounted bootstrap hooks.
  */
 export function usePosRealtimeCoordinator() {
-  const { authState } = useAppSession();
+  const { authState, companyUrl, sessionId } = useAppSession();
   const enabled = authState === "signedIn";
   const catalogue = usePosBootstrap({
     enabled,
@@ -40,9 +45,28 @@ export function usePosRealtimeCoordinator() {
 
   useEffect(() => {
     if (!enabled) return;
-    return registerRealtimeControlRefresh(POS_WORKSPACE_RESOURCE, (payload) => {
-      const full = isFullRefreshSignal(payload);
-      return Promise.resolve(reloadCatalogue.current({ full })).then(() => undefined);
-    });
-  }, [enabled]);
+    const unregisterReference = registerRealtimeControlRefresh(
+      POS_REFERENCE_DATA_RESOURCE,
+      (payload) => {
+        const full = isFullRefreshSignal(payload);
+        return Promise.resolve(reloadCatalogue.current({ full })).then(() => undefined);
+      },
+    );
+    const unregisterProfile = registerRealtimeControlRefresh(
+      POS_PROFILE_CHANGED_RESOURCE,
+      async () => {
+        if (companyUrl && sessionId) {
+          await posCache.clearResource(
+            { companyUrl, userId: sessionId, posProfile: "workspace" },
+            POS_WORKSPACE_RESOURCE,
+          );
+        }
+        await reloadCatalogue.current({ full: true });
+      },
+    );
+    return () => {
+      unregisterReference();
+      unregisterProfile();
+    };
+  }, [companyUrl, enabled, sessionId]);
 }

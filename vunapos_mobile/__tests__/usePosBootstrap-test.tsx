@@ -146,23 +146,15 @@ describe("usePosBootstrap", () => {
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
   });
 
-  it("refreshes bootstrap data when desk-side POS configuration changes", async () => {
+  it("leaves realtime ownership to the app coordinator", async () => {
     mockGetVunaMethod.mockResolvedValue({
       items: [],
       payment_modes: [],
       pos_profile: { name: "POS-001" },
     });
-    const hook = await renderHook(() =>
-      usePosBootstrap({ subscribeRealtime: true }),
-    );
+    const hook = await renderHook(() => usePosBootstrap({ subscribeRealtime: true }));
     await waitFor(() => expect(hook.result.current.data).not.toBeNull());
-
-    const refresh = mockRegisterRealtimeRefresh.mock.calls.at(-1)?.[1] as
-      (() => Promise<void>) | undefined;
-    expect(refresh).toBeDefined();
-    await act(async () => refresh?.());
-
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(mockRegisterRealtimeRefresh).not.toHaveBeenCalled();
   });
 
   it("does not let feature bootstrap hooks own realtime subscriptions", async () => {

@@ -1,11 +1,33 @@
 import { io } from "socket.io-client";
 
 import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
-import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
+import {
+  POS_PROFILE_CHANGED_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+} from "@/sync/posResourceKeys";
 
 export const DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed";
 export const CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT;
 export const CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed";
+export type PosDomainResource =
+  | typeof POS_REFERENCE_DATA_RESOURCE
+  | typeof POS_PROFILE_CHANGED_RESOURCE;
+
+export function parsePosDomainResource(payload: unknown): PosDomainResource {
+  if (payload && typeof payload === "object") {
+    const resource = (payload as { resource?: unknown }).resource;
+    if (
+      resource === POS_REFERENCE_DATA_RESOURCE ||
+      resource === POS_PROFILE_CHANGED_RESOURCE
+    ) {
+      return resource;
+    }
+  }
+  // Older servers sent doctype/action/refresh metadata. It is safe to treat
+  // that signal as ordinary reference data, but it cannot prove a profile
+  // scope/access change, so it must not trigger a destructive rebootstrap.
+  return POS_REFERENCE_DATA_RESOURCE;
+}
 
 // `adb reverse` exposes the bench to an Android emulator as localhost. The
 // physical Frappe site remains meru.localhost, which is also the namespace
@@ -82,7 +104,7 @@ export function getFrappeRealtimeConnection(companyUrl: string) {
 export class FrappeRealtimeClient {
   private connectedOnce = false;
   private configurationRefreshInFlight = false;
-  private configurationRefreshPayload: unknown;
+  private configurationRefreshPayloads = new Map<PosDomainResource, unknown>();
   private configurationRefreshQueued = false;
   private configurationRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   private socket: SocketLike | undefined;
@@ -120,7 +142,7 @@ export class FrappeRealtimeClient {
       this.configurationRefreshTimer = undefined;
     }
     this.configurationRefreshQueued = false;
-    this.configurationRefreshPayload = undefined;
+    this.configurationRefreshPayloads.clear();
     this.configurationRefreshInFlight = false;
     if (this.socket) {
       this.socket.off("connect", this.handleConnect);
@@ -149,15 +171,18 @@ export class FrappeRealtimeClient {
   };
 
   private readonly handleConfigurationChange = (payload?: unknown) => {
-    this.scheduleConfigurationRefresh(payload);
+    this.scheduleConfigurationRefresh(parsePosDomainResource(payload), payload);
   };
 
   private readonly handleCheckoutQueueChange = (payload?: unknown) => {
     void invalidateRealtimeResource("checkout-queue", payload);
   };
 
-  private readonly scheduleConfigurationRefresh = (payload?: unknown) => {
-    this.configurationRefreshPayload = payload;
+  private readonly scheduleConfigurationRefresh = (
+    resource: PosDomainResource = POS_REFERENCE_DATA_RESOURCE,
+    payload?: unknown,
+  ) => {
+    this.configurationRefreshPayloads.set(resource, payload);
     this.configurationRefreshQueued = true;
     if (this.configurationRefreshTimer) return;
     this.configurationRefreshTimer = setTimeout(() => {
@@ -169,17 +194,39 @@ export class FrappeRealtimeClient {
   private readonly flushConfigurationRefresh = async () => {
     if (this.configurationRefreshInFlight) return;
     if (!this.configurationRefreshQueued) return;
-    const payload = this.configurationRefreshPayload;
-    this.configurationRefreshPayload = undefined;
+    const payloads = new Map(this.configurationRefreshPayloads);
+    this.configurationRefreshPayloads.clear();
     this.configurationRefreshQueued = false;
     this.configurationRefreshInFlight = true;
     try {
-      await invalidateRealtimeResource(POS_WORKSPACE_RESOURCE, payload);
+      // A profile-scope change is a superset of an ordinary reference refresh.
+      // If both arrive in one debounce window, perform only the rebootstrap so
+      // the root coordinator cannot issue two equivalent requests.
+      const entries = payloads.has(POS_PROFILE_CHANGED_RESOURCE)
+        ? ([
+            [
+              POS_PROFILE_CHANGED_RESOURCE,
+              payloads.get(POS_PROFILE_CHANGED_RESOURCE),
+            ],
+          ] as const)
+        : [...payloads.entries()];
+      await Promise.all(
+        entries.map(([resource, payload]) =>
+          invalidateRealtimeResource(resource, payload),
+        ),
+      );
     } finally {
       this.configurationRefreshInFlight = false;
       // If another event arrived while the refresh was running, schedule one
       // follow-up rather than starting overlapping bootstrap requests.
-      if (this.configurationRefreshQueued) this.scheduleConfigurationRefresh();
+      if (this.configurationRefreshQueued) {
+        if (!this.configurationRefreshTimer) {
+          this.configurationRefreshTimer = setTimeout(() => {
+            this.configurationRefreshTimer = undefined;
+            void this.flushConfigurationRefresh();
+          }, CONFIGURATION_DEBOUNCE_MS);
+        }
+      }
     }
   };
 }
