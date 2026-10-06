@@ -52,12 +52,22 @@ const emptyState = {
   lastUpdated: null,
 };
 
-const registeredRefreshers = new Map<string, Set<() => void>>();
+type RegisteredRefresher = {
+  resource: string;
+  refresh: (force: boolean) => Promise<void>;
+};
+
+const registeredRefreshers = new Map<string, Set<RegisteredRefresher>>();
 
 /** Invoked by the single app-level freshness scheduler. */
-export async function refreshRegisteredPosResources() {
+export async function refreshRegisteredPosResources(options?: {
+  force?: boolean;
+  excludeResources?: readonly string[];
+}) {
   const refreshes = [...registeredRefreshers.values()].flatMap((callbacks) =>
-    [...callbacks].map((refresh) => refresh()),
+    [...callbacks]
+      .filter(({ resource }) => !options?.excludeResources?.includes(resource))
+      .map(({ refresh }) => refresh(options?.force === true)),
   );
   await Promise.allSettled(refreshes);
 }
@@ -154,7 +164,9 @@ export function usePosCachedResource<T>({
       // Cached rows remain usable during outages. When there is no cached row,
       // however, let the request reach Frappe and classify the real failure
       // instead of treating Expo Network's hint as authoritative.
-      const canRequest = connectionStatus !== "offline" || !cached;
+      // A forced retry/reconnect follows an observed server action, so an
+      // outdated device network hint must not prevent the actual request.
+      const canRequest = forceRefresh || connectionStatus !== "offline" || !cached;
 
       if (!forceRefresh && cached && !cached.isStale) {
         setActiveState({
@@ -258,12 +270,15 @@ export function usePosCachedResource<T>({
 
   useEffect(() => {
     if (!enabled || !manageFreshness || !keyFingerprint) return;
-    const refresh = () => loadResource(false);
+    const registration: RegisteredRefresher = {
+      resource: cacheKeyRef.current?.resource ?? "",
+      refresh: loadResource,
+    };
     const refreshers = registeredRefreshers.get(keyFingerprint) ?? new Set();
-    refreshers.add(refresh);
+    refreshers.add(registration);
     registeredRefreshers.set(keyFingerprint, refreshers);
     return () => {
-      refreshers.delete(refresh);
+      refreshers.delete(registration);
       if (!refreshers.size) registeredRefreshers.delete(keyFingerprint);
     };
   }, [enabled, keyFingerprint, loadResource, manageFreshness]);

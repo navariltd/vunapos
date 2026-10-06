@@ -197,6 +197,7 @@ describe("usePosCachedResource", () => {
     );
 
     await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+    await act(async () => refreshRegisteredPosResources());
     expect(cache.fetch).not.toHaveBeenCalled();
     expect(load).not.toHaveBeenCalled();
     expect(hook.result.current.isStale).toBe(false);

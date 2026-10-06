@@ -10,6 +10,7 @@ import {
   registerRealtimeControlRefresh,
   registerRealtimeRefresh,
 } from "@/sync/realtimeInvalidation";
+import * as realtimeInvalidation from "@/sync/realtimeInvalidation";
 
 function socketStub() {
   const listeners = new Map<string, (payload?: unknown) => void>();
@@ -184,11 +185,14 @@ describe("FrappeRealtimeClient", () => {
     jest.useRealTimers();
   });
 
-  it("repairs configuration through the timestamp delta after socket recovery", async () => {
+  it("repairs reference data and operational resources after socket reconnect", async () => {
     jest.useFakeTimers();
     const socket = socketStub();
     const client = new FrappeRealtimeClient(() => socket);
     const refresh = jest.fn().mockResolvedValue(undefined);
+    const refreshOperational = jest
+      .spyOn(realtimeInvalidation, "refreshOperationalPosResources")
+      .mockResolvedValue(undefined);
     const unregister = registerRealtimeControlRefresh(
       "referenceDataChanged",
       refresh,
@@ -196,13 +200,82 @@ describe("FrappeRealtimeClient", () => {
 
     client.start("https://pos.example.com", "sid-1");
     socket.emit("connect");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(refreshOperational).not.toHaveBeenCalled();
     socket.emit("connect");
-    jest.advanceTimersByTime(350);
-    await Promise.resolve();
+    await jest.advanceTimersByTimeAsync(350);
 
     expect(refresh).toHaveBeenCalledWith(undefined);
+    expect(refreshOperational).toHaveBeenCalledTimes(1);
     client.stop();
     unregister();
+    refreshOperational.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it("lets a profile change supersede reference repair during reconnect", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    const refreshReference = jest.fn().mockResolvedValue(undefined);
+    const refreshProfile = jest.fn().mockResolvedValue(undefined);
+    const refreshOperational = jest
+      .spyOn(realtimeInvalidation, "refreshOperationalPosResources")
+      .mockResolvedValue(undefined);
+    const unregisterReference = registerRealtimeControlRefresh(
+      "referenceDataChanged",
+      refreshReference,
+    );
+    const unregisterProfile = registerRealtimeControlRefresh(
+      "posProfileChanged",
+      refreshProfile,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit("connect");
+    socket.emit("connect");
+    socket.emit(CONFIGURATION_EVENT, { resource: "posProfileChanged" });
+    await jest.advanceTimersByTimeAsync(350);
+
+    expect(refreshReference).not.toHaveBeenCalled();
+    expect(refreshProfile).toHaveBeenCalledTimes(1);
+    expect(refreshOperational).toHaveBeenCalledTimes(1);
+    client.stop();
+    unregisterReference();
+    unregisterProfile();
+    refreshOperational.mockRestore();
+    jest.useRealTimers();
+  });
+
+  it("does not repair operational data for a stopped session", async () => {
+    jest.useFakeTimers();
+    const socket = socketStub();
+    const client = new FrappeRealtimeClient(() => socket);
+    let finishReference: (() => void) | undefined;
+    const refreshReference = jest.fn(
+      () => new Promise<void>((resolve) => { finishReference = resolve; }),
+    );
+    const refreshOperational = jest
+      .spyOn(realtimeInvalidation, "refreshOperationalPosResources")
+      .mockResolvedValue(undefined);
+    const unregister = registerRealtimeControlRefresh(
+      "referenceDataChanged",
+      refreshReference,
+    );
+
+    client.start("https://pos.example.com", "sid-1");
+    socket.emit("connect");
+    socket.emit("connect");
+    jest.advanceTimersByTime(350);
+    expect(refreshReference).toHaveBeenCalledTimes(1);
+
+    client.stop();
+    finishReference?.();
+    await jest.runAllTimersAsync();
+    expect(refreshOperational).not.toHaveBeenCalled();
+
+    unregister();
+    refreshOperational.mockRestore();
     jest.useRealTimers();
   });
 

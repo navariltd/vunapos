@@ -1,6 +1,8 @@
+import { refreshRegisteredPosResources } from "@/hooks/usePosCachedResource";
 import {
   POS_PROFILE_CHANGED_RESOURCE,
   POS_REFERENCE_DATA_RESOURCE,
+  POS_WORKSPACE_RESOURCE,
 } from "@/sync/posResourceKeys";
 
 /** Application data that can be refreshed after a Frappe realtime signal. */
@@ -74,4 +76,21 @@ export function invalidateRealtimeResource(
     }),
   );
   return Promise.all(refreshes).then(() => undefined);
+}
+
+/** Revalidate mounted operational views after the root workspace is current. */
+export function refreshOperationalPosResources() {
+  return refreshRegisteredPosResources({
+    force: true,
+    excludeResources: [POS_WORKSPACE_RESOURCE],
+  });
+}
+
+/** Root-owned recovery for device connectivity and foreground returns. */
+export async function recoverPosResources(source: "reconnect" | "foreground") {
+  await invalidateRealtimeResource(POS_REFERENCE_DATA_RESOURCE, {
+    full: false,
+    source,
+  });
+  await refreshOperationalPosResources();
 }
