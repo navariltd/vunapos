@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PosCacheEntry,
   PosCacheKey,
+  SupersededCacheRequestError,
   posCache,
   posCacheKey,
 } from "@/services/posCache";
@@ -100,7 +101,7 @@ export function usePosCachedResource<T>({
   const [state, setState] = useState<PosCachedResourceState<T>>(emptyState);
 
   const loadResource = useCallback(
-    async (forceRefresh: boolean) => {
+    async (forceRefresh: boolean, afterCurrent = false) => {
       const activeKey = cacheKeyRef.current;
       if (!activeKey) return;
       const activeFingerprint = posCacheKey(activeKey);
@@ -210,6 +211,7 @@ export function usePosCachedResource<T>({
           activeKey,
           () => loadRef.current(controller.signal, cached?.data ?? null),
           ttlMs,
+          { afterCurrent },
         );
         setActiveState({
           data,
@@ -224,7 +226,9 @@ export function usePosCachedResource<T>({
         if (!isActive()) return;
         setState((current) => ({
           ...current,
-          error: errorMessage(error),
+          error: error instanceof SupersededCacheRequestError
+            ? current.error
+            : errorMessage(error),
           isLoading: false,
           isRefreshing: false,
         }));
@@ -283,8 +287,8 @@ export function usePosCachedResource<T>({
     };
   }, [enabled, keyFingerprint, loadResource, manageFreshness]);
 
-  const refresh = useCallback(async () => {
-    await loadResource(true);
+  const refresh = useCallback(async (options?: { afterCurrent?: boolean }) => {
+    await loadResource(true, options?.afterCurrent);
   }, [loadResource]);
 
   const isCurrentKey = state.keyFingerprint === keyFingerprint;

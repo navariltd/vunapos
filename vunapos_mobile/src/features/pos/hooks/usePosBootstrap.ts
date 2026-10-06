@@ -243,7 +243,7 @@ export function usePosBootstrap(options?: {
   const { connectionStatus } = useNetworkStatus();
   const enabled = options?.enabled !== false;
   const manageFreshness = options?.manageFreshness === true;
-  const forceFullRefreshRef = useRef(false);
+  const pendingFullRefreshesRef = useRef(0);
   const cacheKey =
     companyUrl && sessionId
       ? {
@@ -265,7 +265,7 @@ export function usePosBootstrap(options?: {
         );
       }
       try {
-        const since = forceFullRefreshRef.current
+        const since = pendingFullRefreshesRef.current > 0
           ? undefined
           : cached?.lastDeltaSync ?? cached?.server_time;
         const posProfile = cached?.pos_profile?.name;
@@ -328,11 +328,11 @@ export function usePosBootstrap(options?: {
   const refreshResource = resource.refresh;
   const reload = useCallback(
     async (options?: { full?: boolean }) => {
-      forceFullRefreshRef.current = Boolean(options?.full);
+      if (options?.full) pendingFullRefreshesRef.current += 1;
       try {
-        await refreshResource();
+        await refreshResource({ afterCurrent: options?.full === true });
       } finally {
-        forceFullRefreshRef.current = false;
+        if (options?.full) pendingFullRefreshesRef.current -= 1;
       }
     },
     [refreshResource],
