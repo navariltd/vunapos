@@ -1,4 +1,4 @@
-from unittest.mock import call, patch
+from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -153,6 +153,131 @@ class TestConfigurationRealtime(IntegrationTestCase):
 			publish_configuration_change(frappe._dict(doctype="Pricing Rule"), "on_update")
 
 		publish_realtime.assert_not_called()
+
+	def test_company_scoped_tax_change_skips_other_company_profiles(self):
+		def get_all(doctype, filters=None, pluck=None):
+			if doctype == "POS Profile":
+				self.assertEqual(filters, {"disabled": 0, "company": "Company A"})
+				return ["Counter A"]
+			self.assertEqual(filters["parent"], ["in", ["Counter A"]])
+			return ["cashier-a@example.com"]
+
+		with (
+			patch("vunapos.realtime.frappe.get_all", side_effect=get_all),
+			patch("frappe.publish_realtime") as publish_realtime,
+		):
+			publish_configuration_change(
+				frappe._dict(
+					doctype="Item Tax Template",
+					company="Company A",
+					get_doc_before_save=lambda: None,
+				),
+				"on_update",
+			)
+
+		publish_realtime.assert_called_once_with(
+			CONFIGURATION_EVENT,
+			{"resource": "referenceDataChanged"},
+			user="cashier-a@example.com",
+			after_commit=True,
+		)
+
+	def test_company_move_notifies_both_old_and_new_company(self):
+		def get_all(doctype, filters=None, pluck=None):
+			if doctype == "POS Profile":
+				return ["Counter A"] if filters["company"] == "Company A" else ["Counter B"]
+			return [
+				user
+				for profile, user in (
+					("Counter A", "cashier-a@example.com"),
+					("Counter B", "cashier-b@example.com"),
+				)
+				if profile in filters["parent"][1]
+			]
+
+		for doctype in ("Sales Taxes and Charges Template", "Item Tax Template", "Pricing Rule"):
+			with self.subTest(doctype=doctype):
+				doc = frappe._dict(
+					doctype=doctype,
+					name="Company-scoped document",
+					company="Company B",
+					get_doc_before_save=lambda: frappe._dict(company="Company A"),
+				)
+				with (
+					patch("vunapos.realtime.frappe.get_all", side_effect=get_all),
+					patch("frappe.publish_realtime") as publish_realtime,
+				):
+					publish_configuration_change(doc, "on_update")
+
+				self.assertCountEqual(
+					[call.kwargs["user"] for call in publish_realtime.call_args_list],
+					["cashier-a@example.com", "cashier-b@example.com"],
+				)
+
+	def test_company_scoped_delete_uses_current_company_only(self):
+		doc = frappe._dict(
+			doctype="Pricing Rule",
+			company="Company A",
+			get_doc_before_save=lambda: self.fail("Deletion must not read pre-save state"),
+		)
+
+		def get_all(doctype, filters=None, pluck=None):
+			if doctype == "POS Profile":
+				self.assertEqual(filters, {"disabled": 0, "company": "Company A"})
+				return ["Counter A"]
+			return ["cashier-a@example.com"]
+
+		with (
+			patch("vunapos.realtime.frappe.get_all", side_effect=get_all),
+			patch("frappe.publish_realtime") as publish_realtime,
+		):
+			publish_configuration_change(doc, "on_trash")
+
+		publish_realtime.assert_called_once_with(
+			CONFIGURATION_EVENT,
+			{"resource": "referenceDataChanged"},
+			user="cashier-a@example.com",
+			after_commit=True,
+		)
+
+	def test_payment_mode_change_only_notifies_profiles_using_it(self):
+		def get_all(doctype, filters=None, pluck=None):
+			if doctype == "POS Profile":
+				return ["Counter A", "Counter B"]
+			if doctype == "POS Payment Method":
+				self.assertEqual(filters["mode_of_payment"], "Cash")
+				return ["Counter B"]
+			self.assertEqual(filters["parent"], ["in", ["Counter B"]])
+			return ["cashier-b@example.com"]
+
+		with (
+			patch("vunapos.realtime.frappe.get_all", side_effect=get_all),
+			patch("frappe.publish_realtime") as publish_realtime,
+		):
+			publish_configuration_change(frappe._dict(doctype="Mode of Payment", name="Cash"), "on_update")
+
+		self.assertEqual(publish_realtime.call_args.kwargs["user"], "cashier-b@example.com")
+		publish_realtime.assert_called_once()
+
+	def test_global_item_price_change_keeps_customer_pricing_profiles_in_scope(self):
+		def get_all(doctype, filters=None, pluck=None):
+			if doctype == "POS Profile":
+				self.assertEqual(filters, {"disabled": 0})
+				return ["Counter A", "Counter B"]
+			return ["cashier-a@example.com", "cashier-b@example.com"]
+
+		with (
+			patch("vunapos.realtime.frappe.get_all", side_effect=get_all),
+			patch("frappe.publish_realtime") as publish_realtime,
+		):
+			publish_configuration_change(
+				frappe._dict(doctype="Item Price", price_list="Customer Price List"), "on_update"
+			)
+
+		self.assertCountEqual(
+			[call.kwargs["user"] for call in publish_realtime.call_args_list],
+			["cashier-a@example.com", "cashier-b@example.com"],
+		)
 
 
 class TestCheckoutQueueRealtime(IntegrationTestCase):

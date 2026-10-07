@@ -9,6 +9,11 @@ DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed"
 CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT
 CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed"
 GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
+COMPANY_SCOPED_CONFIGURATION_DOCTYPES = (
+	"Sales Taxes and Charges Template",
+	"Item Tax Template",
+	"Pricing Rule",
+)
 
 
 def _profile_users(doc: Document) -> set[str]:
@@ -67,6 +72,40 @@ def _publish_domain_data_changed(resource: str, users: set[str]) -> None:
 			)
 
 
+def _configuration_profile_names(doc: Document, method: str | None) -> list[str]:
+	"""Narrow only dependencies whose profile scope can be proven.
+
+	Item/price-list changes can affect customer-specific pricing outside a
+	profile's default list, so those must still reach all enabled profiles.
+	"""
+	filters = {"disabled": 0}
+	companies = {doc.get("company")}
+	if doc.doctype in COMPANY_SCOPED_CONFIGURATION_DOCTYPES and method == "on_update":
+		# Frappe retains the pre-save document through on_update; no capture hook is needed.
+		get_previous = getattr(doc, "get_doc_before_save", None)
+		previous = get_previous() if get_previous else None
+		if previous:
+			companies.add(previous.get("company"))
+	if doc.doctype in COMPANY_SCOPED_CONFIGURATION_DOCTYPES and None not in companies and "" not in companies:
+		profiles = set()
+		for company in companies:
+			profiles.update(
+				frappe.get_all("POS Profile", filters={**filters, "company": company}, pluck="name")
+			)
+	else:
+		profiles = set(frappe.get_all("POS Profile", filters=filters, pluck="name"))
+	if doc.doctype == "Mode of Payment" and profiles:
+		used_by = set(
+			frappe.get_all(
+				"POS Payment Method",
+				filters={"parent": ["in", list(profiles)], "mode_of_payment": doc.name},
+				pluck="parent",
+			)
+		)
+		profiles &= used_by
+	return sorted(profiles)
+
+
 def publish_configuration_change(doc: Document, method: str | None = None) -> None:
 	"""Invalidate VunaPOS reference data after a committed configuration change."""
 	invalidate_catalogue_cache(doc, method)
@@ -85,13 +124,13 @@ def publish_configuration_change(doc: Document, method: str | None = None) -> No
 		)
 		_publish_domain_data_changed(resource, users)
 		return
-	enabled_profiles = frappe.get_all("POS Profile", filters={"disabled": 0}, pluck="name")
-	if not enabled_profiles:
+	affected_profiles = _configuration_profile_names(doc, method)
+	if not affected_profiles:
 		return
 	users = set(
 		frappe.get_all(
 			"POS Profile User",
-			filters={"parenttype": "POS Profile", "parent": ["in", enabled_profiles]},
+			filters={"parenttype": "POS Profile", "parent": ["in", affected_profiles]},
 			pluck="user",
 		)
 	)

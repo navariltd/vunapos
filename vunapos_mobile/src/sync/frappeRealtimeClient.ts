@@ -12,6 +12,7 @@ import {
 export const DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed";
 export const CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT;
 export const CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed";
+export const GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed";
 export type PosDomainResource =
   | typeof POS_REFERENCE_DATA_RESOURCE
   | typeof POS_PROFILE_CHANGED_RESOURCE;
@@ -101,14 +102,10 @@ export function getFrappeRealtimeConnection(
 
   const connection = {
     siteName: siteName?.trim() || url.hostname,
-    // Direct bench Socket.IO uses a site namespace. Public deployments expose
-    // the Socket.IO endpoint through the normal origin and reject that extra
-    // hostname path as an unknown namespace.
-    url: isLoopbackBench
-      ? `${url.origin}/${
-          siteName?.trim() || url.hostname
-        }`
-      : url.origin,
+    // Frappe publishes into /<site> for both direct bench connections and
+    // public reverse proxies. The public origin hides the internal :9000 port,
+    // but it does not remove the Socket.IO site namespace.
+    url: `${url.origin}/${siteName?.trim() || url.hostname}`,
   };
   if (isAndroidEmulatorBench) {
     return {
@@ -132,6 +129,7 @@ export class FrappeRealtimeClient {
   private configurationRefreshQueued = false;
   private reconnectRecoveryQueued = false;
   private configurationRefreshTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly gatewayPaymentListeners = new Set<(payload?: unknown) => void>();
   private socket: SocketLike | undefined;
 
   constructor(
@@ -151,7 +149,9 @@ export class FrappeRealtimeClient {
         "X-Frappe-Site-Name": connection.siteName,
       },
       reconnection: true,
-      reconnectionAttempts: 5,
+      // A long outage must not permanently disable realtime for this session.
+      // Socket.IO's default is unlimited attempts; foreground REST repair is
+      // only the fallback for events missed while disconnected.
       reconnectionDelay: 1_000,
       reconnectionDelayMax: 15_000,
       transports: ["websocket", "polling"],
@@ -160,6 +160,15 @@ export class FrappeRealtimeClient {
     this.socket.on("connect_error", this.handleConnectError);
     this.socket.on(CONFIGURATION_EVENT, this.handleConfigurationChange);
     this.socket.on(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
+    this.socket.on(GATEWAY_PAYMENT_EVENT, this.handleGatewayPaymentChange);
+  }
+
+  /** Feature screens observe the root socket without creating connections. */
+  subscribeGatewayPayment(listener: (payload?: unknown) => void) {
+    this.gatewayPaymentListeners.add(listener);
+    return () => {
+      this.gatewayPaymentListeners.delete(listener);
+    };
   }
 
   stop() {
@@ -177,6 +186,7 @@ export class FrappeRealtimeClient {
       this.socket.off("connect_error", this.handleConnectError);
       this.socket.off(CONFIGURATION_EVENT, this.handleConfigurationChange);
       this.socket.off(CHECKOUT_QUEUE_EVENT, this.handleCheckoutQueueChange);
+      this.socket.off(GATEWAY_PAYMENT_EVENT, this.handleGatewayPaymentChange);
       this.socket.disconnect();
       this.socket = undefined;
     }
@@ -207,6 +217,16 @@ export class FrappeRealtimeClient {
 
   private readonly handleCheckoutQueueChange = (payload?: unknown) => {
     void invalidateRealtimeResource("checkout-queue", payload);
+  };
+
+  private readonly handleGatewayPaymentChange = (payload?: unknown) => {
+    for (const listener of this.gatewayPaymentListeners) {
+      try {
+        listener(payload);
+      } catch {
+        // A screen callback must not interrupt delivery to other consumers.
+      }
+    }
   };
 
   private readonly scheduleConfigurationRefresh = (

@@ -13,10 +13,11 @@ import {
   PosDefaultCustomer,
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { useRootPosBootstrapSnapshot } from "@/sync/PosBootstrapSnapshot";
 
 export const POS_BOOTSTRAP_DELTA_TTL_MS = POS_CACHE_TTL_MS;
 
-type PosBootstrapState = {
+export type PosBootstrapState = {
   data: PosBootstrapData | null;
   error: string | null;
   hasHydratedCache?: boolean;
@@ -234,18 +235,17 @@ function withSyncMetadata(
 
 export function usePosBootstrap(options?: {
   enabled?: boolean;
-  /** Only the app-level POS sync coordinator should subscribe to realtime. */
-  subscribeRealtime?: boolean;
   /** Only the app-level POS sync coordinator should schedule freshness. */
   manageFreshness?: boolean;
 }): PosBootstrapState {
+  const rootSnapshot = useRootPosBootstrapSnapshot();
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const enabled = options?.enabled !== false;
   const manageFreshness = options?.manageFreshness === true;
   const pendingFullRefreshesRef = useRef(0);
   const cacheKey =
-    companyUrl && sessionId
+    !rootSnapshot && companyUrl && sessionId
       ? {
           resource: POS_WORKSPACE_RESOURCE,
           scope: {
@@ -344,6 +344,7 @@ export function usePosBootstrap(options?: {
     () => (resource.data ? normalizeBootstrap(resource.data) : null),
     [resource.data],
   );
+  if (rootSnapshot) return rootSnapshot;
   if (!cacheKey)
     return {
       data: null,
@@ -369,14 +370,11 @@ export function usePosBootstrap(options?: {
 /**
  * Reads the app-owned bootstrap snapshot for shell consumers.
  *
- * This intentionally shares the exact cache key and loader with
- * usePosBootstrap. The root coordinator therefore has one authoritative
- * refresh and screens cannot create a second configuration projection.
+ * Inside the signed-in app, consumers observe the root-owned snapshot.
+ * Standalone callers still use the same cache key and loader as the root.
  */
 export function usePosBootstrapConfig(options?: {
   enabled?: boolean;
-  /** Only the app-level POS sync coordinator should subscribe to realtime. */
-  subscribeRealtime?: boolean;
   /** Only the app-level POS sync coordinator should schedule freshness. */
   manageFreshness?: boolean;
 }): PosBootstrapConfigState {

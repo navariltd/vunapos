@@ -270,7 +270,6 @@ export function PosCustomerDetailsScreen({
   const isOffline = connectionStatus !== "online";
   const bootstrap = usePosBootstrap({
     manageFreshness: false,
-    subscribeRealtime: false,
   });
   const details = usePosCustomerDetails({
     customer,

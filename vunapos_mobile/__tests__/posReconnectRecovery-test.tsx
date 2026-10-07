@@ -4,9 +4,11 @@ import {
   PosCachedResourceClient,
   usePosCachedResource,
 } from "@/hooks/usePosCachedResource";
-import { PosCacheKey } from "@/services/posCache";
+import { PosCacheKey, posCache } from "@/services/posCache";
+import { invalidateOperationalPosCache } from "@/services/posCacheInvalidation";
 import {
   recoverPosResources,
+  registerOperationalCacheRecovery,
   registerRealtimeControlRefresh,
 } from "@/sync/realtimeInvalidation";
 
@@ -92,4 +94,83 @@ it("keeps the last operational snapshot when reconnect repair fails", async () =
   expect(cache.fetch).toHaveBeenCalledTimes(1);
   expect(hook.result.current.data).toBe("history");
   expect(hook.result.current.error).toBe("Connection interrupted");
+});
+
+it("repairs the root-owned cache before refreshing mounted views", async () => {
+  const calls: string[] = [];
+  const historyCache = freshCache("history", () => calls.push("mounted history"));
+  const hook = await renderHook(() => usePosCachedResource({
+    cache: historyCache,
+    cacheKey: { resource: "invoice-history", scope },
+    connectionStatus: "online",
+    load: jest.fn(),
+  }));
+  await waitFor(() => expect(hook.result.current.data).toBe("history"));
+  const unregisterReference = registerRealtimeControlRefresh("referenceDataChanged", () => {
+    calls.push("reference");
+  });
+  const unregisterRecovery = registerOperationalCacheRecovery(async () => {
+    calls.push("persisted operational cache");
+  });
+  try {
+    await act(async () => recoverPosResources("reconnect"));
+    expect(calls).toEqual(["reference", "persisted operational cache", "mounted history"]);
+  } finally {
+    unregisterRecovery();
+    unregisterReference();
+  }
+});
+
+it("marks unmounted persisted data stale without touching another profile", async () => {
+  const historyKey: PosCacheKey = { resource: "invoice-history", scope };
+  const otherProfileKey: PosCacheKey = {
+    resource: "invoice-history",
+    scope: { ...scope, posProfile: "Other POS" },
+  };
+  await posCache.write(historyKey, { invoices: ["SINV-001"] }, 60_000);
+  await posCache.write(otherProfileKey, { invoices: ["SINV-002"] }, 60_000);
+  expect((await posCache.read(historyKey))?.isStale).toBe(false);
+
+  const unregisterReference = registerRealtimeControlRefresh("referenceDataChanged", () => {});
+  const unregisterRecovery = registerOperationalCacheRecovery(() =>
+    invalidateOperationalPosCache({
+      companyUrl: scope.companyUrl,
+      posProfile: scope.posProfile,
+      sessionId: scope.userId,
+    }),
+  );
+  try {
+    await recoverPosResources("reconnect");
+    expect((await posCache.read(historyKey))?.data).toEqual({ invoices: ["SINV-001"] });
+    expect((await posCache.read(historyKey))?.isStale).toBe(true);
+    expect((await posCache.read(otherProfileKey))?.isStale).toBe(false);
+  } finally {
+    unregisterRecovery();
+    unregisterReference();
+    await posCache.clearNamespace(scope);
+    await posCache.clearNamespace(otherProfileKey.scope);
+  }
+});
+
+it("still refreshes mounted views when persisted-cache repair fails", async () => {
+  const historyCache = freshCache("history");
+  const hook = await renderHook(() => usePosCachedResource({
+    cache: historyCache,
+    cacheKey: { resource: "invoice-history", scope },
+    connectionStatus: "online",
+    load: jest.fn(),
+  }));
+  await waitFor(() => expect(hook.result.current.data).toBe("history"));
+  const unregisterReference = registerRealtimeControlRefresh("referenceDataChanged", () => {});
+  const unregisterRecovery = registerOperationalCacheRecovery(async () => {
+    throw new Error("SQLite unavailable");
+  });
+  try {
+    await act(async () => recoverPosResources("reconnect"));
+    expect(historyCache.fetch).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.data).toBe("history refreshed");
+  } finally {
+    unregisterRecovery();
+    unregisterReference();
+  }
 });

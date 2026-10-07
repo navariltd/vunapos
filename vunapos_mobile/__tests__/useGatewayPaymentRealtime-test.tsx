@@ -1,80 +1,52 @@
 import { cleanup, renderHook, waitFor } from "@testing-library/react-native";
 
-jest.mock("@/features/auth/AppSessionProvider", () => ({
-  useAppSession: jest.fn(),
-}));
-
-jest.mock("@/services/NetworkStatusProvider", () => ({
-  useNetworkStatus: () => ({ connectionStatus: "online" }),
-}));
-jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
-  usePosBootstrap: jest.fn(() => ({ data: { site_name: "vuna.example.com" } })),
-}));
-
 jest.mock("socket.io-client", () => ({
   io: jest.fn(),
 }));
+jest.mock("@/sync/frappeRealtimeClient", () => {
+  const actual = jest.requireActual("@/sync/frappeRealtimeClient");
+  return {
+    ...actual,
+    frappeRealtimeClient: { subscribeGatewayPayment: jest.fn() },
+  };
+});
 
-import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
-  GATEWAY_PAYMENT_EVENT,
-  getGatewayRealtimeConnection,
   useGatewayPaymentRealtime,
 } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import { io } from "socket.io-client";
+import { frappeRealtimeClient } from "@/sync/frappeRealtimeClient";
 
 const mockIo = jest.mocked(io);
-const mockUseAppSession = jest.mocked(useAppSession);
+const subscribeGatewayPayment = jest.mocked(frappeRealtimeClient.subscribeGatewayPayment);
 
 describe("gateway payment realtime hook", () => {
-  const disconnect = jest.fn();
-  const off = jest.fn();
-  const on = jest.fn();
+  const unsubscribe = jest.fn();
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseAppSession.mockReturnValue({
-      companyUrl: "https://vuna.example.com",
-      sessionId: "sid-1",
-    } as ReturnType<typeof useAppSession>);
-    mockIo.mockReturnValue({ disconnect, off, on } as never);
+    subscribeGatewayPayment.mockReturnValue(unsubscribe);
   });
 
   afterEach(async () => {
     await cleanup();
   });
 
-  it("connects to Frappe using the saved session and unsubscribes on cleanup", async () => {
+  it("observes the root socket without opening another connection", async () => {
     const onChange = jest.fn();
     renderHook(() => useGatewayPaymentRealtime(onChange));
 
-    await waitFor(() =>
-      expect(mockIo).toHaveBeenCalledWith(
-        "https://vuna.example.com",
-        expect.objectContaining({
-          extraHeaders: {
-            Cookie: "sid=sid-1",
-            Origin: "https://vuna.example.com",
-            "X-Frappe-Site-Name": "vuna.example.com",
-          },
-          transports: ["websocket", "polling"],
-        }),
-      ),
-    );
-    expect(on).toHaveBeenCalledWith(GATEWAY_PAYMENT_EVENT, onChange);
+    await waitFor(() => expect(subscribeGatewayPayment).toHaveBeenCalledTimes(1));
+    const listener = subscribeGatewayPayment.mock.calls[0][0];
+    const payment = { name: "GATEWAY-001", status: "Paid" };
+    listener(payment);
+    listener(null);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(payment);
+    expect(mockIo).not.toHaveBeenCalled();
 
     await cleanup();
-    expect(off).toHaveBeenCalledWith(GATEWAY_PAYMENT_EVENT, onChange);
-    expect(disconnect).toHaveBeenCalled();
-  });
-
-  it("uses the Bench Socket.IO port only for a loopback development site", () => {
-    expect(
-      getGatewayRealtimeConnection("http://vuna.localhost:8000", "vuna.localhost"),
-    ).toEqual({
-      siteName: "vuna.localhost",
-      url: "http://vuna.localhost:9000/vuna.localhost",
-    });
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
 });

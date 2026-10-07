@@ -2,6 +2,7 @@ import {
   CHECKOUT_QUEUE_EVENT,
   CONFIGURATION_EVENT,
   FrappeRealtimeClient,
+  GATEWAY_PAYMENT_EVENT,
   getFrappeRealtimeConnection,
   parsePosDomainResource,
 } from "@/sync/frappeRealtimeClient";
@@ -50,13 +51,19 @@ describe("FrappeRealtimeClient", () => {
       getFrappeRealtimeConnection("https://pos.example.com"),
     ).toEqual({
       siteName: "pos.example.com",
-      url: "https://pos.example.com",
+      url: "https://pos.example.com/pos.example.com",
+    });
+    expect(
+      getFrappeRealtimeConnection("https://pos.example.com", "meru.localhost"),
+    ).toEqual({
+      siteName: "meru.localhost",
+      url: "https://pos.example.com/meru.localhost",
     });
   });
 
   it("sends the bench host and site namespace headers for Android emulator access", () => {
     const socket = socketStub();
-    const factory = jest.fn(() => socket);
+    const factory = jest.fn((_url: string, _options: Record<string, unknown>) => socket);
     const client = new FrappeRealtimeClient(factory);
 
     client.start("http://10.0.2.2:8000", "sid-1", "meru.localhost");
@@ -78,7 +85,7 @@ describe("FrappeRealtimeClient", () => {
   it("owns one socket and debounces configuration invalidation events", async () => {
     jest.useFakeTimers();
     const socket = socketStub();
-    const factory = jest.fn(() => socket);
+    const factory = jest.fn((_url: string, _options: Record<string, unknown>) => socket);
     const client = new FrappeRealtimeClient(factory);
     const refresh = jest.fn();
     const unregister = registerRealtimeControlRefresh(
@@ -95,21 +102,42 @@ describe("FrappeRealtimeClient", () => {
     expect(refresh).toHaveBeenCalledWith({ resource: "referenceDataChanged" });
 
     expect(factory).toHaveBeenCalledWith(
-      "https://pos.example.com",
+      "https://pos.example.com/pos.example.com",
       expect.objectContaining({
         extraHeaders: expect.objectContaining({
           Cookie: "sid=sid-1",
           "X-Frappe-Site-Name": "pos.example.com",
         }),
         transports: ["websocket", "polling"],
+        reconnection: true,
       }),
     );
+    expect(factory.mock.calls[0][1]).not.toHaveProperty("reconnectionAttempts");
     expect(refresh).toHaveBeenCalledTimes(1);
 
     client.stop();
     expect(socket.disconnect).toHaveBeenCalledTimes(1);
     unregister();
     jest.useRealTimers();
+  });
+
+  it("delivers gateway changes through the same root socket and respects unsubscribe", () => {
+    const socket = socketStub();
+    const factory = jest.fn(() => socket);
+    const client = new FrappeRealtimeClient(factory);
+    const paymentListener = jest.fn();
+    const unsubscribe = client.subscribeGatewayPayment(paymentListener);
+
+    client.start("https://pos.example.com", "sid-1", "meru.localhost");
+    socket.emit(GATEWAY_PAYMENT_EVENT, { name: "GATEWAY-001", status: "Paid" });
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(paymentListener).toHaveBeenCalledWith({ name: "GATEWAY-001", status: "Paid" });
+
+    unsubscribe();
+    socket.emit(GATEWAY_PAYMENT_EVENT, { name: "GATEWAY-002", status: "Failed" });
+    expect(paymentListener).toHaveBeenCalledTimes(1);
+    client.stop();
+    expect(socket.off).toHaveBeenCalledWith(GATEWAY_PAYMENT_EVENT, expect.any(Function));
   });
 
   it("does not invoke removed resource handlers", () => {

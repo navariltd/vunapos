@@ -159,7 +159,6 @@ export function PosInvoiceDetailsScreen({
   const [workflowActionsVisible, setWorkflowActionsVisible] = useState(false);
   const bootstrap = usePosBootstrap({
     manageFreshness: false,
-    subscribeRealtime: false,
   });
   const details = usePosInvoiceDetails({
     invoiceDoctype,

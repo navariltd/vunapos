@@ -21,6 +21,7 @@ import { useFrappeRealtime } from "@/sync/useFrappeRealtime";
 import { usePosQueueRealtime } from "@/sync/usePosQueueRealtime";
 import { usePosRefreshTriggers } from "@/sync/usePosRefreshTriggers";
 import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
+import { PosBootstrapSnapshotBoundary } from "@/sync/PosBootstrapSnapshot";
 import { AppearanceProvider, useAppearance } from "@/theme/AppearanceProvider";
 
 SplashScreen.preventAutoHideAsync();
@@ -51,11 +52,11 @@ export default function RootLayout() {
 }
 
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
-  useFrappeRealtime();
-  usePosRealtimeCoordinator();
+  const posBootstrap = usePosRealtimeCoordinator();
+  useFrappeRealtime(posBootstrap.data?.site_name);
   usePosQueueRealtime();
   usePosRefreshTriggers();
-  const { isBootstrapping } = useAppSession();
+  const { authState, isBootstrapping, signOut } = useAppSession();
   const { isReady: isAppearanceReady } = useAppearance();
   const hideNativeSplash = useCallback(() => {
     void SplashScreen.hideAsync();
@@ -71,10 +72,16 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   }
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="index" />
-      <Stack.Screen name="(auth)" />
-      <Stack.Screen name="(app)" />
-    </Stack>
+    <PosBootstrapSnapshotBoundary
+      authState={authState}
+      onSignOut={signOut}
+      value={posBootstrap}
+    >
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="index" />
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+    </PosBootstrapSnapshotBoundary>
   );
 }

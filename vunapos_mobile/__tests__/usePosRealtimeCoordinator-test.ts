@@ -11,15 +11,28 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
 const mockRegisterRealtimeRefresh = jest.fn(
   (_resource: unknown, _handler: unknown) => jest.fn(),
 );
+const mockRegisterOperationalRecovery = jest.fn((_handler: unknown) => jest.fn());
 const mockClearResource = jest.fn().mockResolvedValue(undefined);
+const mockRead = jest.fn().mockResolvedValue(null);
+const mockInvalidateOperationalCache = jest.fn().mockResolvedValue(undefined);
+const mockClearOperationalCache = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/sync/realtimeInvalidation", () => ({
   registerRealtimeRefresh: (resource: unknown, handler: unknown) =>
     mockRegisterRealtimeRefresh(resource, handler),
   registerRealtimeControlRefresh: (resource: unknown, handler: unknown) =>
     mockRegisterRealtimeRefresh(resource, handler),
+  registerOperationalCacheRecovery: (handler: unknown) =>
+    mockRegisterOperationalRecovery(handler),
 }));
 jest.mock("@/services/posCache", () => ({
-  posCache: { clearResource: (...args: unknown[]) => mockClearResource(...args) },
+  posCache: {
+    clearResource: (...args: unknown[]) => mockClearResource(...args),
+    read: (...args: unknown[]) => mockRead(...args),
+  },
+}));
+jest.mock("@/services/posCacheInvalidation", () => ({
+  invalidateOperationalPosCache: (...args: unknown[]) => mockInvalidateOperationalCache(...args),
+  clearOperationalPosCache: (...args: unknown[]) => mockClearOperationalCache(...args),
 }));
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
@@ -79,6 +92,7 @@ describe("usePosRealtimeCoordinator", () => {
   });
 
   it("clears the scoped workspace before handling a profile scope change", async () => {
+    mockRead.mockResolvedValueOnce({ data: { pos_profile: { name: "POS-OLD" } } });
     renderHook(() => usePosRealtimeCoordinator());
     await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
 
@@ -86,6 +100,11 @@ describe("usePosRealtimeCoordinator", () => {
       Promise<void>;
     await act(async () => profileHandler());
 
+    expect(mockClearOperationalCache).toHaveBeenCalledWith({
+      companyUrl: "https://pos.example.com",
+      sessionId: "sid-1",
+      posProfile: "POS-OLD",
+    });
     expect(mockClearResource).toHaveBeenCalledWith(
       {
         companyUrl: "https://pos.example.com",
@@ -95,5 +114,41 @@ describe("usePosRealtimeCoordinator", () => {
       "workspace-configuration",
     );
     expect(catalogueReload).toHaveBeenCalledWith({ full: true });
+  });
+
+  it("registers root recovery for unmounted profile-scoped browse data", async () => {
+    mockRead.mockResolvedValueOnce({ data: { pos_profile: { name: "POS-001" } } });
+    renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterOperationalRecovery).toHaveBeenCalledTimes(1));
+    const recover = mockRegisterOperationalRecovery.mock.calls[0][0] as () => Promise<void>;
+
+    await act(async () => recover());
+
+    expect(mockInvalidateOperationalCache).toHaveBeenCalledWith({
+      companyUrl: "https://pos.example.com",
+      sessionId: "sid-1",
+      posProfile: "POS-001",
+    });
+  });
+
+  it("uses the active root snapshot when a large workspace was not persisted", async () => {
+    mockRead.mockResolvedValueOnce(null);
+    mockUsePosBootstrap.mockReturnValue({
+      data: { pos_profile: { name: "POS-LIVE" } },
+      error: null,
+      isLoading: false,
+      reload: catalogueReload,
+    } as never);
+    renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterOperationalRecovery).toHaveBeenCalledTimes(1));
+    const recover = mockRegisterOperationalRecovery.mock.calls[0][0] as () => Promise<void>;
+
+    await act(async () => recover());
+
+    expect(mockInvalidateOperationalCache).toHaveBeenCalledWith({
+      companyUrl: "https://pos.example.com",
+      sessionId: "sid-1",
+      posProfile: "POS-LIVE",
+    });
   });
 });

@@ -21,6 +21,7 @@ jest.mock("@/sync/realtimeInvalidation", () => ({
     mockRegisterRealtimeRefresh(resource, callback),
   registerRealtimeControlRefresh: (resource: unknown, callback: unknown) =>
     mockRegisterRealtimeRefresh(resource, callback),
+  registerOperationalCacheRecovery: () => jest.fn(),
 }));
 
 jest.mock("@/services/frappeClient", () => ({
@@ -365,7 +366,7 @@ describe("usePosBootstrap", () => {
       payment_modes: [],
       pos_profile: { name: "POS-001" },
     });
-    const hook = await renderHook(() => usePosBootstrap({ subscribeRealtime: true }));
+    const hook = await renderHook(() => usePosBootstrap());
     await waitFor(() => expect(hook.result.current.data).not.toBeNull());
     expect(mockRegisterRealtimeRefresh).not.toHaveBeenCalled();
   });

@@ -205,7 +205,6 @@ export function PosCheckoutScreen({
   const bootstrapResource = usePosBootstrap({
     enabled: !bootstrapData,
     manageFreshness: false,
-    subscribeRealtime: false,
   });
   const bootstrap = bootstrapData
     ? {

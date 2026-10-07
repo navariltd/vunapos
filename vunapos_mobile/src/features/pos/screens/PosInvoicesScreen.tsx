@@ -158,7 +158,6 @@ export function PosInvoicesScreen({
   const [start, setStart] = useState(0);
   const bootstrap = usePosBootstrap({
     manageFreshness: false,
-    subscribeRealtime: false,
   });
   const history = usePosInvoiceHistory({
     filters,

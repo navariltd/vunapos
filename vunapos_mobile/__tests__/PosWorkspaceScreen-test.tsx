@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
@@ -63,6 +63,9 @@ const mockCart = {
   items: [],
   refresh: jest.fn(),
   remove: jest.fn(async () => true),
+  restoreHeldInvoice: jest.fn(async () => ({
+    source: { doctype: "Sales Order", name: "SAL-ORD-001" },
+  })),
   retry: jest.fn(),
   subtotal: 0,
   taxes: [],
@@ -81,6 +84,15 @@ jest.mock("@/features/pos/hooks/useSalespersonPin", () => ({
     lock: jest.fn(),
     session: null,
     verify: jest.fn(),
+  }),
+}));
+
+jest.mock("@/features/pos/hooks/useOpenPosShift", () => ({
+  useOpenPosShift: () => ({
+    clearError: jest.fn(),
+    error: null,
+    isOpening: false,
+    open: jest.fn(async () => ({ name: "OPEN-001" })),
   }),
 }));
 
@@ -401,16 +413,32 @@ jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
   }: {
     onComplete: (result: { doctype: string; name: string }) => void;
   }) => {
-    const { Pressable, Text } = require("react-native");
+    const { useState } = require("react");
+    const { Pressable, Text, TextInput, View } = require("react-native");
+    const [note, setNote] = useState("");
     return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={() =>
-          onComplete({ doctype: "Sales Order", name: "SO-TEST-0001" })
-        }
-      >
-        <Text>Complete test sale</Text>
-      </Pressable>
+      <View>
+        <TextInput accessibilityLabel="Checkout note" onChangeText={setNote} value={note} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            mockSetConfigData?.({
+              payment_modes: [],
+              pos_profile: { name: "POS-001", price_list: "Updated" },
+            })
+          }
+        >
+          <Text>Refresh profile during checkout</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onComplete({ doctype: "Sales Order", name: "SO-TEST-0001" })
+          }
+        >
+          <Text>Complete test sale</Text>
+        </Pressable>
+      </View>
     );
   },
 }));
@@ -439,12 +467,14 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
   PosInvoiceDetailsScreen: ({
     invoiceName,
     onBack,
+    onEditDraft,
     onOpenPaymentEntry,
     onOpenReturn,
     onStartSale,
   }: {
     invoiceName: string;
     onBack: () => void;
+    onEditDraft: (source: { doctype: string; name: string }) => Promise<void>;
     onOpenPaymentEntry: (
       paymentEntry: {
         allocated_amount: number;
@@ -499,6 +529,12 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
         <Pressable accessibilityRole="button" onPress={onBack}>
           <Text>Back to previous invoice</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void onEditDraft({ doctype: "Sales Order", name: invoiceName })}
+        >
+          <Text>Edit draft</Text>
+        </Pressable>
       </>
     );
   },
@@ -529,6 +565,9 @@ describe("PosWorkspaceScreen", () => {
     mockCart.itemCount = 0;
     mockCart.clear.mockReturnValue(true);
     mockCart.remove.mockResolvedValue(true);
+    mockCart.restoreHeldInvoice.mockResolvedValue({
+      source: { doctype: "Sales Order", name: "SAL-ORD-001" },
+    });
   });
 
   afterEach(async () => {
@@ -582,6 +621,40 @@ describe("PosWorkspaceScreen", () => {
 
     await fireEvent.press(screen.getByRole("button", { name: "Clear cart" }));
     expect(screen.getByText("Cart customer: Walk-in customer")).toBeTruthy();
+  });
+
+  it("keeps an active checkout mounted while the shared profile snapshot changes", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Deliver tomorrow");
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Refresh profile during checkout" }),
+    );
+
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Deliver tomorrow");
+    expect(screen.queryByText("Preparing your POS settings…")).toBeNull();
+    expect(screen.queryByText("Restoring your POS…")).toBeNull();
+  });
+
+  it("keeps a restored Sales Order as an Order even when mode switching is disabled", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Set Invoice as POS default" }));
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: {
+          allow_order_type_change: false,
+          default_order_type: "Sales Invoice",
+          name: "POS-001",
+        },
+      });
+    });
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoices" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Edit draft" }));
+    await waitFor(() => expect(screen.getByText("Current order type: Order")).toBeTruthy());
   });
 
   it("returns to the POS Profile default customer after the last cart item is removed", async () => {
@@ -718,6 +791,28 @@ describe("PosWorkspaceScreen", () => {
     await waitFor(() =>
       expect(screen.getAllByText("Start POS shift")).toHaveLength(2),
     );
+  });
+
+  it("does not carry an optimistic opened shift into another POS Profile", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [{ mode_of_payment: "Cash" }],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    await fireEvent.press(screen.getByLabelText("Start POS shift"));
+    await waitFor(() => expect(screen.getByText("POS home")).toBeTruthy());
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [{ mode_of_payment: "Cash" }],
+        pos_profile: { name: "POS-002" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    expect(screen.getByLabelText("Start POS shift")).toBeTruthy();
   });
 
   it("opens the Customer tab only after the POS Profile enables customer management", async () => {

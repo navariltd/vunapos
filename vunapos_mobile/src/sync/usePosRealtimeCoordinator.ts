@@ -2,7 +2,15 @@ import { useEffect, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
-import { registerRealtimeControlRefresh } from "@/sync/realtimeInvalidation";
+import type { PosBootstrapData } from "@/features/pos/types";
+import {
+  clearOperationalPosCache,
+  invalidateOperationalPosCache,
+} from "@/services/posCacheInvalidation";
+import {
+  registerOperationalCacheRecovery,
+  registerRealtimeControlRefresh,
+} from "@/sync/realtimeInvalidation";
 import {
   POS_PROFILE_CHANGED_RESOURCE,
   POS_REFERENCE_DATA_RESOURCE,
@@ -35,16 +43,33 @@ export function usePosRealtimeCoordinator() {
   const catalogue = usePosBootstrap({
     enabled,
     manageFreshness: true,
-    subscribeRealtime: false,
   });
   const reloadCatalogue = useRef(catalogue.reload);
+  const activeProfile = useRef(catalogue.data?.pos_profile?.name);
 
   useEffect(() => {
     reloadCatalogue.current = catalogue.reload;
   }, [catalogue.reload]);
 
   useEffect(() => {
+    activeProfile.current = catalogue.data?.pos_profile?.name;
+  }, [catalogue.data?.pos_profile?.name]);
+
+  useEffect(() => {
     if (!enabled) return;
+    const workspaceScope = companyUrl && sessionId
+      ? { companyUrl, userId: sessionId, posProfile: "workspace" }
+      : null;
+    const workspaceKey = workspaceScope
+      ? { scope: workspaceScope, resource: POS_WORKSPACE_RESOURCE }
+      : null;
+    const unregisterOperationalRecovery = registerOperationalCacheRecovery(async () => {
+      if (!workspaceKey || !companyUrl || !sessionId) return;
+      const snapshot = await posCache.read<PosBootstrapData>(workspaceKey);
+      const posProfile = snapshot?.data.pos_profile?.name ?? activeProfile.current;
+      if (!posProfile) return;
+      await invalidateOperationalPosCache({ companyUrl, posProfile, sessionId });
+    });
     const unregisterReference = registerRealtimeControlRefresh(
       POS_REFERENCE_DATA_RESOURCE,
       (payload) => {
@@ -55,11 +80,17 @@ export function usePosRealtimeCoordinator() {
     const unregisterProfile = registerRealtimeControlRefresh(
       POS_PROFILE_CHANGED_RESOURCE,
       async () => {
-        if (companyUrl && sessionId) {
-          await posCache.clearResource(
-            { companyUrl, userId: sessionId, posProfile: "workspace" },
-            POS_WORKSPACE_RESOURCE,
-          );
+        if (workspaceKey && workspaceScope) {
+          const previous = await posCache.read<PosBootstrapData>(workspaceKey);
+          const previousProfile = previous?.data.pos_profile?.name ?? activeProfile.current;
+          if (previousProfile) {
+            await clearOperationalPosCache({
+              companyUrl: workspaceScope.companyUrl,
+              sessionId: workspaceScope.userId,
+              posProfile: previousProfile,
+            });
+          }
+          await posCache.clearResource(workspaceScope, POS_WORKSPACE_RESOURCE);
         }
         await reloadCatalogue.current({ full: true });
       },
@@ -67,6 +98,9 @@ export function usePosRealtimeCoordinator() {
     return () => {
       unregisterReference();
       unregisterProfile();
+      unregisterOperationalRecovery();
     };
   }, [companyUrl, enabled, sessionId]);
+
+  return catalogue;
 }

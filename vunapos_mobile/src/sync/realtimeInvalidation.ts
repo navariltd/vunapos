@@ -24,6 +24,15 @@ type RefreshHandler = (payload?: unknown) => void | Promise<void>;
 
 const handlers = new Map<RealtimeResource, Set<RefreshHandler>>();
 const controlHandlers = new Map<RealtimeResource, Set<RefreshHandler>>();
+let operationalCacheRecovery: (() => Promise<void>) | null = null;
+
+/** One authenticated root owns repair of persisted, unmounted browse resources. */
+export function registerOperationalCacheRecovery(handler: () => Promise<void>) {
+  operationalCacheRecovery = handler;
+  return () => {
+    if (operationalCacheRecovery === handler) operationalCacheRecovery = null;
+  };
+}
 
 function addHandler(
   registry: Map<RealtimeResource, Set<RefreshHandler>>,
@@ -80,10 +89,16 @@ export function invalidateRealtimeResource(
 
 /** Revalidate mounted operational views after the root workspace is current. */
 export function refreshOperationalPosResources() {
-  return refreshRegisteredPosResources({
-    force: true,
-    excludeResources: [POS_WORKSPACE_RESOURCE],
-  });
+  return Promise.resolve()
+    .then(() => operationalCacheRecovery?.())
+    .catch(() => {
+      // A failed SQLite repair must not prevent currently mounted resources
+      // from attempting their normal server refresh.
+    })
+    .then(() => refreshRegisteredPosResources({
+      force: true,
+      excludeResources: [POS_WORKSPACE_RESOURCE],
+    }));
 }
 
 /** Root-owned recovery for device connectivity and foreground returns. */

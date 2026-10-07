@@ -101,8 +101,8 @@ type UsePosCartArgs = {
   orderType?: PosOrderType;
   posProfile?: string;
   priceList?: string;
-  /** Incremented after a POS configuration refresh to re-preview an active cart. */
-  configurationRefreshKey?: number;
+  /** Changes only when transaction-affecting POS configuration changes. */
+  configurationRefreshKey?: string | number;
 };
 
 type CartResponse = Omit<PosCartData, "items"> & {
