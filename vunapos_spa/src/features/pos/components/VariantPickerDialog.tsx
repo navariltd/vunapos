@@ -13,6 +13,7 @@ type VariantPickerDialogProps = {
   currency?: string;
   error?: string | null;
   isLoading?: boolean;
+  ignoreStock?: boolean;
   isOpen: boolean;
   template: ItemDTO | null;
   variants: TemplateVariant[];
@@ -24,6 +25,7 @@ export function VariantPickerDialog({
   currency,
   error,
   isLoading,
+  ignoreStock,
   isOpen,
   template,
   variants,
@@ -197,7 +199,7 @@ export function VariantPickerDialog({
                   </div>
                   <Button
                     size="sm"
-                    disabled={Number(variant.actual_qty || 0) <= 0}
+                    disabled={!ignoreStock && Number(variant.actual_qty || 0) <= 0}
                     onClick={() => onSelect(variant)}
                   >
                     Add

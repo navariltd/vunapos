@@ -36,7 +36,11 @@ def _warehouse(company):
 
 
 def _price_list():
-	return _first_value("Price List", {"selling": 1, "enabled": 1}) or _first_value("Price List", {})
+	return (
+		_first_value("Price List", {"name": "Standard Selling", "selling": 1, "enabled": 1})
+		or _first_value("Price List", {"selling": 1, "enabled": 1})
+		or _first_value("Price List", {})
+	)
 
 
 def _tax_account(company):
@@ -141,6 +145,10 @@ def ensure_test_shipping_address(customer=None):
 def ensure_test_pos_profile():
 	if frappe.db.exists("POS Profile", "_Test VunaPOS Profile"):
 		profile = frappe.get_doc("POS Profile", "_Test VunaPOS Profile")
+		default_price_list = _price_list()
+		if profile.selling_price_list != default_price_list:
+			profile.selling_price_list = default_price_list
+			profile.save(ignore_permissions=True)
 		if profile.meta.has_field("vunapos_allow_service_items") and not profile.vunapos_allow_service_items:
 			profile.vunapos_allow_service_items = 1
 			profile.save(ignore_permissions=True)
@@ -342,6 +350,9 @@ def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
 
 
 def ensure_test_batch_item(item_code="_Test Vuna Batch Item", has_serial_no=0):
+	# ERPNext rejects tracked items unless stock settings explicitly enable
+	# serial/batch tracking. CI sites start with the default disabled value.
+	frappe.db.set_single_value("Stock Settings", "enable_serial_and_batch_no_for_item", 1)
 	if frappe.db.exists("Item", item_code):
 		item = frappe.get_doc("Item", item_code)
 	else:
@@ -496,6 +507,22 @@ def ensure_open_pos_opening_entry(pos_profile, period_start_date=None):
 				"POS Opening Entry", existing, "period_start_date", period_start_date, update_modified=False
 			)
 		return existing
+
+	# The VunaPOS override enforces one open shift per cashier across all
+	# profiles. Close stale fixture shifts from another profile before creating
+	# the shift requested by this test; otherwise one leaked test shift prevents
+	# every subsequent test from reaching its actual assertions.
+	for stale_name in frappe.get_all(
+		"POS Opening Entry",
+		filters={"user": user, "status": "Open", "docstatus": 1, "pos_profile": ["!=", pos_profile]},
+		pluck="name",
+	):
+		frappe.db.set_value(
+			"POS Opening Entry",
+			stale_name,
+			{"status": "Closed", "period_end_date": now_datetime()},
+			update_modified=False,
+		)
 
 	profile = frappe.get_doc("POS Profile", pos_profile)
 	entry = frappe.new_doc("POS Opening Entry")

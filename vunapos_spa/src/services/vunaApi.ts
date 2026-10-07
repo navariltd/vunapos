@@ -109,6 +109,15 @@ export const vunaMethods = {
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
+	if (typeof response === "string") {
+		const body = response.trim();
+		if (body.startsWith("<")) {
+			throw new VunaApiError(
+				"The server returned HTML instead of a JSON API response. Your session may have expired.",
+				"INVALID_SERVER_RESPONSE",
+			);
+		}
+	}
 	const payload = getResponsePayload<T>(response);
 
 	if (payload && typeof payload === "object" && "ok" in payload) {

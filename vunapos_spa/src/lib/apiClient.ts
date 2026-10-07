@@ -27,7 +27,18 @@ async function getJson(path: string, params: Record<string, string | undefined> 
 				: "HTTP_ERROR";
 		throw new VunaApiError(`Request to ${path} failed with status ${response.status}`, code);
 	}
-	return response.json();
+	const body = await response.text();
+	if (!body.trim()) {
+		throw new VunaApiError(`Request to ${path} returned an empty response`, "INVALID_SERVER_RESPONSE");
+	}
+	try {
+		return JSON.parse(body);
+	} catch {
+		throw new VunaApiError(
+			`Request to ${path} returned a non-JSON response`,
+			"INVALID_SERVER_RESPONSE",
+		);
+	}
 }
 
 export async function pingServer(): Promise<{ server_time: string }> {

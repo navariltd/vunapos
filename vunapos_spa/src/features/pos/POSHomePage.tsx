@@ -180,6 +180,7 @@ export function POSHomePage({
   const [customerAddresses, setCustomerAddresses] = useState<CustomerAddressDTO[]>([]);
   const [customerAddressesLoading, setCustomerAddressesLoading] = useState(false);
   const [customerAddressesCustomer, setCustomerAddressesCustomer] = useState<string | null>(null);
+  const [shippingAddressName, setShippingAddressName] = useState<string>("");
   const lastAutoAddedSearch = useRef("");
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
@@ -209,12 +210,16 @@ export function POSHomePage({
     bootstrap.data?.allow_customer_payments !== false;
 
   const selectedPriceList = useCartStore((s) => s.selectedPriceList);
-  const items = useItemSearch(itemSearchQuery, selectedPriceList);
   const cartInvoice = useCartStore((s) => s.invoice);
   // Drafts edited from history retain their original doctype. Prefer it over
   // the workspace selector so Sales Orders never enter the invoice checkout path.
   const effectiveOrderType: OrderType =
     cartInvoice?.source_invoice_doctype === "Sales Order" ? "Sales Order" : orderType;
+  const items = useItemSearch(
+    itemSearchQuery,
+    selectedPriceList,
+    effectiveOrderType === "Sales Order",
+  );
   const cartQuantity =
     cartInvoice?.items.reduce(
       (total, item) => total + Number(item.qty || 0),
@@ -251,7 +256,14 @@ export function POSHomePage({
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
-    if (!isCheckoutOpen || !activeCustomerName) return;
+    if (!activeCustomerName) {
+      setCustomerAddresses([]);
+      setCustomerAddressesCustomer(null);
+      setShippingAddressName("");
+      setCustomerAddressesLoading(false);
+      return;
+    }
+    setCustomerAddressesLoading(true);
     let cancelled = false;
     void getCustomerAddresses(customerAddressesCall.call, {
       pos_profile: bootstrap.data?.pos_profile,
@@ -262,6 +274,11 @@ export function POSHomePage({
         if (!cancelled) {
           setCustomerAddresses(addresses);
           setCustomerAddressesCustomer(activeCustomerName);
+          setShippingAddressName((current) =>
+            addresses.some((address) => address.name === current)
+              ? current
+              : addresses.find((address) => address.is_default)?.name || addresses[0]?.name || "",
+          );
         }
       })
       .catch(() => {
@@ -276,7 +293,7 @@ export function POSHomePage({
     return () => {
       cancelled = true;
     };
-  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call, isCheckoutOpen]);
+  }, [activeCustomerName, bootstrap.data?.pos_profile, customerAddressesCall.call]);
 
   const handleRemoveItem = useCallback(
     (rowName: string) => {
@@ -305,6 +322,7 @@ export function POSHomePage({
     reportError = true,
   ) => {
     setSelectedCustomer(customer);
+    setShippingAddressName("");
     if (!isReachable || navigator.onLine === false) return;
     try {
       await cartActions.refreshCustomerPricing(customer);
@@ -469,7 +487,7 @@ export function POSHomePage({
       showToast({
         type: "error",
         message:
-          err instanceof Error ? err.message : "Failed to load held invoices",
+          err instanceof Error ? err.message : "Failed to load draft invoices",
       });
     });
     // cartActions is a fresh object each render (see useCartActions) - keying on its
@@ -709,9 +727,6 @@ export function POSHomePage({
         return;
       }
       setIsCartOpen(false);
-      setCustomerAddresses([]);
-      setCustomerAddressesCustomer(null);
-      setCustomerAddressesLoading(true);
       setIsCheckoutOpen(true);
     } catch (error) {
       showToast({
@@ -720,6 +735,27 @@ export function POSHomePage({
           error instanceof Error
             ? error.message
             : "Unable to validate this cart with the server.",
+      });
+    }
+  };
+
+  const handleOpenDraft = async (invoiceDoctype: string, invoiceName: string, checkout = false) => {
+    try {
+      const draft = await cartActions.editDraftInvoice(invoiceDoctype, invoiceName);
+      if (draft.customer) {
+        setSelectedCustomer({
+          customer: draft.customer,
+          customer_name: draft.customer_name || draft.customer,
+          tax_id: draft.tax_id,
+        });
+      }
+      navigateToPosPage("Home");
+      if (checkout) setIsCheckoutOpen(true);
+      else setIsCartOpen(true);
+    } catch (err) {
+      showToast({
+        type: "error",
+        message: err instanceof Error ? err.message : "Unable to open draft invoice",
       });
     }
   };
@@ -776,7 +812,7 @@ export function POSHomePage({
       showToast({
         type: "error",
         message:
-          "Held invoices need a connection - try again once you're back online.",
+          "Draft invoices need a connection - try again once you're back online.",
       });
       return;
     }
@@ -786,7 +822,7 @@ export function POSHomePage({
       showToast({
         type: "error",
         message:
-          err instanceof Error ? err.message : "Failed to load held invoices",
+          err instanceof Error ? err.message : "Failed to load draft invoices",
       });
     }
   };
@@ -800,7 +836,7 @@ export function POSHomePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activePage]);
 
-  const handleRestoreHeld = async (heldInvoice: HeldInvoiceDTO) => {
+  const handleRestoreHeld = async (heldInvoice: HeldInvoiceDTO, checkout = false) => {
     setPageError(null);
     clearToast();
     try {
@@ -816,12 +852,19 @@ export function POSHomePage({
         false,
       );
       setActivePage("Home");
-      setIsCartOpen(true);
+      if (checkout) {
+        setCustomerAddresses([]);
+        setCustomerAddressesCustomer(null);
+        setCustomerAddressesLoading(true);
+        setIsCheckoutOpen(true);
+      } else {
+        setIsCartOpen(true);
+      }
     } catch (err) {
       showToast({
         type: "error",
         message:
-          err instanceof Error ? err.message : "Failed to restore held invoice",
+          err instanceof Error ? err.message : "Failed to restore draft invoice",
       });
     }
   };
@@ -951,33 +994,21 @@ export function POSHomePage({
             invoice={getInvoiceFromPath(currentPath) || ""}
             invoiceDoctype={getInvoiceDoctypeFromPath(currentPath)}
             posProfile={bootstrap.data?.pos_profile}
+            allowReturns={bootstrap.data?.allow_returns !== false}
             isOnline={isReachable && navigator.onLine !== false}
             onStartSale={(customer) => {
               void handleSelectCustomer(customer);
               navigateToPosPage("Home");
             }}
-            onEdit={async () => {
-              try {
-                const editedInvoice = await cartActions.editDraftInvoice(
-                  getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
-                  getInvoiceFromPath(currentPath) || "",
-                );
-                if (editedInvoice.customer) {
-                  setSelectedCustomer({
-                    customer: editedInvoice.customer,
-                    customer_name: editedInvoice.customer_name || editedInvoice.customer,
-                    tax_id: editedInvoice.tax_id,
-                  });
-                }
-                navigateToPosPage("Home");
-                setIsCartOpen(true);
-              } catch (err) {
-                showToast({
-                  type: "error",
-                  message: err instanceof Error ? err.message : "Unable to edit draft",
-                });
-              }
-            }}
+            onEdit={() => void handleOpenDraft(
+              getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
+              getInvoiceFromPath(currentPath) || "",
+            )}
+            onCheckout={() => void handleOpenDraft(
+              getInvoiceDoctypeFromPath(currentPath) || "Sales Invoice",
+              getInvoiceFromPath(currentPath) || "",
+              true,
+            )}
           />
         ) : (
           <InvoicesPage
@@ -987,8 +1018,8 @@ export function POSHomePage({
             heldInvoices={heldInvoicesView}
             heldLoading={cartIsHeldLoading}
             onBack={() => setActivePage("Home")}
-            onRefreshHeld={handleRefreshHeld}
             onRestoreHeld={handleRestoreHeld}
+            onCheckoutHeld={(invoice) => void handleRestoreHeld(invoice, true)}
           />
         )
       ) : activePage === "Payments" ? (
@@ -1101,6 +1132,14 @@ export function POSHomePage({
             onLoadBatches={cartActions.loadItemBatches}
             onRemoveItem={handleRemoveItem}
             onSelectCustomer={(customer) => void handleSelectCustomer(customer)}
+            customerAddresses={
+              customerAddressesCustomer === activeCustomer?.customer
+                ? customerAddresses
+                : []
+            }
+            customerAddressesLoading={customerAddressesLoading}
+            shippingAddressName={shippingAddressName}
+            onSelectShippingAddress={setShippingAddressName}
             onSelectPriceList={(priceList) =>
               void handleSelectPriceList(priceList)
             }
@@ -1190,6 +1229,14 @@ export function POSHomePage({
               onSelectCustomer={(customer) =>
                 void handleSelectCustomer(customer)
               }
+              customerAddresses={
+                customerAddressesCustomer === activeCustomer?.customer
+                  ? customerAddresses
+                  : []
+              }
+              customerAddressesLoading={customerAddressesLoading}
+              shippingAddressName={shippingAddressName}
+              onSelectShippingAddress={setShippingAddressName}
               onSelectPriceList={(priceList) =>
                 void handleSelectPriceList(priceList)
               }
@@ -1227,6 +1274,8 @@ export function POSHomePage({
             : []
         }
         customerAddressesLoading={customerAddressesLoading}
+        shippingAddressName={shippingAddressName}
+        onShippingAddressChange={setShippingAddressName}
         defaultSaleType={bootstrap.data?.default_sale_type}
         error={pageError}
         isOpen={isCheckoutOpen}
@@ -1266,12 +1315,16 @@ export function POSHomePage({
         onResolveCustomerPhone={gatewayPayments.getCustomerContactPhone}
         onCancelGatewayPayment={gatewayPayments.cancelGatewayPaymentLink}
         onInitiateGatewayPayment={(params) =>
-          gatewayPayments.initiateStkPayment({
-            ...params,
-            pos_profile: bootstrap.data?.pos_profile,
-            customer: activeCustomer?.customer,
-            currency: bootstrap.data?.currency,
-          })
+          cartActions.prepareGatewayPayment(effectiveOrderType).then((prepared) =>
+            gatewayPayments.initiateStkPayment({
+              ...params,
+              pos_profile: bootstrap.data?.pos_profile,
+              customer: activeCustomer?.customer,
+              currency: bootstrap.data?.currency,
+              account_reference:
+                prepared?.source_invoice_name || prepared?.name || params.account_reference,
+            }),
+          )
         }
         onPreviewLoyalty={(points) =>
           cartActions.previewLoyaltyRedemption(points)
@@ -1383,6 +1436,7 @@ export function POSHomePage({
         currency={bootstrap.data?.currency}
         error={variantError}
         isLoading={templateVariantsCall.loading}
+        ignoreStock={effectiveOrderType === "Sales Order"}
         isOpen={Boolean(variantPickerItem)}
         template={variantPickerItem}
         variants={variantOptions}
@@ -1400,6 +1454,7 @@ export function POSHomePage({
         details={bundleDetails}
         error={bundleError}
         isLoading={productBundleCall.loading}
+        ignoreStock={effectiveOrderType === "Sales Order"}
         isOpen={Boolean(bundleItem)}
         onClose={() => {
           setBundleItem(null);

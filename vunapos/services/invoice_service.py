@@ -1368,7 +1368,7 @@ def get_invoice(invoice_doctype, invoice_name):
 
 def hold_invoice(invoice_doctype, invoice_name):
 	doc = _load_draft_invoice(invoice_doctype, invoice_name, allow_sales_order=True)
-	opening_entry = require_open_pos_session(doc.get("pos_profile"))
+	opening_entry = require_open_pos_session(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
 	_stamp_validated_session(doc, opening_entry)
 	_set_if_has_field(doc, VUNAPOS_FIELD, 1)
 	_set_if_has_field(doc, HELD_FIELD, 1)
@@ -1455,6 +1455,8 @@ def _held_invoice_row(doctype, row):
 def list_held_invoices(pos_profile=None, limit=20):
 	limit = min(int(limit or 20), 100)
 	rows = []
+	# Held invoices are restored through the invoice workflow. Sales Orders have
+	# their own history and must not appear in this invoice-only list.
 	for doctype in SUPPORTED_INVOICE_DOCTYPES:
 		if not frappe.db.table_exists(doctype):
 			continue
@@ -1748,6 +1750,8 @@ def _prepare_invoice_for_checkout(
 	checkout_fields=None,
 ):
 	profile = resolve_pos_profile(doc.get("pos_profile") or doc.get("vunapos_pos_profile"))
+	# Preserve the original intentional-hold marker when a held draft is checked
+	# out directly. Editing/restoring a draft clears the active marker separately.
 	held_before_checkout = bool(doc.get(HELD_FIELD))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)

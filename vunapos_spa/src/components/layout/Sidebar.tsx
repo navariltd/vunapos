@@ -18,12 +18,12 @@ import {
   type POSPage,
 } from "../../lib/stores/navigationStore";
 
-const items: { label: POSPage; icon: typeof Home }[] = [
-  { label: "Home", icon: Home },
-  { label: "Invoices", icon: ReceiptText },
-  { label: "Payments", icon: CreditCard },
-  { label: "Customers", icon: Users },
-  { label: "Close Shift", icon: LogOut },
+const items: { label: POSPage; title: string; icon: typeof Home }[] = [
+  { label: "Home", title: "Home", icon: Home },
+  { label: "Invoices", title: "Sales History", icon: ReceiptText },
+  { label: "Payments", title: "Payments", icon: CreditCard },
+  { label: "Customers", title: "Customers", icon: Users },
+  { label: "Close Shift", title: "Close Shift", icon: LogOut },
 ];
 
 export type NavFeatureFlags = {
@@ -87,7 +87,7 @@ export function Sidebar({
             <a
               key={item.label}
               href={getPosPagePath(item.label)}
-              title={isCollapsed ? item.label : undefined}
+              title={isCollapsed ? item.title : undefined}
               className={cn(
                 "flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
                 isActive ? activeLinkClass : inactiveLinkClass,
@@ -99,7 +99,7 @@ export function Sidebar({
               }}
             >
               <Icon className="size-4" aria-hidden="true" />
-              {isCollapsed ? null : <span>{item.label}</span>}
+              {isCollapsed ? null : <span>{item.title}</span>}
             </a>
           );
         })}

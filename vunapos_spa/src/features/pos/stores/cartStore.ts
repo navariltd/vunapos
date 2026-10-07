@@ -686,6 +686,7 @@ type CartActions = {
 	refreshCartConfiguration: (api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshCustomerPricing: (customer: CustomerDTO | null | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
 	refreshPriceListPricing: (priceList: string | undefined, api: CartApi) => Promise<InvoiceDTO | null>;
+	prepareGatewayPayment: (api: CartApi, orderType?: "Sales Invoice" | "Sales Order") => Promise<InvoiceDTO | null>;
 	submitCart: (
 		payments: PaymentInput[],
 		printFormat: string | null | undefined,
@@ -881,6 +882,34 @@ export const useCartStore = create<CartStore>((set, get) => {
 		});
 	}
 
+	async function prepareGatewayPayment(
+		api: CartApi,
+		orderType: "Sales Invoice" | "Sales Order" = get().transactionOrderType,
+	): Promise<InvoiceDTO | null> {
+		const invoice = get().invoice;
+		if (!invoice?.items?.length) return null;
+		if (invoice.source_invoice_doctype && invoice.source_invoice_name) return invoice;
+		if (!isLocalCart(invoice)) return invoice;
+
+		const selectedCustomer = getActiveCustomer(get());
+		const draft = await runMutation(() => createInvoiceFromCart(api.createInvoiceFromCart, {
+			pos_profile: get().posProfile,
+			customer: selectedCustomer?.customer || invoice.customer,
+			price_list: get().selectedPriceList || invoice.selling_price_list,
+			items: cartItemsPayload(invoice.items),
+			loyalty_points: invoice.loyalty_points || undefined,
+			invoice_doctype: orderType === "Sales Order" ? "Sales Order" : "Sales Invoice",
+		}));
+		const materialized = {
+			...draft,
+			is_local: true,
+			source_invoice_doctype: draft.doctype,
+			source_invoice_name: draft.name,
+		};
+		set({ invoice: materialized });
+		return materialized;
+	}
+
 	async function restoreDefaultCataloguePricing(api: CartApi) {
 		try {
 			const pricedItems = await searchItems(api.searchItems, {
@@ -917,7 +946,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 	addCartItem: async (item, api) => {
 			const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
-			const initialUom = selectAvailableInitialUom(item);
+			const initialUom = get().transactionOrderType === "Sales Order"
+				? { item }
+				: selectAvailableInitialUom(item);
 			const itemForCart = initialUom.item;
 			if (isStockControlled(itemForCart) && get().transactionOrderType !== "Sales Order") {
 				validateAvailableQty(itemForCart, 1);
@@ -1158,7 +1189,9 @@ export const useCartStore = create<CartStore>((set, get) => {
 			const nextItems = invoice.items.map((item) =>
 				item.row_name === rowName ? { ...item, batch_allocations: allocations || [] } : item,
 			);
-			validateManualBatchAllocations(nextItems);
+			if (get().transactionOrderType !== "Sales Order" && invoice.source_invoice_doctype !== "Sales Order") {
+				validateManualBatchAllocations(nextItems);
+			}
 			if (isLocalCart(invoice)) {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
@@ -1458,6 +1491,8 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return get().validateCart(api);
 		},
 
+		prepareGatewayPayment: (api, orderType) => prepareGatewayPayment(api, orderType),
+
 		submitCart: async (
 			payments,
 			printFormat,
@@ -1489,7 +1524,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 
 			const selectedCustomer = getActiveCustomer(get());
 			const activePriceList = get().selectedPriceList;
-			if (isOnline && isUnsyncedLocalCart(invoice)) {
+			if (isOnline && isUnsyncedLocalCart(invoice) && effectiveOrderType !== "Sales Order") {
 				invoice = await runMutation(() =>
 					refreshAndValidateStock(
 						invoice as InvoiceDTO,

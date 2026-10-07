@@ -69,18 +69,22 @@ type Props = {
 	invoice: string;
 	invoiceDoctype?: string;
   posProfile?: string;
+  allowReturns?: boolean;
   isOnline: boolean;
   onStartSale: (customer: CustomerDTO) => void;
   onEdit?: () => void;
+  onCheckout?: () => void;
 };
 
 export function InvoiceDetailsPage({
 	invoice,
 	invoiceDoctype,
   posProfile,
+  allowReturns = true,
   isOnline,
   onStartSale,
-  onEdit,
+	onEdit,
+  onCheckout,
 }: Props) {
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
@@ -271,6 +275,12 @@ export function InvoiceDetailsPage({
                 <span className="ml-2">Edit</span>
               </Button>
             ) : null}
+            {details.docstatus === 0 && onCheckout ? (
+              <Button variant="primary" onClick={onCheckout}>
+                <ShoppingCart className="mr-2 size-4" />
+                Checkout
+              </Button>
+            ) : null}
             {workflowActions.length ? (
               <div className="relative">
                 <Button
@@ -300,7 +310,7 @@ export function InvoiceDetailsPage({
                 ) : null}
               </div>
             ) : null}
-            {details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
+            {allowReturns && details.doctype !== "Sales Order" && details.docstatus === 1 && !details.is_return ? (
               <Button
                 variant="secondary"
                 disabled={!isOnline}

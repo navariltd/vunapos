@@ -144,6 +144,7 @@ export type CachedProfile = {
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
 	allow_payment_history?: boolean;
+	allow_returns?: boolean;
 	checkout_fields?: Array<{
 		doctype: "Sales Invoice" | "POS Invoice" | "Sales Order";
 		fieldname: string;

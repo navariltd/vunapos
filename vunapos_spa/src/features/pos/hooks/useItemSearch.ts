@@ -9,7 +9,7 @@ import { searchItems } from "../../../services/vunaApi";
 
 // Search the current server-hydrated in-memory catalogue without a request per keypress.
 // Reloading the application starts empty and requires a fresh server bootstrap.
-export function useItemSearch(query: string, priceList?: string) {
+export function useItemSearch(query: string, priceList?: string, includeUnavailable = false) {
 	const searchCall = useFrappePostCall("vunapos.api.item.search_items");
 	const [debouncedQuery, setDebouncedQuery] = useState(query);
 	const [items, setItems] = useState<ItemDTO[]>();
@@ -28,7 +28,7 @@ export function useItemSearch(query: string, priceList?: string) {
 		let cancelled = false;
 		void profileRepository.getActive().then(async (profile) => {
 			const localRows = await itemRepository.search(debouncedQuery, 60, {
-				hideUnavailable: Boolean(profile?.hide_unavailable_items),
+				 hideUnavailable: Boolean(profile?.hide_unavailable_items) && !includeUnavailable,
 			});
 			// Normal item/name searches stay entirely in the hydrated catalogue. Use
 			// the server only when the local catalogue cannot resolve the query,
@@ -41,7 +41,7 @@ export function useItemSearch(query: string, priceList?: string) {
 					price_list: priceList,
 					limit: 60,
 				});
-				const visibleServerRows = profile.hide_unavailable_items
+				const visibleServerRows = profile.hide_unavailable_items && !includeUnavailable
 					? serverRows.filter((row) => {
 						const isUnavailable = Boolean(row.is_stock_item ?? true)
 							&& !row.allow_negative_stock
@@ -60,7 +60,7 @@ export function useItemSearch(query: string, priceList?: string) {
 			if (!cancelled) setItems(rows as ItemDTO[]);
 		});
 		return () => { cancelled = true; };
-	}, [debouncedQuery, priceList, revision, searchCall.call]);
+	}, [debouncedQuery, includeUnavailable, priceList, revision, searchCall.call]);
 
 	return {
 		error: null as string | null,

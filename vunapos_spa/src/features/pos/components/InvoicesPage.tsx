@@ -15,8 +15,8 @@ type Props = {
   heldInvoices?: HeldInvoiceDTO[];
   heldLoading: boolean;
   onBack: () => void;
-  onRefreshHeld: () => void;
   onRestoreHeld: (invoice: HeldInvoiceDTO) => void;
+  onCheckoutHeld: (invoice: HeldInvoiceDTO) => void;
 };
 type Filters = {
   invoice: string;
@@ -75,6 +75,8 @@ type InvoiceTab = "history" | "orders" | "draft-orders" | "queue" | "issues";
 const INVOICE_TAB_STORAGE_KEY = "vunapos.invoices-tab";
 const INVOICE_FILTERS_STORAGE_KEY = "vunapos.invoices-filters";
 const EMPTY_INVOICE_FILTERS: Filters = { invoice: "", customer: "", from_date: "", to_date: "", status: "", payment_mode: "", sale_type: "", current_shift: "1" };
+type DraftFilters = Pick<Filters, "invoice" | "customer" | "from_date" | "to_date">;
+const EMPTY_DRAFT_FILTERS: DraftFilters = { invoice: "", customer: "", from_date: "", to_date: "" };
 function readInvoiceFilters(): Filters {
   if (typeof window === "undefined") return EMPTY_INVOICE_FILTERS;
   try {
@@ -92,8 +94,8 @@ export function InvoicesPage({
   heldInvoices,
   heldLoading,
   onBack,
-  onRefreshHeld,
   onRestoreHeld,
+  onCheckoutHeld,
 }: Props) {
   const [tab, setTab] = useState<InvoiceTab>(() => {
     if (typeof window === "undefined") return "history";
@@ -106,6 +108,7 @@ export function InvoicesPage({
     window.localStorage.setItem(INVOICE_TAB_STORAGE_KEY, tab);
   }, [tab]);
   const [filters, setFilters] = useState<Filters>(readInvoiceFilters);
+  const [draftFilters, setDraftFilters] = useState<DraftFilters>(EMPTY_DRAFT_FILTERS);
   useEffect(() => {
     window.localStorage.setItem(INVOICE_FILTERS_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
@@ -139,6 +142,14 @@ export function InvoicesPage({
     setFilters(EMPTY_INVOICE_FILTERS);
     setStart(0);
   };
+  const heldFilterText = `${draftFilters.invoice} ${draftFilters.customer}`.trim().toLowerCase();
+  const filteredHeldInvoices = (heldInvoices || []).filter((invoice) => {
+    const matchesText = !heldFilterText || `${invoice.name} ${invoice.customer || ""} ${invoice.customer_name || ""}`.toLowerCase().includes(heldFilterText);
+    const date = (invoice.posting_date || invoice.modified || "").slice(0, 10);
+    const matchesFrom = !draftFilters.from_date || date >= draftFilters.from_date;
+    const matchesTo = !draftFilters.to_date || date <= draftFilters.to_date;
+    return matchesText && matchesFrom && matchesTo;
+  });
   const openDetails = (event: MouseEvent<HTMLElement>) => {
     const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
       'a[href^="/app/"]',
@@ -159,20 +170,23 @@ export function InvoicesPage({
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold">Invoices</h2>
+            <h2 className="text-lg font-semibold">Sales History</h2>
             <p className="text-sm text-on-surface-variant">
               {tab === "orders"
                 ? "Review submitted and cancelled Sales Orders."
                 : tab === "draft-orders"
                   ? "Review Sales Orders awaiting workflow approval."
-                : "Review completed sales and restore held invoices."}
+                : "Review completed sales and restore draft invoices."}
             </p>
           </div>
           <Button onClick={onBack}>Back to POS</Button>
         </div>
         <div className="flex border-b border-outline-variant">
           <Tab active={tab === "history"} onClick={() => setTab("history")}>
-            Sales History
+            Sales Invoices
+          </Tab>
+          <Tab active={tab === "issues"} onClick={() => setTab("issues")}>
+            Draft Invoices
           </Tab>
           <Tab active={tab === "orders"} onClick={() => setTab("orders")}>
             Sales Orders
@@ -183,20 +197,26 @@ export function InvoicesPage({
           <Tab active={tab === "queue"} onClick={() => setTab("queue")}>
             Checkout Queue
           </Tab>
-          <Tab active={tab === "issues"} onClick={() => setTab("issues")}>
-            Held Invoices
-          </Tab>
         </div>
         {tab === "queue" ? (
           <CheckoutQueuePanel posProfile={posProfile} currency={currency} />
         ) : tab === "issues" ? (
-          <HeldInvoicesPanel
-            currency={currency}
-            heldInvoices={heldInvoices}
-            isLoading={heldLoading}
-            onRefresh={onRefreshHeld}
-            onRestore={onRestoreHeld}
-          />
+          <>
+            <div className="grid gap-3 rounded-lg border border-outline-variant p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <input className={fieldClass} placeholder="Invoice number" value={draftFilters.invoice} onChange={(event) => setDraftFilters((current) => ({ ...current, invoice: event.target.value }))} />
+              <input className={fieldClass} placeholder="Customer ID or name" value={draftFilters.customer} onChange={(event) => setDraftFilters((current) => ({ ...current, customer: event.target.value }))} />
+              <DateFilter label="From date" value={draftFilters.from_date} onChange={(value) => setDraftFilters((current) => ({ ...current, from_date: value }))} />
+              <DateFilter label="To date" value={draftFilters.to_date} onChange={(value) => setDraftFilters((current) => ({ ...current, to_date: value }))} />
+              <Button variant="ghost" onClick={() => setDraftFilters(EMPTY_DRAFT_FILTERS)}>Clear filters</Button>
+            </div>
+            <HeldInvoicesPanel
+              currency={currency}
+              heldInvoices={filteredHeldInvoices}
+              isLoading={heldLoading}
+              onEdit={onRestoreHeld}
+              onCheckout={onCheckoutHeld}
+            />
+          </>
         ) : (
           <>
             <div className="grid gap-3 rounded-lg border border-outline-variant p-4 sm:grid-cols-2 lg:grid-cols-4">
