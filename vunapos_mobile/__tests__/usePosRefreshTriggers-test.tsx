@@ -5,7 +5,7 @@ const mockUseAppSession = jest.fn();
 const mockUseNetworkStatus = jest.fn();
 const mockGetVunaMethod = jest.fn();
 const mockValidateFrappeSession = jest.fn();
-const mockInvalidateRealtimeResource = jest.fn();
+const mockRecoverPosResources = jest.fn();
 const mockRefreshRegisteredPosResources = jest.fn();
 const mockListener = jest.fn();
 let appStateCallback: ((state: "active" | "background") => void) | undefined;
@@ -22,8 +22,7 @@ jest.mock("@/services/frappeClient", () => ({
     mockValidateFrappeSession(...args),
 }));
 jest.mock("@/sync/realtimeInvalidation", () => ({
-  invalidateRealtimeResource: (...args: unknown[]) =>
-    mockInvalidateRealtimeResource(...args),
+  recoverPosResources: (...args: unknown[]) => mockRecoverPosResources(...args),
 }));
 jest.mock("@/hooks/usePosCachedResource", () => ({
   POS_CACHE_TTL_MS: 60_000,
@@ -44,7 +43,7 @@ describe("usePosRefreshTriggers", () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
     mockGetVunaMethod.mockResolvedValue({});
     mockValidateFrappeSession.mockResolvedValue("valid");
-    mockInvalidateRealtimeResource.mockResolvedValue(undefined);
+    mockRecoverPosResources.mockResolvedValue(undefined);
     appStateCallback = undefined;
     jest.spyOn(AppState, "addEventListener").mockImplementation(
       (_event, callback) => {
@@ -71,10 +70,7 @@ describe("usePosRefreshTriggers", () => {
       "sid-1",
     );
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
-    expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
-      "workspace-configuration",
-      { full: false, source: "reconnect" },
-    );
+    expect(mockRecoverPosResources).toHaveBeenCalledWith("reconnect");
   });
 
   it("keeps a foreground refresh targeted to the timestamp delta", async () => {
@@ -85,10 +81,7 @@ describe("usePosRefreshTriggers", () => {
 
     await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
-    expect(mockInvalidateRealtimeResource).toHaveBeenCalledWith(
-      "workspace-configuration",
-      { full: false, source: "foreground" },
-    );
+    expect(mockRecoverPosResources).toHaveBeenCalledWith("foreground");
   });
 
   it("runs the app-level resource scheduler at the 60-second boundary", async () => {

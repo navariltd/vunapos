@@ -1,5 +1,6 @@
 jest.mock("@/services/posCache", () => ({
   posCache: {
+    clearResource: jest.fn(),
     markResourceStale: jest.fn(),
     read: jest.fn(),
     write: jest.fn(),
@@ -7,9 +8,11 @@ jest.mock("@/services/posCache", () => ({
 }));
 
 import {
+  clearOperationalPosCache,
   invalidateCustomerDirectoryCache,
   invalidateCustomerPaymentCache,
   invalidateHeldInvoiceCache,
+  invalidateOperationalPosCache,
   invalidateReturnCache,
   invalidateSaleCache,
   patchCachedCatalogueItems,
@@ -19,6 +22,7 @@ import { posCache } from "@/services/posCache";
 describe("invalidateSaleCache", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.mocked(posCache.clearResource).mockResolvedValue(undefined);
     jest.mocked(posCache.markResourceStale).mockResolvedValue(undefined);
     jest.mocked(posCache.write).mockResolvedValue(undefined);
   });
@@ -90,6 +94,45 @@ describe("invalidateSaleCache", () => {
       "held-invoices",
     );
     expect(posCache.markResourceStale).toHaveBeenCalledTimes(7);
+  });
+
+  it("marks every operational resource stale for reconnect, including unmounted views", async () => {
+    await invalidateOperationalPosCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      sessionId: "sid-1",
+    });
+    const scope = {
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-001",
+      userId: "sid-1",
+    };
+    for (const resource of [
+      "catalogue", "customer-details", "customer-directory", "customer-search",
+      "invoice-history", "payment-history", "held-invoices",
+    ]) {
+      expect(posCache.markResourceStale).toHaveBeenCalledWith(scope, resource);
+    }
+    expect(posCache.markResourceStale).toHaveBeenCalledTimes(7);
+    expect(posCache.markResourceStale).not.toHaveBeenCalledWith(
+      { ...scope, posProfile: "workspace" }, "workspace-configuration",
+    );
+  });
+
+  it("clears old profile browse rows without deleting the active cart", async () => {
+    await clearOperationalPosCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-OLD",
+      sessionId: "sid-1",
+    });
+    const scope = {
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-OLD",
+      userId: "sid-1",
+    };
+    expect(posCache.clearResource).toHaveBeenCalledTimes(7);
+    expect(posCache.clearResource).toHaveBeenCalledWith(scope, "invoice-history");
+    expect(posCache.clearResource).not.toHaveBeenCalledWith(scope, "active-cart");
   });
 
   it("also marks held drafts stale when their checkout completes", async () => {

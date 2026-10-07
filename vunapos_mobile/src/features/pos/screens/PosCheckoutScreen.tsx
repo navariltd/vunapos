@@ -71,7 +71,10 @@ type PosCheckoutScreenProps = {
   onClear?: () => void;
   onComplete: (result: PosCheckoutResult) => void;
   onHold?: () => Promise<{ name: string } | null>;
+  onMaterializeGatewayDraft?: () => Promise<PosCartSource | null>;
   onSalespersonTokenExpired?: () => void;
+  shippingAddressName?: string;
+  onShippingAddressChange?: (addressName: string) => void;
   initialCheckoutFieldValues?: PosCheckoutFieldValues;
   orderType: PosOrderType;
   priceList?: string;
@@ -183,8 +186,11 @@ export function PosCheckoutScreen({
   onClear,
   onComplete,
   onHold,
+  onMaterializeGatewayDraft,
   initialCheckoutFieldValues,
   onSalespersonTokenExpired,
+  shippingAddressName: controlledShippingAddressName,
+  onShippingAddressChange,
   orderType,
   priceList,
   saleCustomer,
@@ -196,7 +202,10 @@ export function PosCheckoutScreen({
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const bootstrapResource = usePosBootstrap({ enabled: !bootstrapData });
+  const bootstrapResource = usePosBootstrap({
+    enabled: !bootstrapData,
+    manageFreshness: false,
+  });
   const bootstrap = bootstrapData
     ? {
         ...bootstrapResource,
@@ -224,7 +233,13 @@ export function PosCheckoutScreen({
   );
   const [isApplyingDeliveryCharge, setIsApplyingDeliveryCharge] =
     useState(false);
-  const [shippingAddressName, setShippingAddressName] = useState("");
+  const [localShippingAddressName, setLocalShippingAddressName] = useState("");
+  const shippingAddressName =
+    controlledShippingAddressName ?? localShippingAddressName;
+  function setShippingAddressName(name: string) {
+    setLocalShippingAddressName(name);
+    onShippingAddressChange?.(name);
+  }
   const [isShippingAddressPickerVisible, setIsShippingAddressPickerVisible] =
     useState(false);
   const preview = usePosCheckoutPreview(
@@ -536,9 +551,7 @@ export function PosCheckoutScreen({
   const selectedShippingAddress =
     customerShippingAddresses.data?.find(
       (address) => address.name === shippingAddressName,
-    ) ||
-    customerShippingAddresses.data?.find((address) => address.is_default) ||
-    customerShippingAddresses.data?.[0];
+    );
   const allocation = calculatePaymentAllocation(
     paymentModes,
     paymentAmounts,
@@ -815,8 +828,16 @@ export function PosCheckoutScreen({
       gatewayIdempotencyKeys.current[modeOfPayment] ||
       (gatewayIdempotencyKeys.current[modeOfPayment] =
         createGatewayIdempotencyKey(modeOfPayment));
+    // Gateway providers need a stable transaction reference. A brand-new
+    // local cart has no document name yet, so materialize the same draft the
+    // SPA uses before opening the gateway payment. Existing drafts continue
+    // using their original document name.
+    const gatewaySource = sourceInvoice ||
+      (onMaterializeGatewayDraft ? await onMaterializeGatewayDraft() : null);
+    if (onMaterializeGatewayDraft && !gatewaySource) return;
     const link = await gatewayPayment.initiate({
       amount: amountMinor / currencyScale(precision),
+      accountReference: gatewaySource?.name,
       currency,
       customer: saleCustomer?.customer,
       idempotencyKey,

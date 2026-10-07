@@ -354,7 +354,7 @@ describe("PosInvoicesScreen", () => {
       expect.objectContaining({ enabled: false }),
     );
 
-    fireEvent.press(screen.getByText("Held invoices"));
+    fireEvent.press(screen.getByText("Draft invoices"));
 
     await waitFor(() =>
       expect(mockUsePosHeldInvoices).toHaveBeenLastCalledWith(
@@ -364,6 +364,6 @@ describe("PosInvoicesScreen", () => {
         }),
       ),
     );
-    expect(screen.getByText("No invoices are currently held.")).toBeTruthy();
+    expect(screen.getByText("No draft invoices are currently held.")).toBeTruthy();
   });
 });

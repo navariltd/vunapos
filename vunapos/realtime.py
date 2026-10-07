@@ -4,37 +4,137 @@ from frappe.utils import cint, flt
 
 from vunapos.services.catalogue_cache import invalidate_catalogue_cache
 
-CONFIGURATION_EVENT = "vunapos_configuration_changed"
+DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed"
+# Keep the descriptive alias for callers that import the old constant name.
+CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT
 CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed"
 GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
+COMPANY_SCOPED_CONFIGURATION_DOCTYPES = (
+	"Sales Taxes and Charges Template",
+	"Item Tax Template",
+	"Pricing Rule",
+)
+
+
+def _profile_users(doc: Document) -> set[str]:
+	users = set()
+	for row in doc.get("applicable_for_users") or []:
+		user = getattr(row, "user", None)
+		if user is None and isinstance(row, dict):
+			user = row.get("user")
+		if user:
+			users.add(user)
+	return users
+
+
+def _profile_access_signature(doc: Document):
+	user_defaults = []
+	for row in doc.get("applicable_for_users") or []:
+		user = getattr(row, "user", None)
+		default = getattr(row, "default", None)
+		if isinstance(row, dict):
+			user = user or row.get("user")
+			default = row.get("default")
+		if user:
+			user_defaults.append((user, bool(default)))
+	return (
+		doc.get("company"),
+		doc.get("warehouse"),
+		bool(doc.get("disabled")),
+		tuple(sorted(user_defaults)),
+	)
+
+
+def capture_pos_profile_realtime_recipients(doc: Document, method: str | None = None) -> None:
+	"""Capture the pre-save POS Profile scope for reliable invalidation."""
+	flags = getattr(doc, "flags", None)
+	if flags is None:
+		flags = frappe._dict()
+		doc.flags = flags
+	is_new = getattr(doc, "is_new", lambda: False)()
+	if is_new:
+		flags.vunapos_previous_profile_users = set()
+		flags.vunapos_previous_profile_access_signature = None
+		return
+	previous = frappe.get_doc("POS Profile", doc.name)
+	flags.vunapos_previous_profile_users = _profile_users(previous)
+	flags.vunapos_previous_profile_access_signature = _profile_access_signature(previous)
+
+
+def _publish_domain_data_changed(resource: str, users: set[str]) -> None:
+	for user in users:
+		if user:
+			frappe.publish_realtime(
+				DOMAIN_DATA_CHANGED_EVENT,
+				{"resource": resource},
+				user=user,
+				after_commit=True,
+			)
+
+
+def _configuration_profile_names(doc: Document, method: str | None) -> list[str]:
+	"""Narrow only dependencies whose profile scope can be proven.
+
+	Item/price-list changes can affect customer-specific pricing outside a
+	profile's default list, so those must still reach all enabled profiles.
+	"""
+	filters = {"disabled": 0}
+	companies = {doc.get("company")}
+	if doc.doctype in COMPANY_SCOPED_CONFIGURATION_DOCTYPES and method == "on_update":
+		# Frappe retains the pre-save document through on_update; no capture hook is needed.
+		get_previous = getattr(doc, "get_doc_before_save", None)
+		previous = get_previous() if get_previous else None
+		if previous:
+			companies.add(previous.get("company"))
+	if doc.doctype in COMPANY_SCOPED_CONFIGURATION_DOCTYPES and None not in companies and "" not in companies:
+		profiles = set()
+		for company in companies:
+			profiles.update(
+				frappe.get_all("POS Profile", filters={**filters, "company": company}, pluck="name")
+			)
+	else:
+		profiles = set(frappe.get_all("POS Profile", filters=filters, pluck="name"))
+	if doc.doctype == "Mode of Payment" and profiles:
+		used_by = set(
+			frappe.get_all(
+				"POS Payment Method",
+				filters={"parent": ["in", list(profiles)], "mode_of_payment": doc.name},
+				pluck="parent",
+			)
+		)
+		profiles &= used_by
+	return sorted(profiles)
 
 
 def publish_configuration_change(doc: Document, method: str | None = None) -> None:
-	"""Tell active VunaPOS terminals to reload their permission-filtered configuration."""
+	"""Invalidate VunaPOS reference data after a committed configuration change."""
 	invalidate_catalogue_cache(doc, method)
-	enabled_profiles = frappe.get_all("POS Profile", filters={"disabled": 0}, pluck="name")
-	if not enabled_profiles:
+	if doc.doctype == "POS Profile":
+		flags = getattr(doc, "flags", None)
+		previous_users = set(getattr(flags, "vunapos_previous_profile_users", None) or set())
+		current_users = _profile_users(doc)
+		users = previous_users | current_users
+		if not users:
+			return
+		previous_signature = getattr(flags, "vunapos_previous_profile_access_signature", None)
+		resource = (
+			"posProfileChanged"
+			if method == "on_trash" or previous_signature != _profile_access_signature(doc)
+			else "referenceDataChanged"
+		)
+		_publish_domain_data_changed(resource, users)
+		return
+	affected_profiles = _configuration_profile_names(doc, method)
+	if not affected_profiles:
 		return
 	users = set(
 		frappe.get_all(
 			"POS Profile User",
-			filters={"parenttype": "POS Profile", "parent": ["in", enabled_profiles]},
+			filters={"parenttype": "POS Profile", "parent": ["in", affected_profiles]},
 			pluck="user",
 		)
 	)
-	payload = {
-		"doctype": doc.doctype,
-		"action": method or "on_update",
-		"refresh": "full",
-	}
-	for user in users:
-		if user:
-			frappe.publish_realtime(
-				CONFIGURATION_EVENT,
-				payload,
-				user=user,
-				after_commit=True,
-			)
+	_publish_domain_data_changed("referenceDataChanged", set(users))
 
 
 def publish_checkout_queue_change(doc: Document) -> None:

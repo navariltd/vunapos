@@ -35,6 +35,28 @@ def _warehouse(company):
 	)
 
 
+def _prepare_test_stock_item(item):
+	"""Keep disposable stock fixtures valid under optional site customizations."""
+	item_meta = frappe.get_meta("Item")
+	if item_meta.has_field("etims_prevent_etims_registration"):
+		item.etims_prevent_etims_registration = 1
+	if not item_meta.has_field("custom_warehouse_types"):
+		return
+	warehouse = frappe.db.get_value("POS Profile", "_Test VunaPOS Profile", "warehouse") or _warehouse(
+		_company()
+	)
+	warehouse_type = frappe.db.get_value("Warehouse", warehouse, "warehouse_type")
+	if not warehouse_type:
+		warehouse_type = "_Test VunaPOS Warehouse Type"
+		if not frappe.db.exists("Warehouse Type", warehouse_type):
+			frappe.get_doc({"doctype": "Warehouse Type", "name": warehouse_type}).insert(
+				ignore_permissions=True
+			)
+		frappe.db.set_value("Warehouse", warehouse, "warehouse_type", warehouse_type)
+	if not any(row.warehouse_type == warehouse_type for row in item.get("custom_warehouse_types", [])):
+		item.append("custom_warehouse_types", {"warehouse_type": warehouse_type})
+
+
 def _price_list():
 	return (
 		_first_value("Price List", {"name": "Standard Selling", "selling": 1, "enabled": 1})
@@ -85,17 +107,28 @@ def ensure_test_payment_mode(mode_of_payment="_Test Vuna M-Pesa", payment_type="
 
 
 def ensure_test_customer():
-	if frappe.db.exists("Customer", "_Test Customer"):
-		return "_Test Customer"
-	customer = frappe.get_doc(
-		{
-			"doctype": "Customer",
-			"customer_name": "_Test Customer",
-			"customer_type": "Individual",
-			"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
-			"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
-		}
-	)
+	existing_customer = frappe.db.get_value("Customer", {"customer_name": "_Test Customer"}, "name")
+	if existing_customer:
+		return existing_customer
+	values = {
+		"doctype": "Customer",
+		"customer_name": "_Test Customer",
+		"customer_type": "Individual",
+		"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
+		"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
+	}
+	# Keep this fixture valid when the site has an additional required
+	# Customer Link, while allowing sites without that custom field.
+	if frappe.get_meta("Customer").has_field("custom_order_type"):
+		order_type = frappe.db.get_value("Customer Order Type", {}, "name")
+		if not order_type:
+			order_type = (
+				frappe.get_doc({"doctype": "Customer Order Type", "name1": "_Test VunaPOS Order Type"})
+				.insert(ignore_permissions=True)
+				.name
+			)
+		values["custom_order_type"] = order_type
+	customer = frappe.get_doc(values)
 	customer.insert(ignore_permissions=True)
 	return customer.name
 
@@ -252,21 +285,27 @@ def set_profile_tax_template(pos_profile, tax_template=None):
 
 
 def ensure_test_item():
-	if frappe.db.exists("Item", "_Test VunaPOS Item"):
-		item = frappe.get_doc("Item", "_Test VunaPOS Item")
+	# Some sites assign Item names from a series, so item_code is not the
+	# document name. The unique fixture barcode identifies an existing row.
+	existing_item = frappe.db.get_value("Item Barcode", {"barcode": "VUNA-POS-BARCODE"}, "parent")
+	if existing_item:
+		item = frappe.get_doc("Item", existing_item)
 	else:
-		item = frappe.get_doc(
-			{
-				"doctype": "Item",
-				"item_code": "_Test VunaPOS Item",
-				"item_name": "_Test VunaPOS Item",
-				"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
-				"stock_uom": frappe.db.get_value("UOM", {}, "name"),
-				"is_sales_item": 1,
-				"is_stock_item": 0,
-				"standard_rate": 100,
-			}
-		)
+		values = {
+			"doctype": "Item",
+			"item_code": "_Test VunaPOS Item",
+			"item_name": "_Test VunaPOS Item",
+			"item_group": frappe.db.get_value("Item Group", {"is_group": 0}, "name"),
+			"stock_uom": frappe.db.get_value("UOM", {}, "name"),
+			"is_sales_item": 1,
+			"is_stock_item": 0,
+			"standard_rate": 100,
+		}
+		# This test item is not submitted to eTIMS. Sites with Kenya compliance
+		# otherwise require seven unrelated registration fields during insertion.
+		if frappe.get_meta("Item").has_field("etims_prevent_etims_registration"):
+			values["etims_prevent_etims_registration"] = 1
+		item = frappe.get_doc(values)
 		item.insert(ignore_permissions=True)
 
 	if not frappe.db.exists("Item Barcode", {"parent": item.name, "barcode": "VUNA-POS-BARCODE"}):
@@ -298,10 +337,12 @@ def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
 				"uoms": [{"uom": box_uom, "conversion_factor": 18}],
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.sales_uom = box_uom
 	item.is_sales_item = 1
 	item.is_stock_item = 1
+	_prepare_test_stock_item(item)
 	if not any(row.uom == box_uom for row in item.get("uoms", [])):
 		item.append("uoms", {"uom": box_uom, "conversion_factor": 18})
 	item.save(ignore_permissions=True)
@@ -325,10 +366,12 @@ def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
 				"standard_rate": 100,
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.is_stock_item = 1
 	item.has_batch_no = 0
 	item.has_serial_no = 0
+	_prepare_test_stock_item(item)
 	item.save(ignore_permissions=True)
 	frappe.clear_document_cache("Item", item.name)
 	return item.name
@@ -355,10 +398,12 @@ def ensure_test_batch_item(item_code="_Test Vuna Batch Item", has_serial_no=0):
 				"standard_rate": 100,
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.has_batch_no = 1
 	item.has_serial_no = has_serial_no
 	item.is_stock_item = 1
+	_prepare_test_stock_item(item)
 	item.save(ignore_permissions=True)
 	frappe.clear_document_cache("Item", item.name)
 	return item.name

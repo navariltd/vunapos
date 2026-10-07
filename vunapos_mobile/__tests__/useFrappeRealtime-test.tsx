@@ -10,7 +10,6 @@ jest.mock("@/features/auth/AppSessionProvider", () => ({
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => mockUseNetworkStatus(),
 }));
-
 jest.mock("@/sync/frappeRealtimeClient", () => ({
   frappeRealtimeClient: { start: jest.fn(), stop: jest.fn() },
 }));
@@ -33,12 +32,13 @@ describe("useFrappeRealtime", () => {
   });
 
   it("starts one client for the signed-in online app session and stops on cleanup", async () => {
-    renderHook(() => useFrappeRealtime());
+    renderHook(() => useFrappeRealtime("meru.localhost"));
 
     await waitFor(() =>
       expect(mockStart).toHaveBeenCalledWith(
         "https://pos.example.com",
         "sid-1",
+        "meru.localhost",
       ),
     );
     await cleanup();
@@ -47,11 +47,12 @@ describe("useFrappeRealtime", () => {
 
   it("keeps the authenticated socket running while the device reports offline", async () => {
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
-    renderHook(() => useFrappeRealtime());
+    renderHook(() => useFrappeRealtime("meru.localhost"));
     await waitFor(() =>
       expect(mockStart).toHaveBeenCalledWith(
         "https://pos.example.com",
         "sid-1",
+        "meru.localhost",
       ),
     );
   });

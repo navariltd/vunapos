@@ -19,6 +19,9 @@ const mockRegisterRealtimeRefresh = jest.fn(
 jest.mock("@/sync/realtimeInvalidation", () => ({
   registerRealtimeRefresh: (resource: unknown, callback: unknown) =>
     mockRegisterRealtimeRefresh(resource, callback),
+  registerRealtimeControlRefresh: (resource: unknown, callback: unknown) =>
+    mockRegisterRealtimeRefresh(resource, callback),
+  registerOperationalCacheRecovery: () => jest.fn(),
 }));
 
 jest.mock("@/services/frappeClient", () => ({
@@ -33,6 +36,8 @@ import {
 } from "@/features/pos/hooks/usePosBootstrap";
 import { getVunaMethod } from "@/services/frappeClient";
 import { posCache } from "@/services/posCache";
+import { refreshRegisteredPosResources } from "@/hooks/usePosCachedResource";
+import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
 
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
 const mockUseAppSession = jest.mocked(useAppSession);
@@ -53,8 +58,9 @@ describe("usePosBootstrap", () => {
     } as unknown as ReturnType<typeof useAppSession>);
   });
 
-  it("loads shell configuration independently from the catalogue bootstrap", async () => {
+  it("shares one authoritative snapshot between shell and catalogue consumers", async () => {
     mockGetVunaMethod.mockResolvedValue({
+      items: [{ item_code: "ITEM-001", item_name: "Item" }],
       payment_modes: [{ mode_of_payment: "Cash", default: true }],
       pos_profile: { currency: "KES", name: "POS-001" },
       pos_session: { ready: true },
@@ -66,24 +72,22 @@ describe("usePosBootstrap", () => {
     await waitFor(() =>
       expect(hook.result.current.data?.pos_profile.name).toBe("POS-001"),
     );
-    expect(hook.result.current.data?.items).toBeUndefined();
+    expect(hook.result.current.data?.items).toHaveLength(1);
     expect(mockGetVunaMethod).toHaveBeenCalledWith(
       "https://vuna.example.com",
       "sid-1",
-      "vunapos.api.pos.get_pos_bootstrap_config",
+      "vunapos.api.pos.get_pos_bootstrap",
       {},
       expect.any(AbortSignal),
     );
   });
 
-  it("keeps configuration usable when catalogue hydration fails", async () => {
-    mockGetVunaMethod
-      .mockResolvedValueOnce({
-        payment_modes: [],
-        pos_profile: { name: "POS-001" },
-        pos_session: { ready: true },
-      })
-      .mockRejectedValueOnce(new Error("catalogue unavailable"));
+  it("deduplicates shell and catalogue consumers on the shared cache key", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    });
 
     const hook = await renderHook(() => ({
       config: usePosBootstrapConfig(),
@@ -93,10 +97,219 @@ describe("usePosBootstrap", () => {
     await waitFor(() =>
       expect(hook.result.current.config.data?.pos_profile.name).toBe("POS-001"),
     );
-    await waitFor(() =>
-      expect(hook.result.current.catalogue.error).toBe("catalogue unavailable"),
+    await waitFor(() => expect(hook.result.current.catalogue.data).not.toBeNull());
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues a full rebootstrap behind an in-flight delta instead of accepting that delta", async () => {
+    const key = {
+      resource: "workspace-configuration",
+      scope: {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+    };
+    await posCache.write(key, {
+      server_time: "2026-09-26 09:00:00",
+      mode: "full",
+      items: [{ item_code: "OLD-001" }],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    }, 1);
+    await posCache.markResourceStale(key.scope, key.resource);
+
+    let finishDelta: ((value: unknown) => void) | undefined;
+    mockGetVunaMethod
+      .mockImplementationOnce(() => new Promise((resolve) => { finishDelta = resolve; }))
+      .mockResolvedValueOnce({
+        server_time: "2026-09-26 09:02:00",
+        mode: "full",
+        items: [{ item_code: "NEW-001" }],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      });
+
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    let fullRefresh: Promise<void> | undefined;
+    await act(async () => {
+      fullRefresh = Promise.resolve(hook.result.current.reload({ full: true }));
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishDelta?.({
+        server_time: "2026-09-26 09:01:00",
+        mode: "delta",
+        items: [],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      });
+      await fullRefresh;
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+    expect(mockGetVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.pos.get_pos_bootstrap",
+      { pos_profile: "POS-001" },
+      expect.any(AbortSignal),
     );
-    expect(hook.result.current.config.error).toBeNull();
+    expect(hook.result.current.data?.items?.[0]?.item_code).toBe("NEW-001");
+  });
+
+  it("keeps two overlapping full-refresh intents full until both have completed", async () => {
+    await posCache.write({
+      resource: "workspace-configuration",
+      scope: {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+    }, {
+      server_time: "2026-09-26 09:00:00",
+      mode: "full",
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    }, 60_000);
+    let finishFirst: ((value: unknown) => void) | undefined;
+    mockGetVunaMethod
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = resolve; }))
+      .mockResolvedValueOnce({
+        server_time: "2026-09-26 09:02:00",
+        mode: "full",
+        items: [],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      });
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(hook.result.current.data).not.toBeNull());
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+    await act(async () => {
+      first = Promise.resolve(hook.result.current.reload({ full: true }));
+      second = Promise.resolve(hook.result.current.reload({ full: true }));
+    });
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      finishFirst?.({
+        server_time: "2026-09-26 09:01:00",
+        mode: "full",
+        items: [],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      });
+      await Promise.all([first, second]);
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+    expect(mockGetVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.pos.get_pos_bootstrap",
+      { pos_profile: "POS-001" },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("shares one request across the root event, freshness scheduler, and mounted views", async () => {
+    mockUseAppSession.mockReturnValue({
+      authState: "signedIn",
+      companyUrl: "https://vuna.example.com",
+      invalidateSession,
+      sessionId: "sid-1",
+    } as unknown as ReturnType<typeof useAppSession>);
+    let finishRequest: ((value: unknown) => void) | undefined;
+    mockGetVunaMethod.mockImplementationOnce(() =>
+      new Promise((resolve) => { finishRequest = resolve; }),
+    );
+    const hook = await renderHook(() => {
+      usePosRealtimeCoordinator();
+      return usePosBootstrap();
+    });
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const referenceHandler = mockRegisterRealtimeRefresh.mock.calls[0][1] as () => Promise<void>;
+    let eventRefresh: Promise<void> | undefined;
+    let scheduledRefresh: Promise<void> | undefined;
+    let viewRefresh: Promise<void> | undefined;
+    await act(async () => {
+      eventRefresh = referenceHandler();
+      scheduledRefresh = refreshRegisteredPosResources({ force: true });
+      viewRefresh = Promise.resolve(hook.result.current.reload());
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishRequest?.({
+        items: [{ item_code: "ITEM-001" }],
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+      });
+      await Promise.all([eventRefresh, scheduledRefresh, viewRefresh]);
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(1);
+    expect(hook.result.current.data?.items?.[0]?.item_code).toBe("ITEM-001");
+  });
+
+  it("does not restore a removed profile when its previous delta finishes late", async () => {
+    const key = {
+      resource: "workspace-configuration",
+      scope: {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+    };
+    await posCache.write(key, {
+      server_time: "2026-09-26 09:00:00",
+      mode: "full",
+      items: [{ item_code: "OLD-001" }],
+      payment_modes: [],
+      pos_profile: { name: "POS-OLD" },
+    }, 1);
+    await posCache.markResourceStale(key.scope, key.resource);
+    let finishOld: ((value: unknown) => void) | undefined;
+    mockGetVunaMethod
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOld = resolve; }))
+      .mockResolvedValueOnce({
+        server_time: "2026-09-26 09:02:00",
+        mode: "full",
+        items: [{ item_code: "NEW-001" }],
+        payment_modes: [],
+        pos_profile: { name: "POS-NEW" },
+      });
+
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
+    await posCache.clearResource(key.scope, key.resource);
+    let fullRefresh: Promise<void> | undefined;
+    await act(async () => {
+      fullRefresh = Promise.resolve(hook.result.current.reload({ full: true }));
+    });
+    await act(async () => {
+      finishOld?.({
+        server_time: "2026-09-26 09:01:00",
+        mode: "delta",
+        items: [{ item_code: "OLD-001" }],
+        payment_modes: [],
+        pos_profile: { name: "POS-OLD" },
+      });
+      await fullRefresh;
+    });
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+    expect(mockGetVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.pos.get_pos_bootstrap",
+      {},
+      expect.any(AbortSignal),
+    );
+    expect(hook.result.current.data?.pos_profile.name).toBe("POS-NEW");
+    expect((await posCache.read<{ pos_profile: { name: string } }>(key))?.data.pos_profile.name)
+      .toBe("POS-NEW");
   });
 
   afterEach(async () => {
@@ -147,7 +360,7 @@ describe("usePosBootstrap", () => {
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
   });
 
-  it("refreshes bootstrap data when desk-side POS configuration changes", async () => {
+  it("leaves realtime ownership to the app coordinator", async () => {
     mockGetVunaMethod.mockResolvedValue({
       items: [],
       payment_modes: [],
@@ -155,40 +368,25 @@ describe("usePosBootstrap", () => {
     });
     const hook = await renderHook(() => usePosBootstrap());
     await waitFor(() => expect(hook.result.current.data).not.toBeNull());
-
-    const refresh = mockRegisterRealtimeRefresh.mock.calls.at(-1)?.[1] as
-      (() => Promise<void>) | undefined;
-    expect(refresh).toBeDefined();
-    await act(async () => refresh?.());
-
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    expect(mockRegisterRealtimeRefresh).not.toHaveBeenCalled();
   });
 
-  it("measures the separate workspace and catalogue realtime handlers", async () => {
-    mockGetVunaMethod.mockImplementation(async (_companyUrl, _sessionId, method) =>
-      method === "vunapos.api.pos.get_pos_bootstrap_config"
-        ? { payment_modes: [], pos_profile: { name: "POS-001" } }
-        : { items: [], payment_modes: [], pos_profile: { name: "POS-001" } },
-    );
+  it("does not let feature bootstrap hooks own realtime subscriptions", async () => {
+    mockGetVunaMethod.mockResolvedValue({
+      items: [],
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    });
     await renderHook(() => ({
       config: usePosBootstrapConfig(),
       catalogue: usePosBootstrap(),
     }));
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
 
     const handlers = mockRegisterRealtimeRefresh.mock.calls
       .filter(([resource]) => resource === "workspace-configuration")
       .map(([, callback]) => callback as () => Promise<void>);
-    expect(handlers).toHaveLength(2);
-
-    await act(async () => {
-      await Promise.all(handlers.map((handler) => handler()));
-    });
-    await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(4));
-    expect(mockGetVunaMethod.mock.calls.slice(2).map((call) => call[2])).toEqual([
-      "vunapos.api.pos.get_pos_bootstrap_config",
-      "vunapos.api.pos.get_pos_bootstrap",
-    ]);
+    expect(handlers).toHaveLength(0);
   });
 
   it("maps the profile default customer from a cached server payload", async () => {

@@ -67,6 +67,12 @@ export type PosCacheOptions = {
   schemaVersion?: number;
 };
 
+export class SupersededCacheRequestError extends Error {
+  constructor() {
+    super("This cached request was superseded.");
+  }
+}
+
 const CACHE_SCHEMA_VERSION = 1;
 const DEFAULT_MAXIMUM_BYTES_PER_NAMESPACE = 5_000_000;
 const DEFAULT_MAXIMUM_ENTRY_BYTES = 2_000_000;
@@ -312,7 +318,12 @@ class ExpoSqliteCacheStorage implements CacheStorage {
  * a database problem must never prevent the live POS from making a request.
  */
 export class PosCache {
-  private readonly inFlight = new Map<string, Promise<unknown>>();
+  private readonly inFlight = new Map<string, {
+    invalidated: boolean;
+    namespace: string;
+    promise: Promise<unknown>;
+    resource: string;
+  }>();
   private readonly listeners = new Map<string, Set<() => void>>();
   private readonly memory = new Map<string, StoredCacheEntry>();
   private readonly maximumBytesPerNamespace: number;
@@ -400,7 +411,13 @@ export class PosCache {
     }
   }
 
-  async write<T>(key: PosCacheKey, data: T, ttlMs: number) {
+  async write<T>(
+    key: PosCacheKey,
+    data: T,
+    ttlMs: number,
+    isCurrent: () => boolean = () => true,
+  ) {
+    if (!isCurrent()) return;
     const now = this.now();
     const payload = JSON.stringify(data);
     if (utf8ByteLength(payload) > this.maximumEntryBytes) {
@@ -444,6 +461,10 @@ export class PosCache {
         );
       }
     } catch {
+      if (!isCurrent()) {
+        await this.delete(entry.cacheKey);
+        return;
+      }
       // A first live response may still be useful for this running process
       // when persistence is unavailable. Once a previous snapshot exists,
       // restore it so a failed refresh cannot replace approved data.
@@ -461,6 +482,12 @@ export class PosCache {
         resource: key.resource,
         source: "sqlite",
       });
+      return;
+    }
+    if (!isCurrent()) {
+      // A profile/session may have been cleared while SQLite was committing.
+      // Do not publish that obsolete snapshot to mounted readers.
+      await this.delete(entry.cacheKey);
       return;
     }
     // Publish the new snapshot only after the durable replacement succeeds.
@@ -490,23 +517,45 @@ export class PosCache {
   }
 
   /** Shares the one live request for a resource between all interested views. */
-  async fetch<T>(key: PosCacheKey, loader: () => Promise<T>, ttlMs: number) {
+  async fetch<T>(
+    key: PosCacheKey,
+    loader: () => Promise<T>,
+    ttlMs: number,
+    options?: { afterCurrent?: boolean },
+  ): Promise<T> {
     const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
-    const existing = this.inFlight.get(cacheKey) as Promise<T> | undefined;
+    const existing = this.inFlight.get(cacheKey);
     if (existing) {
+      if (options?.afterCurrent || existing.invalidated) {
+        // A full rebootstrap must not adopt an older delta response. A request
+        // invalidated by a scope change must not become the new scope's data.
+        return existing.promise.catch(() => undefined).then(() =>
+          this.fetch<T>(key, loader, ttlMs, options),
+        );
+      }
       recordCacheDiagnostic({
         operation: "fetch",
         outcome: "deduplicated",
         resource: key.resource,
         source: "network",
       });
-      return existing;
+      return existing.promise as Promise<T>;
     }
 
+    const entry = {
+      invalidated: false,
+      namespace: posCacheNamespace(key.scope),
+      promise: Promise.resolve() as Promise<unknown>,
+      resource: key.resource,
+    };
     const request = loader()
       .then(async (data) => {
-        await this.write(key, data, ttlMs);
+        if (entry.invalidated) throw new SupersededCacheRequestError();
+        await this.write(key, data, ttlMs, () => !entry.invalidated);
+        if (entry.invalidated) {
+          throw new SupersededCacheRequestError();
+        }
         recordCacheDiagnostic({
           durationMs: Date.now() - startedAt,
           operation: "fetch",
@@ -526,13 +575,19 @@ export class PosCache {
         });
         throw error;
       })
-      .finally(() => this.inFlight.delete(cacheKey));
-    this.inFlight.set(cacheKey, request);
+      .finally(() => {
+        if (this.inFlight.get(cacheKey) === entry) this.inFlight.delete(cacheKey);
+      });
+    entry.promise = request;
+    this.inFlight.set(cacheKey, entry);
     return request;
   }
 
   async clearNamespace(scope: PosCacheScope) {
     const namespace = posCacheNamespace(scope);
+    for (const entry of this.inFlight.values()) {
+      if (entry.namespace === namespace) entry.invalidated = true;
+    }
     for (const [cacheKey, entry] of this.memory) {
       if (entry.namespace === namespace) {
         this.memory.delete(cacheKey);
@@ -549,6 +604,7 @@ export class PosCache {
 
   /** Used when the active account changes, so no POS data outlives its owner. */
   async clearAll() {
+    for (const entry of this.inFlight.values()) entry.invalidated = true;
     this.memory.clear();
     this.listeners.clear();
     try {
@@ -561,6 +617,11 @@ export class PosCache {
 
   async clearResource(scope: PosCacheScope, resource: string) {
     const namespace = posCacheNamespace(scope);
+    for (const entry of this.inFlight.values()) {
+      if (entry.namespace === namespace && entry.resource === resource) {
+        entry.invalidated = true;
+      }
+    }
     for (const [cacheKey, entry] of this.memory) {
       if (entry.namespace === namespace && entry.resource === resource) {
         this.memory.delete(cacheKey);

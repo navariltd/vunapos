@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
 import { AppShell } from "@/features/shell/components/AppShell";
-import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
 import { useSalespersonPin } from "@/features/pos/hooks/useSalespersonPin";
 import { OpenPosShiftResult } from "@/features/pos/hooks/useOpenPosShift";
@@ -24,6 +22,7 @@ import { PosSessionGateScreen } from "@/features/pos/screens/PosSessionGateScree
 import type { PosCheckoutFieldValues } from "@/features/pos/components/PosCheckoutFieldsCard";
 import {
   PosBootstrapData,
+  PosHeldInvoice,
   PosInvoicePaymentEntry,
   PosNavigationTab,
   PosOrderType,
@@ -31,14 +30,11 @@ import {
   PosSession,
 } from "@/features/pos/types";
 import { usePosCart } from "@/features/pos/hooks/usePosCart";
+import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
-import {
-  effectivePosConfigurationFingerprint,
-  transactionConfigurationFingerprint,
-} from "@/features/pos/posConfiguration";
+import { transactionConfigurationFingerprint } from "@/features/pos/posConfiguration";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { posCache } from "@/services/posCache";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -58,23 +54,80 @@ function configuredOrderType(
   return profile?.default_order_type === "Sales Order" ? "Order" : "Invoice";
 }
 
+function sessionStateKey(session: PosSession | null | undefined) {
+  if (!session) return "";
+  return JSON.stringify({
+    closing_entry: session.closing_entry,
+    has_opening_entry: session.has_opening_entry,
+    opening_entry: session.opening_entry,
+    ready: session.ready,
+    status: session.status,
+  });
+}
+
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
-  const { companyUrl, sessionId } = useAppSession();
   const toast = useToast();
   const { connectionStatus } = useNetworkStatus();
-  // The shell configuration is intentionally loaded independently of the
-  // catalogue. This lets the POS/session gate render while items hydrate in
-  // the background, matching the SPA startup sequence.
-  const workspaceConfig = usePosBootstrapConfig();
+  // Shell and catalogue consumers read the same root-owned snapshot. This
+  // keeps profile state coherent while the app-level coordinator refreshes it.
+  const workspaceConfig = usePosBootstrapConfig({
+    manageFreshness: false,
+  });
+  const bootstrap = workspaceConfig.data;
+  const posProfileConfig = bootstrap?.pos_profile;
+  const posProfile = posProfileConfig?.name;
+  const paymentModes = bootstrap?.payment_modes ?? [];
+  const defaultSaleCustomer = useMemo<PosSaleCustomer | null>(() => {
+    const customer = bootstrap?.default_customer;
+    return customer
+      ? {
+          customer: customer.customer,
+          customerName: customer.customer_name,
+          defaultPriceList: customer.default_price_list,
+          isWalkin: Boolean(customer.is_walkin),
+          mobile: customer.mobile_no || undefined,
+          taxId: customer.tax_id || undefined,
+        }
+      : null;
+  }, [bootstrap?.default_customer]);
+  const [sessionOverride, setSessionOverride] = useState<{
+    against: string;
+    posProfile?: string;
+    session: PosSession;
+  } | null>(null);
+  const serverSession = bootstrap?.pos_session ?? null;
+  const posSession =
+    sessionOverride &&
+    sessionOverride.posProfile === posProfile &&
+    sessionOverride.against === sessionStateKey(serverSession)
+      ? sessionOverride.session
+      : serverSession;
+  const [orderTypeOverride, setOrderTypeOverride] = useState<{
+    posProfile?: string;
+    restoredDraft?: boolean;
+    value: PosOrderType;
+  } | null>(null);
+  const orderType =
+    orderTypeOverride &&
+    (orderTypeOverride.restoredDraft ||
+      posProfileConfig?.allow_order_type_change !== false) &&
+    orderTypeOverride.posProfile === posProfile
+      ? orderTypeOverride.value
+      : configuredOrderType(posProfileConfig);
+  const configurationRefreshKey = useMemo(
+    () => (bootstrap ? transactionConfigurationFingerprint(bootstrap) : ""),
+    [bootstrap],
+  );
   const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
   const [cartCurrency, setCartCurrency] = useState("KES");
-  const [orderType, setOrderType] = useState<PosOrderType>("Invoice");
-  const configuredProfileRef = useRef<string | undefined>(undefined);
-  const orderTypeOverrideRef = useRef(false);
+  const [shippingAddressSelection, setShippingAddressSelection] = useState<{
+    customer?: string;
+    addressName: string;
+  }>({ addressName: "" });
   const [selectedInvoice, setSelectedInvoice] =
     useState<SelectedInvoice | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
@@ -93,27 +146,25 @@ export function PosWorkspaceScreen() {
   const [selectedPriceList, setSelectedPriceList] = useState<string>();
   const [draftCheckoutFieldValues, setDraftCheckoutFieldValues] =
     useState<PosCheckoutFieldValues>({});
-  const [defaultSaleCustomer, setDefaultSaleCustomer] =
-    useState<PosSaleCustomer | null>(null);
   // A selected customer belongs to the active cart only. The POS Profile
   // default is the fallback for every new cart.
   const saleCustomer = selectedSaleCustomer ?? defaultSaleCustomer;
-  const [posProfile, setPosProfile] = useState<string>();
-  const [paymentModes, setPaymentModes] = useState<
-    PosBootstrapData["payment_modes"]
-  >([]);
-  const [posProfileConfig, setPosProfileConfig] =
-    useState<PosBootstrapData["pos_profile"]>();
-  const [posSession, setPosSession] = useState<PosSession | null>(null);
   const [postSaleRefreshKey, setPostSaleRefreshKey] = useState(0);
-  const [configurationRefreshKey, setConfigurationRefreshKey] = useState(0);
-  const appliedConfigurationFingerprintRef = useRef<string | undefined>(
-    undefined,
-  );
-  const appliedTransactionFingerprintRef = useRef<string | undefined>(
-    undefined,
-  );
   const [heldRefreshKey, setHeldRefreshKey] = useState(0);
+  const customerShippingAddresses = usePosCustomerShippingAddresses(
+    saleCustomer?.customer,
+    posProfile,
+  );
+  const shippingAddressName =
+    shippingAddressSelection.customer === saleCustomer?.customer
+      ? shippingAddressSelection.addressName
+      : "";
+  function setShippingAddressName(addressName: string) {
+    setShippingAddressSelection({
+      customer: saleCustomer?.customer,
+      addressName,
+    });
+  }
   const cart = usePosCart({
     customer: saleCustomer,
     orderType,
@@ -143,84 +194,24 @@ export function PosWorkspaceScreen() {
     selectedSaleCustomer,
   ]);
   const salespersonPin = useSalespersonPin();
-  const receivePosProfile = useCallback((bootstrap: PosBootstrapData) => {
-    // The configuration endpoint can be refreshed independently from the
-    // catalogue. Do not cause a cart re-preview unless the effective POS
-    // configuration actually changed; server timestamps and object identity
-    // are not meaningful configuration changes.
-    const fingerprint = effectivePosConfigurationFingerprint(bootstrap);
-    if (appliedConfigurationFingerprintRef.current === fingerprint) return;
-    appliedConfigurationFingerprintRef.current = fingerprint;
-    const transactionFingerprint = transactionConfigurationFingerprint(bootstrap);
-    const transactionChanged =
-      appliedTransactionFingerprintRef.current !== undefined &&
-      appliedTransactionFingerprintRef.current !== transactionFingerprint;
-    appliedTransactionFingerprintRef.current = transactionFingerprint;
-    const defaultCustomer = bootstrap.default_customer;
-    const profileOrderType = configuredOrderType(bootstrap.pos_profile);
-    const isNewProfile =
-      configuredProfileRef.current !== undefined &&
-      configuredProfileRef.current !== bootstrap.pos_profile.name;
-    if (isNewProfile) orderTypeOverrideRef.current = false;
-    configuredProfileRef.current = bootstrap.pos_profile.name;
-    setPosProfile(bootstrap.pos_profile.name);
-    setPosProfileConfig(bootstrap.pos_profile);
-    setPosSession(bootstrap.pos_session ?? null);
-    setPaymentModes(bootstrap.payment_modes);
-    if (transactionChanged) {
-      setConfigurationRefreshKey((current) => current + 1);
-    }
-    setOrderType((current) =>
-      (!orderTypeOverrideRef.current &&
-        (configuredProfileRef.current === bootstrap.pos_profile.name ||
-          isNewProfile)) ||
-      bootstrap.pos_profile.allow_order_type_change === false
-        ? profileOrderType
-        : current,
-    );
-    setDefaultSaleCustomer(
-      defaultCustomer
-        ? {
-            customer: defaultCustomer.customer,
-            customerName: defaultCustomer.customer_name,
-            defaultPriceList: defaultCustomer.default_price_list,
-            isWalkin: Boolean(defaultCustomer.is_walkin),
-            mobile: defaultCustomer.mobile_no || undefined,
-            taxId: defaultCustomer.tax_id || undefined,
-          }
-        : null,
-    );
-  }, []);
-  useEffect(() => {
-    if (!workspaceConfig.data) return;
-    const sync = setTimeout(
-      () => receivePosProfile(workspaceConfig.data!),
-      0,
-    );
-    return () => clearTimeout(sync);
-  }, [receivePosProfile, workspaceConfig.data]);
+  const reloadWorkspace = workspaceConfig.reload;
   const handleShiftOpened = useCallback(
     async (result: OpenPosShiftResult) => {
-      if (companyUrl && sessionId) {
-        await posCache.clearResource(
-          {
-            companyUrl,
-            posProfile: "workspace",
-            userId: sessionId,
-          },
-          "workspace-configuration",
-        );
-      }
-      setPosSession({
-        has_opening_entry: true,
-        opening_entry: result.name,
-        ready: true,
-        status: "OPEN",
+      setSessionOverride({
+        against: sessionStateKey(serverSession),
+        posProfile,
+        session: {
+          has_opening_entry: true,
+          opening_entry: result.name,
+          ready: true,
+          status: "OPEN",
+        },
       });
+      void Promise.resolve(reloadWorkspace());
       toast.success("POS shift opened.");
       setPostSaleRefreshKey((current) => current + 1);
     },
-    [companyUrl, sessionId, toast],
+    [posProfile, reloadWorkspace, serverSession, toast],
   );
   const salespersonLocked = Boolean(
     posProfileConfig?.enable_salesperson_pin && !salespersonPin.session,
@@ -289,16 +280,34 @@ export function PosWorkspaceScreen() {
     setActiveTab("Payments");
   }
 
-  if (workspaceConfig.isHydratingCache) {
-    return <AppLaunchScreen message="Restoring your POS…" />;
-  }
-
-  if (
-    workspaceConfig.hasHydratedCache &&
-    !workspaceConfig.data &&
-    workspaceConfig.isInitialNetworkLoading
-  ) {
-    return <AppLaunchScreen message="Preparing your POS settings…" />;
+  async function restoreDraft(invoice: PosHeldInvoice, checkout = false) {
+    const restored = await cart.restoreHeldInvoice(invoice);
+    setOrderTypeOverride({
+      posProfile,
+      restoredDraft: true,
+      value: restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
+    });
+    setSelectedPriceList(restored.selling_price_list);
+    setDraftCheckoutFieldValues(
+      Object.fromEntries(
+        Object.entries(restored.checkout_field_values ?? {})
+          .filter(([, value]) => value !== null && value !== undefined)
+          .map(([fieldname, value]) => [fieldname, String(value)]),
+      ),
+    );
+    setSelectedSaleCustomer(
+      restored.customer
+        ? {
+            customer: restored.customer,
+            customerName: restored.customer_name || restored.customer,
+          }
+        : null,
+    );
+    setCheckoutVisible(checkout);
+    setCartVisible(!checkout);
+    setShippingAddressName("");
+    setActiveTab("Home");
+    setHeldRefreshKey((current) => current + 1);
   }
 
   return (
@@ -307,8 +316,7 @@ export function PosWorkspaceScreen() {
       allowOrderTypeChange={posProfileConfig?.allow_order_type_change !== false}
       customersEnabled={allowsCustomerManagement}
       onOrderTypeChange={(nextOrderType) => {
-        orderTypeOverrideRef.current = true;
-        setOrderType(nextOrderType);
+        setOrderTypeOverride({ posProfile, value: nextOrderType });
       }}
       onTabChange={changeTab}
       orderType={orderType}
@@ -388,10 +396,11 @@ export function PosWorkspaceScreen() {
             const restored = await cart.restoreHeldInvoice(source);
             // A restored draft owns its transaction type. Keep its Sales Order
             // preview path even when the POS Profile defaults to Invoice.
-            orderTypeOverrideRef.current = true;
-            setOrderType(
-              restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
-            );
+            setOrderTypeOverride({
+              posProfile,
+              restoredDraft: true,
+              value: restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
+            });
             setSelectedPriceList(restored.selling_price_list);
             setDraftCheckoutFieldValues(
               Object.fromEntries(
@@ -437,6 +446,8 @@ export function PosWorkspaceScreen() {
           items={cart.items}
           onApplyDeliveryCharge={cart.applyDeliveryCharge}
           onBack={() => setCheckoutVisible(false)}
+          shippingAddressName={shippingAddressName}
+          onShippingAddressChange={setShippingAddressName}
           onClear={() => {
             if (!cart.clear()) return;
             setSelectedPriceList(undefined);
@@ -447,12 +458,12 @@ export function PosWorkspaceScreen() {
           }}
           onComplete={(result) => {
             cart.clear();
+            setShippingAddressName("");
             setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
             // A user override applies only to the sale that was just
             // submitted. Start the next sale from the POS Profile default.
-            orderTypeOverrideRef.current = false;
-            setOrderType(configuredOrderType(posProfileConfig));
+            setOrderTypeOverride(null);
             setHeldRefreshKey((current) => current + 1);
             if (posProfileConfig?.require_pin_before_every_sale)
               salespersonPin.lock();
@@ -492,6 +503,7 @@ export function PosWorkspaceScreen() {
             }
             return heldInvoice ? { name: heldInvoice.name } : null;
           }}
+          onMaterializeGatewayDraft={() => cart.materializeDraft(orderType)}
           onSalespersonTokenExpired={() => salespersonPin.lock()}
           orderType={orderType}
           priceList={selectedPriceList}
@@ -525,6 +537,7 @@ export function PosWorkspaceScreen() {
           }}
           onClear={() => {
             if (!cart.clear()) return false;
+            setShippingAddressName("");
             setSelectedPriceList(undefined);
             setDraftCheckoutFieldValues({});
             setSelectedSaleCustomer(null);
@@ -562,6 +575,10 @@ export function PosWorkspaceScreen() {
             setSelectedPriceList(undefined);
             setSelectedSaleCustomer(customer);
           }}
+          customerShippingAddresses={customerShippingAddresses.data ?? []}
+          customerShippingAddressesLoading={customerShippingAddresses.isLoading}
+          shippingAddressName={shippingAddressName}
+          onSelectShippingAddress={setShippingAddressName}
           onSelectPriceList={(priceList) => {
             setSelectedPriceList(priceList);
           }}
@@ -604,6 +621,7 @@ export function PosWorkspaceScreen() {
             return cart.add(item);
           }}
           onOpenCart={() => setCartVisible(true)}
+          orderType={orderType}
           pricingContext={{
             customer: saleCustomer?.customer,
             priceList: selectedPriceList,
@@ -638,40 +656,22 @@ export function PosWorkspaceScreen() {
         <PosCloseShiftScreen
           currency={posProfileConfig?.currency}
           currencyPrecision={posProfileConfig?.currency_precision}
-          onShiftClosed={setPosSession}
+          onShiftClosed={(session) => {
+            setSessionOverride({
+              against: sessionStateKey(serverSession),
+              posProfile,
+              session,
+            });
+            void Promise.resolve(reloadWorkspace());
+          }}
           posProfile={posProfile}
         />
       ) : (
         <PosInvoicesScreen
           heldRefreshKey={heldRefreshKey}
           onOpenInvoice={setSelectedInvoice}
-          onRestoreHeld={async (invoice) => {
-            const restored = await cart.restoreHeldInvoice(invoice);
-            orderTypeOverrideRef.current = true;
-            setOrderType(
-              restored.source?.doctype === "Sales Order" ? "Order" : "Invoice",
-            );
-            setSelectedPriceList(restored.selling_price_list);
-            setDraftCheckoutFieldValues(
-              Object.fromEntries(
-                Object.entries(restored.checkout_field_values ?? {})
-                  .filter(([, value]) => value !== null && value !== undefined)
-                  .map(([fieldname, value]) => [fieldname, String(value)]),
-              ),
-            );
-            setSelectedSaleCustomer(
-              restored.customer
-                ? {
-                    customer: restored.customer,
-                    customerName: restored.customer_name || restored.customer,
-                  }
-                : null,
-            );
-            setCheckoutVisible(false);
-            setCartVisible(true);
-            setActiveTab("Home");
-            setHeldRefreshKey((current) => current + 1);
-          }}
+          onRestoreHeld={(invoice) => restoreDraft(invoice)}
+          onCheckoutHeld={(invoice) => restoreDraft(invoice, true)}
         />
       )}
       <SalespersonPinLock

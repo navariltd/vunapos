@@ -6,7 +6,7 @@ import {
   validateFrappeSession,
 } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
+import { recoverPosResources } from "@/sync/realtimeInvalidation";
 import {
   POS_CACHE_TTL_MS,
   refreshRegisteredPosResources,
@@ -90,10 +90,7 @@ export function usePosRefreshTriggers() {
       // Let the cache owner perform the one configuration request so a
       // foreground/reconnect repair cannot fetch and discard an identical
       // payload before invalidating the resource.
-      await invalidateRealtimeResource("workspace-configuration", {
-        full: false,
-        source,
-      });
+      await recoverPosResources(source);
     } catch {
       // A failed probe is expected during a transient outage. Existing cached
       // data remains visible and the next trigger retries it.

@@ -218,6 +218,70 @@ describe("PosCache", () => {
     expect(JSON.stringify(getCacheDiagnostics())).not.toContain("milk");
   });
 
+  it("queues a stronger refresh behind the shared in-flight request", async () => {
+    let finishFirst: ((value: string[]) => void) | undefined;
+    const firstLoader = jest.fn(
+      () => new Promise<string[]>((resolve) => { finishFirst = resolve; }),
+    );
+    const secondLoader = jest.fn(async () => ["new snapshot"]);
+
+    const first = cache.fetch(key, firstLoader, 1_000);
+    const second = cache.fetch(key, secondLoader, 1_000, { afterCurrent: true });
+    expect(firstLoader).toHaveBeenCalledTimes(1);
+    expect(secondLoader).not.toHaveBeenCalled();
+
+    finishFirst?.(["old snapshot"]);
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      ["old snapshot"],
+      ["new snapshot"],
+    ]);
+    expect(secondLoader).toHaveBeenCalledTimes(1);
+    await expect(cache.read(key)).resolves.toMatchObject({ data: ["new snapshot"] });
+  });
+
+  it("does not restore a cleared profile from a late request", async () => {
+    let finishOld: ((value: string[]) => void) | undefined;
+    const old = cache.fetch(
+      key,
+      () => new Promise<string[]>((resolve) => { finishOld = resolve; }),
+      1_000,
+    );
+    await cache.clearResource(scope, key.resource);
+    const freshLoader = jest.fn(async () => ["new profile"]);
+    const fresh = cache.fetch(key, freshLoader, 1_000);
+    expect(freshLoader).not.toHaveBeenCalled();
+
+    finishOld?.(["removed profile"]);
+    await expect(old).rejects.toThrow("superseded");
+    await expect(fresh).resolves.toEqual(["new profile"]);
+    expect(freshLoader).toHaveBeenCalledTimes(1);
+    await expect(cache.read(key)).resolves.toMatchObject({ data: ["new profile"] });
+  });
+
+  it("does not publish a write that finishes after its profile is cleared", async () => {
+    class DelayedWriteStorage extends MemoryStorage {
+      releaseWrite: (() => void) | undefined;
+
+      override async write(entry: StoredEntry) {
+        await new Promise<void>((resolve) => { this.releaseWrite = resolve; });
+        await super.write(entry);
+      }
+    }
+    const delayedStorage = new DelayedWriteStorage();
+    const delayedCache = new PosCache(delayedStorage, { now: () => now });
+    const listener = jest.fn();
+    delayedCache.subscribe(key, listener);
+    const old = delayedCache.fetch(key, async () => ["removed profile"], 1_000);
+    await Promise.resolve();
+    expect(delayedStorage.releaseWrite).toBeDefined();
+
+    await delayedCache.clearResource(scope, key.resource);
+    delayedStorage.releaseWrite?.();
+    await expect(old).rejects.toThrow("superseded");
+    expect(listener).not.toHaveBeenCalled();
+    await expect(delayedCache.read(key)).resolves.toBeNull();
+  });
+
   it("keeps a stale record available for stale-while-revalidate views", async () => {
     await cache.write(key, ["milk"], 10);
     now = 1_010;

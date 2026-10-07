@@ -1,5 +1,6 @@
 import { PosBootstrapData, PosCartSource, PosCatalogueItem } from "@/features/pos/types";
 import { PosCacheScope, posCache } from "@/services/posCache";
+import { POS_WORKSPACE_RESOURCE } from "@/sync/posResourceKeys";
 
 const saleResources = [
   "catalogue",
@@ -17,6 +18,33 @@ const returnResources = [
   "customer-search",
   "invoice-history",
 ] as const;
+
+// These browse resources have profile-scoped SQLite rows even when their
+// screens are unmounted. Reconnect must mark them stale before the next read.
+const operationalResources = [...saleResources, "held-invoices"] as const;
+
+export async function invalidateOperationalPosCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  await Promise.all(
+    operationalResources.map((resource) => posCache.markResourceStale(scope, resource)),
+  );
+}
+
+/** Discard old browse snapshots after profile access/scope changes, never the active cart. */
+export async function clearOperationalPosCache({
+  companyUrl,
+  posProfile,
+  sessionId,
+}: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
+  const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
+  await Promise.all(
+    operationalResources.map((resource) => posCache.clearResource(scope, resource)),
+  );
+}
 
 type InvalidateSaleCacheArgs = {
   companyUrl: string;
@@ -47,7 +75,7 @@ export async function patchCachedCatalogueItems({
     posProfile: "workspace",
     userId: sessionId,
   };
-  const key = { resource: "workspace-configuration", scope } as const;
+  const key = { resource: POS_WORKSPACE_RESOURCE, scope } as const;
   const cached = await posCache.read<PosBootstrapData>(key);
   if (!cached?.data.items?.length) return;
   const byCode = new Map(patches.map((patch) => [patch.item_code, patch]));
@@ -98,7 +126,7 @@ export async function invalidateSaleCache({
 
   await Promise.all([
     ...resources.map((resource) => posCache.markResourceStale(scope, resource)),
-    posCache.markResourceStale(workspaceScope, "workspace-configuration"),
+    posCache.markResourceStale(workspaceScope, POS_WORKSPACE_RESOURCE),
   ]);
 }
 
@@ -119,7 +147,7 @@ export async function invalidateReturnCache({
     ...returnResources.map((resource) =>
       posCache.markResourceStale(scope, resource),
     ),
-    posCache.markResourceStale(workspaceScope, "workspace-configuration"),
+    posCache.markResourceStale(workspaceScope, POS_WORKSPACE_RESOURCE),
   ]);
 }
 

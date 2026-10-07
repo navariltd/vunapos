@@ -25,12 +25,14 @@ function mockResponse({
   setCookies = [],
   status = ok ? 200 : 500,
 }: MockResponseOptions = {}): Response {
+  const body = typeof json === "string" ? json : JSON.stringify(json);
   return {
     headers: {
       get: jest.fn(() => setCookies[0] ?? null),
       getSetCookie: jest.fn(() => setCookies),
     },
     json: jest.fn().mockResolvedValue(json),
+    text: jest.fn().mockResolvedValue(body),
     ok,
     status,
   } as unknown as Response;
@@ -333,18 +335,18 @@ describe("frappeClient", () => {
       ).rejects.toMatchObject({ code: "connection" });
     });
 
-    it("uses a status-based API error when a proxy returns non-JSON", async () => {
+    it("classifies a non-JSON proxy response explicitly", async () => {
       const response = mockResponse({ ok: false, status: 502 });
       (response.json as jest.Mock).mockRejectedValue(
         new Error("HTML proxy response"),
       );
+      (response.text as jest.Mock).mockResolvedValue("<html>proxy error</html>");
       fetchMock.mockResolvedValue(response);
 
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
       ).rejects.toMatchObject({
-        code: "api",
-        message: "The server could not complete this request (502).",
+        code: "INVALID_SERVER_RESPONSE",
       });
     });
 

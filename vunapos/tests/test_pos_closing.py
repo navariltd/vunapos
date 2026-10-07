@@ -61,7 +61,12 @@ class TestVunaPOSClosing(IntegrationTestCase):
 			invoice["name"],
 			payments=[
 				{"mode_of_payment": cash_mode, "amount": cash_amount},
-				{"mode_of_payment": second_mode, "amount": flt(amount - cash_amount)},
+				{
+					"mode_of_payment": second_mode,
+					"amount": flt(amount - cash_amount),
+					"reference_no": "VUNA-TEST-SPLIT-PAYMENT",
+					"reference_date": nowdate(),
+				},
 			],
 		)
 		self.assertTrue(response["ok"], response)

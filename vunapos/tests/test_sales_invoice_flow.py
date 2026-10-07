@@ -215,6 +215,25 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		item_code = ensure_test_item()
 		customer = ensure_test_customer()
 		address = ensure_test_shipping_address(customer)
+		checkout_fields = None
+		if frappe.get_meta("Sales Order").has_field("custom_payment_status"):
+			profile_doc = frappe.get_doc("POS Profile", profile)
+			payment_status_field = next(
+				(
+					row
+					for row in profile_doc.get("vunapos_checkout_fields") or []
+					if row.target_doctype == "Sales Order" and row.fieldname == "custom_payment_status"
+				),
+				None,
+			)
+			if payment_status_field is None:
+				payment_status_field = profile_doc.append(
+					"vunapos_checkout_fields",
+					{"target_doctype": "Sales Order", "fieldname": "custom_payment_status"},
+				)
+			payment_status_field.enabled = 1
+			profile_doc.save(ignore_permissions=True)
+			checkout_fields = {"custom_payment_status": "Not Paid"}
 
 		response = create_and_submit_sales_order(
 			pos_profile=profile,
@@ -222,6 +241,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			items=[{"item_code": item_code, "qty": 2}],
 			idempotency_key="sales-order-checkout-key",
 			shipping_address_name=address,
+			checkout_fields=checkout_fields,
 		)
 
 		self.assertTrue(response["ok"], response)

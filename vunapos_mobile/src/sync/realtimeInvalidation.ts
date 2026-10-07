@@ -1,7 +1,21 @@
+import { refreshRegisteredPosResources } from "@/hooks/usePosCachedResource";
+import {
+  POS_PROFILE_CHANGED_RESOURCE,
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_WORKSPACE_RESOURCE,
+} from "@/sync/posResourceKeys";
+
 /** Application data that can be refreshed after a Frappe realtime signal. */
 export const REALTIME_RESOURCES = [
-  "workspace-configuration",
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_PROFILE_CHANGED_RESOURCE,
   "checkout-queue",
+] as const;
+
+/** Control signals are owned by the authenticated app root, never by screens. */
+export const CONTROL_REALTIME_RESOURCES = [
+  POS_REFERENCE_DATA_RESOURCE,
+  POS_PROFILE_CHANGED_RESOURCE,
 ] as const;
 
 export type RealtimeResource = (typeof REALTIME_RESOURCES)[number];
@@ -9,6 +23,31 @@ export type RealtimeResource = (typeof REALTIME_RESOURCES)[number];
 type RefreshHandler = (payload?: unknown) => void | Promise<void>;
 
 const handlers = new Map<RealtimeResource, Set<RefreshHandler>>();
+const controlHandlers = new Map<RealtimeResource, Set<RefreshHandler>>();
+let operationalCacheRecovery: (() => Promise<void>) | null = null;
+
+/** One authenticated root owns repair of persisted, unmounted browse resources. */
+export function registerOperationalCacheRecovery(handler: () => Promise<void>) {
+  operationalCacheRecovery = handler;
+  return () => {
+    if (operationalCacheRecovery === handler) operationalCacheRecovery = null;
+  };
+}
+
+function addHandler(
+  registry: Map<RealtimeResource, Set<RefreshHandler>>,
+  resource: RealtimeResource,
+  handler: RefreshHandler,
+) {
+  const resourceHandlers = registry.get(resource) ?? new Set<RefreshHandler>();
+  resourceHandlers.add(handler);
+  registry.set(resource, resourceHandlers);
+
+  return () => {
+    resourceHandlers.delete(handler);
+    if (!resourceHandlers.size) registry.delete(resource);
+  };
+}
 
 /**
  * Registers a mounted resource to refresh itself. The realtime connection is
@@ -18,21 +57,27 @@ export function registerRealtimeRefresh(
   resource: RealtimeResource,
   handler: RefreshHandler,
 ) {
-  const resourceHandlers = handlers.get(resource) ?? new Set<RefreshHandler>();
-  resourceHandlers.add(handler);
-  handlers.set(resource, resourceHandlers);
+  return addHandler(handlers, resource, handler);
+}
 
-  return () => {
-    resourceHandlers.delete(handler);
-    if (!resourceHandlers.size) handlers.delete(resource);
-  };
+/** Registers an app-owned control handler that survives feature navigation. */
+export function registerRealtimeControlRefresh(
+  resource: (typeof CONTROL_REALTIME_RESOURCES)[number],
+  handler: RefreshHandler,
+) {
+  return addHandler(controlHandlers, resource, handler);
 }
 
 export function invalidateRealtimeResource(
   resource: RealtimeResource,
   payload?: unknown,
 ) {
-  const refreshes = [...(handlers.get(resource) ?? [])].map((handler) =>
+  const registry = CONTROL_REALTIME_RESOURCES.includes(
+    resource as (typeof CONTROL_REALTIME_RESOURCES)[number],
+  )
+    ? controlHandlers
+    : handlers;
+  const refreshes = [...(registry.get(resource) ?? [])].map((handler) =>
     Promise.resolve(handler(payload)).catch(() => {
       // A realtime notification is an acceleration path. A failed refresh is
       // surfaced by the resource that owns the request, never as an unhandled
@@ -40,4 +85,27 @@ export function invalidateRealtimeResource(
     }),
   );
   return Promise.all(refreshes).then(() => undefined);
+}
+
+/** Revalidate mounted operational views after the root workspace is current. */
+export function refreshOperationalPosResources() {
+  return Promise.resolve()
+    .then(() => operationalCacheRecovery?.())
+    .catch(() => {
+      // A failed SQLite repair must not prevent currently mounted resources
+      // from attempting their normal server refresh.
+    })
+    .then(() => refreshRegisteredPosResources({
+      force: true,
+      excludeResources: [POS_WORKSPACE_RESOURCE],
+    }));
+}
+
+/** Root-owned recovery for device connectivity and foreground returns. */
+export async function recoverPosResources(source: "reconnect" | "foreground") {
+  await invalidateRealtimeResource(POS_REFERENCE_DATA_RESOURCE, {
+    full: false,
+    source,
+  });
+  await refreshOperationalPosResources();
 }
