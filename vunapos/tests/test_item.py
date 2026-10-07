@@ -3,14 +3,30 @@ from frappe.tests import IntegrationTestCase
 
 from vunapos.api.item import search_items
 from vunapos.tests.helpers import (
+	ensure_test_batch_item,
 	ensure_test_customer,
 	ensure_test_item,
 	ensure_test_pos_profile,
 	ensure_test_sales_uom_item,
+	ensure_test_stock_item,
 )
 
 
 class TestVunaPOSItem(IntegrationTestCase):
+	def test_stock_item_fixtures_allow_the_pos_warehouse_type(self):
+		if not frappe.get_meta("Item").has_field("custom_warehouse_types"):
+			self.skipTest("This site does not enforce item warehouse types")
+		profile = frappe.get_doc("POS Profile", ensure_test_pos_profile())
+		for create_item in (ensure_test_stock_item, ensure_test_batch_item, ensure_test_sales_uom_item):
+			with self.subTest(create_item=create_item.__name__):
+				item = frappe.get_doc("Item", create_item())
+				warehouse_type = frappe.db.get_value("Warehouse", profile.warehouse, "warehouse_type")
+				self.assertTrue(warehouse_type)
+				self.assertIn(
+					warehouse_type,
+					[row.warehouse_type for row in item.get("custom_warehouse_types", [])],
+				)
+
 	def test_search_items_by_name(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()

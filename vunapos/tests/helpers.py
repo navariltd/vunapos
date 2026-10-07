@@ -35,6 +35,28 @@ def _warehouse(company):
 	)
 
 
+def _prepare_test_stock_item(item):
+	"""Keep disposable stock fixtures valid under optional site customizations."""
+	item_meta = frappe.get_meta("Item")
+	if item_meta.has_field("etims_prevent_etims_registration"):
+		item.etims_prevent_etims_registration = 1
+	if not item_meta.has_field("custom_warehouse_types"):
+		return
+	warehouse = frappe.db.get_value("POS Profile", "_Test VunaPOS Profile", "warehouse") or _warehouse(
+		_company()
+	)
+	warehouse_type = frappe.db.get_value("Warehouse", warehouse, "warehouse_type")
+	if not warehouse_type:
+		warehouse_type = "_Test VunaPOS Warehouse Type"
+		if not frappe.db.exists("Warehouse Type", warehouse_type):
+			frappe.get_doc({"doctype": "Warehouse Type", "name": warehouse_type}).insert(
+				ignore_permissions=True
+			)
+		frappe.db.set_value("Warehouse", warehouse, "warehouse_type", warehouse_type)
+	if not any(row.warehouse_type == warehouse_type for row in item.get("custom_warehouse_types", [])):
+		item.append("custom_warehouse_types", {"warehouse_type": warehouse_type})
+
+
 def _price_list():
 	return (
 		_first_value("Price List", {"name": "Standard Selling", "selling": 1, "enabled": 1})
@@ -100,9 +122,11 @@ def ensure_test_customer():
 	if frappe.get_meta("Customer").has_field("custom_order_type"):
 		order_type = frappe.db.get_value("Customer Order Type", {}, "name")
 		if not order_type:
-			order_type = frappe.get_doc(
-				{"doctype": "Customer Order Type", "name1": "_Test VunaPOS Order Type"}
-			).insert(ignore_permissions=True).name
+			order_type = (
+				frappe.get_doc({"doctype": "Customer Order Type", "name1": "_Test VunaPOS Order Type"})
+				.insert(ignore_permissions=True)
+				.name
+			)
 		values["custom_order_type"] = order_type
 	customer = frappe.get_doc(values)
 	customer.insert(ignore_permissions=True)
@@ -313,10 +337,12 @@ def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
 				"uoms": [{"uom": box_uom, "conversion_factor": 18}],
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.sales_uom = box_uom
 	item.is_sales_item = 1
 	item.is_stock_item = 1
+	_prepare_test_stock_item(item)
 	if not any(row.uom == box_uom for row in item.get("uoms", [])):
 		item.append("uoms", {"uom": box_uom, "conversion_factor": 18})
 	item.save(ignore_permissions=True)
@@ -340,10 +366,12 @@ def ensure_test_stock_item(item_code="_Test VunaPOS Stock Item"):
 				"standard_rate": 100,
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.is_stock_item = 1
 	item.has_batch_no = 0
 	item.has_serial_no = 0
+	_prepare_test_stock_item(item)
 	item.save(ignore_permissions=True)
 	frappe.clear_document_cache("Item", item.name)
 	return item.name
@@ -370,10 +398,12 @@ def ensure_test_batch_item(item_code="_Test Vuna Batch Item", has_serial_no=0):
 				"standard_rate": 100,
 			}
 		)
+		_prepare_test_stock_item(item)
 		item.insert(ignore_permissions=True)
 	item.has_batch_no = 1
 	item.has_serial_no = has_serial_no
 	item.is_stock_item = 1
+	_prepare_test_stock_item(item)
 	item.save(ignore_permissions=True)
 	frappe.clear_document_cache("Item", item.name)
 	return item.name
