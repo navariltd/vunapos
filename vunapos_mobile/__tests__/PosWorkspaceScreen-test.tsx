@@ -438,6 +438,14 @@ jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
         >
           <Text>Complete test sale</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onComplete({ doctype: "Sales Invoice", name: "SINV-TEST-0001" })
+          }
+        >
+          <Text>Complete test invoice</Text>
+        </Pressable>
       </View>
     );
   },
@@ -694,14 +702,29 @@ describe("PosWorkspaceScreen", () => {
     );
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
     await fireEvent.press(
       screen.getByRole("button", { name: "Complete test sale" }),
     );
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
+    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+  });
+
+  it("returns Home and clears the cart after an invoice completes", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
+
     await fireEvent.press(
-      screen.getByRole("button", { name: "Back to previous invoice" }),
+      screen.getByRole("button", { name: "Complete test invoice" }),
     );
 
-    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
   });
 
   it("resets an Order override to the Invoice POS default after submission", async () => {

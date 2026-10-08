@@ -357,11 +357,12 @@ export function useSubmitPosCheckout() {
             workflowRequestError.code === "session"
           )
             void invalidateSession();
-          setWorkflowError(
+          const workflowMessage =
             workflowRequestError instanceof Error
               ? workflowRequestError.message
-              : "The transaction was created, but its workflow action could not be applied.",
-          );
+              : "The transaction was created, but its workflow action could not be applied.";
+          setWorkflowError(workflowMessage);
+          result = { ...result, workflowActionError: workflowMessage };
         }
       }
       await invalidateSaleCache({
@@ -378,11 +379,15 @@ export function useSubmitPosCheckout() {
           priceList: input.priceList,
         });
       } else {
-        await refreshSoldItemStock({
+        // Stock repair is background work. Once Frappe has accepted the sale,
+        // the cashier should return to Home without waiting for item-detail reads.
+        void refreshSoldItemStock({
           companyUrl,
           items: input.items,
           posProfile: input.posProfile,
           sessionId,
+        }).catch(() => {
+          // The next timestamp delta repairs stock if a targeted read fails.
         });
       }
       idempotencyKey.current = createIdempotencyKey();

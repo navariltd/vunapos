@@ -3,6 +3,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Modal,
   Pressable,
   StyleSheet,
@@ -23,7 +24,6 @@ import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalt
 import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
-import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
 import {
@@ -257,7 +257,6 @@ export function PosCheckoutScreen({
   useEffect(() => {
     if (checkout.salespersonTokenExpired) onSalespersonTokenExpired?.();
   }, [checkout.salespersonTokenExpired, onSalespersonTokenExpired]);
-  const receipt = useInvoiceReceipt();
   const gatewayPayment = useGatewayPayment();
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>(
     {},
@@ -296,11 +295,7 @@ export function PosCheckoutScreen({
   );
   const [validationError, setValidationError] = useState<string | null>(null);
   const [invalidCheckoutField, setInvalidCheckoutField] = useState<string>();
-  const [completedResult, setCompletedResult] =
-    useState<PosCheckoutResult | null>(null);
-  const completionHandledRef = useRef(false);
-  const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] =
-    useState(false);
+  const submissionInProgressRef = useRef(false);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
   const [isHolding, setIsHolding] = useState(false);
@@ -1026,6 +1021,7 @@ export function PosCheckoutScreen({
   }
 
   function requestSubmit() {
+    if (submissionInProgressRef.current || checkout.isSubmitting) return;
     setValidationError(null);
     checkout.clearError();
     if (!profile) {
@@ -1139,7 +1135,8 @@ export function PosCheckoutScreen({
       }
     }
 
-    setIsSubmitConfirmationVisible(true);
+    Keyboard.dismiss();
+    void submit();
   }
 
   async function holdCheckout() {
@@ -1159,46 +1156,32 @@ export function PosCheckoutScreen({
   }
 
   async function submit() {
-    if (!profile) return;
-    const result = await checkout.submit({
-      checkoutFields: checkoutFieldValues,
-      customer: saleCustomer?.customer,
-      deliveryDate: !isInvoice ? deliveryDate : undefined,
-      dueDate: isCreditSale ? dueDate : undefined,
-      isCreditSale,
-      items,
-      loyaltyPoints: appliedLoyaltyPoints || undefined,
-      orderType,
-      payments:
-        isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
-      posProfile: profile.name,
-      priceList,
-      salesperson: salesperson?.name,
-      salespersonToken: salesperson?.token,
-      shippingAddressName: selectedShippingAddress?.name,
-      sourceInvoice,
-      taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
-      workflowAction: initialWorkflowAction,
-    });
-    if (!result) return;
-    setCompletedResult(result);
-    if (
-      result.queue_status !== "Queued" &&
-      result.queue_status !== "Processing" &&
-      result.docstatus !== 0
-    ) {
-      void receipt.printReceipt({
-        invoiceDoctype: result.doctype,
-        invoiceName: result.name,
+    if (!profile || submissionInProgressRef.current) return;
+    submissionInProgressRef.current = true;
+    try {
+      const result = await checkout.submit({
+        checkoutFields: checkoutFieldValues,
+        customer: saleCustomer?.customer,
+        deliveryDate: !isInvoice ? deliveryDate : undefined,
+        dueDate: isCreditSale ? dueDate : undefined,
+        isCreditSale,
+        items,
+        loyaltyPoints: appliedLoyaltyPoints || undefined,
+        orderType,
+        payments:
+          isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
+        posProfile: profile.name,
+        priceList,
+        salesperson: salesperson?.name,
+        salespersonToken: salesperson?.token,
+        shippingAddressName: selectedShippingAddress?.name,
+        sourceInvoice,
+        taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
+        workflowAction: initialWorkflowAction,
       });
-    }
-    // The workspace owns the transaction lifecycle. Leave checkout as soon as
-    // the server has accepted the request, including an intentional queued
-    // response; the result modal is retained only for isolated screen usage
-    // and tests where the parent does not unmount immediately.
-    if (!completionHandledRef.current) {
-      completionHandledRef.current = true;
-      onComplete(result);
+      if (result) onComplete(result);
+    } finally {
+      submissionInProgressRef.current = false;
     }
   }
 
@@ -2044,9 +2027,16 @@ export function PosCheckoutScreen({
             isInvoice ? "Complete sale" : "Submit sales order"
           }
           accessibilityState={{
-            disabled: !isReadyToSubmit && !requiredCheckoutField,
+            disabled:
+              checkout.isSubmitting ||
+              isHolding ||
+              (!isReadyToSubmit && !requiredCheckoutField),
           }}
-          disabled={!isReadyToSubmit && !requiredCheckoutField}
+          disabled={
+            checkout.isSubmitting ||
+            isHolding ||
+            (!isReadyToSubmit && !requiredCheckoutField)
+          }
           onPress={requestSubmit}
           style={[
             styles.submitButton,
@@ -2055,7 +2045,7 @@ export function PosCheckoutScreen({
         >
           <Text style={styles.submitButtonLabel}>
             {checkout.isSubmitting
-              ? "Submitting…"
+              ? `Submitting ${submissionLabel}…`
               : isInvoice
                 ? `Complete sale · ${formatCurrency(total, currency, precision)}`
                 : "Submit sales order"}
@@ -2461,157 +2451,6 @@ export function PosCheckoutScreen({
           </SafeAreaView>
         </Modal>
 
-        <Modal
-          animationType="fade"
-          onRequestClose={() => {
-            if (checkout.isSubmitting) return;
-            if (completedResult) {
-              if (!completionHandledRef.current) {
-                completionHandledRef.current = true;
-                onComplete(completedResult);
-              }
-            } else {
-              setIsSubmitConfirmationVisible(false);
-            }
-          }}
-          presentationStyle="overFullScreen"
-          statusBarTranslucent
-          transparent
-          visible={isSubmitConfirmationVisible}
-        >
-          <View style={styles.confirmationModalRoot}>
-            <Pressable
-              accessibilityLabel="Dismiss sale confirmation"
-              disabled={checkout.isSubmitting}
-              onPress={() => {
-                if (completedResult) {
-                  if (!completionHandledRef.current) {
-                    completionHandledRef.current = true;
-                    onComplete(completedResult);
-                  }
-                } else {
-                  setIsSubmitConfirmationVisible(false);
-                }
-              }}
-              style={styles.confirmationBackdrop}
-            />
-            <View accessibilityViewIsModal style={styles.confirmationDialog}>
-              {completedResult ? (
-                <>
-                  <MaterialCommunityIcons
-                    color={
-                      completedResult.queue_status === "Queued" ||
-                      completedResult.queue_status === "Processing"
-                        ? palette.primary
-                        : completedResult.docstatus === 0
-                          ? palette.primary
-                          : palette.success
-                    }
-                    name={
-                      completedResult.queue_status === "Queued" ||
-                      completedResult.queue_status === "Processing"
-                        ? "clock-outline"
-                        : completedResult.docstatus === 0
-                          ? "file-document-outline"
-                          : "check-circle-outline"
-                    }
-                    size={34}
-                  />
-                  <Text style={styles.confirmationTitle}>
-                    {completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is queued.`
-                      : completedResult.docstatus === 0
-                        ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is saved as a draft.`
-                        : `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} submitted.`}
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    {completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? "The sale is waiting for server processing. A receipt will be available once it is submitted."
-                      : completedResult.docstatus === 0
-                        ? checkout.workflowError
-                          ? `The transaction was created, but its workflow action needs attention: ${checkout.workflowError}`
-                          : "The workflow left this transaction as a draft. Review it to continue or edit it if your workflow state permits."
-                        : receipt.isWorking
-                          ? "Opening the native print preview…"
-                          : receipt.error
-                            ? "The sale is complete, but its receipt could not be prepared. You can retry from the invoice details screen."
-                            : "The receipt was sent to the native print preview."}
-                  </Text>
-                  <Pressable
-                    accessibilityLabel={`View submitted ${submissionLabel}`}
-                    onPress={() => {
-                      if (completionHandledRef.current) return;
-                      completionHandledRef.current = true;
-                      onComplete(completedResult);
-                    }}
-                    style={styles.confirmConfirmationButton}
-                  >
-                    <Text style={styles.confirmConfirmationLabel}>
-                      {completedResult.docstatus === 0 ? "View draft" : "View"}{" "}
-                      {submissionLabel === "sales invoice"
-                        ? "invoice"
-                        : "sales order"}
-                    </Text>
-                  </Pressable>
-                </>
-              ) : checkout.isSubmitting ? (
-                <>
-                  <ActivityIndicator color={palette.primary} size="small" />
-                  <Text style={styles.confirmationTitle}>
-                    Submitting {submissionLabel}…
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    Please wait while the sale is confirmed.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.confirmationTitle}>
-                    Confirm submission of {submissionLabel} for {customerName}?
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    {!isInvoice
-                      ? allocation.allocatedMinor > 0
-                        ? `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)} and collect an advance of ${formatCurrency(paidAmount, currency, precision)}.`
-                        : `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)}.`
-                      : isCreditSale
-                        ? "This will submit the sale as credit with its payment due date."
-                        : "This will submit the sale and its selected payment allocation."}
-                  </Text>
-                  {checkout.error ? (
-                    <Text accessibilityRole="alert" style={styles.errorText}>
-                      {checkout.error}
-                    </Text>
-                  ) : null}
-                  <View style={styles.confirmationActions}>
-                    <Pressable
-                      accessibilityLabel="Cancel sale submission"
-                      onPress={() => setIsSubmitConfirmationVisible(false)}
-                      style={styles.cancelConfirmationButton}
-                    >
-                      <Text style={styles.cancelConfirmationLabel}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={
-                        isInvoice
-                          ? "Confirm sales invoice submission"
-                          : "Confirm sales order submission"
-                      }
-                      onPress={() => void submit()}
-                      style={styles.confirmConfirmationButton}
-                    >
-                      <Text style={styles.confirmConfirmationLabel}>
-                        {isInvoice ? "Submit invoice" : "Submit order"}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
 
         {onClear ? (
           <ClearCartConfirmationDialog
@@ -2625,6 +2464,26 @@ export function PosCheckoutScreen({
           />
         ) : null}
       </KeyboardAwareFormScroll>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => undefined}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        transparent
+        visible={checkout.isSubmitting}
+      >
+        <View
+          accessibilityViewIsModal
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.submittingOverlay,
+            { backgroundColor: palette.background },
+          ]}
+        >
+          <ActivityIndicator color={palette.primary} size="large" />
+          <Text style={styles.submittingLabel}>Submitting {submissionLabel}…</Text>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2713,66 +2572,6 @@ function createStyles(palette: AppPalette) {
       alignItems: "stretch",
       flexDirection: "row",
       gap: spacing.sm,
-    },
-    cancelConfirmationButton: {
-      alignItems: "center",
-      borderColor: palette.border,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      flex: 1,
-      justifyContent: "center",
-      minHeight: 44,
-      paddingHorizontal: spacing.sm,
-    },
-    cancelConfirmationLabel: {
-      color: palette.onSurface,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.small,
-    },
-    confirmConfirmationButton: {
-      alignItems: "center",
-      backgroundColor: palette.primary,
-      borderRadius: radii.md,
-      flex: 1,
-      justifyContent: "center",
-      minHeight: 44,
-      paddingHorizontal: spacing.sm,
-    },
-    confirmConfirmationLabel: {
-      color: palette.onPrimary,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.small,
-    },
-    confirmationActions: {
-      flexDirection: "row",
-      gap: spacing.sm,
-      marginTop: spacing.xs,
-    },
-    confirmationBackdrop: {
-      backgroundColor: palette.scrim,
-      ...StyleSheet.absoluteFill,
-    },
-    confirmationDescription: {
-      color: palette.onSurfaceMuted,
-      fontFamily: typography.fontFamily.regular,
-      fontSize: typography.size.body,
-      lineHeight: typography.lineHeight.body,
-    },
-    confirmationDialog: {
-      backgroundColor: palette.surfaceContainer,
-      borderColor: palette.border,
-      borderRadius: radii.lg,
-      borderWidth: 1,
-      gap: spacing.md,
-      marginHorizontal: spacing.lg,
-      padding: spacing.lg,
-    },
-    confirmationModalRoot: { flex: 1, justifyContent: "center" },
-    confirmationTitle: {
-      color: palette.onSurface,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: 19,
-      lineHeight: typography.lineHeight.body,
     },
     content: {
       gap: spacing.md,
@@ -2992,6 +2791,17 @@ function createStyles(palette: AppPalette) {
     },
     scrollView: { flex: 1 },
     screen: { flex: 1 },
+    submittingOverlay: {
+      ...StyleSheet.absoluteFill,
+      alignItems: "center",
+      gap: spacing.md,
+      justifyContent: "center",
+    },
+    submittingLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
     secondaryButton: {
       alignItems: "center",
       borderColor: palette.border,

@@ -296,6 +296,34 @@ describe("POS checkout hooks", () => {
     });
   });
 
+  it("returns an accepted sale before background stock repair finishes", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-FAST-001",
+    });
+    let finishStockRefresh: (() => void) | undefined;
+    mockRefreshSoldItemStock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { finishStockRefresh = resolve; }),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    let result: Awaited<ReturnType<typeof hook.result.current.submit>> = null;
+
+    await act(async () => {
+      result = await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(result).toEqual({ doctype: "Sales Invoice", name: "SINV-FAST-001" });
+    expect(mockRefreshSoldItemStock).toHaveBeenCalledTimes(1);
+    finishStockRefresh?.();
+  });
+
   it("registers queued invoice and order context for later targeted reconciliation", async () => {
     mockPostVunaMethod.mockResolvedValue({
       doctype: "Sales Order",
@@ -394,6 +422,7 @@ describe("POS checkout hooks", () => {
       docstatus: 0,
       doctype: "Sales Invoice",
       name: "SINV-WORKFLOW-002",
+      workflowActionError: "Action is not allowed for this user.",
     });
     expect(hook.result.current.workflowError).toBe(
       "Action is not allowed for this user.",

@@ -466,9 +466,21 @@ export function PosWorkspaceScreen() {
               salespersonPin.lock();
             setCheckoutVisible(false);
             setCartVisible(false);
-            setSelectedInvoice({ doctype: result.doctype, name: result.name });
+            setSelectedInvoice(null);
+            setSelectedCustomer(null);
+            setSelectedPaymentEntry(null);
+            setReceivePaymentContext(null);
+            setActiveTab("Home");
             const label = result.doctype === "Sales Order" ? "Sales order" : "Sales invoice";
-            if (result.queue_status === "Queued" || result.queue_status === "Processing") {
+            if (result.workflowActionError) {
+              toast.warning(
+                `${label} ${result.name} was saved as a draft, but its workflow action failed: ${result.workflowActionError}`,
+                {
+                  title: "Workflow needs attention",
+                  dedupeKey: `checkout-workflow:${result.doctype}:${result.name}`,
+                },
+              );
+            } else if (result.queue_status === "Queued" || result.queue_status === "Processing") {
               toast.info(`${label} ${result.name} is queued for server submission.`, {
                 title: "Submission queued",
                 dedupeKey: `checkout-queued:${result.doctype}:${result.name}`,
