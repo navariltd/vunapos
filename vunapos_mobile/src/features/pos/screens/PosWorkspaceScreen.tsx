@@ -34,7 +34,6 @@ import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCust
 import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
 import { transactionConfigurationFingerprint } from "@/features/pos/posConfiguration";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -68,7 +67,6 @@ function sessionStateKey(session: PosSession | null | undefined) {
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const toast = useToast();
-  const { connectionStatus } = useNetworkStatus();
   // Shell and catalogue consumers read the same root-owned snapshot. This
   // keeps profile state coherent while the app-level coordinator refreshes it.
   const workspaceConfig = usePosBootstrapConfig({
@@ -119,7 +117,6 @@ export function PosWorkspaceScreen() {
     () => (bootstrap ? transactionConfigurationFingerprint(bootstrap) : ""),
     [bootstrap],
   );
-  const isOffline = connectionStatus !== "online";
   const [activeTab, setActiveTab] = useState<PosNavigationTab>("Home");
   const [cartVisible, setCartVisible] = useState(false);
   const [checkoutVisible, setCheckoutVisible] = useState(false);
@@ -519,8 +516,6 @@ export function PosWorkspaceScreen() {
           allowCustomerCreation={Boolean(
             posProfileConfig?.allow_customer_creation,
           )}
-          cartCacheIsStale={cart.cartCacheIsStale}
-          cartCacheLastUpdated={cart.cartCacheLastUpdated}
           allowDiscountChange={Boolean(posProfileConfig?.allow_discount_change)}
           allowRateChange={Boolean(posProfileConfig?.allow_rate_change)}
           currency={cartCurrency}
@@ -528,7 +523,6 @@ export function PosWorkspaceScreen() {
           defaultPriceList={posProfileConfig?.price_list}
           hasPendingHold={cart.hasPendingHold}
           holdError={cart.holdError}
-          isOffline={isOffline}
           items={cart.items}
           onBack={() => setCartVisible(false)}
           onCheckout={() => {

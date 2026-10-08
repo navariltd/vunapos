@@ -15,8 +15,6 @@ import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import {
   PosBatchAllocation,
@@ -35,8 +33,6 @@ import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
-  cartCacheIsStale?: boolean;
-  cartCacheLastUpdated?: number | null;
   allowDiscountChange?: boolean;
   allowPriceListSwitching?: boolean;
   allowRateChange?: boolean;
@@ -46,7 +42,6 @@ type PosCartScreenProps = {
   hasPendingHold?: boolean;
   holdError?: string | null;
   isHolding?: boolean;
-  isOffline?: boolean;
   isUpdating: boolean;
   items: PosCartItem[];
   onBack: () => void;
@@ -739,6 +734,14 @@ function CartLine({
     item.available_qty !== null
       ? item.available_qty / Number(item.conversion_factor || 1)
       : null;
+  const isCarton = item.uom?.trim().toLowerCase() === "carton";
+  const displayedMaximum =
+    maximum === null
+      ? null
+      : isCarton
+        ? Math.floor(maximum + 1e-9)
+        : Number(maximum.toFixed(3));
+  const availableUom = isCarton ? "Cartons" : item.uom || "units";
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
   const hasRuleDiscount = Boolean(
@@ -1042,11 +1045,11 @@ function CartLine({
           />
           <Pressable
             accessibilityLabel={`Increase quantity for ${item.item_name}`}
-            disabled={itemDisabled || (maximum !== null && item.qty >= maximum)}
+            disabled={itemDisabled || (maximum !== null && item.qty + 1 > maximum)}
             onPress={() => onUpdateQuantity(item.qty + 1)}
             style={[
               styles.quantityButton,
-              (itemDisabled || (maximum !== null && item.qty >= maximum)) &&
+              (itemDisabled || (maximum !== null && item.qty + 1 > maximum)) &&
                 styles.quantityButtonDisabled,
             ]}
           >
@@ -1068,9 +1071,9 @@ function CartLine({
           </Text>
         </View>
       </View>
-      {maximum !== null ? (
+      {displayedMaximum !== null ? (
         <Text style={styles.stockHint}>
-          Available {maximum} {item.uom || ""}
+          Available {availableUom}: {displayedMaximum}
         </Text>
       ) : null}
       {item.item_tax_template ? (
@@ -1096,8 +1099,6 @@ function CartLine({
 
 export function PosCartScreen({
   allowCustomerCreation,
-  cartCacheIsStale = false,
-  cartCacheLastUpdated,
   allowDiscountChange = false,
   allowPriceListSwitching = false,
   allowRateChange = false,
@@ -1108,7 +1109,6 @@ export function PosCartScreen({
   hasPendingHold = false,
   holdError,
   isHolding = false,
-  isOffline: isOfflineProp,
   isUpdating,
   items,
   onBack,
@@ -1160,8 +1160,6 @@ export function PosCartScreen({
       toast.error(holdError, { title: "Could not hold sale" });
     }
   }, [holdError, toast]);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = isOfflineProp ?? connectionStatus !== "online";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
@@ -1489,14 +1487,6 @@ export function PosCartScreen({
               </Text>
             </View>
           ) : null}
-          <Text style={styles.checkoutNote}>
-            Payment is collected at checkout.
-          </Text>
-          <PosCacheStatus
-            isOffline={isOffline}
-            isStale={cartCacheIsStale}
-            lastUpdated={cartCacheLastUpdated}
-          />
           <View
             style={[
               styles.cartActions,
@@ -1911,13 +1901,6 @@ function createStyles(palette: AppPalette) {
     color: palette.onPrimary,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
-  },
-  checkoutNote: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-    lineHeight: typography.lineHeight.body,
-    textAlign: "center",
   },
   clearButton: {
     borderColor: palette.border,

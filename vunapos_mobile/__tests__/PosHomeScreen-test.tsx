@@ -284,6 +284,41 @@ describe("PosHomeScreen", () => {
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
   });
 
+  it("keeps a lone final grid card one column wide and hides cache timestamps", async () => {
+    const items = ["ONE", "TWO", "THREE"].map((item_code) => ({
+      actual_qty: 3,
+      item_code,
+      item_name: item_code,
+      rate: 150,
+    }));
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items,
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      lastUpdated: Date.now(),
+      reload: jest.fn(),
+    });
+
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+      />,
+    );
+
+    const firstWidth = screen.getByTestId("catalogue-cell-ONE").props.style.width;
+    const lastWidth = screen.getByTestId("catalogue-cell-THREE").props.style.width;
+    expect(firstWidth).toBeGreaterThan(0);
+    expect(lastWidth).toBe(firstWidth);
+    expect(screen.queryByText(/Updated \d{2}\/\d{2}\/\d{4}/)).toBeNull();
+  });
+
   it("keeps cached browsing available while allowing server actions to classify failures", async () => {
     const item = {
       actual_qty: 3,
