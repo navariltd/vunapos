@@ -444,7 +444,6 @@ export function PosWorkspaceScreen() {
           onApplyDeliveryCharge={cart.applyDeliveryCharge}
           onBack={() => setCheckoutVisible(false)}
           shippingAddressName={shippingAddressName}
-          onShippingAddressChange={setShippingAddressName}
           onComplete={(result) => {
             cart.clear();
             setShippingAddressName("");

@@ -375,12 +375,16 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
     onCheckout,
     onClear,
     onRemove,
+    onSelectShippingAddress,
     saleCustomer,
+    shippingAddressName,
   }: {
     onCheckout: () => void;
     onClear: () => boolean;
     onRemove: (itemCode: string) => Promise<void>;
+    onSelectShippingAddress: (addressName: string) => void;
     saleCustomer: { customerName: string } | null;
+    shippingAddressName: string;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
@@ -402,6 +406,13 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
         <Pressable accessibilityRole="button" onPress={onCheckout}>
           <Text>Open checkout</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSelectShippingAddress("ADDR-002")}
+        >
+          <Text>Select cart shipping address</Text>
+        </Pressable>
+        <Text>{`Cart shipping address: ${shippingAddressName || "none"}`}</Text>
       </>
     );
   },
@@ -410,14 +421,17 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
 jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
   PosCheckoutScreen: ({
     onComplete,
+    shippingAddressName,
   }: {
     onComplete: (result: { doctype: string; name: string }) => void;
+    shippingAddressName?: string;
   }) => {
     const { useState } = require("react");
     const { Pressable, Text, TextInput, View } = require("react-native");
     const [note, setNote] = useState("");
     return (
       <View>
+        <Text>{`Checkout shipping address: ${shippingAddressName || "none"}`}</Text>
         <TextInput accessibilityLabel="Checkout note" onChangeText={setNote} value={note} />
         <Pressable
           accessibilityRole="button"
@@ -606,6 +620,18 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByText("POS home")).toBeTruthy();
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
+  });
+
+  it("carries the cart shipping address into checkout without a second selection", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select cart shipping address" }),
+    );
+    expect(screen.getByText("Cart shipping address: ADDR-002")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    expect(screen.getByText("Checkout shipping address: ADDR-002")).toBeTruthy();
   });
 
   it("returns to the POS Profile default customer when a cart is cleared", async () => {

@@ -305,10 +305,24 @@ describe("PosCartScreen", () => {
 
     expect(screen.getByText("Select shipping address")).toBeTruthy();
     await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Search shipping addresses"),
+      "unknown place",
+    );
+    expect(screen.getByText("No matching shipping addresses.")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Search shipping addresses"),
+      "market road",
+    );
+    expect(
+      screen.queryByLabelText("Select shipping address Main shop"),
+    ).toBeNull();
     await fireEvent.press(
       screen.getByLabelText("Select shipping address Market branch"),
     );
     expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-002");
+    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    expect(screen.getByLabelText("Search shipping addresses").props.value).toBe("");
   });
 
   it("keeps cart actions available without network gating", async () => {

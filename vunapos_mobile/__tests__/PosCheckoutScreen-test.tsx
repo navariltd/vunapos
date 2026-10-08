@@ -38,10 +38,6 @@ jest.mock("@/features/pos/hooks/usePosCustomerLoyalty", () => ({
   usePosCustomerLoyalty: jest.fn(),
 }));
 
-jest.mock("@/features/pos/hooks/usePosCustomerShippingAddresses", () => ({
-  usePosCustomerShippingAddresses: jest.fn(),
-}));
-
 jest.mock("@/features/pos/hooks/useGatewayPayment", () => ({
   useGatewayPayment: jest.fn(),
 }));
@@ -52,7 +48,6 @@ jest.mock("@/features/pos/hooks/useGatewayPaymentRealtime", () => ({
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
-import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
 import {
@@ -63,9 +58,6 @@ import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
-const mockUsePosCustomerShippingAddresses = jest.mocked(
-  usePosCustomerShippingAddresses,
-);
 const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
 const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
@@ -100,11 +92,6 @@ describe("PosCheckoutScreen", () => {
       previewLoyalty: jest.fn(),
     });
     mockUsePosCustomerLoyalty.mockReturnValue({
-      data: null,
-      error: null,
-      isLoading: false,
-    });
-    mockUsePosCustomerShippingAddresses.mockReturnValue({
       data: null,
       error: null,
       isLoading: false,
@@ -770,29 +757,10 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("selects a permitted shipping address and submits its Frappe address name", async () => {
+  it("submits the invoice shipping address selected in the cart without a checkout picker", async () => {
     submit.mockResolvedValue({
       doctype: "Sales Invoice",
       name: "SINV-SHIP-001",
-    });
-    mockUsePosCustomerShippingAddresses.mockReturnValue({
-      data: [
-        {
-          address_title: "Main branch",
-          city: "Nairobi",
-          formatted_address: "Kilimani, Nairobi, Kenya",
-          is_default: true,
-          name: "ADDR-001",
-        },
-        {
-          address_title: "Warehouse",
-          city: "Mombasa",
-          formatted_address: "Changamwe, Mombasa, Kenya",
-          name: "ADDR-002",
-        },
-      ],
-      error: null,
-      isLoading: false,
     });
     const screen = await render(
       <PosCheckoutScreen
@@ -813,21 +781,51 @@ describe("PosCheckoutScreen", () => {
         onComplete={onComplete}
         orderType="Invoice"
         saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        shippingAddressName="ADDR-002"
         subtotal={100}
       />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByText("Select shipping address")).toBeTruthy(),
-    );
-    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
-    expect(screen.getByLabelText("Back to checkout")).toBeTruthy();
-    await fireEvent.press(
-      screen.getByLabelText("Select shipping address Warehouse"),
-    );
-    expect(screen.getByText("Changamwe, Mombasa, Kenya")).toBeTruthy();
+    expect(screen.queryByLabelText("Choose shipping address")).toBeNull();
+    expect(screen.queryByLabelText("Search shipping addresses")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingAddressName: "ADDR-002" }),
+      ),
+    );
+  });
+
+  it("submits the Sales Order shipping address selected in the cart without a checkout picker", async () => {
+    submit.mockResolvedValue({ doctype: "Sales Order", name: "SO-SHIP-001" });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        shippingAddressName="ADDR-002"
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Choose shipping address")).toBeNull();
+    expect(screen.queryByLabelText("Search shipping addresses")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Submit sales order"));
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({ shippingAddressName: "ADDR-002" }),

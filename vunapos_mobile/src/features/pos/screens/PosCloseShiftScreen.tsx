@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -27,6 +28,8 @@ type PosCloseShiftScreenProps = {
   onShiftClosed?: (session: PosSession) => void;
   posProfile?: string;
 };
+
+const MAX_VISIBLE_SHIFT_SALES = 5;
 
 /**
  * Entry point for the server-authoritative POS closing workflow. The preview
@@ -117,6 +120,16 @@ export function PosCloseShiftScreen({
     setConfirmationVisible(false);
     onShiftClosed?.(result.session);
   }
+
+  const shiftInvoices = preview.data?.invoices ?? [];
+  const saleRows = shiftInvoices.map((invoice) => (
+    <ShiftSaleCard
+      currency={currency}
+      currencyPrecision={currencyPrecision}
+      invoice={invoice}
+      key={`${invoice.doctype}:${invoice.name}`}
+    />
+  ));
 
   return (
     <>
@@ -278,17 +291,18 @@ export function PosCloseShiftScreen({
                   {preview.data.invoice_count} total
                 </Text>
               </View>
-              {(preview.data.invoices ?? []).length ? (
-                <View style={styles.salesList}>
-                  {(preview.data.invoices ?? []).map((invoice) => (
-                    <ShiftSaleCard
-                      currency={currency}
-                      currencyPrecision={currencyPrecision}
-                      invoice={invoice}
-                      key={`${invoice.doctype}:${invoice.name}`}
-                    />
-                  ))}
-                </View>
+              {shiftInvoices.length > MAX_VISIBLE_SHIFT_SALES ? (
+                <ScrollView
+                  contentContainerStyle={styles.salesList}
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  style={styles.salesListViewport}
+                  testID="shift-sales-scroll"
+                >
+                  {saleRows}
+                </ScrollView>
+              ) : shiftInvoices.length ? (
+                <View style={styles.salesList}>{saleRows}</View>
               ) : (
                 <View
                   style={[
@@ -1028,6 +1042,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   salesList: { gap: spacing.sm },
+  // About five standard sale rows; longer rows remain accessible by scrolling.
+  salesListViewport: {
+    maxHeight:
+      MAX_VISIBLE_SHIFT_SALES * 80 + (MAX_VISIBLE_SHIFT_SALES - 1) * spacing.sm,
+  },
   stateCard: {
     borderRadius: radii.md,
     borderWidth: 1,

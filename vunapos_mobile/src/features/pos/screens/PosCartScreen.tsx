@@ -5,6 +5,7 @@ import { Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
+import { filterShippingAddresses } from "@/features/pos/shippingAddressSearch";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
@@ -1167,6 +1168,7 @@ export function PosCartScreen({
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [shippingAddressPickerVisible, setShippingAddressPickerVisible] =
     useState(false);
+  const [shippingAddressQuery, setShippingAddressQuery] = useState("");
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
   const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
@@ -1188,6 +1190,14 @@ export function PosCartScreen({
     customerShippingAddresses.find(
       (address) => address.name === shippingAddressName,
     );
+  const matchingShippingAddresses = filterShippingAddresses(
+    customerShippingAddresses,
+    shippingAddressQuery,
+  );
+  function dismissShippingAddressPicker() {
+    setShippingAddressPickerVisible(false);
+    setShippingAddressQuery("");
+  }
   const isCartBusy = isUpdating || isHolding || hasPendingHold;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 
@@ -1278,7 +1288,10 @@ export function PosCartScreen({
             <Pressable
               accessibilityLabel="Choose shipping address"
               disabled={isCartBusy || customerShippingAddressesLoading}
-              onPress={() => setShippingAddressPickerVisible(true)}
+              onPress={() => {
+                setShippingAddressQuery("");
+                setShippingAddressPickerVisible(true);
+              }}
               style={[
                 styles.shippingAddressSelector,
                 (isCartBusy || customerShippingAddressesLoading) &&
@@ -1579,7 +1592,7 @@ export function PosCartScreen({
       />
       <Modal
         animationType="slide"
-        onRequestClose={() => setShippingAddressPickerVisible(false)}
+        onRequestClose={dismissShippingAddressPicker}
         visible={shippingAddressPickerVisible}
       >
         <SafeAreaView
@@ -1590,20 +1603,32 @@ export function PosCartScreen({
             <Text style={styles.title}>Shipping address</Text>
             <Pressable
               accessibilityLabel="Close shipping address picker"
-              onPress={() => setShippingAddressPickerVisible(false)}
+              onPress={dismissShippingAddressPicker}
               style={styles.clearCustomerButton}
             >
               <Text style={styles.clearCustomerButtonLabel}>Close</Text>
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.shippingAddressOptions}>
-            {customerShippingAddresses.map((address) => (
+          <TextInput
+            accessibilityLabel="Search shipping addresses"
+            autoCorrect={false}
+            onChangeText={setShippingAddressQuery}
+            placeholder="Search shipping addresses"
+            placeholderTextColor={palette.onSurfaceMuted}
+            style={styles.shippingAddressSearchInput}
+            value={shippingAddressQuery}
+          />
+          <ScrollView
+            contentContainerStyle={styles.shippingAddressOptions}
+            keyboardShouldPersistTaps="handled"
+          >
+            {matchingShippingAddresses.map((address) => (
               <Pressable
                 accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
                 key={address.name}
                 onPress={() => {
                   onSelectShippingAddress?.(address.name);
-                  setShippingAddressPickerVisible(false);
+                  dismissShippingAddressPicker();
                 }}
                 style={[
                   styles.shippingAddressOption,
@@ -1619,6 +1644,13 @@ export function PosCartScreen({
                 </Text>
               </Pressable>
             ))}
+            {!matchingShippingAddresses.length ? (
+              <Text style={styles.customerSelectorMeta}>
+                {customerShippingAddressesLoading
+                  ? "Loading shipping addresses…"
+                  : "No matching shipping addresses."}
+              </Text>
+            ) : null}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -1984,6 +2016,18 @@ function createStyles(palette: AppPalette) {
     marginBottom: spacing.md,
   },
   shippingAddressOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
+  shippingAddressSearchInput: {
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    color: palette.onSurface,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    marginBottom: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
   shippingAddressOption: {
     borderColor: palette.border,
     borderRadius: radii.md,
