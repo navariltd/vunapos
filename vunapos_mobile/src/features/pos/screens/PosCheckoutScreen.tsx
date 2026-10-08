@@ -14,7 +14,6 @@ import {
 import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
-import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import {
   PosCheckoutFieldsCard,
   PosCheckoutFieldValues,
@@ -68,7 +67,6 @@ type PosCheckoutScreenProps = {
     amount?: number,
   ) => Promise<PosCartData | null>;
   onBack: () => void;
-  onClear?: () => void;
   onComplete: (result: PosCheckoutResult) => void;
   onHold?: () => Promise<{ name: string } | null>;
   onMaterializeGatewayDraft?: () => Promise<PosCartSource | null>;
@@ -183,7 +181,6 @@ export function PosCheckoutScreen({
   items,
   onApplyDeliveryCharge,
   onBack,
-  onClear,
   onComplete,
   onHold,
   onMaterializeGatewayDraft,
@@ -296,8 +293,6 @@ export function PosCheckoutScreen({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [invalidCheckoutField, setInvalidCheckoutField] = useState<string>();
   const submissionInProgressRef = useRef(false);
-  const [clearConfirmationVisible, setClearConfirmationVisible] =
-    useState(false);
   const [isHolding, setIsHolding] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
   const resolvedPhoneCustomerRef = useRef<string | null>(null);
@@ -1405,24 +1400,22 @@ export function PosCheckoutScreen({
 
         {!isInvoice ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sales Order</Text>
-            <Text style={styles.cardHint}>
-              Choose when this order should be delivered.
-            </Text>
-            <Text style={styles.fieldLabel}>Delivery date</Text>
+            <Text style={styles.cardTitle}>Enter delivery date</Text>
             <Pressable
               accessibilityLabel="Choose Sales Order delivery date"
               onPress={() => setIsDeliveryDatePickerVisible(true)}
-              style={styles.datePickerButton}
+              style={styles.shippingAddressSelector}
             >
+              <View style={styles.shippingAddressText}>
+                <Text style={styles.shippingAddressTitle}>
+                  {formatDate(deliveryDate)}
+                </Text>
+              </View>
               <MaterialCommunityIcons
                 color={palette.onSurfaceMuted}
                 name="calendar-month-outline"
-                size={20}
+                size={22}
               />
-              <Text style={styles.datePickerButtonLabel}>
-                {formatDate(deliveryDate)}
-              </Text>
             </Pressable>
             {isDeliveryDatePickerVisible ? (
               <DateTimePicker
@@ -1438,12 +1431,6 @@ export function PosCheckoutScreen({
                 testID="sales-order-delivery-date-picker"
                 value={dateFromInput(deliveryDate)}
               />
-            ) : null}
-            {!allowsSalesOrderAdvancePayments ? (
-              <Text style={styles.cardHint}>
-                This POS profile does not allow an advance payment for Sales
-                Orders.
-              </Text>
             ) : null}
           </View>
         ) : null}
@@ -1989,68 +1976,55 @@ export function PosCheckoutScreen({
         ) : null}
         {holdError ? <Text style={styles.errorText}>{holdError}</Text> : null}
         <View style={styles.checkoutActions}>
-          {onClear ? (
-            <Pressable
-              accessibilityLabel="Clear checkout"
-              disabled={checkout.isSubmitting || isHolding}
-              onPress={() => setClearConfirmationVisible(true)}
-              style={[
-                styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding) &&
-                  styles.submitButtonDisabled,
-              ]}
-            >
-              <Text style={styles.secondaryActionLabel}>Clear</Text>
-            </Pressable>
-          ) : null}
           {onHold && isInvoice ? (
             <Pressable
               accessibilityLabel="Hold checkout"
               disabled={checkout.isSubmitting || isHolding}
               onPress={() => void holdCheckout()}
               style={[
-                styles.secondaryActionButton,
+                styles.holdActionButton,
                 (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
               {isHolding ? (
-                <ActivityIndicator color={palette.onSurface} size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.secondaryActionLabel}>Hold</Text>
+                <Text style={styles.holdActionLabel}>Hold</Text>
               )}
             </Pressable>
           ) : null}
-        </View>
-        <Pressable
-          accessibilityLabel={
-            isInvoice ? "Complete sale" : "Submit sales order"
-          }
-          accessibilityState={{
-            disabled:
+          <Pressable
+            accessibilityLabel={
+              isInvoice ? "Complete sale" : "Submit sales order"
+            }
+            accessibilityState={{
+              disabled:
+                checkout.isSubmitting ||
+                isHolding ||
+                (!isReadyToSubmit && !requiredCheckoutField),
+            }}
+            disabled={
               checkout.isSubmitting ||
               isHolding ||
-              (!isReadyToSubmit && !requiredCheckoutField),
-          }}
-          disabled={
-            checkout.isSubmitting ||
-            isHolding ||
-            (!isReadyToSubmit && !requiredCheckoutField)
-          }
-          onPress={requestSubmit}
-          style={[
-            styles.submitButton,
-            !isReadyToSubmit && styles.submitButtonDisabled,
-          ]}
-        >
-          <Text style={styles.submitButtonLabel}>
-            {checkout.isSubmitting
-              ? `Submitting ${submissionLabel}…`
-              : isInvoice
-                ? `Complete sale · ${formatCurrency(total, currency, precision)}`
-                : "Submit sales order"}
-          </Text>
-        </Pressable>
+              (!isReadyToSubmit && !requiredCheckoutField)
+            }
+            onPress={requestSubmit}
+            style={[
+              styles.submitButton,
+              styles.checkoutSubmitButton,
+              !isReadyToSubmit && styles.submitButtonDisabled,
+            ]}
+          >
+            <Text style={styles.submitButtonLabel}>
+              {checkout.isSubmitting
+                ? `Submitting ${submissionLabel}…`
+                : isInvoice
+                  ? "Complete sale"
+                  : "Submit sales order"}
+            </Text>
+          </Pressable>
+        </View>
 
         <Modal
           animationType="slide"
@@ -2452,17 +2426,6 @@ export function PosCheckoutScreen({
         </Modal>
 
 
-        {onClear ? (
-          <ClearCartConfirmationDialog
-            isOffline={checkout.isSubmitting || isHolding}
-            onConfirm={() => {
-              onClear();
-              setClearConfirmationVisible(false);
-            }}
-            onDismiss={() => setClearConfirmationVisible(false)}
-            visible={clearConfirmationVisible}
-          />
-        ) : null}
       </KeyboardAwareFormScroll>
       <Modal
         animationType="fade"
@@ -2902,18 +2865,18 @@ function createStyles(palette: AppPalette) {
       minHeight: 50,
       paddingHorizontal: spacing.md,
     },
-    secondaryActionButton: {
+    checkoutSubmitButton: { flex: 1 },
+    holdActionButton: {
       alignItems: "center",
-      borderColor: palette.border,
+      backgroundColor: "#99571f",
       borderRadius: radii.md,
-      borderWidth: 1,
-      flex: 1,
+      flex: 0.55,
       justifyContent: "center",
       minHeight: 50,
       paddingHorizontal: spacing.md,
     },
-    secondaryActionLabel: {
-      color: palette.onSurface,
+    holdActionLabel: {
+      color: "#ffffff",
       fontFamily: typography.fontFamily.semibold,
       fontSize: typography.size.body,
     },

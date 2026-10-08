@@ -5,6 +5,7 @@ import {
   render,
   waitFor,
 } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -279,6 +280,8 @@ describe("PosCheckoutScreen", () => {
 
     expect(screen.getAllByText("Submitting sales order…").length).toBeGreaterThan(0);
     expect(screen.queryByText(/Confirm submission of sales order/)).toBeNull();
+    expect(screen.queryByLabelText("Clear checkout")).toBeNull();
+    expect(screen.queryByLabelText("Hold checkout")).toBeNull();
     expect(screen.getByLabelText("Submit sales order").props.accessibilityState.disabled).toBe(true);
   });
 
@@ -309,44 +312,17 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByLabelText("Hold checkout"));
+    const holdButton = screen.getByLabelText("Hold checkout");
+    const completeButton = screen.getByLabelText("Complete sale");
+    expect(holdButton.parent).toBe(completeButton.parent);
+    expect(screen.getByText("Complete sale")).toBeTruthy();
+    expect(screen.queryByText(/Complete sale ·/)).toBeNull();
+    expect(screen.queryByLabelText("Clear checkout")).toBeNull();
+
+    await fireEvent.press(holdButton);
 
     await waitFor(() => expect(onHold).toHaveBeenCalledTimes(1));
     expect(onBack).toHaveBeenCalledTimes(1);
-  });
-
-  it("confirms clearing the active checkout before removing its cart", async () => {
-    const onClear = jest.fn();
-    const screen = await render(
-      <PosCheckoutScreen
-        currency="KES"
-        items={[
-          {
-            allow_negative_stock: false,
-            available_qty: 4,
-            is_stock_item: true,
-            item_code: "ITEM-001",
-            item_name: "Stock item",
-            qty: 1,
-            rate: 100,
-            uom: "Nos",
-          },
-        ]}
-        onBack={jest.fn()}
-        onClear={onClear}
-        onComplete={onComplete}
-        orderType="Invoice"
-        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
-        subtotal={100}
-      />,
-    );
-
-    await fireEvent.press(screen.getByLabelText("Clear checkout"));
-    expect(screen.getByText("Clear the current cart?")).toBeTruthy();
-    expect(onClear).not.toHaveBeenCalled();
-
-    await fireEvent.press(screen.getByLabelText("Confirm clear cart"));
-    expect(onClear).toHaveBeenCalledTimes(1);
   });
 
   it("blocks checkout with the configured field label when a required checkout field is empty", async () => {
@@ -2153,10 +2129,27 @@ describe("PosCheckoutScreen", () => {
         />,
       );
 
-      expect(screen.getByText("Delivery date")).toBeTruthy();
-      await fireEvent.press(
-        screen.getByLabelText("Choose Sales Order delivery date"),
+      const deliveryLabel = screen.getByText("Enter delivery date");
+      const deliveryPicker = screen.getByLabelText(
+        "Choose Sales Order delivery date",
       );
+      expect(deliveryLabel.parent).toBe(deliveryPicker.parent);
+      expect(StyleSheet.flatten(deliveryLabel.parent?.props.style)).toMatchObject({
+        borderWidth: 1,
+        padding: 16,
+      });
+      expect(StyleSheet.flatten(deliveryPicker.props.style)).toMatchObject({
+        minHeight: 56,
+      });
+      expect(
+        screen.queryByText("Choose when this order should be delivered."),
+      ).toBeNull();
+      expect(
+        screen.queryByText(
+          "This POS profile does not allow an advance payment for Sales Orders.",
+        ),
+      ).toBeNull();
+      await fireEvent.press(deliveryPicker);
       await fireEvent(
         screen.getByTestId("sales-order-delivery-date-picker"),
         "valueChange",

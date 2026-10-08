@@ -445,14 +445,6 @@ export function PosWorkspaceScreen() {
           onBack={() => setCheckoutVisible(false)}
           shippingAddressName={shippingAddressName}
           onShippingAddressChange={setShippingAddressName}
-          onClear={() => {
-            if (!cart.clear()) return;
-            setSelectedPriceList(undefined);
-            setDraftCheckoutFieldValues({});
-            setSelectedSaleCustomer(null);
-            setCheckoutVisible(false);
-            setCartVisible(false);
-          }}
           onComplete={(result) => {
             cart.clear();
             setShippingAddressName("");

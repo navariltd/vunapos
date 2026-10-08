@@ -4,6 +4,7 @@ import {
   render,
   waitFor,
 } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native/Libraries/Lists/FlatList", () => {
   const React = require("react");
@@ -365,5 +366,21 @@ describe("PosInvoicesScreen", () => {
       ),
     );
     expect(screen.getByText("No draft invoices are currently held.")).toBeTruthy();
+  });
+
+  it("gives the Filters and Refresh actions modestly larger tap targets", async () => {
+    const screen = await renderScreen();
+    expect(
+      StyleSheet.flatten(screen.getByLabelText("Open invoice filters").props.style),
+    ).toMatchObject({ minHeight: 38, paddingHorizontal: 16 });
+
+    fireEvent.press(screen.getByText("Draft invoices"));
+    await waitFor(() =>
+      expect(
+        StyleSheet.flatten(
+          screen.getByLabelText("Refresh held invoices").props.style,
+        ),
+      ).toMatchObject({ minHeight: 38, paddingHorizontal: 16 }),
+    );
   });
 });

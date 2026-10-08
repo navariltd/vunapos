@@ -1222,7 +1222,7 @@ export function PosCartScreen({
             onPress={() => setClearConfirmationVisible(true)}
             style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
           >
-            <Text style={styles.clearButtonLabel}>Clear</Text>
+            <Text style={styles.clearButtonLabel}>Clear Cart</Text>
           </Pressable>
         ) : null}
         </View>
@@ -1903,16 +1903,17 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.body,
   },
   clearButton: {
-    borderColor: palette.border,
+    alignItems: "center",
+    backgroundColor: "#b4232b",
     borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
   },
   clearButtonLabel: {
-    color: palette.onSurface,
+    color: "#ffffff",
     fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
+    fontSize: typography.size.small,
   },
   cartActions: { flexDirection: "row", gap: spacing.sm },
   cartActionsStandalone: { justifyContent: "center" },

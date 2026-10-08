@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -352,7 +353,13 @@ describe("PosCartScreen", () => {
       screen.getByLabelText("Increase quantity for Stock item"),
     );
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
-    await fireEvent.press(screen.getByLabelText("Clear cart"));
+    const clearButton = screen.getByLabelText("Clear cart");
+    expect(screen.getByText("Clear Cart")).toBeTruthy();
+    expect(StyleSheet.flatten(clearButton.props.style)).toMatchObject({
+      backgroundColor: "#b4232b",
+      minHeight: 42,
+    });
+    await fireEvent.press(clearButton);
 
     expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 2);
     expect(onCheckout).toHaveBeenCalled();
