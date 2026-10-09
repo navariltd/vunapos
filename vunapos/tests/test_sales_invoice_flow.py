@@ -61,6 +61,16 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			"POS Profile", profile, "vunapos_default_sale_type", "Cash Sale", update_modified=False
 		)
 		profile_doc = frappe.get_doc("POS Profile", profile)
+		# This reusable profile must not carry required fields added by another
+		# checkout-field test into unrelated invoice submissions.
+		profile_doc.set(
+			"vunapos_checkout_fields",
+			[
+				row
+				for row in profile_doc.get("vunapos_checkout_fields") or []
+				if not (row.target_doctype == "Sales Invoice" and row.fieldname in ("po_no", "remarks"))
+			],
+		)
 		for row in profile_doc.get("payments", []):
 			row.payment_gateway = None
 		profile_doc.save(ignore_permissions=True)
@@ -319,6 +329,84 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			frappe.db.get_value("Sales Invoice", invoice["name"], "shipping_address_name"),
 			address,
 		)
+
+	def _configure_invoice_checkout_fields(self):
+		profile = ensure_test_pos_profile()
+		set_invoice_mode("Sales Invoice")
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		for fieldname, required in (("po_no", 1), ("remarks", 0)):
+			row = next(
+				(
+					row
+					for row in profile_doc.get("vunapos_checkout_fields") or []
+					if row.target_doctype == "Sales Invoice" and row.fieldname == fieldname
+				),
+				None,
+			)
+			if row is None:
+				row = profile_doc.append(
+					"vunapos_checkout_fields",
+					{"target_doctype": "Sales Invoice", "fieldname": fieldname},
+				)
+			row.enabled = 1
+			row.required = required
+		profile_doc.save(ignore_permissions=True)
+		frappe.clear_cache(doctype="POS Profile")
+		return profile
+
+	def test_new_cart_checkout_applies_required_and_optional_configured_fields(self):
+		profile = self._configure_invoice_checkout_fields()
+		item_code = ensure_test_item()
+		response = create_and_submit_invoice(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1}],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			idempotency_key="new-cart-checkout-fields",
+			checkout_fields={"po_no": "  PO-NEW-001  ", "remarks": "  Counter sale  "},
+		)
+		self.assertTrue(response["ok"], response)
+		invoice = frappe.get_doc("Sales Invoice", response["data"]["name"])
+		self.assertEqual(invoice.docstatus, 1)
+		self.assertEqual(invoice.po_no, "PO-NEW-001")
+		self.assertEqual(invoice.remarks, "Counter sale")
+
+	def test_new_cart_checkout_enforces_required_and_unsupported_fields(self):
+		profile = self._configure_invoice_checkout_fields()
+		item_code = ensure_test_item()
+		base = {
+			"pos_profile": profile,
+			"items": [{"item_code": item_code, "qty": 1}],
+			"payments": [{"mode_of_payment": "Cash", "amount": 100}],
+		}
+		missing = create_and_submit_invoice(
+			**base, idempotency_key="new-cart-required-missing", checkout_fields={"remarks": "Optional"}
+		)
+		self.assertFalse(missing["ok"], missing)
+		self.assertIn("required", missing["errors"][0]["message"].lower())
+		unsupported = create_and_submit_invoice(
+			**base,
+			idempotency_key="new-cart-unsupported-field",
+			checkout_fields={"po_no": "PO-001", "customer": "Different customer"},
+		)
+		self.assertFalse(unsupported["ok"], unsupported)
+		self.assertIn("Unsupported VunaPOS checkout field", unsupported["errors"][0]["message"])
+
+	def test_existing_draft_checkout_keeps_the_same_field_validation(self):
+		profile = self._configure_invoice_checkout_fields()
+		item_code = ensure_test_item()
+		draft = create_invoice(pos_profile=profile)["data"]
+		add_item(draft["doctype"], draft["name"], item_code, 1)
+		response = checkout_invoice(
+			draft["doctype"],
+			draft["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": 100}],
+			checkout_fields={"po_no": "PO-DRAFT-001", "remarks": "Draft sale"},
+		)
+		self.assertTrue(response["ok"], response)
+		invoice = frappe.get_doc("Sales Invoice", response["data"]["name"])
+		self.assertEqual(invoice.docstatus, 1)
+		self.assertEqual(invoice.po_no, "PO-DRAFT-001")
+		self.assertEqual(invoice.remarks, "Draft sale")
 
 	def test_checkout_rejects_shipping_address_for_another_customer(self):
 		profile = ensure_test_pos_profile()
@@ -1547,7 +1635,7 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	@patch("frappe.enqueue")
 	def test_background_enabled_checkout_reserves_then_queues_submission(self, enqueue):
-		profile_name = ensure_test_pos_profile()
+		profile_name = self._configure_invoice_checkout_fields()
 		profile = frappe.get_doc("POS Profile", profile_name)
 		frappe.db.set_value("Customer", profile.customer, "is_walkin", 1, update_modified=False)
 		frappe.clear_cache(doctype="Customer")
@@ -1570,12 +1658,17 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 			payments=[{"mode_of_payment": "Cash", "amount": 200}],
 			idempotency_key="reserved-synchronous-checkout",
 			tax_id="P051234567A",
+			checkout_fields={"po_no": "PO-QUEUED-001"},
 		)
 
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["docstatus"], 0)
 		self.assertEqual(response["data"]["queue_status"], "Queued")
 		self.assertEqual(response["data"]["tax_id"], "P051234567A")
+		self.assertEqual(
+			frappe.db.get_value("Sales Invoice", response["data"]["name"], "po_no"),
+			"PO-QUEUED-001",
+		)
 		self.assertEqual(
 			frappe.db.get_value("Sales Invoice", response["data"]["name"], "tax_id"), "P051234567A"
 		)
