@@ -602,6 +602,10 @@ describe("PosCheckoutScreen", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Cash amount").props.value).toBe("96.00"),
     );
+    const invoiceCashAmount = screen.getByLabelText("Cash amount");
+    expect(invoiceCashAmount.parent?.parent?.children[0]).toBe(
+      screen.getByLabelText("Allocate all to Cash"),
+    );
     expect(screen.getByText("Amount payable")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
@@ -761,7 +765,7 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("allows a permitted delivery charge to be applied through the parent cart", async () => {
+  it("applies an editable delivery charge through the parent cart when Apply is pressed", async () => {
     const applyDeliveryCharge = jest.fn().mockResolvedValue({
       items: [],
       taxes: [],
@@ -805,6 +809,10 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
+    expect(screen.getByText("Add delivery charges")).toBeTruthy();
+    expect(screen.getByLabelText("Apply delivery charge")).toBeTruthy();
+    expect(screen.queryByText("Optional")).toBeNull();
+    expect(screen.getByLabelText("Delivery charge amount").props.editable).toBe(true);
     await fireEvent.changeText(
       screen.getByLabelText("Delivery charge amount"),
       "25",
@@ -812,16 +820,59 @@ describe("PosCheckoutScreen", () => {
     expect(
       screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
     ).toBe(true);
-    expect(
-      screen.getByText(
-        "Delivery charge changed but not applied. Apply it before submitting.",
-      ),
-    ).toBeTruthy();
+    expect(applyDeliveryCharge).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByLabelText("Apply delivery charge"));
-
     await waitFor(() =>
       expect(applyDeliveryCharge).toHaveBeenCalledWith("DELIVERY", 25),
     );
+  });
+
+  it("shows the current cart charge without an editable field when rate changes are disabled", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: "Cash" }],
+        pos_profile: {
+          allow_delivery_charge_change: false,
+          allow_delivery_charges: true,
+          delivery_charge_item: "DELIVERY",
+          name: "POS-001",
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: false,
+          item_code: "DELIVERY",
+          item_name: "Delivery charge",
+          qty: 1,
+          rate: 55,
+          uom: "Nos",
+        }]}
+        onApplyDeliveryCharge={jest.fn()}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={55}
+      />,
+    );
+
+    expect(screen.getByText("Add delivery charges")).toBeTruthy();
+    expect(screen.getByLabelText("Delivery charge amount").props).toMatchObject({
+      editable: false,
+      value: "55.00",
+    });
+    expect(
+      screen.getByLabelText("Apply delivery charge").props.accessibilityState.disabled,
+    ).toBe(true);
+    expect(screen.queryByText("Optional")).toBeNull();
   });
 
   it("passes the active salesperson token into the final checkout request", async () => {
@@ -2488,6 +2539,11 @@ describe("PosCheckoutScreen", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("Sales Order advance payment")).toBeTruthy();
+    const cashAmount = screen.getByLabelText("Cash amount");
+    const cashButton = screen.getByLabelText("Allocate all to Cash");
+    const paymentRow = cashAmount.parent?.parent;
+    expect(paymentRow?.children[0]).toBe(cashAmount.parent);
+    expect(paymentRow?.children[1]).toBe(cashButton);
     await fireEvent.changeText(screen.getByLabelText("Cash amount"), "40");
     expect(screen.getByText("Advance payment")).toBeTruthy();
 

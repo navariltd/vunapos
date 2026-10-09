@@ -1605,28 +1605,20 @@ export function PosCheckoutScreen({
 
         {deliveryChargeEnabled ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Delivery charge</Text>
-            <Text style={styles.cardHint}>
-              Optionally add the configured delivery item to this sale. Frappe
-              will recalculate the total before payment.
-            </Text>
-            <View style={styles.deliveryChargeRow}>
-              <View style={styles.paymentAmountWrap}>
-                <Text style={styles.currencyPrefix}>{currency}</Text>
-                <TextInput
-                  accessibilityLabel="Delivery charge amount"
-                  editable={
-                    deliveryChargeCanChange && !isApplyingDeliveryCharge
-                  }
-                  inputMode="decimal"
-                  keyboardType="decimal-pad"
-                  onChangeText={setDeliveryChargeAmount}
-                  placeholder="Optional"
-                  placeholderTextColor={palette.onSurfaceMuted}
-                  style={styles.paymentAmountInput}
-                  value={displayedDeliveryChargeAmount}
-                />
-              </View>
+            <Text style={styles.cardTitle}>Add delivery charges</Text>
+            <View style={styles.deliveryDateSelector}>
+              <Text style={styles.currencyPrefix}>{currency}</Text>
+              <TextInput
+                accessibilityLabel="Delivery charge amount"
+                editable={deliveryChargeCanChange && !isApplyingDeliveryCharge}
+                inputMode="decimal"
+                keyboardType="decimal-pad"
+                onChangeText={setDeliveryChargeAmount}
+                placeholder="0.00"
+                placeholderTextColor={palette.onSurfaceMuted}
+                style={styles.deliveryChargeInput}
+                value={displayedDeliveryChargeAmount}
+              />
               <Pressable
                 accessibilityLabel="Apply delivery charge"
                 disabled={!deliveryChargeCanChange || isApplyingDeliveryCharge}
@@ -1644,19 +1636,8 @@ export function PosCheckoutScreen({
                 )}
               </Pressable>
             </View>
-            {!deliveryChargeCanChange ? (
-              <Text style={styles.cardHint}>
-                This POS profile does not allow changing the delivery charge.
-              </Text>
-            ) : null}
             {deliveryChargeError ? (
               <Text style={styles.errorText}>{deliveryChargeError}</Text>
-            ) : null}
-            {deliveryChargeDirty && !deliveryChargeError ? (
-              <Text style={styles.cardHint}>
-                Delivery charge changed but not applied. Apply it before
-                submitting.
-              </Text>
             ) : null}
           </View>
         ) : null}
@@ -1728,47 +1709,48 @@ export function PosCheckoutScreen({
                         other.mode_of_payment === mode.mode_of_payment ||
                         !paymentAmounts[other.mode_of_payment],
                     );
+                  const modeButton = (
+                    <Pressable
+                      accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`}
+                      onPress={() => selectPaymentMode(mode.mode_of_payment)}
+                      style={[
+                        styles.paymentModeButton,
+                        isAll && styles.paymentModeButtonActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.paymentModeLabel,
+                          isAll && styles.paymentModeLabelActive,
+                        ]}
+                      >
+                        {mode.mode_of_payment}
+                        {mode.default ? " · Default" : ""}
+                      </Text>
+                    </Pressable>
+                  );
+                  const amountField = (
+                    <View style={styles.paymentAmountWrap}>
+                      <Text style={styles.currencyPrefix}>{currency}</Text>
+                      <TextInput
+                        accessibilityLabel={`${mode.mode_of_payment} amount`}
+                        inputMode="decimal"
+                        keyboardType="decimal-pad"
+                        onChangeText={(amountInput) =>
+                          setPaymentAmount(mode.mode_of_payment, amountInput)
+                        }
+                        placeholder={minorUnitsToInput(0, precision)}
+                        placeholderTextColor={palette.onSurfaceMuted}
+                        style={styles.paymentAmountInput}
+                        value={amount}
+                      />
+                    </View>
+                  );
                   return (
                     <View key={mode.mode_of_payment} style={styles.paymentMode}>
                       <View style={styles.paymentModeRow}>
-                        <Pressable
-                          accessibilityLabel={`Allocate all to ${mode.mode_of_payment}`}
-                          onPress={() =>
-                            selectPaymentMode(mode.mode_of_payment)
-                          }
-                          style={[
-                            styles.paymentModeButton,
-                            isAll && styles.paymentModeButtonActive,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.paymentModeLabel,
-                              isAll && styles.paymentModeLabelActive,
-                            ]}
-                          >
-                            {mode.mode_of_payment}
-                            {mode.default ? " · Default" : ""}
-                          </Text>
-                        </Pressable>
-                        <View style={styles.paymentAmountWrap}>
-                          <Text style={styles.currencyPrefix}>{currency}</Text>
-                          <TextInput
-                            accessibilityLabel={`${mode.mode_of_payment} amount`}
-                            inputMode="decimal"
-                            keyboardType="decimal-pad"
-                            onChangeText={(amountInput) =>
-                              setPaymentAmount(
-                                mode.mode_of_payment,
-                                amountInput,
-                              )
-                            }
-                            placeholder={minorUnitsToInput(0, precision)}
-                            placeholderTextColor={palette.onSurfaceMuted}
-                            style={styles.paymentAmountInput}
-                            value={amount}
-                          />
-                        </View>
+                        {isInvoice ? modeButton : amountField}
+                        {isInvoice ? amountField : modeButton}
                       </View>
                       {needsReference ? (
                         <View style={styles.paymentReference}>
@@ -2420,10 +2402,12 @@ function createStyles(palette: AppPalette) {
       fontFamily: typography.fontFamily.regular,
       fontSize: typography.size.body,
     },
-    deliveryChargeRow: {
-      alignItems: "stretch",
-      flexDirection: "row",
-      gap: spacing.sm,
+    deliveryChargeInput: {
+      color: palette.onSurface,
+      flex: 1,
+      fontFamily: typography.fontFamily.medium,
+      fontSize: typography.size.body,
+      paddingVertical: 0,
     },
     errorText: {
       color: palette.error,
