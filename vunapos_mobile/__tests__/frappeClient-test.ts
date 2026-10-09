@@ -316,7 +316,7 @@ describe("frappeClient", () => {
           mockResponse({
             json: {
               message: {
-                errors: [{ message: "No active POS shift." }],
+                errors: [{ code: "POS_OPENING_REQUIRED", message: "No active POS shift." }],
                 ok: false,
               },
             },
@@ -329,7 +329,11 @@ describe("frappeClient", () => {
       ).rejects.toMatchObject({ code: "session" });
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
-      ).rejects.toMatchObject({ code: "api", message: "No active POS shift." });
+      ).rejects.toMatchObject({
+        code: "api",
+        domainCode: "POS_OPENING_REQUIRED",
+        message: "No active POS shift.",
+      });
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
       ).rejects.toMatchObject({ code: "connection" });

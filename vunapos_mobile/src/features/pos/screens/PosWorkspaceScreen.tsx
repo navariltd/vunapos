@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Modal } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 import { AppShell } from "@/features/shell/components/AppShell";
 import { SalespersonPinLock } from "@/features/pos/components/SalespersonPinLock";
@@ -34,6 +36,7 @@ import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCust
 import { useToast } from "@/components/feedback/ToastProvider";
 import { usePosBootstrapConfig } from "@/features/pos/hooks/usePosBootstrap";
 import { transactionConfigurationFingerprint } from "@/features/pos/posConfiguration";
+import { useAppearance } from "@/theme/AppearanceProvider";
 
 type SelectedInvoice = {
   doctype?: string;
@@ -67,6 +70,7 @@ function sessionStateKey(session: PosSession | null | undefined) {
 /** Owns POS-wide shell state while feature screens remain independent. */
 export function PosWorkspaceScreen() {
   const toast = useToast();
+  const { palette } = useAppearance();
   // Shell and catalogue consumers read the same root-owned snapshot. This
   // keeps profile state coherent while the app-level coordinator refreshes it.
   const workspaceConfig = usePosBootstrapConfig({
@@ -101,6 +105,19 @@ export function PosWorkspaceScreen() {
     sessionOverride.against === sessionStateKey(serverSession)
       ? sessionOverride.session
       : serverSession;
+  const sessionMatchesProfile = Boolean(
+    !posSession?.pos_profile || posSession.pos_profile === posProfile,
+  );
+  const sessionReady = Boolean(posSession?.ready && sessionMatchesProfile);
+  const [operationalProfile, setOperationalProfile] = useState<string | null>(
+    () => sessionReady ? posProfile ?? null : null,
+  );
+  if (sessionReady && posProfile && operationalProfile !== posProfile) {
+    setOperationalProfile(posProfile);
+  }
+  const sessionUnavailable = !sessionReady;
+  const preserveWorkspaceBehindSessionGate =
+    sessionUnavailable && operationalProfile === posProfile && Boolean(posProfile);
   const [orderTypeOverride, setOrderTypeOverride] = useState<{
     posProfile?: string;
     restoredDraft?: boolean;
@@ -166,6 +183,8 @@ export function PosWorkspaceScreen() {
     customer: saleCustomer,
     orderType,
     posProfile,
+    profileCompany: posProfileConfig?.company,
+    profileWarehouse: posProfileConfig?.warehouse,
     priceList: selectedPriceList,
     configurationRefreshKey,
   });
@@ -307,6 +326,17 @@ export function PosWorkspaceScreen() {
     setHeldRefreshKey((current) => current + 1);
   }
 
+  const sessionGate = (
+    <PosSessionGateScreen
+      currency={posProfileConfig?.currency}
+      onShiftOpened={handleShiftOpened}
+      paymentModes={paymentModes}
+      posProfile={posProfile}
+      preservedDraft={Boolean(checkoutVisible || cart.itemCount)}
+      session={posSession}
+    />
+  );
+
   return (
     <AppShell
       activeTab={activeTab}
@@ -319,14 +349,8 @@ export function PosWorkspaceScreen() {
       orderType={orderType}
       paymentsEnabled={allowsCustomerPayments}
     >
-      {posSession && !posSession.ready ? (
-        <PosSessionGateScreen
-          currency={posProfileConfig?.currency}
-          onShiftOpened={handleShiftOpened}
-          paymentModes={paymentModes}
-          posProfile={posProfile}
-          session={posSession}
-        />
+      {sessionUnavailable && !preserveWorkspaceBehindSessionGate ? (
+        sessionGate
       ) : selectedPaymentEntry ? (
         <PosPaymentEntryDetailsScreen
           currency={selectedPaymentEntry.currency}
@@ -513,6 +537,11 @@ export function PosWorkspaceScreen() {
           sourceInvoice={cart.sourceInvoice}
           subtotal={cart.subtotal}
           bootstrapData={workspaceConfig.data}
+          transactionReady={Boolean(sessionReady && !workspaceConfig.isScopeInvalidated)}
+          sessionVerificationKey={JSON.stringify([
+            sessionStateKey(posSession),
+            configurationRefreshKey,
+          ])}
         />
       ) : cartVisible ? (
         <PosCartScreen
@@ -671,6 +700,13 @@ export function PosWorkspaceScreen() {
           onCheckoutHeld={(invoice) => restoreDraft(invoice, true)}
         />
       )}
+      {preserveWorkspaceBehindSessionGate ? (
+        <Modal animationType="none" onRequestClose={() => {}} visible>
+          <SafeAreaView style={{ backgroundColor: palette.background, flex: 1 }}>
+            {sessionGate}
+          </SafeAreaView>
+        </Modal>
+      ) : null}
       <SalespersonPinLock
         error={salespersonPin.error}
         isVerifying={salespersonPin.isVerifying}

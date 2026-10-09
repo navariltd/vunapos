@@ -171,6 +171,60 @@ describe("POS checkout hooks", () => {
     expect(hook.result.current.isLoading).toBe(false);
   });
 
+  it("requires a fresh preview after session closure and recovery, even for the same opening", async () => {
+    const original = { totals: { grand_total: 290, net_total: 250 } };
+    mockGetVunaMethod.mockResolvedValueOnce(original);
+    const hook = await renderHook(
+      ({ ready }: { ready: boolean }) => usePosCheckoutPreview(ready ? {
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+        verificationKey: "OPEN-001",
+      } : null),
+      { initialProps: { ready: true } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(original));
+    await hook.rerender({ ready: false });
+    expect(hook.result.current.data).toBeNull();
+
+    let finishRecovery!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(() => new Promise((resolve) => {
+      finishRecovery = resolve;
+    }));
+    await hook.rerender({ ready: true });
+    expect(hook.result.current.data).toEqual(original);
+    expect(hook.result.current.isLoading).toBe(true);
+    await act(async () => finishRecovery({ totals: { grand_total: 300, net_total: 259 } }));
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(300));
+    expect(hook.result.current.isLoading).toBe(false);
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates an unchanged cart when transaction-affecting configuration changes", async () => {
+    const original = { totals: { grand_total: 290, net_total: 250 } };
+    mockGetVunaMethod.mockResolvedValueOnce(original);
+    const hook = await renderHook(
+      ({ configuration }: { configuration: string }) => usePosCheckoutPreview({
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+        verificationKey: `OPEN-001:${configuration}`,
+      }),
+      { initialProps: { configuration: "tax-a" } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(original));
+    let finishRevalidation!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(() => new Promise((resolve) => {
+      finishRevalidation = resolve;
+    }));
+    await hook.rerender({ configuration: "tax-b" });
+    expect(hook.result.current.data).toEqual(original);
+    expect(hook.result.current.isLoading).toBe(true);
+    await act(async () => finishRevalidation({ totals: { grand_total: 310, net_total: 250 } }));
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(310));
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the last valid preview when revalidation fails", async () => {
     const initial = { totals: { grand_total: 290, net_total: 250 } };
     mockGetVunaMethod.mockResolvedValueOnce(initial);

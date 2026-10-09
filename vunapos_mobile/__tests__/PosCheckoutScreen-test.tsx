@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
+import type { ComponentProps } from "react";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -54,7 +55,16 @@ import {
   usePosCheckoutPreview,
   useSubmitPosCheckout,
 } from "@/features/pos/hooks/usePosCheckout";
-import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+import { PosCheckoutScreen as ActualPosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+
+type CheckoutProps = ComponentProps<typeof ActualPosCheckoutScreen>;
+
+function PosCheckoutScreen(
+  props: Omit<CheckoutProps, "transactionReady"> & { transactionReady?: boolean },
+) {
+  const { transactionReady = true, ...rest } = props;
+  return <ActualPosCheckoutScreen {...rest} transactionReady={transactionReady} />;
+}
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
@@ -80,6 +90,7 @@ describe("PosCheckoutScreen", () => {
       data: {
         payment_modes: [{ default: true, mode_of_payment: "Cash" }],
         pos_profile: { allow_credit_sales: true, name: "POS-001" },
+        pos_session: { has_opening_entry: true, ready: true, status: "OPEN" },
       },
       error: null,
       isLoading: false,
@@ -169,6 +180,56 @@ describe("PosCheckoutScreen", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Confirm submission of sales invoice/)).toBeNull();
     expect(screen.queryByLabelText("View submitted sales invoice")).toBeNull();
+  });
+
+  it("blocks submission during shift closure and waits for a fresh preview after reopening", async () => {
+    const props = {
+      currency: "KES",
+      items: [{
+        allow_negative_stock: false,
+        available_qty: 4,
+        is_stock_item: true,
+        item_code: "ITEM-001",
+        item_name: "Stock item",
+        qty: 1,
+        rate: 100,
+        uom: "Nos",
+      }],
+      onBack: jest.fn(),
+      onComplete,
+      orderType: "Invoice" as const,
+      saleCustomer: { customer: "CUST-001", customerName: "ABC Corps" },
+      subtotal: 100,
+    };
+    const screen = await render(<PosCheckoutScreen {...props} transactionReady />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(false);
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady={false} />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).not.toHaveBeenCalled();
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: true,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).not.toHaveBeenCalled();
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: false,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady />);
+    expect(submit).not.toHaveBeenCalled();
+    submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0002" });
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
   });
 
   it("does not leave a success popup after an invoice completes", async () => {

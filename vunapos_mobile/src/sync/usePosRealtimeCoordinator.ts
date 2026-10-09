@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
@@ -38,12 +38,18 @@ function isFullRefreshSignal(payload: unknown) {
  * routed through several mounted bootstrap hooks.
  */
 export function usePosRealtimeCoordinator() {
-  const { authState, companyUrl, sessionId } = useAppSession();
+  const { authState, companyUrl, invalidateSession, sessionId } = useAppSession();
   const enabled = authState === "signedIn";
   const catalogue = usePosBootstrap({
     enabled,
     manageFreshness: true,
   });
+  const [pendingProfileRevalidation, setPendingProfileRevalidation] = useState<{
+    scope: string;
+    count: number;
+  } | null>(null);
+  const activeScope = companyUrl && sessionId
+    ? JSON.stringify([companyUrl, sessionId]) : null;
   const reloadCatalogue = useRef(catalogue.reload);
   const activeProfile = useRef(catalogue.data?.pos_profile?.name);
 
@@ -57,6 +63,7 @@ export function usePosRealtimeCoordinator() {
 
   useEffect(() => {
     if (!enabled) return;
+    const revalidationScope = JSON.stringify([companyUrl, sessionId]);
     const workspaceScope = companyUrl && sessionId
       ? { companyUrl, userId: sessionId, posProfile: "workspace" }
       : null;
@@ -80,19 +87,41 @@ export function usePosRealtimeCoordinator() {
     const unregisterProfile = registerRealtimeControlRefresh(
       POS_PROFILE_CHANGED_RESOURCE,
       async () => {
-        if (workspaceKey && workspaceScope) {
-          const previous = await posCache.read<PosBootstrapData>(workspaceKey);
-          const previousProfile = previous?.data.pos_profile?.name ?? activeProfile.current;
-          if (previousProfile) {
-            await clearOperationalPosCache({
-              companyUrl: workspaceScope.companyUrl,
-              sessionId: workspaceScope.userId,
-              posProfile: previousProfile,
-            });
+        setPendingProfileRevalidation((current) => ({
+          scope: revalidationScope,
+          count: current?.scope === revalidationScope ? current.count + 1 : 1,
+        }));
+        try {
+          if (workspaceKey && workspaceScope) {
+            const previous = await posCache.read<PosBootstrapData>(workspaceKey);
+            const previousProfile = previous?.data.pos_profile?.name ?? activeProfile.current;
+            if (previousProfile) {
+              const clearedOperational = await clearOperationalPosCache({
+                companyUrl: workspaceScope.companyUrl,
+                sessionId: workspaceScope.userId,
+                posProfile: previousProfile,
+              });
+              if (clearedOperational === false) {
+                await invalidateSession();
+                return;
+              }
+            }
+            const clearedWorkspace = await posCache.clearResource(
+              workspaceScope, POS_WORKSPACE_RESOURCE,
+            );
+            if (clearedWorkspace === false) {
+              await invalidateSession();
+              return;
+            }
           }
-          await posCache.clearResource(workspaceScope, POS_WORKSPACE_RESOURCE);
+          await reloadCatalogue.current({ full: true });
+        } finally {
+          setPendingProfileRevalidation((current) =>
+            current?.scope === revalidationScope
+              ? current.count > 1 ? { ...current, count: current.count - 1 } : null
+              : current,
+          );
         }
-        await reloadCatalogue.current({ full: true });
       },
     );
     return () => {
@@ -100,7 +129,12 @@ export function usePosRealtimeCoordinator() {
       unregisterProfile();
       unregisterOperationalRecovery();
     };
-  }, [companyUrl, enabled, sessionId]);
+  }, [companyUrl, enabled, invalidateSession, sessionId]);
 
-  return catalogue;
+  return {
+    ...catalogue,
+    isScopeInvalidated: Boolean(
+      pendingProfileRevalidation?.scope === activeScope || catalogue.isScopeInvalidated,
+    ),
+  };
 }

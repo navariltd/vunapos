@@ -20,7 +20,7 @@ type FrappeErrorResponse = {
 
 type VunaEnvelope<T> = {
   data: T;
-  errors?: { message?: string }[];
+  errors?: { code?: string; message?: string }[];
   ok: boolean;
 };
 
@@ -50,6 +50,7 @@ export class FrappeClientError extends Error {
     readonly status?: number,
     readonly reason?: "network" | "timeout" | "aborted",
     readonly cause?: unknown,
+    readonly domainCode?: string,
   ) {
     super(message);
     this.name = "FrappeClientError";
@@ -603,7 +604,10 @@ export async function getVunaMethod<T>(
       const message =
         payload?.message?.errors?.[0]?.message ??
         "The server could not complete this request.";
-      throw new FrappeClientError(message, "api");
+      throw new FrappeClientError(
+        message, "api", undefined, undefined, undefined,
+        payload.message.errors?.[0]?.code,
+      );
     }
 
     return payload.message.data;
@@ -729,7 +733,10 @@ async function postVunaEnvelopeMethod<T>(
       const message =
         payload?.message?.errors?.[0]?.message ??
         "The server could not complete this request.";
-      throw new FrappeClientError(message, "api");
+      throw new FrappeClientError(
+        message, "api", undefined, undefined, undefined,
+        payload.message.errors?.[0]?.code,
+      );
     }
 
     return payload.message.data;

@@ -77,6 +77,9 @@ type PosCheckoutScreenProps = {
   salesperson?: PosSalespersonSession | null;
   sourceInvoice?: PosCartSource | null;
   subtotal: number;
+  /** Workspace/session authority; cached preview data cannot override this gate. */
+  transactionReady: boolean;
+  sessionVerificationKey?: string;
   /** Workspace-owned configuration; prevents checkout from creating another bootstrap owner. */
   bootstrapData?: PosBootstrapData | null;
 };
@@ -175,6 +178,8 @@ export function PosCheckoutScreen({
   sourceInvoice,
   subtotal,
   bootstrapData,
+  transactionReady,
+  sessionVerificationKey,
 }: PosCheckoutScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
@@ -192,6 +197,7 @@ export function PosCheckoutScreen({
       }
     : bootstrapResource;
   const profile = bootstrap.data?.pos_profile;
+  const transactionAvailable = transactionReady;
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [loyaltyInput, setLoyaltyInput] = useState("");
@@ -211,13 +217,14 @@ export function PosCheckoutScreen({
   const [isApplyingDeliveryCharge, setIsApplyingDeliveryCharge] =
     useState(false);
   const preview = usePosCheckoutPreview(
-    isInvoice && bootstrap.data
+    isInvoice && bootstrap.data && transactionAvailable
       ? {
           customer: saleCustomer?.customer,
           items,
           loyaltyPoints,
           posProfile: bootstrap.data.pos_profile.name,
           priceList,
+          verificationKey: sessionVerificationKey,
         }
       : null,
   );
@@ -598,6 +605,7 @@ export function PosCheckoutScreen({
                         : "Payment incomplete";
   const isReadyToSubmit = Boolean(
     items.length &&
+    transactionAvailable &&
     !requiredCheckoutField &&
     (!isInvoice || (!preview.isLoading && !preview.error && Boolean(preview.data))) &&
     !checkout.isSubmitting &&
@@ -982,6 +990,10 @@ export function PosCheckoutScreen({
     if (submissionInProgressRef.current || checkout.isSubmitting) return;
     setValidationError(null);
     checkout.clearError();
+    if (!transactionAvailable) {
+      setValidationError("Your POS shift or profile is being verified. Wait for confirmation before submitting.");
+      return;
+    }
     if (!profile) {
       setValidationError(
         "Could not load your POS profile. Return to the cart and try again.",
@@ -1114,7 +1126,7 @@ export function PosCheckoutScreen({
   }
 
   async function submit() {
-    if (!profile || submissionInProgressRef.current) return;
+    if (!profile || !transactionAvailable || submissionInProgressRef.current) return;
     submissionInProgressRef.current = true;
     try {
       const result = await checkout.submit({

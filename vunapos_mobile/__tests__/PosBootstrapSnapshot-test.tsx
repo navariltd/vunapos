@@ -1,13 +1,14 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
-import { useEffect } from "react";
-import { Text } from "react-native";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react-native";
+import { useEffect, useState } from "react";
+import { Text, TextInput } from "react-native";
+
+const mockUseAppSession = jest.fn(() => ({
+  companyUrl: "https://vuna.example.com",
+  sessionId: "sid-1",
+}));
 
 jest.mock("@/features/auth/AppSessionProvider", () => ({
-  useAppSession: () => ({
-    companyUrl: "https://vuna.example.com",
-    invalidateSession: jest.fn(),
-    sessionId: "sid-1",
-  }),
+  useAppSession: () => mockUseAppSession(),
 }));
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
@@ -47,17 +48,25 @@ const unmounted = jest.fn();
 
 function WorkspaceConsumer() {
   const bootstrap = usePosBootstrapConfig();
+  const [note, setNote] = useState("");
   useEffect(() => {
     mounted();
     return () => unmounted();
   }, []);
-  return <Text>{bootstrap.data?.pos_profile.name ?? "No POS profile"}</Text>;
+  return <>
+    <Text>{bootstrap.data?.pos_profile.name ?? "No POS profile"}</Text>
+    <Text>{bootstrap.isLoading ? "Cold-start loading" : "Workspace usable"}</Text>
+    <TextInput accessibilityLabel="Draft checkout note" onChangeText={setNote} value={note} />
+  </>;
 }
 
 describe("PosBootstrapSnapshotBoundary", () => {
-  afterEach(cleanup);
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAppSession.mockReturnValue({
+      companyUrl: "https://vuna.example.com",
+      sessionId: "sid-1",
+    });
   });
 
   it("waits for scoped cache hydration before mounting the workspace", async () => {
@@ -104,12 +113,52 @@ describe("PosBootstrapSnapshotBoundary", () => {
     expect(unmounted).not.toHaveBeenCalled();
   });
 
+  it("does not reuse a previous user's snapshot after session scope changes", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    mockUseAppSession.mockReturnValue({
+      companyUrl: "https://vuna.example.com",
+      sessionId: "sid-2",
+    });
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: null, isHydratingCache: true,
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.queryByText("POS-001")).toBeNull();
+    expect(screen.getByText("Preparing your workspace…")).toBeTruthy();
+  });
+
+  it("removes the previous POS snapshot from context after sign-out", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedOut" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.queryByText("POS-001")).toBeNull();
+    expect(screen.getByText("No POS profile")).toBeTruthy();
+  });
+
   it("holds the old company snapshot until the new scoped snapshot is ready", async () => {
     const view = await render(
       <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
         <WorkspaceConsumer />
       </PosBootstrapSnapshotBoundary>,
     );
+    mockUseAppSession.mockReturnValue({
+      companyUrl: "https://other.example.com",
+      sessionId: "sid-2",
+    });
     await view.rerender(
       <PosBootstrapSnapshotBoundary
         authState="signedIn"
@@ -128,7 +177,129 @@ describe("PosBootstrapSnapshotBoundary", () => {
         <WorkspaceConsumer />
       </PosBootstrapSnapshotBoundary>,
     );
+    await waitFor(() => expect(screen.getByText("POS-002")).toBeTruthy());
+  });
+
+  it("keeps the same-scope route and form mounted through an unexpected background null", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Draft checkout note"), "Do not lose this");
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: null, isLoading: true, isHydratingCache: true,
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS-001")).toBeTruthy();
+    expect(screen.getByText("Workspace usable")).toBeTruthy();
+    expect(screen.queryByText("Cold-start loading")).toBeNull();
+    expect(screen.getByLabelText("Draft checkout note").props.value).toBe("Do not lose this");
+    expect(screen.queryByText("Preparing your workspace…")).toBeNull();
+    expect(mounted).toHaveBeenCalledTimes(1);
+    expect(unmounted).not.toHaveBeenCalled();
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: null, error: "Storage read interrupted",
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByLabelText("Draft checkout note").props.value).toBe("Do not lose this");
+    expect(screen.queryByText("POS unavailable")).toBeNull();
+    expect(unmounted).not.toHaveBeenCalled();
+  });
+
+  it("blocks profile-scope revalidation without unmounting the route", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Draft checkout note"), "Keep this draft");
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: null, isScopeInvalidated: true, isLoading: true,
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("Checking POS access…")).toBeTruthy();
+    expect(screen.queryByText("Preparing your workspace…")).toBeNull();
+    expect(unmounted).not.toHaveBeenCalled();
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: { ...snapshot.data!, pos_profile: { name: "POS-002" } },
+        isScopeInvalidated: true,
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS-001")).toBeTruthy();
+    expect(screen.getByText("Checking POS access…")).toBeTruthy();
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: { ...snapshot.data!, pos_profile: { name: "POS-002" } },
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS Profile changed")).toBeTruthy();
+    await act(async () => fireEvent.press(screen.getByText("Open new POS Profile")));
+    await waitFor(() => expect(screen.getByText("POS-002")).toBeTruthy());
+    expect(screen.getByLabelText("Draft checkout note").props.value).toBe("Keep this draft");
+    expect(unmounted).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit handoff before exposing a different authorized POS Profile", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Draft checkout note"), "Old profile draft");
+    const next = {
+      ...snapshot,
+      data: { ...snapshot.data!, pos_profile: { name: "POS-002" } },
+    } as PosBootstrapState;
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={next}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS Profile changed")).toBeTruthy();
+    expect(screen.getByText("POS-001")).toBeTruthy();
+    expect(screen.queryByText("POS-002")).toBeNull();
+    expect(screen.getByLabelText("Draft checkout note").props.value).toBe("Old profile draft");
+    expect(unmounted).not.toHaveBeenCalled();
+
+    await act(async () => fireEvent.press(screen.getByText("Open new POS Profile")));
+    expect(screen.queryByText("POS Profile changed")).toBeNull();
     expect(screen.getByText("POS-002")).toBeTruthy();
+  });
+
+  it("keeps a revoked-profile failure blocked and actionable without discarding the draft", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    await fireEvent.changeText(screen.getByLabelText("Draft checkout note"), "Unsubmitted work");
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" value={{
+        ...snapshot, data: null, error: "Profile access changed", isScopeInvalidated: true,
+      }}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS unavailable")).toBeTruthy();
+    expect(screen.getByText("Profile access changed")).toBeTruthy();
+    expect(unmounted).not.toHaveBeenCalled();
+    await act(async () => fireEvent.press(screen.getByText("Try again")));
+    expect(snapshot.reload).toHaveBeenCalledWith({ full: true });
   });
 
   it("blocks POS access after a failed cold or revoked-profile bootstrap", async () => {
