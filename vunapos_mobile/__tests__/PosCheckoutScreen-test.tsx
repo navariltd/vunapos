@@ -375,6 +375,10 @@ describe("PosCheckoutScreen", () => {
     );
 
     expect(screen.getAllByText("Submitting sales order…").length).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(screen.getByLabelText("Sale submission progress").props.style)).toMatchObject({
+      backgroundColor: "#f3f3f3",
+      minWidth: 240,
+    });
     expect(screen.queryByText(/Confirm submission of sales order/)).toBeNull();
     expect(screen.queryByLabelText("Clear checkout")).toBeNull();
     expect(screen.queryByLabelText("Hold checkout")).toBeNull();
@@ -980,6 +984,10 @@ describe("PosCheckoutScreen", () => {
     await screen.rerender(<PosCheckoutScreen {...props} />);
 
     expect(screen.getAllByText("Submitting sales invoice…").length).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(screen.getByLabelText("Sale submission progress").props.style)).toMatchObject({
+      backgroundColor: "#f3f3f3",
+      minWidth: 240,
+    });
     expect(screen.getByText("Checkout summary")).toBeTruthy();
     expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
     expect(screen.queryByLabelText("Cancel sale submission")).toBeNull();

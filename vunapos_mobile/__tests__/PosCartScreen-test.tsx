@@ -369,6 +369,7 @@ describe("PosCartScreen", () => {
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
     const clearButton = screen.getByLabelText("Clear cart");
     expect(screen.getByText("Clear Cart")).toBeTruthy();
+    expect(screen.getByTestId("clear-cart-icon")).toBeTruthy();
     expect(StyleSheet.flatten(clearButton.props.style)).toMatchObject({
       backgroundColor: "#b4232b",
       minHeight: 42,

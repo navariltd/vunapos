@@ -1232,6 +1232,12 @@ export function PosCartScreen({
             onPress={() => setClearConfirmationVisible(true)}
             style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
           >
+            <MaterialCommunityIcons
+              color="#ffffff"
+              name="delete-outline"
+              size={18}
+              testID="clear-cart-icon"
+            />
             <Text style={styles.clearButtonLabel}>Clear Cart</Text>
           </Pressable>
         ) : null}
@@ -1938,6 +1944,8 @@ function createStyles(palette: AppPalette) {
     alignItems: "center",
     backgroundColor: "#b4232b",
     borderRadius: radii.md,
+    flexDirection: "row",
+    gap: spacing.xs,
     justifyContent: "center",
     minHeight: 42,
     paddingHorizontal: spacing.md,

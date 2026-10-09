@@ -2291,13 +2291,12 @@ export function PosCheckoutScreen({
         <View
           accessibilityViewIsModal
           accessibilityLiveRegion="polite"
-          style={[
-            styles.submittingOverlay,
-            { backgroundColor: palette.background },
-          ]}
+          style={styles.submittingOverlay}
         >
-          <ActivityIndicator color={palette.primary} size="large" />
-          <Text style={styles.submittingLabel}>{submissionProgressLabel}</Text>
+          <View accessibilityLabel="Sale submission progress" style={styles.submittingDialog}>
+            <ActivityIndicator color={palette.primary} size="large" />
+            <Text style={styles.submittingLabel}>{submissionProgressLabel}</Text>
+          </View>
         </View>
       </Modal>
     </View>
@@ -2608,15 +2607,27 @@ function createStyles(palette: AppPalette) {
     scrollView: { flex: 1 },
     screen: { flex: 1 },
     submittingOverlay: {
-      ...StyleSheet.absoluteFill,
       alignItems: "center",
-      gap: spacing.md,
+      backgroundColor: palette.scrim,
+      flex: 1,
       justifyContent: "center",
+      padding: spacing.lg,
+    },
+    submittingDialog: {
+      alignItems: "center",
+      backgroundColor: palette.surfaceContainer,
+      borderRadius: radii.lg,
+      elevation: 6,
+      gap: spacing.md,
+      maxWidth: "100%",
+      minWidth: 240,
+      padding: spacing.xl,
     },
     submittingLabel: {
       color: palette.onSurface,
       fontFamily: typography.fontFamily.semibold,
       fontSize: typography.size.body,
+      textAlign: "center",
     },
     secondaryButton: {
       alignItems: "center",
