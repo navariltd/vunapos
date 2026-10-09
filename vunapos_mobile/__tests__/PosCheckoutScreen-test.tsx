@@ -2233,6 +2233,70 @@ describe("PosCheckoutScreen", () => {
     }
   });
 
+  it("presents an edited workflow order as a save without an initial workflow action", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: "Cash" }],
+        pos_profile: {
+          name: "POS-001",
+          workflow: {
+            enabled: true,
+            workflows: {
+              "Sales Order": {
+                name: "Sales Order Approval",
+                state_field: "workflow_state",
+                transitions: [{
+                  action: "Send for Payment Confirmation",
+                  next_state: "Pending Payment Confirmation",
+                  state: "Draft",
+                }],
+              },
+            },
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    submit.mockResolvedValue({
+      docstatus: 0,
+      doctype: "Sales Order",
+      name: "SAL-ORD-00141",
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 3,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        sourceInvoice={{ doctype: "Sales Order", name: "SAL-ORD-00141" }}
+        subtotal={300}
+      />,
+    );
+
+    expect(screen.getByLabelText("Save order changes")).toBeTruthy();
+    expect(screen.queryByText("Next action: Send for Payment Confirmation")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Save order changes"));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceInvoice: { doctype: "Sales Order", name: "SAL-ORD-00141" },
+        workflowAction: undefined,
+      }),
+    ));
+  });
+
   it("uses the cashier's local calendar date for the default delivery date", async () => {
     jest.useFakeTimers();
     // Construct the instant in the test runner's local timezone. The picker

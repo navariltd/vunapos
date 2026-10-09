@@ -650,6 +650,59 @@ describe("POS checkout hooks", () => {
     );
   });
 
+  it("saves an edited workflow Sales Order without replaying its initial transition", async () => {
+    const savedOrder = {
+      docstatus: 0,
+      doctype: "Sales Order",
+      name: "SAL-ORD-00141",
+      workflow_state: "Pending Payment Confirmation",
+    };
+    mockPostVunaMethod
+      .mockResolvedValueOnce(savedOrder)
+      .mockResolvedValueOnce(savedOrder)
+      .mockRejectedValueOnce(new Error("Not a valid Workflow Action"));
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    let result: Awaited<ReturnType<typeof hook.result.current.submit>> = null;
+
+    await act(async () => {
+      result = await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [{ ...item, qty: 3 }],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+        sourceInvoice: { doctype: "Sales Order", name: savedOrder.name },
+        workflowAction: "Send for Payment Confirmation",
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledTimes(2);
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      1,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.update_invoice_from_cart",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        invoice_name: savedOrder.name,
+        items: '[{"item_code":"ITEM-001","qty":3,"uom":"Nos"}]',
+      }),
+    );
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.checkout_invoice",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        invoice_name: savedOrder.name,
+      }),
+    );
+    expect(result).toEqual(savedOrder);
+    expect(hook.result.current.workflowError).toBeNull();
+  });
+
   it("sends credit-only fields only when the cashier enables a credit sale", async () => {
     mockPostVunaMethod.mockResolvedValue({
       doctype: "Sales Invoice",

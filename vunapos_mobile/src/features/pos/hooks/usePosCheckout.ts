@@ -347,10 +347,10 @@ export function useSubmitPosCheckout() {
             : {}),
         },
       );
-      // Workflow-enabled transactions are deliberately created as drafts. The
-      // profile metadata supplies the first transition, but ERPNext remains
-      // authoritative when we ask it to apply that action.
-      if (input.workflowAction && result.docstatus === 0) {
+      // Only a newly created draft can take the profile's initial transition.
+      // An edited draft may already be in a later workflow state; saving it
+      // must not replay that first transition.
+      if (input.workflowAction && !input.sourceInvoice && result.docstatus === 0) {
         try {
           result = await postVunaMethod<PosCheckoutResult>(
             companyUrl,

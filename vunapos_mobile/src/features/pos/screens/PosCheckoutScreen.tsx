@@ -414,6 +414,7 @@ export function PosCheckoutScreen({
     ? profile.workflow.workflows[transactionDoctype]
     : undefined;
   const initialWorkflowAction = activeWorkflow?.transitions?.[0]?.action;
+  const isEditingWorkflowDraft = Boolean(sourceInvoice && activeWorkflow);
   const requiredCheckoutField = profile?.checkout_fields
     ?.filter((field) => field.doctype === transactionDoctype)
     .find(
@@ -1147,7 +1148,7 @@ export function PosCheckoutScreen({
         shippingAddressName: shippingAddressName || undefined,
         sourceInvoice,
         taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
-        workflowAction: initialWorkflowAction,
+        workflowAction: sourceInvoice ? undefined : initialWorkflowAction,
       });
       if (result) onComplete(result);
     } finally {
@@ -1156,6 +1157,15 @@ export function PosCheckoutScreen({
   }
 
   const submissionLabel = isInvoice ? "sales invoice" : "sales order";
+  const checkoutTitle = isEditingWorkflowDraft
+    ? isInvoice ? "Edit invoice" : "Edit order"
+    : sourceInvoice ? "Continue checkout" : isInvoice ? "Checkout" : "Submit order";
+  const submissionActionLabel = isEditingWorkflowDraft
+    ? `Save ${isInvoice ? "invoice" : "order"} changes`
+    : isInvoice ? "Complete sale" : "Submit sales order";
+  const submissionProgressLabel = isEditingWorkflowDraft
+    ? `Saving ${submissionLabel} changes…`
+    : `Submitting ${submissionLabel}…`;
   const customerName = saleCustomer?.customerName || "Walk-in customer";
 
   if (bootstrap.isLoading || (isInvoice && preview.isLoading && !preview.data)) {
@@ -1200,13 +1210,7 @@ export function PosCheckoutScreen({
             />
           </Pressable>
           <View style={styles.heading}>
-            <Text style={styles.title}>
-              {sourceInvoice
-                ? "Continue checkout"
-                : isInvoice
-                  ? "Checkout"
-                  : "Submit order"}
-            </Text>
+            <Text style={styles.title}>{checkoutTitle}</Text>
             <Text style={styles.subtitle}>
               {customerName} · {items.length} item
               {items.length === 1 ? "" : "s"}
@@ -1226,8 +1230,9 @@ export function PosCheckoutScreen({
         ) : null}
         {sourceInvoice ? (
           <Text style={styles.restoredDraftHint}>
-            Continuing held invoice {sourceInvoice.name}. Your current cart will
-            be saved to this invoice before it is submitted.
+            {isEditingWorkflowDraft
+              ? `Editing ${submissionLabel} ${sourceInvoice.name}. Saving changes keeps its current workflow state. Use Actions on the saved document to move it forward.`
+              : `Continuing draft ${submissionLabel} ${sourceInvoice.name}. Your cart will be saved to this document before checkout.`}
           </Text>
         ) : null}
 
@@ -1334,7 +1339,7 @@ export function PosCheckoutScreen({
               />
               <Text style={styles.cardHint}>
                 Final taxes and totals will be confirmed by Frappe when the
-                Sales Order is submitted.
+                Sales Order is {isEditingWorkflowDraft ? "saved" : "submitted"}.
               </Text>
               <View style={styles.summaryDivider} />
               <SummaryRow
@@ -1364,7 +1369,7 @@ export function PosCheckoutScreen({
               <Text style={styles.workflowTitle}>
                 Workflow: {activeWorkflow.name}
               </Text>
-              {initialWorkflowAction ? (
+              {!sourceInvoice && initialWorkflowAction ? (
                 <Text style={styles.workflowHint}>
                   Next action: {initialWorkflowAction}
                 </Text>
@@ -1934,9 +1939,7 @@ export function PosCheckoutScreen({
             </Pressable>
           ) : null}
           <Pressable
-            accessibilityLabel={
-              isInvoice ? "Complete sale" : "Submit sales order"
-            }
+            accessibilityLabel={submissionActionLabel}
             accessibilityState={{
               disabled:
                 checkout.isSubmitting ||
@@ -1956,11 +1959,7 @@ export function PosCheckoutScreen({
             ]}
           >
             <Text style={styles.submitButtonLabel}>
-              {checkout.isSubmitting
-                ? `Submitting ${submissionLabel}…`
-                : isInvoice
-                  ? "Complete sale"
-                  : "Submit sales order"}
+              {checkout.isSubmitting ? submissionProgressLabel : submissionActionLabel}
             </Text>
           </Pressable>
         </View>
@@ -2298,7 +2297,7 @@ export function PosCheckoutScreen({
           ]}
         >
           <ActivityIndicator color={palette.primary} size="large" />
-          <Text style={styles.submittingLabel}>Submitting {submissionLabel}…</Text>
+          <Text style={styles.submittingLabel}>{submissionProgressLabel}</Text>
         </View>
       </Modal>
     </View>
