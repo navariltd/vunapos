@@ -22,7 +22,7 @@ import { posCache } from "@/services/posCache";
 describe("invalidateSaleCache", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(posCache.clearResource).mockResolvedValue(undefined);
+    jest.mocked(posCache.clearResource).mockResolvedValue(true);
     jest.mocked(posCache.markResourceStale).mockResolvedValue(undefined);
     jest.mocked(posCache.write).mockResolvedValue(undefined);
   });
@@ -120,7 +120,7 @@ describe("invalidateSaleCache", () => {
   });
 
   it("clears old profile browse rows without deleting the active cart", async () => {
-    await clearOperationalPosCache({
+    const cleared = await clearOperationalPosCache({
       companyUrl: "https://vuna.example.com",
       posProfile: "POS-OLD",
       sessionId: "sid-1",
@@ -133,6 +133,16 @@ describe("invalidateSaleCache", () => {
     expect(posCache.clearResource).toHaveBeenCalledTimes(7);
     expect(posCache.clearResource).toHaveBeenCalledWith(scope, "invoice-history");
     expect(posCache.clearResource).not.toHaveBeenCalledWith(scope, "active-cart");
+    expect(cleared).toBe(true);
+  });
+
+  it("reports incomplete durable profile cleanup to the access coordinator", async () => {
+    jest.mocked(posCache.clearResource).mockResolvedValueOnce(false);
+    await expect(clearOperationalPosCache({
+      companyUrl: "https://vuna.example.com",
+      posProfile: "POS-OLD",
+      sessionId: "sid-1",
+    })).resolves.toBe(false);
   });
 
   it("also marks held drafts stale when their checkout completes", async () => {
