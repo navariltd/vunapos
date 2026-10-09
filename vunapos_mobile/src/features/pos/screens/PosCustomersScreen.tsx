@@ -108,8 +108,10 @@ export function PosCustomersScreen({
     setFilterSheetVisible(false);
   }
 
-  function clearDraftFilters() {
+  function clearFilters() {
     setDraftFilters(initialFilters);
+    updateDirectoryState({ ...currentDirectoryState, filters: initialFilters, start: 0 });
+    setFilterSheetVisible(false);
   }
 
   function updateDraftFilter<Key extends keyof PosCustomerDirectoryFilters>(
@@ -309,7 +311,7 @@ export function PosCustomersScreen({
         filters={draftFilters}
         onApply={applyFilters}
         onChange={updateDraftFilter}
-        onClear={clearDraftFilters}
+        onClear={clearFilters}
         onDismiss={() => setFilterSheetVisible(false)}
         territories={directory.data?.territories ?? []}
         visible={filterSheetVisible}
