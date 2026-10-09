@@ -1913,7 +1913,7 @@ export function PosCheckoutScreen({
           </View>
         ) : null}
 
-        {validationError || checkout.error ? (
+        {validationError || (checkout.error && !checkout.isRequiredFieldError) ? (
           <Text style={styles.errorText}>
             {validationError || checkout.error}
           </Text>

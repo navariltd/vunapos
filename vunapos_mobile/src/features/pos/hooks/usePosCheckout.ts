@@ -66,6 +66,34 @@ function createIdempotencyKey() {
   return `mobile-checkout-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+/** Frappe's MandatoryError names fields as "[DocType, document]:field_one, field_two". */
+function requiredFieldMessage(requestError: unknown): string | null {
+  if (!(requestError instanceof Error)) return null;
+  const fields = /^\[[^\]\r\n]+,\s*[^\]\r\n]+\]:\s*([a-zA-Z][\w]*(?:,\s*[a-zA-Z][\w]*)*)\s*$/.exec(
+    requestError.message,
+  )?.[1].split(/,\s*/);
+  if (!fields?.length) {
+    return requestError instanceof FrappeClientError &&
+      requestError.domainCode === "MandatoryError"
+      ? "Required sale details are missing. Review the cart and checkout, then try again."
+      : null;
+  }
+
+  const labels = fields.map((field) => {
+    if (field === "shipping_address_name") return "shipping address";
+    return field.replace(/^custom_/, "").replace(/_/g, " ");
+  });
+  const fieldList = labels.length === 2
+    ? labels.join(" and ")
+    : labels.length > 2
+      ? `${labels.slice(0, -1).join(", ")}, and ${labels.at(-1)}`
+      : labels[0];
+  const message = `${fieldList.charAt(0).toUpperCase()}${fieldList.slice(1)} ${labels.length === 1 ? "is" : "are"} required.`;
+  return fields.includes("shipping_address_name")
+    ? `${message} Select one in the cart and try again.`
+    : message;
+}
+
 /** Fetches server-calculated invoice totals before a cashier allocates payment. */
 export function usePosCheckoutPreview(input: PreviewInput | null) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
@@ -225,14 +253,17 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
 /** Submits an online-only sale with one stable idempotency key per checkout attempt. */
 export function useSubmitPosCheckout() {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
-  const [error, setError] = useState<string | null>(null);
+  const [submissionError, setSubmissionError] = useState<{
+    message: string;
+    isRequiredFieldError: boolean;
+  } | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [salespersonTokenExpired, setSalespersonTokenExpired] = useState(false);
   const idempotencyKey = useRef(createIdempotencyKey());
 
   function clearError() {
-    setError(null);
+    setSubmissionError(null);
     setWorkflowError(null);
     setSalespersonTokenExpired(false);
   }
@@ -262,13 +293,14 @@ export function useSubmitPosCheckout() {
 
   async function submit(input: SubmitInput): Promise<PosCheckoutResult | null> {
     if (!companyUrl || !sessionId || !input.posProfile) {
-      setError(
-        "Your session is no longer available. Sign in again to continue.",
-      );
+      setSubmissionError({
+        message: "Your session is no longer available. Sign in again to continue.",
+        isRequiredFieldError: false,
+      });
       return null;
     }
 
-    setError(null);
+    setSubmissionError(null);
     setIsSubmitting(true);
     try {
       const checkoutFields = input.checkoutFields
@@ -418,7 +450,11 @@ export function useSubmitPosCheckout() {
       ) {
         void invalidateSession();
       }
-      setError(cashierError(requestError));
+      const requiredMessage = requiredFieldMessage(requestError);
+      setSubmissionError({
+        message: requiredMessage ?? cashierError(requestError),
+        isRequiredFieldError: requiredMessage !== null,
+      });
       return null;
     } finally {
       setIsSubmitting(false);
@@ -427,7 +463,8 @@ export function useSubmitPosCheckout() {
 
   return {
     clearError,
-    error,
+    error: submissionError?.message ?? null,
+    isRequiredFieldError: submissionError?.isRequiredFieldError ?? false,
     isSubmitting,
     salespersonTokenExpired,
     submit,

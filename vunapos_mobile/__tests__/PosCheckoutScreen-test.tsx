@@ -30,6 +30,12 @@ jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
 }));
 
+const mockToastError = jest.fn();
+jest.mock("@/components/feedback/ToastProvider", () => {
+  const toast = { error: (...args: unknown[]) => mockToastError(...args) };
+  return { useToast: () => toast };
+});
+
 jest.mock("@/features/pos/hooks/usePosCheckout", () => ({
   usePosCheckoutPreview: jest.fn(),
   useSubmitPosCheckout: jest.fn(),
@@ -110,6 +116,7 @@ describe("PosCheckoutScreen", () => {
     mockUseSubmitPosCheckout.mockReturnValue({
       clearError,
       error: null,
+      isRequiredFieldError: false,
       isSubmitting: false,
       salespersonTokenExpired: false,
       submit,
@@ -180,6 +187,46 @@ describe("PosCheckoutScreen", () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/Confirm submission of sales invoice/)).toBeNull();
     expect(screen.queryByLabelText("View submitted sales invoice")).toBeNull();
+  });
+
+  it("shows server-required fields in a toast without an inline duplicate", async () => {
+    const message = "Shipping address is required. Select one in the cart and try again.";
+    mockUseSubmitPosCheckout.mockReturnValue({
+      clearError,
+      error: message,
+      isRequiredFieldError: true,
+      isSubmitting: false,
+      salespersonTokenExpired: false,
+      submit,
+      workflowError: null,
+    });
+
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      message,
+      expect.objectContaining({ title: "Checkout needs attention" }),
+    );
+    expect(screen.queryByText(message)).toBeNull();
   });
 
   it("blocks submission during shift closure and waits for a fresh preview after reopening", async () => {
@@ -300,6 +347,7 @@ describe("PosCheckoutScreen", () => {
     mockUseSubmitPosCheckout.mockReturnValue({
       clearError,
       error: null,
+      isRequiredFieldError: false,
       isSubmitting: true,
       salespersonTokenExpired: false,
       submit,
@@ -923,6 +971,7 @@ describe("PosCheckoutScreen", () => {
     mockUseSubmitPosCheckout.mockReturnValue({
       clearError,
       error: null,
+      isRequiredFieldError: false,
       isSubmitting: true,
       salespersonTokenExpired: false,
       submit,

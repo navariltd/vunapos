@@ -39,7 +39,7 @@ import {
   usePosCheckoutPreview,
   useSubmitPosCheckout,
 } from "@/features/pos/hooks/usePosCheckout";
-import { getVunaMethod, postVunaMethod } from "@/services/frappeClient";
+import { FrappeClientError, getVunaMethod, postVunaMethod } from "@/services/frappeClient";
 
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
@@ -598,6 +598,85 @@ describe("POS checkout hooks", () => {
     expect(hook.result.current.error).toBe(
       "Purchase order is required before checkout.",
     );
+    expect(hook.result.current.isRequiredFieldError).toBe(false);
+  });
+
+  it("turns ERPNext mandatory fields into readable checkout guidance", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      new Error("[Sales Order, SAL-ORD-2026-00142]:shipping_address_name"),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(hook.result.current.error).toBe(
+      "Shipping address is required. Select one in the cart and try again.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+  });
+
+  it("formats multiple ERPNext mandatory fields without leaking document identifiers", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      new Error("[Sales Order, SAL-ORD-2026-00142]:delivery_date, custom_purchase_order"),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(hook.result.current.error).toBe(
+      "Delivery date and purchase order are required.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+  });
+
+  it("hides unrecognized ERPNext mandatory details and clears the toast-only state for retry", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      Object.assign(new FrappeClientError("Internal mandatory field details", "api"), {
+        domainCode: "MandatoryError",
+      }),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    const input = {
+      customer: "CUST-001",
+      isCreditSale: false,
+      items: [item],
+      orderType: "Order" as const,
+      payments: [],
+      posProfile: "POS-001",
+    };
+
+    await act(async () => {
+      await hook.result.current.submit(input);
+    });
+    expect(hook.result.current.error).toBe(
+      "Required sale details are missing. Review the cart and checkout, then try again.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+
+    mockPostVunaMethod.mockRejectedValue(new Error("Network request failed"));
+    await act(async () => {
+      await hook.result.current.submit(input);
+    });
+    expect(hook.result.current.error).toBe("Network request failed");
+    expect(hook.result.current.isRequiredFieldError).toBe(false);
   });
 
   it("updates and submits the restored draft instead of creating a new invoice", async () => {
