@@ -181,7 +181,11 @@ export function PosInvoiceDetailsScreen({
     }
   }, [error, invoiceDoctype, invoiceName, toast, workflowActions.error]);
 
-  if (bootstrap.isLoading || details.isLoading) {
+  const hasUsableDetails = Boolean(
+    bootstrap.data && !bootstrap.isScopeInvalidated && details.data &&
+    (!details.error || details.isRecoverableError),
+  );
+  if ((bootstrap.isLoading || details.isLoading) && !hasUsableDetails) {
     return (
       <View style={styles.state}>
         <Text style={styles.stateText}>Loading invoice…</Text>
@@ -189,7 +193,7 @@ export function PosInvoiceDetailsScreen({
     );
   }
 
-  if (!details.data || error) {
+  if (!details.data || !hasUsableDetails) {
     return (
       <View style={styles.state}>
         <Text style={styles.errorText}>{error || "Invoice not found."}</Text>

@@ -1,11 +1,8 @@
 import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
-}));
-
-jest.mock("@/services/NetworkStatusProvider", () => ({
-  useNetworkStatus: () => ({ connectionStatus: "online" }),
 }));
 
 jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
@@ -182,6 +179,8 @@ describe("PosCartScreen", () => {
     expect(screen.getByText("KES 290.00")).toBeTruthy();
     expect(screen.getByText("Subtotal")).toBeTruthy();
     expect(screen.getByText("VAT Added")).toBeTruthy();
+    expect(screen.queryByText("Payment is collected at checkout.")).toBeNull();
+    expect(screen.queryByText(/Updated /)).toBeNull();
     await fireEvent.press(
       screen.getByLabelText("Increase quantity for Stock item"),
     );
@@ -213,6 +212,52 @@ describe("PosCartScreen", () => {
 
     await fireEvent.press(screen.getByLabelText("Use default sale customer"));
     expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows complete available cartons without a repeating decimal", async () => {
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 2500,
+            conversion_factor: 24,
+            is_stock_item: true,
+            item_code: "F61",
+            item_name: "Dairy Joy",
+            qty: 104,
+            rate: 100,
+            stock_uom: "Pcs",
+            uom: "Carton",
+          },
+        ]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={null}
+        subtotal={10400}
+        taxes={[]}
+        totals={{ grand_total: 10400, net_total: 10400 }}
+      />,
+    );
+
+    expect(screen.getByText("Available Cartons: 104")).toBeTruthy();
+    expect(screen.queryByText(/104\.166/)).toBeNull();
+    expect(
+      screen.getByLabelText("Increase quantity for Dairy Joy").props.accessibilityState,
+    ).toEqual({ disabled: true });
   });
 
   it("shows and lets the cashier choose a customer shipping address in the cart", async () => {
@@ -260,20 +305,33 @@ describe("PosCartScreen", () => {
 
     expect(screen.getByText("Select shipping address")).toBeTruthy();
     await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    await fireEvent.changeText(
+      screen.getByLabelText("Search shipping addresses"),
+      "unknown place",
+    );
+    expect(screen.getByText("No matching shipping addresses.")).toBeTruthy();
+    await fireEvent.changeText(
+      screen.getByLabelText("Search shipping addresses"),
+      "market road",
+    );
+    expect(
+      screen.queryByLabelText("Select shipping address Main shop"),
+    ).toBeNull();
     await fireEvent.press(
       screen.getByLabelText("Select shipping address Market branch"),
     );
     expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-002");
+    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    expect(screen.getByLabelText("Search shipping addresses").props.value).toBe("");
   });
 
-  it("keeps cart actions available offline so the request can report its real failure", async () => {
+  it("keeps cart actions available without network gating", async () => {
     const screen = await render(
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
         defaultSaleCustomer={null}
         error={null}
-        isOffline
         isUpdating={false}
         items={[
           {
@@ -309,7 +367,13 @@ describe("PosCartScreen", () => {
       screen.getByLabelText("Increase quantity for Stock item"),
     );
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
-    await fireEvent.press(screen.getByLabelText("Clear cart"));
+    const clearButton = screen.getByLabelText("Clear cart");
+    expect(screen.getByText("Clear Cart")).toBeTruthy();
+    expect(StyleSheet.flatten(clearButton.props.style)).toMatchObject({
+      backgroundColor: "#b4232b",
+      minHeight: 42,
+    });
+    await fireEvent.press(clearButton);
 
     expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 2);
     expect(onCheckout).toHaveBeenCalled();

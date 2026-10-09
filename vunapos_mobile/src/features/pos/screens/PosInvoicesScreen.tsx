@@ -691,7 +691,8 @@ function createStyles(palette: AppPalette) {
       borderRadius: radii.md,
       borderWidth: 1,
       justifyContent: "center",
-      paddingHorizontal: spacing.sm,
+      minHeight: 38,
+      paddingHorizontal: spacing.md,
     },
     filtersButtonLabel: {
       color: palette.onSurface,

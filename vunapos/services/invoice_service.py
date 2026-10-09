@@ -1946,6 +1946,7 @@ def create_and_submit_invoice(
 				shipping_address_name=shipping_address_name,
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
+				checkout_fields=checkout_fields,
 			)
 			create_invoice_stock_reservations(doc)
 			enqueue_invoice_submission(doc)
@@ -1964,6 +1965,7 @@ def create_and_submit_invoice(
 			shipping_address_name=shipping_address_name,
 			salesperson=salesperson,
 			salesperson_token=salesperson_token,
+			checkout_fields=checkout_fields,
 		)
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)

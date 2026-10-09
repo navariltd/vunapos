@@ -139,6 +139,44 @@ describe("PosCustomerDetailsScreen", () => {
     });
   });
 
+  it("keeps loaded customer details visible when background configuration refresh fails", async () => {
+    const bootstrap = mockUsePosBootstrap();
+    mockUsePosBootstrap.mockReturnValue({ ...bootstrap, error: "Temporary refresh failure" });
+    const screen = await render(
+      <PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} onStartSale={onStartSale} />,
+    );
+
+    expect(screen.getByText("Example customer")).toBeTruthy();
+    expect(screen.queryByText("Temporary refresh failure")).toBeNull();
+  });
+
+  it("keeps loaded customer details visible after a recoverable detail refresh failure", async () => {
+    const details = mockUsePosCustomerDetails({ customer: "CUST-001", posProfile: "POS-001" });
+    mockUsePosCustomerDetails.mockReturnValue({
+      ...details,
+      error: "Connection interrupted",
+      isRecoverableError: true,
+    } as never);
+    const screen = await render(
+      <PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} onStartSale={onStartSale} />,
+    );
+
+    expect(screen.getByText("Example customer")).toBeTruthy();
+    expect(screen.queryByText("Connection interrupted")).toBeNull();
+  });
+
+  it("hides loaded customer details after confirmed profile invalidation", async () => {
+    const bootstrap = mockUsePosBootstrap();
+    mockUsePosBootstrap.mockReturnValue({
+      ...bootstrap, error: "POS access was revoked.", isScopeInvalidated: true,
+    });
+    const screen = await render(
+      <PosCustomerDetailsScreen customer="CUST-001" onBack={onBack} onStartSale={onStartSale} />,
+    );
+    expect(screen.queryByText("Example customer")).toBeNull();
+    expect(screen.getByText("POS access was revoked.")).toBeTruthy();
+  });
+
   it("returns to the customer directory", async () => {
     const screen = await render(
       <PosCustomerDetailsScreen

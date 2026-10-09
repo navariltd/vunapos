@@ -199,6 +199,71 @@ describe("PosInvoiceDetailsScreen", () => {
     expect(screen.getByLabelText("Return items")).toBeTruthy();
   });
 
+  it("keeps loaded invoice details visible when background configuration refresh fails", async () => {
+    const bootstrap = mockUsePosBootstrap();
+    mockUsePosBootstrap.mockReturnValue({
+      ...bootstrap,
+      error: "Temporary refresh failure",
+    });
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Batched item")).toBeTruthy();
+    expect(screen.queryByText("Temporary refresh failure")).toBeNull();
+  });
+
+  it("keeps loaded invoice details visible after a recoverable detail refresh failure", async () => {
+    const details = mockUsePosInvoiceDetails({
+      invoiceName: "POS-INV-0001",
+      posProfile: "POS-001",
+    });
+    mockUsePosInvoiceDetails.mockReturnValue({
+      ...details,
+      error: "Connection interrupted",
+      isRecoverableError: true,
+    } as never);
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    expect(screen.getByText("Batched item")).toBeTruthy();
+    expect(screen.queryByText("Connection interrupted")).toBeNull();
+  });
+
+  it("hides loaded invoice details after confirmed profile invalidation", async () => {
+    const bootstrap = mockUsePosBootstrap();
+    mockUsePosBootstrap.mockReturnValue({
+      ...bootstrap, error: "POS access was revoked.", isScopeInvalidated: true,
+    });
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+    expect(screen.queryByText("Batched item")).toBeNull();
+    expect(screen.getByText("POS access was revoked.")).toBeTruthy();
+  });
+
   it("returns to the invoice list from the detail header", async () => {
     const screen = await render(
       <PosInvoiceDetailsScreen

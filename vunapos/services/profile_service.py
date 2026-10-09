@@ -83,7 +83,7 @@ def resolve_pos_profile(pos_profile=None):
 		profile = frappe.get_cached_doc("POS Profile", profile_name)
 
 	if profile.disabled:
-		frappe.throw(_("POS Profile {0} is disabled").format(profile.name))
+		_profile_error("POS_PROFILE_DISABLED", _("POS Profile {0} is disabled").format(profile.name))
 
 	return profile
 
@@ -93,7 +93,8 @@ def require_pos_profile_assignment(pos_profile, user=None):
 	if not user or user == "Guest":
 		frappe.throw(_("A signed-in POS user is required"), frappe.PermissionError)
 	if not frappe.db.exists("POS Profile User", {"parent": pos_profile, "user": user}):
-		frappe.throw(
+		_profile_error(
+			"POS_PROFILE_NOT_ASSIGNED",
 			_("POS Profile {0} is not assigned to user {1}").format(pos_profile, user),
 			frappe.PermissionError,
 		)

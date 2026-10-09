@@ -5,6 +5,7 @@ import { Text } from "react-native-paper";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
+import { filterShippingAddresses } from "@/features/pos/shippingAddressSearch";
 import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
@@ -15,8 +16,6 @@ import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import {
   PosBatchAllocation,
@@ -35,8 +34,6 @@ import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
-  cartCacheIsStale?: boolean;
-  cartCacheLastUpdated?: number | null;
   allowDiscountChange?: boolean;
   allowPriceListSwitching?: boolean;
   allowRateChange?: boolean;
@@ -46,7 +43,6 @@ type PosCartScreenProps = {
   hasPendingHold?: boolean;
   holdError?: string | null;
   isHolding?: boolean;
-  isOffline?: boolean;
   isUpdating: boolean;
   items: PosCartItem[];
   onBack: () => void;
@@ -739,6 +735,14 @@ function CartLine({
     item.available_qty !== null
       ? item.available_qty / Number(item.conversion_factor || 1)
       : null;
+  const isCarton = item.uom?.trim().toLowerCase() === "carton";
+  const displayedMaximum =
+    maximum === null
+      ? null
+      : isCarton
+        ? Math.floor(maximum + 1e-9)
+        : Number(maximum.toFixed(3));
+  const availableUom = isCarton ? "Cartons" : item.uom || "units";
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
   const hasRuleDiscount = Boolean(
@@ -1042,11 +1046,11 @@ function CartLine({
           />
           <Pressable
             accessibilityLabel={`Increase quantity for ${item.item_name}`}
-            disabled={itemDisabled || (maximum !== null && item.qty >= maximum)}
+            disabled={itemDisabled || (maximum !== null && item.qty + 1 > maximum)}
             onPress={() => onUpdateQuantity(item.qty + 1)}
             style={[
               styles.quantityButton,
-              (itemDisabled || (maximum !== null && item.qty >= maximum)) &&
+              (itemDisabled || (maximum !== null && item.qty + 1 > maximum)) &&
                 styles.quantityButtonDisabled,
             ]}
           >
@@ -1068,9 +1072,9 @@ function CartLine({
           </Text>
         </View>
       </View>
-      {maximum !== null ? (
+      {displayedMaximum !== null ? (
         <Text style={styles.stockHint}>
-          Available {maximum} {item.uom || ""}
+          Available {availableUom}: {displayedMaximum}
         </Text>
       ) : null}
       {item.item_tax_template ? (
@@ -1096,8 +1100,6 @@ function CartLine({
 
 export function PosCartScreen({
   allowCustomerCreation,
-  cartCacheIsStale = false,
-  cartCacheLastUpdated,
   allowDiscountChange = false,
   allowPriceListSwitching = false,
   allowRateChange = false,
@@ -1108,7 +1110,6 @@ export function PosCartScreen({
   hasPendingHold = false,
   holdError,
   isHolding = false,
-  isOffline: isOfflineProp,
   isUpdating,
   items,
   onBack,
@@ -1160,8 +1161,6 @@ export function PosCartScreen({
       toast.error(holdError, { title: "Could not hold sale" });
     }
   }, [holdError, toast]);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = isOfflineProp ?? connectionStatus !== "online";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
@@ -1169,6 +1168,7 @@ export function PosCartScreen({
   const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
   const [shippingAddressPickerVisible, setShippingAddressPickerVisible] =
     useState(false);
+  const [shippingAddressQuery, setShippingAddressQuery] = useState("");
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
   const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
@@ -1190,6 +1190,14 @@ export function PosCartScreen({
     customerShippingAddresses.find(
       (address) => address.name === shippingAddressName,
     );
+  const matchingShippingAddresses = filterShippingAddresses(
+    customerShippingAddresses,
+    shippingAddressQuery,
+  );
+  function dismissShippingAddressPicker() {
+    setShippingAddressPickerVisible(false);
+    setShippingAddressQuery("");
+  }
   const isCartBusy = isUpdating || isHolding || hasPendingHold;
   const canHold = Boolean(onHold) && orderType === "Invoice";
 
@@ -1224,7 +1232,7 @@ export function PosCartScreen({
             onPress={() => setClearConfirmationVisible(true)}
             style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
           >
-            <Text style={styles.clearButtonLabel}>Clear</Text>
+            <Text style={styles.clearButtonLabel}>Clear Cart</Text>
           </Pressable>
         ) : null}
         </View>
@@ -1280,7 +1288,10 @@ export function PosCartScreen({
             <Pressable
               accessibilityLabel="Choose shipping address"
               disabled={isCartBusy || customerShippingAddressesLoading}
-              onPress={() => setShippingAddressPickerVisible(true)}
+              onPress={() => {
+                setShippingAddressQuery("");
+                setShippingAddressPickerVisible(true);
+              }}
               style={[
                 styles.shippingAddressSelector,
                 (isCartBusy || customerShippingAddressesLoading) &&
@@ -1489,14 +1500,6 @@ export function PosCartScreen({
               </Text>
             </View>
           ) : null}
-          <Text style={styles.checkoutNote}>
-            Payment is collected at checkout.
-          </Text>
-          <PosCacheStatus
-            isOffline={isOffline}
-            isStale={cartCacheIsStale}
-            lastUpdated={cartCacheLastUpdated}
-          />
           <View
             style={[
               styles.cartActions,
@@ -1589,7 +1592,7 @@ export function PosCartScreen({
       />
       <Modal
         animationType="slide"
-        onRequestClose={() => setShippingAddressPickerVisible(false)}
+        onRequestClose={dismissShippingAddressPicker}
         visible={shippingAddressPickerVisible}
       >
         <SafeAreaView
@@ -1600,20 +1603,32 @@ export function PosCartScreen({
             <Text style={styles.title}>Shipping address</Text>
             <Pressable
               accessibilityLabel="Close shipping address picker"
-              onPress={() => setShippingAddressPickerVisible(false)}
+              onPress={dismissShippingAddressPicker}
               style={styles.clearCustomerButton}
             >
               <Text style={styles.clearCustomerButtonLabel}>Close</Text>
             </Pressable>
           </View>
-          <ScrollView contentContainerStyle={styles.shippingAddressOptions}>
-            {customerShippingAddresses.map((address) => (
+          <TextInput
+            accessibilityLabel="Search shipping addresses"
+            autoCorrect={false}
+            onChangeText={setShippingAddressQuery}
+            placeholder="Search shipping addresses"
+            placeholderTextColor={palette.onSurfaceMuted}
+            style={styles.shippingAddressSearchInput}
+            value={shippingAddressQuery}
+          />
+          <ScrollView
+            contentContainerStyle={styles.shippingAddressOptions}
+            keyboardShouldPersistTaps="handled"
+          >
+            {matchingShippingAddresses.map((address) => (
               <Pressable
                 accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
                 key={address.name}
                 onPress={() => {
                   onSelectShippingAddress?.(address.name);
-                  setShippingAddressPickerVisible(false);
+                  dismissShippingAddressPicker();
                 }}
                 style={[
                   styles.shippingAddressOption,
@@ -1629,6 +1644,13 @@ export function PosCartScreen({
                 </Text>
               </Pressable>
             ))}
+            {!matchingShippingAddresses.length ? (
+              <Text style={styles.customerSelectorMeta}>
+                {customerShippingAddressesLoading
+                  ? "Loading shipping addresses…"
+                  : "No matching shipping addresses."}
+              </Text>
+            ) : null}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -1912,24 +1934,18 @@ function createStyles(palette: AppPalette) {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
-  checkoutNote: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-    lineHeight: typography.lineHeight.body,
-    textAlign: "center",
-  },
   clearButton: {
-    borderColor: palette.border,
+    alignItems: "center",
+    backgroundColor: "#b4232b",
     borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
   },
   clearButtonLabel: {
-    color: palette.onSurface,
+    color: "#ffffff",
     fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
+    fontSize: typography.size.small,
   },
   cartActions: { flexDirection: "row", gap: spacing.sm },
   cartActionsStandalone: { justifyContent: "center" },
@@ -2000,6 +2016,18 @@ function createStyles(palette: AppPalette) {
     marginBottom: spacing.md,
   },
   shippingAddressOptions: { gap: spacing.sm, paddingBottom: spacing.xl },
+  shippingAddressSearchInput: {
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    color: palette.onSurface,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    marginBottom: spacing.md,
+    minHeight: 48,
+    paddingHorizontal: spacing.sm,
+  },
   shippingAddressOption: {
     borderColor: palette.border,
     borderRadius: radii.md,

@@ -5,12 +5,12 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -77,6 +77,7 @@ export function PosHomeScreen({
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
+  const { width: windowWidth } = useWindowDimensions();
   const toast = useToast();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -330,20 +331,25 @@ export function PosHomeScreen({
           onAdd={addItem}
         />
       ) : (
-        <PosItemCard
-          currency={currency}
-          currencyPrecision={currencyPrecision}
-          imageUrl={itemImageUrl(item.image, companyUrl)}
-          isAdding={pendingItemCode === item.item_code}
-          isOffline={isOffline}
-          item={item}
-          onAdd={addItem}
-        />
+        <View
+          style={{ width: (windowWidth - spacing.md * 2 - spacing.sm) / 2 }}
+          testID={`catalogue-cell-${item.item_code}`}
+        >
+          <PosItemCard
+            currency={currency}
+            currencyPrecision={currencyPrecision}
+            imageUrl={itemImageUrl(item.image, companyUrl)}
+            isAdding={pendingItemCode === item.item_code}
+            isOffline={isOffline}
+            item={item}
+            onAdd={addItem}
+          />
+        </View>
       ),
-    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode],
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode, windowWidth],
   );
 
-  if (bootstrap.isLoading)
+  if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)
     return (
       <View style={styles.state}>
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -351,7 +357,7 @@ export function PosHomeScreen({
         </Text>
       </View>
     );
-  if (bootstrap.error || !bootstrap.data) {
+  if (!bootstrap.data || bootstrap.isScopeInvalidated) {
     return (
       <View style={styles.state}>
         <Text style={[styles.errorText, { color: palette.error }]}>
@@ -440,16 +446,6 @@ export function PosHomeScreen({
               </Text>
             ) : null}
           </View>
-        }
-        ListFooterComponent={
-          <PosCacheStatus
-            isOffline={isOffline}
-            isRefreshing={
-              Boolean(bootstrap.isRefreshing) || Boolean(itemSearch.isRefreshing)
-            }
-            isStale={Boolean(bootstrap.isStale) || Boolean(itemSearch.isStale)}
-            lastUpdated={itemSearch.lastUpdated ?? bootstrap.lastUpdated}
-          />
         }
         numColumns={hideImages ? 1 : 2}
         maxToRenderPerBatch={8}

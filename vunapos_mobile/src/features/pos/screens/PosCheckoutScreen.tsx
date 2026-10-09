@@ -3,6 +3,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   Modal,
   Pressable,
   StyleSheet,
@@ -13,17 +14,14 @@ import {
 import { Text } from "react-native-paper";
 
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
-import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import {
   PosCheckoutFieldsCard,
   PosCheckoutFieldValues,
 } from "@/features/pos/components/PosCheckoutFieldsCard";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
-import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
-import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
 import {
@@ -49,7 +47,6 @@ import {
   PosCartItem,
   PosCartSource,
   PosCheckoutResult,
-  PosCustomerShippingAddress,
   PosGatewayPaymentLink,
   PosOrderType,
   PosPaymentMode,
@@ -68,13 +65,11 @@ type PosCheckoutScreenProps = {
     amount?: number,
   ) => Promise<PosCartData | null>;
   onBack: () => void;
-  onClear?: () => void;
   onComplete: (result: PosCheckoutResult) => void;
   onHold?: () => Promise<{ name: string } | null>;
   onMaterializeGatewayDraft?: () => Promise<PosCartSource | null>;
   onSalespersonTokenExpired?: () => void;
   shippingAddressName?: string;
-  onShippingAddressChange?: (addressName: string) => void;
   initialCheckoutFieldValues?: PosCheckoutFieldValues;
   orderType: PosOrderType;
   priceList?: string;
@@ -82,6 +77,9 @@ type PosCheckoutScreenProps = {
   salesperson?: PosSalespersonSession | null;
   sourceInvoice?: PosCartSource | null;
   subtotal: number;
+  /** Workspace/session authority; cached preview data cannot override this gate. */
+  transactionReady: boolean;
+  sessionVerificationKey?: string;
   /** Workspace-owned configuration; prevents checkout from creating another bootstrap owner. */
   bootstrapData?: PosBootstrapData | null;
 };
@@ -128,22 +126,6 @@ function formatDate(value: string) {
   }).format(dateFromInput(value));
 }
 
-function shippingAddressText(address?: PosCustomerShippingAddress) {
-  if (!address) return "";
-  if (address.formatted_address?.trim())
-    return address.formatted_address.trim();
-  return [
-    address.address_line1,
-    address.address_line2,
-    address.city,
-    address.state,
-    address.pincode,
-    address.country,
-  ]
-    .filter((part): part is string => Boolean(part?.trim()))
-    .join(", ");
-}
-
 function taxLabel(
   description?: string,
   accountHead?: string,
@@ -183,14 +165,12 @@ export function PosCheckoutScreen({
   items,
   onApplyDeliveryCharge,
   onBack,
-  onClear,
   onComplete,
   onHold,
   onMaterializeGatewayDraft,
   initialCheckoutFieldValues,
   onSalespersonTokenExpired,
-  shippingAddressName: controlledShippingAddressName,
-  onShippingAddressChange,
+  shippingAddressName,
   orderType,
   priceList,
   saleCustomer,
@@ -198,6 +178,8 @@ export function PosCheckoutScreen({
   sourceInvoice,
   subtotal,
   bootstrapData,
+  transactionReady,
+  sessionVerificationKey,
 }: PosCheckoutScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
@@ -215,6 +197,7 @@ export function PosCheckoutScreen({
       }
     : bootstrapResource;
   const profile = bootstrap.data?.pos_profile;
+  const transactionAvailable = transactionReady;
   const isInvoice = orderType === "Invoice";
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [loyaltyInput, setLoyaltyInput] = useState("");
@@ -233,23 +216,15 @@ export function PosCheckoutScreen({
   );
   const [isApplyingDeliveryCharge, setIsApplyingDeliveryCharge] =
     useState(false);
-  const [localShippingAddressName, setLocalShippingAddressName] = useState("");
-  const shippingAddressName =
-    controlledShippingAddressName ?? localShippingAddressName;
-  function setShippingAddressName(name: string) {
-    setLocalShippingAddressName(name);
-    onShippingAddressChange?.(name);
-  }
-  const [isShippingAddressPickerVisible, setIsShippingAddressPickerVisible] =
-    useState(false);
   const preview = usePosCheckoutPreview(
-    isInvoice && bootstrap.data
+    isInvoice && bootstrap.data && transactionAvailable
       ? {
           customer: saleCustomer?.customer,
           items,
           loyaltyPoints,
           posProfile: bootstrap.data.pos_profile.name,
           priceList,
+          verificationKey: sessionVerificationKey,
         }
       : null,
   );
@@ -257,7 +232,6 @@ export function PosCheckoutScreen({
   useEffect(() => {
     if (checkout.salespersonTokenExpired) onSalespersonTokenExpired?.();
   }, [checkout.salespersonTokenExpired, onSalespersonTokenExpired]);
-  const receipt = useInvoiceReceipt();
   const gatewayPayment = useGatewayPayment();
   const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>(
     {},
@@ -296,13 +270,7 @@ export function PosCheckoutScreen({
   );
   const [validationError, setValidationError] = useState<string | null>(null);
   const [invalidCheckoutField, setInvalidCheckoutField] = useState<string>();
-  const [completedResult, setCompletedResult] =
-    useState<PosCheckoutResult | null>(null);
-  const completionHandledRef = useRef(false);
-  const [isSubmitConfirmationVisible, setIsSubmitConfirmationVisible] =
-    useState(false);
-  const [clearConfirmationVisible, setClearConfirmationVisible] =
-    useState(false);
+  const submissionInProgressRef = useRef(false);
   const [isHolding, setIsHolding] = useState(false);
   const [holdError, setHoldError] = useState<string | null>(null);
   const resolvedPhoneCustomerRef = useRef<string | null>(null);
@@ -460,10 +428,6 @@ export function PosCheckoutScreen({
     isInvoice ? saleCustomer?.customer : undefined,
     profile?.name,
   );
-  const customerShippingAddresses = usePosCustomerShippingAddresses(
-    saleCustomer?.customer,
-    profile?.name,
-  );
   const profilePaymentModes = profile?.modes_of_payment ?? [];
   const manualModes = (bootstrap.data?.payment_modes ?? [])
     .filter((mode) => !mode.payment_gateway)
@@ -548,10 +512,6 @@ export function PosCheckoutScreen({
     deliveryChargeAmount !== null &&
     (typedDeliveryChargeMinor === null ||
       typedDeliveryChargeMinor !== appliedDeliveryChargeMinor);
-  const selectedShippingAddress =
-    customerShippingAddresses.data?.find(
-      (address) => address.name === shippingAddressName,
-    );
   const allocation = calculatePaymentAllocation(
     paymentModes,
     paymentAmounts,
@@ -645,6 +605,7 @@ export function PosCheckoutScreen({
                         : "Payment incomplete";
   const isReadyToSubmit = Boolean(
     items.length &&
+    transactionAvailable &&
     !requiredCheckoutField &&
     (!isInvoice || (!preview.isLoading && !preview.error && Boolean(preview.data))) &&
     !checkout.isSubmitting &&
@@ -1026,8 +987,13 @@ export function PosCheckoutScreen({
   }
 
   function requestSubmit() {
+    if (submissionInProgressRef.current || checkout.isSubmitting) return;
     setValidationError(null);
     checkout.clearError();
+    if (!transactionAvailable) {
+      setValidationError("Your POS shift or profile is being verified. Wait for confirmation before submitting.");
+      return;
+    }
     if (!profile) {
       setValidationError(
         "Could not load your POS profile. Return to the cart and try again.",
@@ -1139,7 +1105,8 @@ export function PosCheckoutScreen({
       }
     }
 
-    setIsSubmitConfirmationVisible(true);
+    Keyboard.dismiss();
+    void submit();
   }
 
   async function holdCheckout() {
@@ -1159,46 +1126,32 @@ export function PosCheckoutScreen({
   }
 
   async function submit() {
-    if (!profile) return;
-    const result = await checkout.submit({
-      checkoutFields: checkoutFieldValues,
-      customer: saleCustomer?.customer,
-      deliveryDate: !isInvoice ? deliveryDate : undefined,
-      dueDate: isCreditSale ? dueDate : undefined,
-      isCreditSale,
-      items,
-      loyaltyPoints: appliedLoyaltyPoints || undefined,
-      orderType,
-      payments:
-        isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
-      posProfile: profile.name,
-      priceList,
-      salesperson: salesperson?.name,
-      salespersonToken: salesperson?.token,
-      shippingAddressName: selectedShippingAddress?.name,
-      sourceInvoice,
-      taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
-      workflowAction: initialWorkflowAction,
-    });
-    if (!result) return;
-    setCompletedResult(result);
-    if (
-      result.queue_status !== "Queued" &&
-      result.queue_status !== "Processing" &&
-      result.docstatus !== 0
-    ) {
-      void receipt.printReceipt({
-        invoiceDoctype: result.doctype,
-        invoiceName: result.name,
+    if (!profile || !transactionAvailable || submissionInProgressRef.current) return;
+    submissionInProgressRef.current = true;
+    try {
+      const result = await checkout.submit({
+        checkoutFields: checkoutFieldValues,
+        customer: saleCustomer?.customer,
+        deliveryDate: !isInvoice ? deliveryDate : undefined,
+        dueDate: isCreditSale ? dueDate : undefined,
+        isCreditSale,
+        items,
+        loyaltyPoints: appliedLoyaltyPoints || undefined,
+        orderType,
+        payments:
+          isInvoice || allowsSalesOrderAdvancePayments ? paymentInputs : [],
+        posProfile: profile.name,
+        priceList,
+        salesperson: salesperson?.name,
+        salespersonToken: salesperson?.token,
+        shippingAddressName: shippingAddressName || undefined,
+        sourceInvoice,
+        taxId: isWalkinCustomer ? checkoutTaxId.trim() || undefined : undefined,
+        workflowAction: initialWorkflowAction,
       });
-    }
-    // The workspace owns the transaction lifecycle. Leave checkout as soon as
-    // the server has accepted the request, including an intentional queued
-    // response; the result modal is retained only for isolated screen usage
-    // and tests where the parent does not unmount immediately.
-    if (!completionHandledRef.current) {
-      completionHandledRef.current = true;
-      onComplete(result);
+      if (result) onComplete(result);
+    } finally {
+      submissionInProgressRef.current = false;
     }
   }
 
@@ -1422,24 +1375,22 @@ export function PosCheckoutScreen({
 
         {!isInvoice ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Sales Order</Text>
-            <Text style={styles.cardHint}>
-              Choose when this order should be delivered.
-            </Text>
-            <Text style={styles.fieldLabel}>Delivery date</Text>
+            <Text style={styles.cardTitle}>Enter delivery date</Text>
             <Pressable
               accessibilityLabel="Choose Sales Order delivery date"
               onPress={() => setIsDeliveryDatePickerVisible(true)}
-              style={styles.datePickerButton}
+              style={styles.deliveryDateSelector}
             >
+              <View style={styles.deliveryDateText}>
+                <Text style={styles.deliveryDateTitle}>
+                  {formatDate(deliveryDate)}
+                </Text>
+              </View>
               <MaterialCommunityIcons
                 color={palette.onSurfaceMuted}
                 name="calendar-month-outline"
-                size={20}
+                size={22}
               />
-              <Text style={styles.datePickerButtonLabel}>
-                {formatDate(deliveryDate)}
-              </Text>
             </Pressable>
             {isDeliveryDatePickerVisible ? (
               <DateTimePicker
@@ -1455,12 +1406,6 @@ export function PosCheckoutScreen({
                 testID="sales-order-delivery-date-picker"
                 value={dateFromInput(deliveryDate)}
               />
-            ) : null}
-            {!allowsSalesOrderAdvancePayments ? (
-              <Text style={styles.cardHint}>
-                This POS profile does not allow an advance payment for Sales
-                Orders.
-              </Text>
             ) : null}
           </View>
         ) : null}
@@ -1708,42 +1653,6 @@ export function PosCheckoutScreen({
                 submitting.
               </Text>
             ) : null}
-          </View>
-        ) : null}
-
-        {customerShippingAddresses.isLoading ||
-        customerShippingAddresses.data?.length ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Shipping address</Text>
-            <Pressable
-              accessibilityLabel="Choose shipping address"
-              disabled={customerShippingAddresses.isLoading}
-              onPress={() => setIsShippingAddressPickerVisible(true)}
-              style={[
-                styles.shippingAddressSelector,
-                customerShippingAddresses.isLoading &&
-                  styles.secondaryButtonDisabled,
-              ]}
-            >
-              <View style={styles.shippingAddressText}>
-                <Text style={styles.shippingAddressTitle}>
-                  {customerShippingAddresses.isLoading
-                    ? "Loading shipping addresses…"
-                    : shippingAddressText(selectedShippingAddress) ||
-                      "Select shipping address"}
-                </Text>
-                {selectedShippingAddress?.address_title ? (
-                  <Text style={styles.cardHint}>
-                    {selectedShippingAddress.address_title}
-                  </Text>
-                ) : null}
-              </View>
-              <MaterialCommunityIcons
-                color={palette.onSurfaceMuted}
-                name="chevron-right"
-                size={22}
-              />
-            </Pressable>
           </View>
         ) : null}
 
@@ -2006,61 +1915,55 @@ export function PosCheckoutScreen({
         ) : null}
         {holdError ? <Text style={styles.errorText}>{holdError}</Text> : null}
         <View style={styles.checkoutActions}>
-          {onClear ? (
-            <Pressable
-              accessibilityLabel="Clear checkout"
-              disabled={checkout.isSubmitting || isHolding}
-              onPress={() => setClearConfirmationVisible(true)}
-              style={[
-                styles.secondaryActionButton,
-                (checkout.isSubmitting || isHolding) &&
-                  styles.submitButtonDisabled,
-              ]}
-            >
-              <Text style={styles.secondaryActionLabel}>Clear</Text>
-            </Pressable>
-          ) : null}
           {onHold && isInvoice ? (
             <Pressable
               accessibilityLabel="Hold checkout"
               disabled={checkout.isSubmitting || isHolding}
               onPress={() => void holdCheckout()}
               style={[
-                styles.secondaryActionButton,
+                styles.holdActionButton,
                 (checkout.isSubmitting || isHolding) &&
                   styles.submitButtonDisabled,
               ]}
             >
               {isHolding ? (
-                <ActivityIndicator color={palette.onSurface} size="small" />
+                <ActivityIndicator color="#ffffff" size="small" />
               ) : (
-                <Text style={styles.secondaryActionLabel}>Hold</Text>
+                <Text style={styles.holdActionLabel}>Hold</Text>
               )}
             </Pressable>
           ) : null}
+          <Pressable
+            accessibilityLabel={
+              isInvoice ? "Complete sale" : "Submit sales order"
+            }
+            accessibilityState={{
+              disabled:
+                checkout.isSubmitting ||
+                isHolding ||
+                (!isReadyToSubmit && !requiredCheckoutField),
+            }}
+            disabled={
+              checkout.isSubmitting ||
+              isHolding ||
+              (!isReadyToSubmit && !requiredCheckoutField)
+            }
+            onPress={requestSubmit}
+            style={[
+              styles.submitButton,
+              styles.checkoutSubmitButton,
+              !isReadyToSubmit && styles.submitButtonDisabled,
+            ]}
+          >
+            <Text style={styles.submitButtonLabel}>
+              {checkout.isSubmitting
+                ? `Submitting ${submissionLabel}…`
+                : isInvoice
+                  ? "Complete sale"
+                  : "Submit sales order"}
+            </Text>
+          </Pressable>
         </View>
-        <Pressable
-          accessibilityLabel={
-            isInvoice ? "Complete sale" : "Submit sales order"
-          }
-          accessibilityState={{
-            disabled: !isReadyToSubmit && !requiredCheckoutField,
-          }}
-          disabled={!isReadyToSubmit && !requiredCheckoutField}
-          onPress={requestSubmit}
-          style={[
-            styles.submitButton,
-            !isReadyToSubmit && styles.submitButtonDisabled,
-          ]}
-        >
-          <Text style={styles.submitButtonLabel}>
-            {checkout.isSubmitting
-              ? "Submitting…"
-              : isInvoice
-                ? `Complete sale · ${formatCurrency(total, currency, precision)}`
-                : "Submit sales order"}
-          </Text>
-        </Pressable>
 
         <Modal
           animationType="slide"
@@ -2377,254 +2280,27 @@ export function PosCheckoutScreen({
             </SafeAreaView>
           ) : null}
         </Modal>
-
-        <Modal
-          animationType="slide"
-          onRequestClose={() => setIsShippingAddressPickerVisible(false)}
-          presentationStyle="pageSheet"
-          visible={isShippingAddressPickerVisible}
-        >
-          <SafeAreaView
-            edges={["top", "bottom"]}
-            style={styles.shippingAddressModalPage}
-          >
-            <PosFixedPageHeader>
-              <View style={styles.header}>
-                <Pressable
-                  accessibilityLabel="Back to checkout"
-                  onPress={() => setIsShippingAddressPickerVisible(false)}
-                  style={styles.backButton}
-                >
-                  <MaterialCommunityIcons
-                    color={palette.onSurface}
-                    name="arrow-left"
-                    size={22}
-                  />
-                </Pressable>
-                <View style={styles.heading}>
-                  <Text style={styles.title}>Shipping address</Text>
-                  <Text style={styles.subtitle}>
-                    Choose a permitted address for this{" "}
-                    {isInvoice ? "invoice" : "sales order"}.
-                  </Text>
-                </View>
-              </View>
-            </PosFixedPageHeader>
-            <KeyboardAwareFormScroll
-              contentContainerStyle={styles.shippingAddressModalContent}
-              showsVerticalScrollIndicator={false}
-              style={styles.scrollView}
-            >
-              <View style={styles.shippingAddressOptions}>
-                {customerShippingAddresses.data?.map((address) => {
-                  const selected =
-                    address.name === selectedShippingAddress?.name;
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
-                      disabled={false}
-                      accessibilityState={{ selected }}
-                      key={address.name}
-                      onPress={() => {
-                        setShippingAddressName(address.name);
-                        setIsShippingAddressPickerVisible(false);
-                      }}
-                      style={[
-                        styles.shippingAddressOption,
-                        selected && styles.shippingAddressOptionSelected,
-                      ]}
-                    >
-                      <View style={styles.shippingAddressText}>
-                        <Text style={styles.shippingAddressTitle}>
-                          {shippingAddressText(address) ||
-                            address.address_title ||
-                            "Address details unavailable"}
-                        </Text>
-                        {address.address_title ? (
-                          <Text style={styles.cardHint}>
-                            {address.address_title}
-                          </Text>
-                        ) : null}
-                      </View>
-                      {selected ? (
-                        <MaterialCommunityIcons
-                          color={palette.primary}
-                          name="check-circle"
-                          size={22}
-                        />
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </KeyboardAwareFormScroll>
-          </SafeAreaView>
-        </Modal>
-
-        <Modal
-          animationType="fade"
-          onRequestClose={() => {
-            if (checkout.isSubmitting) return;
-            if (completedResult) {
-              if (!completionHandledRef.current) {
-                completionHandledRef.current = true;
-                onComplete(completedResult);
-              }
-            } else {
-              setIsSubmitConfirmationVisible(false);
-            }
-          }}
-          presentationStyle="overFullScreen"
-          statusBarTranslucent
-          transparent
-          visible={isSubmitConfirmationVisible}
-        >
-          <View style={styles.confirmationModalRoot}>
-            <Pressable
-              accessibilityLabel="Dismiss sale confirmation"
-              disabled={checkout.isSubmitting}
-              onPress={() => {
-                if (completedResult) {
-                  if (!completionHandledRef.current) {
-                    completionHandledRef.current = true;
-                    onComplete(completedResult);
-                  }
-                } else {
-                  setIsSubmitConfirmationVisible(false);
-                }
-              }}
-              style={styles.confirmationBackdrop}
-            />
-            <View accessibilityViewIsModal style={styles.confirmationDialog}>
-              {completedResult ? (
-                <>
-                  <MaterialCommunityIcons
-                    color={
-                      completedResult.queue_status === "Queued" ||
-                      completedResult.queue_status === "Processing"
-                        ? palette.primary
-                        : completedResult.docstatus === 0
-                          ? palette.primary
-                          : palette.success
-                    }
-                    name={
-                      completedResult.queue_status === "Queued" ||
-                      completedResult.queue_status === "Processing"
-                        ? "clock-outline"
-                        : completedResult.docstatus === 0
-                          ? "file-document-outline"
-                          : "check-circle-outline"
-                    }
-                    size={34}
-                  />
-                  <Text style={styles.confirmationTitle}>
-                    {completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is queued.`
-                      : completedResult.docstatus === 0
-                        ? `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} is saved as a draft.`
-                        : `${submissionLabel === "sales invoice" ? "Sales invoice" : "Sales order"} ${completedResult.name} submitted.`}
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    {completedResult.queue_status === "Queued" ||
-                    completedResult.queue_status === "Processing"
-                      ? "The sale is waiting for server processing. A receipt will be available once it is submitted."
-                      : completedResult.docstatus === 0
-                        ? checkout.workflowError
-                          ? `The transaction was created, but its workflow action needs attention: ${checkout.workflowError}`
-                          : "The workflow left this transaction as a draft. Review it to continue or edit it if your workflow state permits."
-                        : receipt.isWorking
-                          ? "Opening the native print preview…"
-                          : receipt.error
-                            ? "The sale is complete, but its receipt could not be prepared. You can retry from the invoice details screen."
-                            : "The receipt was sent to the native print preview."}
-                  </Text>
-                  <Pressable
-                    accessibilityLabel={`View submitted ${submissionLabel}`}
-                    onPress={() => {
-                      if (completionHandledRef.current) return;
-                      completionHandledRef.current = true;
-                      onComplete(completedResult);
-                    }}
-                    style={styles.confirmConfirmationButton}
-                  >
-                    <Text style={styles.confirmConfirmationLabel}>
-                      {completedResult.docstatus === 0 ? "View draft" : "View"}{" "}
-                      {submissionLabel === "sales invoice"
-                        ? "invoice"
-                        : "sales order"}
-                    </Text>
-                  </Pressable>
-                </>
-              ) : checkout.isSubmitting ? (
-                <>
-                  <ActivityIndicator color={palette.primary} size="small" />
-                  <Text style={styles.confirmationTitle}>
-                    Submitting {submissionLabel}…
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    Please wait while the sale is confirmed.
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.confirmationTitle}>
-                    Confirm submission of {submissionLabel} for {customerName}?
-                  </Text>
-                  <Text style={styles.confirmationDescription}>
-                    {!isInvoice
-                      ? allocation.allocatedMinor > 0
-                        ? `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)} and collect an advance of ${formatCurrency(paidAmount, currency, precision)}.`
-                        : `This will submit the Sales Order for delivery on ${formatDate(deliveryDate)}.`
-                      : isCreditSale
-                        ? "This will submit the sale as credit with its payment due date."
-                        : "This will submit the sale and its selected payment allocation."}
-                  </Text>
-                  {checkout.error ? (
-                    <Text accessibilityRole="alert" style={styles.errorText}>
-                      {checkout.error}
-                    </Text>
-                  ) : null}
-                  <View style={styles.confirmationActions}>
-                    <Pressable
-                      accessibilityLabel="Cancel sale submission"
-                      onPress={() => setIsSubmitConfirmationVisible(false)}
-                      style={styles.cancelConfirmationButton}
-                    >
-                      <Text style={styles.cancelConfirmationLabel}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      accessibilityLabel={
-                        isInvoice
-                          ? "Confirm sales invoice submission"
-                          : "Confirm sales order submission"
-                      }
-                      onPress={() => void submit()}
-                      style={styles.confirmConfirmationButton}
-                    >
-                      <Text style={styles.confirmConfirmationLabel}>
-                        {isInvoice ? "Submit invoice" : "Submit order"}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
-
-        {onClear ? (
-          <ClearCartConfirmationDialog
-            isOffline={checkout.isSubmitting || isHolding}
-            onConfirm={() => {
-              onClear();
-              setClearConfirmationVisible(false);
-            }}
-            onDismiss={() => setClearConfirmationVisible(false)}
-            visible={clearConfirmationVisible}
-          />
-        ) : null}
       </KeyboardAwareFormScroll>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => undefined}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent
+        transparent
+        visible={checkout.isSubmitting}
+      >
+        <View
+          accessibilityViewIsModal
+          accessibilityLiveRegion="polite"
+          style={[
+            styles.submittingOverlay,
+            { backgroundColor: palette.background },
+          ]}
+        >
+          <ActivityIndicator color={palette.primary} size="large" />
+          <Text style={styles.submittingLabel}>Submitting {submissionLabel}…</Text>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2713,66 +2389,6 @@ function createStyles(palette: AppPalette) {
       alignItems: "stretch",
       flexDirection: "row",
       gap: spacing.sm,
-    },
-    cancelConfirmationButton: {
-      alignItems: "center",
-      borderColor: palette.border,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      flex: 1,
-      justifyContent: "center",
-      minHeight: 44,
-      paddingHorizontal: spacing.sm,
-    },
-    cancelConfirmationLabel: {
-      color: palette.onSurface,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.small,
-    },
-    confirmConfirmationButton: {
-      alignItems: "center",
-      backgroundColor: palette.primary,
-      borderRadius: radii.md,
-      flex: 1,
-      justifyContent: "center",
-      minHeight: 44,
-      paddingHorizontal: spacing.sm,
-    },
-    confirmConfirmationLabel: {
-      color: palette.onPrimary,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: typography.size.small,
-    },
-    confirmationActions: {
-      flexDirection: "row",
-      gap: spacing.sm,
-      marginTop: spacing.xs,
-    },
-    confirmationBackdrop: {
-      backgroundColor: palette.scrim,
-      ...StyleSheet.absoluteFill,
-    },
-    confirmationDescription: {
-      color: palette.onSurfaceMuted,
-      fontFamily: typography.fontFamily.regular,
-      fontSize: typography.size.body,
-      lineHeight: typography.lineHeight.body,
-    },
-    confirmationDialog: {
-      backgroundColor: palette.surfaceContainer,
-      borderColor: palette.border,
-      borderRadius: radii.lg,
-      borderWidth: 1,
-      gap: spacing.md,
-      marginHorizontal: spacing.lg,
-      padding: spacing.lg,
-    },
-    confirmationModalRoot: { flex: 1, justifyContent: "center" },
-    confirmationTitle: {
-      color: palette.onSurface,
-      fontFamily: typography.fontFamily.semibold,
-      fontSize: 19,
-      lineHeight: typography.lineHeight.body,
     },
     content: {
       gap: spacing.md,
@@ -2992,6 +2608,17 @@ function createStyles(palette: AppPalette) {
     },
     scrollView: { flex: 1 },
     screen: { flex: 1 },
+    submittingOverlay: {
+      ...StyleSheet.absoluteFill,
+      alignItems: "center",
+      gap: spacing.md,
+      justifyContent: "center",
+    },
+    submittingLabel: {
+      color: palette.onSurface,
+      fontFamily: typography.fontFamily.semibold,
+      fontSize: typography.size.body,
+    },
     secondaryButton: {
       alignItems: "center",
       borderColor: palette.border,
@@ -3008,33 +2635,7 @@ function createStyles(palette: AppPalette) {
       fontFamily: typography.fontFamily.semibold,
       fontSize: typography.size.small,
     },
-    shippingAddressModalContent: {
-      gap: spacing.md,
-      padding: spacing.md,
-      paddingBottom: spacing.xxl,
-    },
-    shippingAddressModalPage: {
-      backgroundColor: palette.background,
-      flex: 1,
-    },
-    shippingAddressOption: {
-      alignItems: "center",
-      backgroundColor: palette.surface,
-      borderColor: palette.border,
-      borderRadius: radii.md,
-      borderWidth: 1,
-      flexDirection: "row",
-      gap: spacing.sm,
-      justifyContent: "space-between",
-      minHeight: 64,
-      padding: spacing.md,
-    },
-    shippingAddressOptionSelected: {
-      backgroundColor: palette.surfaceContainerHigh,
-      borderColor: palette.primary,
-    },
-    shippingAddressOptions: { gap: spacing.sm },
-    shippingAddressSelector: {
+    deliveryDateSelector: {
       alignItems: "center",
       backgroundColor: palette.surfaceContainer,
       borderColor: palette.border,
@@ -3046,8 +2647,8 @@ function createStyles(palette: AppPalette) {
       minHeight: 56,
       paddingHorizontal: spacing.sm,
     },
-    shippingAddressText: { flex: 1, gap: 2 },
-    shippingAddressTitle: {
+    deliveryDateText: { flex: 1, gap: 2 },
+    deliveryDateTitle: {
       color: palette.onSurface,
       fontFamily: typography.fontFamily.medium,
       fontSize: typography.size.body,
@@ -3092,18 +2693,18 @@ function createStyles(palette: AppPalette) {
       minHeight: 50,
       paddingHorizontal: spacing.md,
     },
-    secondaryActionButton: {
+    checkoutSubmitButton: { flex: 1 },
+    holdActionButton: {
       alignItems: "center",
-      borderColor: palette.border,
+      backgroundColor: "#99571f",
       borderRadius: radii.md,
-      borderWidth: 1,
-      flex: 1,
+      flex: 0.55,
       justifyContent: "center",
       minHeight: 50,
       paddingHorizontal: spacing.md,
     },
-    secondaryActionLabel: {
-      color: palette.onSurface,
+    holdActionLabel: {
+      color: "#ffffff",
       fontFamily: typography.fontFamily.semibold,
       fontSize: typography.size.body,
     },

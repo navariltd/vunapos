@@ -144,4 +144,26 @@ describe("POS configuration identity", () => {
       transactionConfigurationFingerprint(second),
     );
   });
+
+  it("does not require a pricing preview solely because required form fields change", () => {
+    const first = bootstrap();
+    const second = bootstrap({
+      pos_profile: {
+        ...first.pos_profile,
+        checkout_fields: [{
+          doctype: "Sales Invoice",
+          fieldname: "custom_reference",
+          fieldtype: "Data",
+          label: "Reference",
+          required: true,
+        }],
+      },
+    });
+    expect(transactionConfigurationFingerprint(first)).toBe(
+      transactionConfigurationFingerprint(second),
+    );
+    expect(effectivePosConfigurationFingerprint(first)).not.toBe(
+      effectivePosConfigurationFingerprint(second),
+    );
+  });
 });

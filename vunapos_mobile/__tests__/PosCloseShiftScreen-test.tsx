@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -37,6 +38,34 @@ jest.mock("@/theme/AppearanceProvider", () => ({
 }));
 
 import { PosCloseShiftScreen } from "@/features/pos/screens/PosCloseShiftScreen";
+
+function previewWithSales(count: number) {
+  return {
+    data: {
+      cashier: "cashier@example.com",
+      grand_total: count * 10,
+      invoice_count: count,
+      invoices: Array.from({ length: count }, (_, index) => ({
+        customer: `Customer ${index + 1}`,
+        doctype: "Sales Invoice",
+        grand_total: 10,
+        is_return: false,
+        name: `ACC-SINV-${String(index + 1).padStart(5, "0")}`,
+        posting_date: "2026-09-13",
+        posting_time: "10:30:20.000000",
+      })),
+      net_total: count * 10,
+      opening_entry: "POS-OPEN-001",
+      payments: [],
+      period_end_date: "2026-09-13 12:00:00",
+      period_start_date: "2026-09-13 08:00:00",
+      pos_profile: "POS-001",
+    },
+    error: null,
+    isLoading: false,
+    reload: jest.fn(),
+  };
+}
 
 describe("PosCloseShiftScreen", () => {
   const onBackToPos = jest.fn();
@@ -226,6 +255,34 @@ describe("PosCloseShiftScreen", () => {
     expect(screen.getByText("Return")).toBeTruthy();
     expect(screen.getByText("-")).toBeTruthy();
     expect(screen.getByText("-KES 50.00")).toBeTruthy();
+  });
+
+  it.each([6, 100])(
+    "scrolls %i sales inside the card after the fifth row",
+    async (count) => {
+      mockUsePosClosingPreview.mockReturnValue(previewWithSales(count));
+      const screen = await render(
+        <PosCloseShiftScreen posProfile="POS-001" />,
+      );
+
+      const scroll = screen.getByTestId("shift-sales-scroll");
+      expect(scroll.props.nestedScrollEnabled).toBe(true);
+      expect(StyleSheet.flatten(scroll.props.style)).toMatchObject({
+        maxHeight: 448,
+      });
+      expect(screen.getByText(`${count} total`)).toBeTruthy();
+      expect(
+        screen.getByText(`ACC-SINV-${String(count).padStart(5, "0")}`),
+      ).toBeTruthy();
+    },
+  );
+
+  it("shows up to five sales without an inner scroller", async () => {
+    mockUsePosClosingPreview.mockReturnValue(previewWithSales(5));
+    const screen = await render(<PosCloseShiftScreen posProfile="POS-001" />);
+
+    expect(screen.queryByTestId("shift-sales-scroll")).toBeNull();
+    expect(screen.getByText("ACC-SINV-00005")).toBeTruthy();
   });
 
   it("shows the shift-sales empty state when the server has no submitted invoices", async () => {

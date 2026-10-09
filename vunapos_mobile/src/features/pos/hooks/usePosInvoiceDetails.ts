@@ -7,6 +7,7 @@ import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 type PosInvoiceDetailsState = {
   data: PosInvoiceDetail | null;
   error: string | null;
+  isRecoverableError?: boolean;
   isLoading: boolean;
   reload: () => void;
 };
@@ -15,6 +16,7 @@ type PosInvoiceDetailsRequestState = Omit<
   PosInvoiceDetailsState,
   "isLoading" | "reload"
 > & {
+  identityKey: string | null;
   requestKey: string | null;
 };
 
@@ -34,21 +36,23 @@ export function usePosInvoiceDetails({
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const [reloadKey, setReloadKey] = useState(0);
   const reload = useCallback(() => setReloadKey((key) => key + 1), []);
-  const requestKey =
+  const identityKey =
     companyUrl && sessionId && posProfile && invoiceName
       ? JSON.stringify({
           companyUrl,
           invoiceDoctype,
           invoiceName,
           posProfile,
-          refreshKey,
-          reloadKey,
           sessionId,
         })
       : null;
+  const requestKey = identityKey
+    ? JSON.stringify([identityKey, refreshKey, reloadKey]) : null;
   const [state, setState] = useState<PosInvoiceDetailsRequestState>({
     data: null,
     error: null,
+    identityKey: null,
+    isRecoverableError: false,
     requestKey: null,
   });
 
@@ -75,7 +79,9 @@ export function usePosInvoiceDetails({
       },
       controller.signal,
     )
-      .then((data) => setState({ data, error: null, requestKey }))
+      .then((data) => setState({
+        data, error: null, identityKey, isRecoverableError: false, requestKey,
+      }))
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof FrappeClientError && error.code === "session") {
@@ -88,6 +94,7 @@ export function usePosInvoiceDetails({
             error instanceof Error
               ? error.message
               : "Could not load invoice details.",
+          isRecoverableError: error instanceof FrappeClientError && error.code === "connection",
           requestKey,
         }));
       });
@@ -95,6 +102,7 @@ export function usePosInvoiceDetails({
     return () => controller.abort();
   }, [
     companyUrl,
+    identityKey,
     invalidateSession,
     invoiceDoctype,
     invoiceName,
@@ -104,11 +112,15 @@ export function usePosInvoiceDetails({
     sessionId,
   ]);
 
-  if (!requestKey) return { data: null, error: null, isLoading: false, reload };
+  if (!requestKey) return {
+    data: null, error: null, isLoading: false, isRecoverableError: false, reload,
+  };
 
   return {
     ...state,
+    data: state.identityKey === identityKey ? state.data : null,
     error: state.requestKey === requestKey ? state.error : null,
+    isRecoverableError: state.requestKey === requestKey && state.isRecoverableError,
     isLoading: state.requestKey !== requestKey,
     reload,
   };

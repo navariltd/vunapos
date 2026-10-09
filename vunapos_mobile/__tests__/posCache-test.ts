@@ -58,11 +58,7 @@ class MemoryStorage {
     namespace: string,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) {
-    for (const [key, entry] of this.entries) {
-      if (entry.expiresAt <= now) this.entries.delete(key);
-    }
     const candidates = [...this.entries.values()]
       .filter((entry) => entry.namespace === namespace)
       .sort((left, right) => {
@@ -98,10 +94,9 @@ class FailingStorage extends MemoryStorage {
     namespace: string,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) {
     if (this.failWrites) throw new Error("Cache database unavailable");
-    return super.prune(namespace, maximumEntries, maximumBytes, now);
+    return super.prune(namespace, maximumEntries, maximumBytes);
   }
 
   override async write(entry: StoredEntry) {
@@ -117,10 +112,9 @@ class FailingPruneStorage extends MemoryStorage {
     namespace: string,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) {
     if (this.failPrune) throw new Error("Cache prune interrupted");
-    return super.prune(namespace, maximumEntries, maximumBytes, now);
+    return super.prune(namespace, maximumEntries, maximumBytes);
   }
 }
 
@@ -170,6 +164,33 @@ describe("PosCache", () => {
     await expect(cache.read(otherUser)).resolves.toBeNull();
     await expect(cache.read(otherCompany)).resolves.toBeNull();
     await expect(cache.read(otherProfile)).resolves.toBeNull();
+  });
+
+  it("does not restore an old warehouse cart after restart even if its SQLite clear fails", async () => {
+    class FailedClearStorage extends MemoryStorage {
+      override async clearResource() { throw new Error("SQLite unavailable"); }
+    }
+    const durable = new FailedClearStorage();
+    const oldScope = { ...scope, company: "Company A", warehouse: "Warehouse A" };
+    const newScope = { ...scope, company: "Company B", warehouse: "Warehouse B" };
+    const oldCart = { resource: "active-cart", scope: oldScope };
+    const oldCache = new PosCache(durable, { now: () => now });
+    await oldCache.write(oldCart, { items: ["old sale"] }, 1_000);
+    await oldCache.clearResource(oldScope, "active-cart");
+    expect(durable.entries.has(posCacheKey(oldCart))).toBe(true);
+
+    const restarted = new PosCache(durable, { now: () => now });
+    await expect(restarted.read({ resource: "active-cart", scope: newScope })).resolves.toBeNull();
+    await expect(restarted.read(oldCart)).resolves.toMatchObject({ data: { items: ["old sale"] } });
+  });
+
+  it("never treats an old unscoped cart row as a verified company and warehouse draft", async () => {
+    await cache.write({ resource: "active-cart", scope }, { items: ["legacy sale"] }, 1_000);
+    const scoped = { resource: "active-cart", scope: {
+      ...scope, company: "Company A", warehouse: "Warehouse A",
+    } };
+    const restarted = new PosCache(storage, { now: () => now });
+    await expect(restarted.read(scoped)).resolves.toBeNull();
   });
 
   it("returns a fresh entry without treating it as stale", async () => {
@@ -278,7 +299,8 @@ describe("PosCache", () => {
     await delayedCache.clearResource(scope, key.resource);
     delayedStorage.releaseWrite?.();
     await expect(old).rejects.toThrow("superseded");
-    expect(listener).not.toHaveBeenCalled();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith("clear");
     await expect(delayedCache.read(key)).resolves.toBeNull();
   });
 
@@ -425,15 +447,55 @@ describe("PosCache", () => {
     await expect(cache.read(otherKey)).resolves.toMatchObject({ data: 4 });
   });
 
-  it("prunes expired records at their exact expiry time before retaining newer data", async () => {
+  it("retains a stale record after an unrelated write, including after process restart", async () => {
     await cache.write({ ...key, query: "expired" }, ["old"], 10);
     now += 10;
     await cache.write({ ...key, query: "fresh" }, ["new"], 1_000);
 
-    await expect(cache.read({ ...key, query: "expired" })).resolves.toBeNull();
+    await expect(cache.read({ ...key, query: "expired" })).resolves.toMatchObject({
+      data: ["old"], isStale: true,
+    });
+    const restarted = new PosCache(storage, { now: () => now });
+    await expect(restarted.read({ ...key, query: "expired" })).resolves.toMatchObject({
+      data: ["old"], isStale: true,
+    });
     await expect(cache.read({ ...key, query: "fresh" })).resolves.toMatchObject({
       data: ["new"],
     });
+  });
+
+  it("keeps a stale snapshot beyond seven days while the namespace is within its size limits", async () => {
+    await cache.write(key, ["old"], 10);
+    now += 7 * 24 * 60 * 60 * 1000;
+    await cache.write({ ...key, resource: "invoice-history" }, ["new"], 1_000);
+    await expect(cache.read(key)).resolves.toMatchObject({ data: ["old"], isStale: true });
+    expect(storage.entries.has(posCacheKey(key))).toBe(true);
+  });
+
+  it("does not treat freshness expiry as physical eviction before another write", async () => {
+    await cache.write(key, ["old"], 10);
+    now += 7 * 24 * 60 * 60 * 1000;
+    await expect(cache.read(key)).resolves.toMatchObject({ data: ["old"], isStale: true });
+    expect(storage.entries.has(posCacheKey(key))).toBe(true);
+  });
+
+  it("keeps namespace count and byte limits even when every row is stale", async () => {
+    cache = new PosCache(storage, {
+      maximumBytesPerNamespace: 25,
+      maximumEntriesPerNamespace: 2,
+      now: () => now,
+    });
+    await cache.write({ ...key, query: "one" }, "1234567890", 1);
+    now += 2;
+    await cache.write({ ...key, query: "two" }, "abcdefghij", 1);
+    now += 2;
+    await cache.write({ ...key, query: "three" }, "klmnopqrst", 1);
+    now += 2;
+
+    expect(storage.entries.size).toBe(2);
+    await expect(cache.read({ ...key, query: "one" })).resolves.toBeNull();
+    await expect(cache.read({ ...key, query: "two" })).resolves.toMatchObject({ isStale: true });
+    await expect(cache.read({ ...key, query: "three" })).resolves.toMatchObject({ isStale: true });
   });
 
   it("does not cache one oversized catalogue payload in memory or durable storage", async () => {
@@ -481,6 +543,28 @@ describe("PosCache", () => {
     await expect(cache.read({ ...key, query: "milk" })).resolves.toBeNull();
     await expect(cache.read({ ...key, query: "bread" })).resolves.toBeNull();
     await expect(cache.read(invoices)).resolves.toMatchObject({ data: ["SINV-1"] });
+  });
+
+  it("cannot rehydrate old profile rows when an explicit durable clear fails", async () => {
+    class FailedClearStorage extends MemoryStorage {
+      override async clearResource() { throw new Error("SQLite unavailable"); }
+    }
+    const failedStorage = new FailedClearStorage();
+    const failedCache = new PosCache(failedStorage, { now: () => now });
+    const oldKey = { ...key, query: "old" };
+    const freshKey = { ...key, query: "fresh" };
+    await failedCache.write(oldKey, ["old profile"], 1_000);
+    await failedCache.write(freshKey, ["old result"], 1_000);
+
+    await expect(failedCache.clearResource(scope, key.resource)).resolves.toBe(false);
+    await expect(failedCache.read(oldKey)).resolves.toBeNull();
+    await expect(failedCache.read(freshKey)).resolves.toBeNull();
+
+    await failedCache.write(freshKey, ["server-validated result"], 1_000);
+    await expect(failedCache.read(freshKey)).resolves.toMatchObject({
+      data: ["server-validated result"],
+    });
+    await expect(failedCache.read(oldKey)).resolves.toBeNull();
   });
 
   it("marks only the requested resource stale while keeping it readable offline", async () => {

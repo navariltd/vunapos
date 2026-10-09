@@ -26,6 +26,8 @@ type PreviewInput = {
   loyaltyPoints?: number;
   posProfile?: string;
   priceList?: string;
+  /** Stable session identity; volatile verification timestamps are excluded. */
+  verificationKey?: string;
 };
 
 type SubmitInput = PreviewInput & {
@@ -72,6 +74,14 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
   const loyaltyPoints = input?.loyaltyPoints;
   const posProfile = input?.posProfile;
   const priceList = input?.priceList;
+  const verificationKey = input?.verificationKey;
+  const [inputLifecycle, setInputLifecycle] = useState({ active: hasInput, generation: 0 });
+  const generation = inputLifecycle.active === hasInput
+    ? inputLifecycle.generation
+    : inputLifecycle.generation + (hasInput ? 0 : 1);
+  if (inputLifecycle.active !== hasInput) {
+    setInputLifecycle({ active: hasInput, generation });
+  }
   const itemsPayload = input ? JSON.stringify(cartPayload(input.items)) : "";
   const activeKey =
     hasInput && companyUrl && sessionId && posProfile && input?.items.length
@@ -83,6 +93,8 @@ export function usePosCheckoutPreview(input: PreviewInput | null) {
           posProfile,
           priceList,
           sessionId,
+          verificationKey,
+          generation,
         })
       : null;
   const requestKey = activeKey;
@@ -357,11 +369,12 @@ export function useSubmitPosCheckout() {
             workflowRequestError.code === "session"
           )
             void invalidateSession();
-          setWorkflowError(
+          const workflowMessage =
             workflowRequestError instanceof Error
               ? workflowRequestError.message
-              : "The transaction was created, but its workflow action could not be applied.",
-          );
+              : "The transaction was created, but its workflow action could not be applied.";
+          setWorkflowError(workflowMessage);
+          result = { ...result, workflowActionError: workflowMessage };
         }
       }
       await invalidateSaleCache({
@@ -378,11 +391,15 @@ export function useSubmitPosCheckout() {
           priceList: input.priceList,
         });
       } else {
-        await refreshSoldItemStock({
+        // Stock repair is background work. Once Frappe has accepted the sale,
+        // the cashier should return to Home without waiting for item-detail reads.
+        void refreshSoldItemStock({
           companyUrl,
           items: input.items,
           posProfile: input.posProfile,
           sessionId,
+        }).catch(() => {
+          // The next timestamp delta repairs stock if a targeted read fails.
         });
       }
       idempotencyKey.current = createIdempotencyKey();

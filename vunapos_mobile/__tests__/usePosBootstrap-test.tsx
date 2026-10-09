@@ -34,7 +34,7 @@ import {
   usePosBootstrap,
   usePosBootstrapConfig,
 } from "@/features/pos/hooks/usePosBootstrap";
-import { getVunaMethod } from "@/services/frappeClient";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 import { posCache } from "@/services/posCache";
 import { refreshRegisteredPosResources } from "@/hooks/usePosCachedResource";
 import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
@@ -283,7 +283,7 @@ describe("usePosBootstrap", () => {
 
     const hook = await renderHook(() => usePosBootstrap());
     await waitFor(() => expect(mockGetVunaMethod).toHaveBeenCalledTimes(1));
-    await posCache.clearResource(key.scope, key.resource);
+    await act(async () => { await posCache.clearResource(key.scope, key.resource); });
     let fullRefresh: Promise<void> | undefined;
     await act(async () => {
       fullRefresh = Promise.resolve(hook.result.current.reload({ full: true }));
@@ -310,6 +310,90 @@ describe("usePosBootstrap", () => {
     expect(hook.result.current.data?.pos_profile.name).toBe("POS-NEW");
     expect((await posCache.read<{ pos_profile: { name: string } }>(key))?.data.pos_profile.name)
       .toBe("POS-NEW");
+  });
+
+  it("blocks and clears a cached profile after confirmed server revocation, then accepts verified recovery", async () => {
+    const key = {
+      resource: "workspace-configuration",
+      scope: {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+    };
+    await posCache.write(key, {
+      payment_modes: [],
+      pos_profile: { name: "POS-OLD" },
+    }, 1);
+    await posCache.markResourceStale(key.scope, key.resource);
+    const denied = Object.assign(new FrappeClientError("POS Profile is not assigned", "api"), {
+      code: "api",
+      domainCode: "POS_PROFILE_NOT_ASSIGNED",
+    });
+    const offline = Object.assign(new FrappeClientError("Connection interrupted", "connection"), {
+      code: "connection",
+    });
+    mockGetVunaMethod.mockRejectedValueOnce(denied)
+      .mockRejectedValueOnce(offline)
+      .mockResolvedValueOnce({
+      payment_modes: [],
+      pos_profile: { name: "POS-NEW" },
+    });
+
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(hook.result.current.isScopeInvalidated).toBe(true));
+    expect(hook.result.current.error).toBe("POS Profile is not assigned");
+    expect(await posCache.read(key)).toBeNull();
+    await act(async () => { await hook.result.current.reload({ full: true }); });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+    expect(hook.result.current.error).toBe("POS Profile is not assigned");
+    await act(async () => { await hook.result.current.reload({ full: true }); });
+    await waitFor(() => expect(hook.result.current.data?.pos_profile.name).toBe("POS-NEW"));
+    expect(hook.result.current.isScopeInvalidated).toBe(false);
+  });
+
+  it("invalidates the stored session if confirmed profile revocation cannot be durably cleared", async () => {
+    const clearResource = jest.spyOn(posCache, "clearResource").mockResolvedValueOnce(false);
+    const denied = Object.assign(new FrappeClientError("POS Profile is not assigned", "api"), {
+      code: "api",
+      domainCode: "POS_PROFILE_NOT_ASSIGNED",
+    });
+    mockGetVunaMethod.mockRejectedValueOnce(denied);
+    try {
+      const hook = await renderHook(() => usePosBootstrap());
+      await waitFor(() => expect(hook.result.current.isScopeInvalidated).toBe(true));
+      await waitFor(() => expect(invalidateSession).toHaveBeenCalledTimes(1));
+    } finally {
+      clearResource.mockRestore();
+    }
+  });
+
+  it("keeps an authorized cached profile visible after a temporary verification outage", async () => {
+    const key = {
+      resource: "workspace-configuration",
+      scope: {
+        companyUrl: "https://vuna.example.com",
+        posProfile: "workspace",
+        userId: "sid-1",
+      },
+    };
+    await posCache.write(key, {
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+    }, 1);
+    await posCache.markResourceStale(key.scope, key.resource);
+    mockGetVunaMethod.mockRejectedValueOnce(
+      Object.assign(new FrappeClientError("Connection interrupted", "connection"), {
+        code: "connection",
+      }),
+    );
+    const hook = await renderHook(() => usePosBootstrap());
+    await waitFor(() => expect(hook.result.current.error).toBe("Connection interrupted"));
+    expect(hook.result.current.data?.pos_profile.name).toBe("POS-001");
+    expect(hook.result.current.isScopeInvalidated).toBe(false);
+    expect((await posCache.read(key))?.data).toEqual(expect.objectContaining({
+      pos_profile: { name: "POS-001" },
+    }));
   });
 
   afterEach(async () => {
