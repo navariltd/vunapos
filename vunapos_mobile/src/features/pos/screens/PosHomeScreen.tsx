@@ -349,7 +349,7 @@ export function PosHomeScreen({
     [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode, windowWidth],
   );
 
-  if (bootstrap.isLoading)
+  if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)
     return (
       <View style={styles.state}>
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -357,7 +357,7 @@ export function PosHomeScreen({
         </Text>
       </View>
     );
-  if (bootstrap.error || !bootstrap.data) {
+  if (!bootstrap.data || bootstrap.isScopeInvalidated) {
     return (
       <View style={styles.state}>
         <Text style={[styles.errorText, { color: palette.error }]}>
