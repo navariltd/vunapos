@@ -5,6 +5,8 @@ import {
   render,
   waitFor,
 } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
+import type { ComponentProps } from "react";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -28,6 +30,12 @@ jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
 }));
 
+const mockToastError = jest.fn();
+jest.mock("@/components/feedback/ToastProvider", () => {
+  const toast = { error: (...args: unknown[]) => mockToastError(...args) };
+  return { useToast: () => toast };
+});
+
 jest.mock("@/features/pos/hooks/usePosCheckout", () => ({
   usePosCheckoutPreview: jest.fn(),
   useSubmitPosCheckout: jest.fn(),
@@ -35,10 +43,6 @@ jest.mock("@/features/pos/hooks/usePosCheckout", () => ({
 
 jest.mock("@/features/pos/hooks/usePosCustomerLoyalty", () => ({
   usePosCustomerLoyalty: jest.fn(),
-}));
-
-jest.mock("@/features/pos/hooks/usePosCustomerShippingAddresses", () => ({
-  usePosCustomerShippingAddresses: jest.fn(),
 }));
 
 jest.mock("@/features/pos/hooks/useGatewayPayment", () => ({
@@ -49,34 +53,32 @@ jest.mock("@/features/pos/hooks/useGatewayPaymentRealtime", () => ({
   useGatewayPaymentRealtime: jest.fn(),
 }));
 
-jest.mock("@/features/pos/hooks/useInvoiceReceipt", () => ({
-  useInvoiceReceipt: jest.fn(),
-}));
-
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
-import { usePosCustomerShippingAddresses } from "@/features/pos/hooks/usePosCustomerShippingAddresses";
 import { useGatewayPayment } from "@/features/pos/hooks/useGatewayPayment";
 import { useGatewayPaymentRealtime } from "@/features/pos/hooks/useGatewayPaymentRealtime";
-import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import {
   usePosCheckoutPreview,
   useSubmitPosCheckout,
 } from "@/features/pos/hooks/usePosCheckout";
-import { PosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+import { PosCheckoutScreen as ActualPosCheckoutScreen } from "@/features/pos/screens/PosCheckoutScreen";
+
+type CheckoutProps = ComponentProps<typeof ActualPosCheckoutScreen>;
+
+function PosCheckoutScreen(
+  props: Omit<CheckoutProps, "transactionReady"> & { transactionReady?: boolean },
+) {
+  const { transactionReady = true, ...rest } = props;
+  return <ActualPosCheckoutScreen {...rest} transactionReady={transactionReady} />;
+}
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const mockUsePosCustomerLoyalty = jest.mocked(usePosCustomerLoyalty);
-const mockUsePosCustomerShippingAddresses = jest.mocked(
-  usePosCustomerShippingAddresses,
-);
 const mockUsePosCheckoutPreview = jest.mocked(usePosCheckoutPreview);
 const mockUseSubmitPosCheckout = jest.mocked(useSubmitPosCheckout);
 const mockUseGatewayPayment = jest.mocked(useGatewayPayment);
 const mockUseGatewayPaymentRealtime = jest.mocked(useGatewayPaymentRealtime);
-const mockUseInvoiceReceipt = jest.mocked(useInvoiceReceipt);
 const clearError = jest.fn();
-const printReceipt = jest.fn();
 const submit = jest.fn();
 const onComplete = jest.fn();
 
@@ -94,6 +96,7 @@ describe("PosCheckoutScreen", () => {
       data: {
         payment_modes: [{ default: true, mode_of_payment: "Cash" }],
         pos_profile: { allow_credit_sales: true, name: "POS-001" },
+        pos_session: { has_opening_entry: true, ready: true, status: "OPEN" },
       },
       error: null,
       isLoading: false,
@@ -110,24 +113,14 @@ describe("PosCheckoutScreen", () => {
       error: null,
       isLoading: false,
     });
-    mockUsePosCustomerShippingAddresses.mockReturnValue({
-      data: null,
-      error: null,
-      isLoading: false,
-    });
     mockUseSubmitPosCheckout.mockReturnValue({
       clearError,
       error: null,
+      isRequiredFieldError: false,
       isSubmitting: false,
       salespersonTokenExpired: false,
       submit,
       workflowError: null,
-    });
-    mockUseInvoiceReceipt.mockReturnValue({
-      error: null,
-      isWorking: false,
-      printReceipt,
-      shareReceipt: jest.fn(),
     });
     mockUseGatewayPayment.mockReturnValue({
       attachC2B: jest.fn(),
@@ -147,7 +140,7 @@ describe("PosCheckoutScreen", () => {
     await cleanup();
   });
 
-  it("uses the native POS confirmation dialog before submitting an invoice", async () => {
+  it("submits an invoice on one tap without a confirmation popup", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0001" });
     const screen = await render(
       <PosCheckoutScreen
@@ -175,17 +168,6 @@ describe("PosCheckoutScreen", () => {
     expect(screen.queryByLabelText("Customer Tax ID")).toBeNull();
     await fireEvent.press(screen.getByLabelText("Complete sale"));
 
-    expect(
-      screen.getByText("Confirm submission of sales invoice for ABC Corps?"),
-    ).toBeTruthy();
-    expect(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    ).toBeTruthy();
-
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
-
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -197,30 +179,107 @@ describe("PosCheckoutScreen", () => {
       ),
     );
     await waitFor(() =>
-      expect(printReceipt).toHaveBeenCalledWith({
-        invoiceDoctype: "Sales Invoice",
-        invoiceName: "SINV-0001",
-      }),
-    );
-    // Completion is handed to the workspace immediately; the result surface
-    // must not keep the active cart/checkout alive until it is dismissed.
-    expect(onComplete).toHaveBeenCalledWith({
-      doctype: "Sales Invoice",
-      name: "SINV-0001",
-    });
-    expect(screen.getByText("Sales invoice SINV-0001 submitted.")).toBeTruthy();
-    await fireEvent.press(
-      screen.getByLabelText("View submitted sales invoice"),
-    );
-    await waitFor(() =>
       expect(onComplete).toHaveBeenCalledWith({
         doctype: "Sales Invoice",
         name: "SINV-0001",
       }),
     );
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Confirm submission of sales invoice/)).toBeNull();
+    expect(screen.queryByLabelText("View submitted sales invoice")).toBeNull();
   });
 
-  it("returns to the workspace after dismissing the completed-sale popup", async () => {
+  it("shows server-required fields in a toast without an inline duplicate", async () => {
+    const message = "Shipping address is required. Select one in the cart and try again.";
+    mockUseSubmitPosCheckout.mockReturnValue({
+      clearError,
+      error: message,
+      isRequiredFieldError: true,
+      isSubmitting: false,
+      salespersonTokenExpired: false,
+      submit,
+      workflowError: null,
+    });
+
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    expect(mockToastError).toHaveBeenCalledWith(
+      message,
+      expect.objectContaining({ title: "Checkout needs attention" }),
+    );
+    expect(screen.queryByText(message)).toBeNull();
+  });
+
+  it("blocks submission during shift closure and waits for a fresh preview after reopening", async () => {
+    const props = {
+      currency: "KES",
+      items: [{
+        allow_negative_stock: false,
+        available_qty: 4,
+        is_stock_item: true,
+        item_code: "ITEM-001",
+        item_name: "Stock item",
+        qty: 1,
+        rate: 100,
+        uom: "Nos",
+      }],
+      onBack: jest.fn(),
+      onComplete,
+      orderType: "Invoice" as const,
+      saleCustomer: { customer: "CUST-001", customerName: "ABC Corps" },
+      subtotal: 100,
+    };
+    const screen = await render(<PosCheckoutScreen {...props} transactionReady />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(false);
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady={false} />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).not.toHaveBeenCalled();
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: true,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady />);
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).not.toHaveBeenCalled();
+
+    mockUsePosCheckoutPreview.mockReturnValue({
+      data: { items: [], totals: { grand_total: 116, net_total: 100 } },
+      error: null,
+      isLoading: false,
+      previewLoyalty: jest.fn(),
+    });
+    await screen.rerender(<PosCheckoutScreen {...props} transactionReady />);
+    expect(submit).not.toHaveBeenCalled();
+    submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0002" });
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not leave a success popup after an invoice completes", async () => {
     submit.mockResolvedValue({ doctype: "Sales Invoice", name: "SINV-0001" });
     const screen = await render(
       <PosCheckoutScreen
@@ -246,27 +305,84 @@ describe("PosCheckoutScreen", () => {
     );
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Sales invoice SINV-0001 submitted.")).toBeNull();
+  });
+
+  it("prevents a rapid second submission and keeps checkout after a failed attempt", async () => {
+    let finishSubmit: ((result: null) => void) | undefined;
+    submit.mockImplementationOnce(
+      () => new Promise((resolve) => { finishSubmit = resolve; }),
     );
-    await waitFor(() =>
-      expect(
-        screen.getByText("Sales invoice SINV-0001 submitted."),
-      ).toBeTruthy(),
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Invoice"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
     );
 
-    const confirmationDialog = screen.getByText(
-      "Sales invoice SINV-0001 submitted.",
-    ).parent;
-    const confirmationBackdrop = confirmationDialog?.parent?.children[0];
-    if (!confirmationBackdrop || typeof confirmationBackdrop === "string") {
-      throw new Error("Confirmation backdrop not found");
-    }
-    await fireEvent.press(confirmationBackdrop);
-    expect(onComplete).toHaveBeenCalledWith({
-      doctype: "Sales Invoice",
-      name: "SINV-0001",
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    await fireEvent.press(screen.getByLabelText("Complete sale"));
+    expect(submit).toHaveBeenCalledTimes(1);
+    await act(async () => { finishSubmit?.(null); });
+    expect(onComplete).not.toHaveBeenCalled();
+    expect(screen.getByText("Checkout summary")).toBeTruthy();
+  });
+
+  it("labels a pending order submission without a confirmation dialog", async () => {
+    mockUseSubmitPosCheckout.mockReturnValue({
+      clearError,
+      error: null,
+      isRequiredFieldError: false,
+      isSubmitting: true,
+      salespersonTokenExpired: false,
+      submit,
+      workflowError: null,
     });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.getAllByText("Submitting sales order…").length).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(screen.getByLabelText("Sale submission progress").props.style)).toMatchObject({
+      backgroundColor: "#f3f3f3",
+      minWidth: 240,
+    });
+    expect(screen.queryByText(/Confirm submission of sales order/)).toBeNull();
+    expect(screen.queryByLabelText("Clear checkout")).toBeNull();
+    expect(screen.queryByLabelText("Hold checkout")).toBeNull();
+    expect(screen.getByLabelText("Submit sales order").props.accessibilityState.disabled).toBe(true);
   });
 
   it("holds the active invoice from checkout and returns to the catalogue", async () => {
@@ -296,44 +412,17 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
-    await fireEvent.press(screen.getByLabelText("Hold checkout"));
+    const holdButton = screen.getByLabelText("Hold checkout");
+    const completeButton = screen.getByLabelText("Complete sale");
+    expect(holdButton.parent).toBe(completeButton.parent);
+    expect(screen.getByText("Complete sale")).toBeTruthy();
+    expect(screen.queryByText(/Complete sale ·/)).toBeNull();
+    expect(screen.queryByLabelText("Clear checkout")).toBeNull();
+
+    await fireEvent.press(holdButton);
 
     await waitFor(() => expect(onHold).toHaveBeenCalledTimes(1));
     expect(onBack).toHaveBeenCalledTimes(1);
-  });
-
-  it("confirms clearing the active checkout before removing its cart", async () => {
-    const onClear = jest.fn();
-    const screen = await render(
-      <PosCheckoutScreen
-        currency="KES"
-        items={[
-          {
-            allow_negative_stock: false,
-            available_qty: 4,
-            is_stock_item: true,
-            item_code: "ITEM-001",
-            item_name: "Stock item",
-            qty: 1,
-            rate: 100,
-            uom: "Nos",
-          },
-        ]}
-        onBack={jest.fn()}
-        onClear={onClear}
-        onComplete={onComplete}
-        orderType="Invoice"
-        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
-        subtotal={100}
-      />,
-    );
-
-    await fireEvent.press(screen.getByLabelText("Clear checkout"));
-    expect(screen.getByText("Clear the current cart?")).toBeTruthy();
-    expect(onClear).not.toHaveBeenCalled();
-
-    await fireEvent.press(screen.getByLabelText("Confirm clear cart"));
-    expect(onClear).toHaveBeenCalledTimes(1);
   });
 
   it("blocks checkout with the configured field label when a required checkout field is empty", async () => {
@@ -400,7 +489,7 @@ describe("PosCheckoutScreen", () => {
     ).toBeNull();
   });
 
-  it("shows a queued-success state without attempting to print an unsubmitted invoice", async () => {
+  it("returns a queued invoice without a success popup", async () => {
     submit.mockResolvedValue({
       doctype: "Sales Invoice",
       name: "SINV-QUEUE-001",
@@ -430,24 +519,15 @@ describe("PosCheckoutScreen", () => {
     );
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
-      expect(
-        screen.getByText("Sales invoice SINV-QUEUE-001 is queued."),
-      ).toBeTruthy(),
+      expect(onComplete).toHaveBeenCalledWith({
+        doctype: "Sales Invoice",
+        name: "SINV-QUEUE-001",
+        queue_status: "Queued",
+      }),
     );
-    expect(printReceipt).not.toHaveBeenCalled();
-    await fireEvent.press(
-      screen.getByLabelText("View submitted sales invoice"),
-    );
-    expect(onComplete).toHaveBeenCalledWith({
-      doctype: "Sales Invoice",
-      name: "SINV-QUEUE-001",
-      queue_status: "Queued",
-    });
+    expect(screen.queryByText("Sales invoice SINV-QUEUE-001 is queued.")).toBeNull();
   });
 
   it("validates a loyalty redemption through the cart preview and recalculates the payment", async () => {
@@ -522,12 +602,13 @@ describe("PosCheckoutScreen", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Cash amount").props.value).toBe("96.00"),
     );
+    const invoiceCashAmount = screen.getByLabelText("Cash amount");
+    expect(invoiceCashAmount.parent?.parent?.children[0]).toBe(
+      screen.getByLabelText("Allocate all to Cash"),
+    );
     expect(screen.getByText("Amount payable")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -588,9 +669,6 @@ describe("PosCheckoutScreen", () => {
       "  A123456789Z  ",
     );
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -637,9 +715,6 @@ describe("PosCheckoutScreen", () => {
     expect(taxIdInput.props.value).toBe("");
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     expect(submit.mock.calls[0][0].taxId).toBeUndefined();
   });
@@ -682,9 +757,6 @@ describe("PosCheckoutScreen", () => {
       "  A123456789Z  ",
     );
     await fireEvent.press(screen.getByLabelText("Submit sales order"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales order submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -693,7 +765,7 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("allows a permitted delivery charge to be applied through the parent cart", async () => {
+  it("applies an editable delivery charge through the parent cart when Apply is pressed", async () => {
     const applyDeliveryCharge = jest.fn().mockResolvedValue({
       items: [],
       taxes: [],
@@ -737,6 +809,10 @@ describe("PosCheckoutScreen", () => {
       />,
     );
 
+    expect(screen.getByText("Add delivery charges")).toBeTruthy();
+    expect(screen.getByLabelText("Apply delivery charge")).toBeTruthy();
+    expect(screen.queryByText("Optional")).toBeNull();
+    expect(screen.getByLabelText("Delivery charge amount").props.editable).toBe(true);
     await fireEvent.changeText(
       screen.getByLabelText("Delivery charge amount"),
       "25",
@@ -744,16 +820,59 @@ describe("PosCheckoutScreen", () => {
     expect(
       screen.getByLabelText("Complete sale").props.accessibilityState.disabled,
     ).toBe(true);
-    expect(
-      screen.getByText(
-        "Delivery charge changed but not applied. Apply it before submitting.",
-      ),
-    ).toBeTruthy();
+    expect(applyDeliveryCharge).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByLabelText("Apply delivery charge"));
-
     await waitFor(() =>
       expect(applyDeliveryCharge).toHaveBeenCalledWith("DELIVERY", 25),
     );
+  });
+
+  it("shows the current cart charge without an editable field when rate changes are disabled", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: "Cash" }],
+        pos_profile: {
+          allow_delivery_charge_change: false,
+          allow_delivery_charges: true,
+          delivery_charge_item: "DELIVERY",
+          name: "POS-001",
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: false,
+          item_code: "DELIVERY",
+          item_name: "Delivery charge",
+          qty: 1,
+          rate: 55,
+          uom: "Nos",
+        }]}
+        onApplyDeliveryCharge={jest.fn()}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        subtotal={55}
+      />,
+    );
+
+    expect(screen.getByText("Add delivery charges")).toBeTruthy();
+    expect(screen.getByLabelText("Delivery charge amount").props).toMatchObject({
+      editable: false,
+      value: "55.00",
+    });
+    expect(
+      screen.getByLabelText("Apply delivery charge").props.accessibilityState.disabled,
+    ).toBe(true);
+    expect(screen.queryByText("Optional")).toBeNull();
   });
 
   it("passes the active salesperson token into the final checkout request", async () => {
@@ -791,9 +910,6 @@ describe("PosCheckoutScreen", () => {
     );
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -805,29 +921,10 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("selects a permitted shipping address and submits its Frappe address name", async () => {
+  it("submits the invoice shipping address selected in the cart without a checkout picker", async () => {
     submit.mockResolvedValue({
       doctype: "Sales Invoice",
       name: "SINV-SHIP-001",
-    });
-    mockUsePosCustomerShippingAddresses.mockReturnValue({
-      data: [
-        {
-          address_title: "Main branch",
-          city: "Nairobi",
-          formatted_address: "Kilimani, Nairobi, Kenya",
-          is_default: true,
-          name: "ADDR-001",
-        },
-        {
-          address_title: "Warehouse",
-          city: "Mombasa",
-          formatted_address: "Changamwe, Mombasa, Kenya",
-          name: "ADDR-002",
-        },
-      ],
-      error: null,
-      isLoading: false,
     });
     const screen = await render(
       <PosCheckoutScreen
@@ -848,24 +945,15 @@ describe("PosCheckoutScreen", () => {
         onComplete={onComplete}
         orderType="Invoice"
         saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        shippingAddressName="ADDR-002"
         subtotal={100}
       />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByText("Select shipping address")).toBeTruthy(),
-    );
-    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
-    expect(screen.getByLabelText("Back to checkout")).toBeTruthy();
-    await fireEvent.press(
-      screen.getByLabelText("Select shipping address Warehouse"),
-    );
-    expect(screen.getByText("Changamwe, Mombasa, Kenya")).toBeTruthy();
+    expect(screen.queryByLabelText("Choose shipping address")).toBeNull();
+    expect(screen.queryByLabelText("Search shipping addresses")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({ shippingAddressName: "ADDR-002" }),
@@ -873,7 +961,43 @@ describe("PosCheckoutScreen", () => {
     );
   });
 
-  it("keeps the confirmation dialog visible with a submitting state during submission", async () => {
+  it("submits the Sales Order shipping address selected in the cart without a checkout picker", async () => {
+    submit.mockResolvedValue({ doctype: "Sales Order", name: "SO-SHIP-001" });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[
+          {
+            allow_negative_stock: false,
+            available_qty: 4,
+            is_stock_item: true,
+            item_code: "ITEM-001",
+            item_name: "Stock item",
+            qty: 1,
+            rate: 100,
+            uom: "Nos",
+          },
+        ]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        shippingAddressName="ADDR-002"
+        subtotal={100}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Choose shipping address")).toBeNull();
+    expect(screen.queryByLabelText("Search shipping addresses")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Submit sales order"));
+    await waitFor(() =>
+      expect(submit).toHaveBeenCalledWith(
+        expect.objectContaining({ shippingAddressName: "ADDR-002" }),
+      ),
+    );
+  });
+
+  it("shows a blocking spinner without unmounting checkout while submitting", async () => {
     submit.mockReturnValue(new Promise(() => undefined));
     const props = {
       currency: "KES",
@@ -898,13 +1022,11 @@ describe("PosCheckoutScreen", () => {
     const screen = await render(<PosCheckoutScreen {...props} />);
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     mockUseSubmitPosCheckout.mockReturnValue({
       clearError,
       error: null,
+      isRequiredFieldError: false,
       isSubmitting: true,
       salespersonTokenExpired: false,
       submit,
@@ -912,10 +1034,14 @@ describe("PosCheckoutScreen", () => {
     });
     await screen.rerender(<PosCheckoutScreen {...props} />);
 
-    expect(screen.getByText("Submitting sales invoice…")).toBeTruthy();
-    expect(
-      screen.getByText("Please wait while the sale is confirmed."),
-    ).toBeTruthy();
+    expect(screen.getAllByText("Submitting sales invoice…").length).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(screen.getByLabelText("Sale submission progress").props.style)).toMatchObject({
+      backgroundColor: "#f3f3f3",
+      minWidth: 240,
+    });
+    expect(screen.getByText("Checkout summary")).toBeTruthy();
+    expect(screen.getByLabelText("Complete sale").props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByLabelText("Cancel sale submission")).toBeNull();
   });
 
   it("keeps the checkout form mounted during background preview revalidation", async () => {
@@ -1031,7 +1157,6 @@ describe("PosCheckoutScreen", () => {
       disabled: false,
     });
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(screen.getByLabelText("Confirm sales invoice submission"));
     await waitFor(() => expect(submit).toHaveBeenCalled());
 
     mockUsePosCheckoutPreview.mockReturnValue({
@@ -1077,9 +1202,6 @@ describe("PosCheckoutScreen", () => {
       true,
     );
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -1127,9 +1249,6 @@ describe("PosCheckoutScreen", () => {
     expect(screen.queryByLabelText("Cash amount")).toBeNull();
 
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -1373,9 +1492,6 @@ describe("PosCheckoutScreen", () => {
     await fireEvent.changeText(screen.getByLabelText("Cash amount"), "16");
     await fireEvent.changeText(screen.getByLabelText("M-Pesa amount"), "100");
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -1458,9 +1574,6 @@ describe("PosCheckoutScreen", () => {
       "RCP-001",
     );
     await fireEvent.press(screen.getByLabelText("Complete sale"));
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales invoice submission"),
-    );
 
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
@@ -2183,10 +2296,27 @@ describe("PosCheckoutScreen", () => {
         />,
       );
 
-      expect(screen.getByText("Delivery date")).toBeTruthy();
-      await fireEvent.press(
-        screen.getByLabelText("Choose Sales Order delivery date"),
+      const deliveryLabel = screen.getByText("Enter delivery date");
+      const deliveryPicker = screen.getByLabelText(
+        "Choose Sales Order delivery date",
       );
+      expect(deliveryLabel.parent).toBe(deliveryPicker.parent);
+      expect(StyleSheet.flatten(deliveryLabel.parent?.props.style)).toMatchObject({
+        borderWidth: 1,
+        padding: 16,
+      });
+      expect(StyleSheet.flatten(deliveryPicker.props.style)).toMatchObject({
+        minHeight: 56,
+      });
+      expect(
+        screen.queryByText("Choose when this order should be delivered."),
+      ).toBeNull();
+      expect(
+        screen.queryByText(
+          "This POS profile does not allow an advance payment for Sales Orders.",
+        ),
+      ).toBeNull();
+      await fireEvent.press(deliveryPicker);
       await fireEvent(
         screen.getByTestId("sales-order-delivery-date-picker"),
         "valueChange",
@@ -2195,14 +2325,7 @@ describe("PosCheckoutScreen", () => {
       );
 
       await fireEvent.press(screen.getByLabelText("Submit sales order"));
-      expect(
-        screen.getByText(
-          "This will submit the Sales Order for delivery on Sep 12, 2026.",
-        ),
-      ).toBeTruthy();
-      await fireEvent.press(
-        screen.getByLabelText("Confirm sales order submission"),
-      );
+      expect(screen.queryByText(/Confirm submission of sales order/)).toBeNull();
 
       await waitFor(() =>
         expect(submit).toHaveBeenCalledWith(
@@ -2216,6 +2339,70 @@ describe("PosCheckoutScreen", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it("presents an edited workflow order as a save without an initial workflow action", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        payment_modes: [{ default: true, mode_of_payment: "Cash" }],
+        pos_profile: {
+          name: "POS-001",
+          workflow: {
+            enabled: true,
+            workflows: {
+              "Sales Order": {
+                name: "Sales Order Approval",
+                state_field: "workflow_state",
+                transitions: [{
+                  action: "Send for Payment Confirmation",
+                  next_state: "Pending Payment Confirmation",
+                  state: "Draft",
+                }],
+              },
+            },
+          },
+        },
+      },
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    submit.mockResolvedValue({
+      docstatus: 0,
+      doctype: "Sales Order",
+      name: "SAL-ORD-00141",
+    });
+    const screen = await render(
+      <PosCheckoutScreen
+        currency="KES"
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 3,
+          rate: 100,
+          uom: "Nos",
+        }]}
+        onBack={jest.fn()}
+        onComplete={onComplete}
+        orderType="Order"
+        saleCustomer={{ customer: "CUST-001", customerName: "ABC Corps" }}
+        sourceInvoice={{ doctype: "Sales Order", name: "SAL-ORD-00141" }}
+        subtotal={300}
+      />,
+    );
+
+    expect(screen.getByLabelText("Save order changes")).toBeTruthy();
+    expect(screen.queryByText("Next action: Send for Payment Confirmation")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("Save order changes"));
+    await waitFor(() => expect(submit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceInvoice: { doctype: "Sales Order", name: "SAL-ORD-00141" },
+        workflowAction: undefined,
+      }),
+    ));
   });
 
   it("uses the cashier's local calendar date for the default delivery date", async () => {
@@ -2253,7 +2440,7 @@ describe("PosCheckoutScreen", () => {
     }
   });
 
-  it("returns to the workspace after dismissing a submitted Sales Order", async () => {
+  it("completes a Sales Order without a confirmation or success popup", async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date("2026-09-01T12:00:00"));
     try {
@@ -2294,27 +2481,13 @@ describe("PosCheckoutScreen", () => {
         new Date(2026, 8, 12, 12),
       );
       await fireEvent.press(screen.getByLabelText("Submit sales order"));
-      await fireEvent.press(
-        screen.getByLabelText("Confirm sales order submission"),
-      );
       await waitFor(() =>
-        expect(
-          screen.getByText("Sales order SAL-ORD-0003 submitted."),
-        ).toBeTruthy(),
+        expect(onComplete).toHaveBeenCalledWith({
+          doctype: "Sales Order",
+          name: "SAL-ORD-0003",
+        }),
       );
-
-      const confirmationDialog = screen.getByText(
-        "Sales order SAL-ORD-0003 submitted.",
-      ).parent;
-      const confirmationBackdrop = confirmationDialog?.parent?.children[0];
-      if (!confirmationBackdrop || typeof confirmationBackdrop === "string") {
-        throw new Error("Confirmation backdrop not found");
-      }
-      await fireEvent.press(confirmationBackdrop);
-      expect(onComplete).toHaveBeenCalledWith({
-        doctype: "Sales Order",
-        name: "SAL-ORD-0003",
-      });
+      expect(screen.queryByText("Sales order SAL-ORD-0003 submitted.")).toBeNull();
     } finally {
       jest.useRealTimers();
     }
@@ -2366,15 +2539,15 @@ describe("PosCheckoutScreen", () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText("Sales Order advance payment")).toBeTruthy();
+    const cashAmount = screen.getByLabelText("Cash amount");
+    const cashButton = screen.getByLabelText("Allocate all to Cash");
+    const paymentRow = cashAmount.parent?.parent;
+    expect(paymentRow?.children[0]).toBe(cashAmount.parent);
+    expect(paymentRow?.children[1]).toBe(cashButton);
     await fireEvent.changeText(screen.getByLabelText("Cash amount"), "40");
     expect(screen.getByText("Advance payment")).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText("Submit sales order"));
-    expect(screen.getByText(/collect an advance of/)).toBeTruthy();
-    await fireEvent.press(
-      screen.getByLabelText("Confirm sales order submission"),
-    );
-
     await waitFor(() =>
       expect(submit).toHaveBeenCalledWith(
         expect.objectContaining({

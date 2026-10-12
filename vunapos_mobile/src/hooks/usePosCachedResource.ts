@@ -16,7 +16,7 @@ export type PosCachedResourceClient = Pick<
   typeof posCache,
   "fetch" | "read"
 > & {
-  subscribe?: (key: PosCacheKey, listener: () => void) => () => void;
+  subscribe?: (key: PosCacheKey, listener: (event: "write" | "clear") => void) => () => void;
 };
 
 type UsePosCachedResourceArgs<T> = {
@@ -41,6 +41,17 @@ type PosCachedResourceState<T> = {
   keyFingerprint: string | null;
   lastUpdated: number | null;
 };
+
+/**
+ * Resource lifecycle using the existing flags, without a second store:
+ * - unmatched key / !hasHydratedCache: local hydration unresolved;
+ * - hydrated + no data + isLoading: genuine cold network bootstrap;
+ * - data + isStale/isRefreshing: usable same-scope display during revalidation;
+ * - data + error: failed refresh retaining last-known-good display;
+ * - no data + error: cold-start failure;
+ * - key change: previous scope is hidden immediately;
+ * - clear event: previous data is explicitly discarded, not treated as a miss.
+ */
 
 const emptyState = {
   data: null,
@@ -99,20 +110,33 @@ export function usePosCachedResource<T>({
     [cacheKey],
   );
   const [state, setState] = useState<PosCachedResourceState<T>>(emptyState);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const clearVersionRef = useRef(0);
+  const dataClearVersionRef = useRef(0);
+  const clearedFingerprintRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
 
   const loadResource = useCallback(
     async (forceRefresh: boolean, afterCurrent = false) => {
       const activeKey = cacheKeyRef.current;
       if (!activeKey) return;
       const activeFingerprint = posCacheKey(activeKey);
+      const clearVersion = clearVersionRef.current;
+      // Forced full rebootstrap requests deliberately queue behind the active
+      // request in PosCache.fetch; do not discard one of those intents here.
+      const loadGeneration = afterCurrent ? null : ++loadGenerationRef.current;
       const isActive = () => {
         const currentKey = cacheKeyRef.current;
         return Boolean(
-          currentKey && posCacheKey(currentKey) === activeFingerprint,
+          currentKey && posCacheKey(currentKey) === activeFingerprint &&
+          clearVersion === clearVersionRef.current &&
+          (loadGeneration === null || loadGeneration === loadGenerationRef.current),
         );
       };
       const setActiveState = (nextState: Omit<PosCachedResourceState<T>, "keyFingerprint">) => {
         if (!isActive()) return;
+        if (nextState.data !== null) dataClearVersionRef.current = clearVersion;
         setState({ ...nextState, keyFingerprint: activeFingerprint });
       };
 
@@ -147,27 +171,36 @@ export function usePosCachedResource<T>({
       }
 
       let cached: PosCacheEntry<T> | null = null;
+      let readError: string | null = null;
       try {
         cached = await cache.read<T>(activeKey);
       } catch (error) {
-        // A local read failure must not leave the resource permanently in the
-        // unresolved hydration state. Treat it as a cache miss and let the
-        // normal server request provide the recovery path.
-        if (!isActive()) return;
-        setActiveState({
-          ...emptyState,
-          error: errorMessage(error),
-          hasHydratedCache: true,
-        });
+        readError = errorMessage(error);
       }
       if (!isActive()) return;
+
+      // A recoverable same-scope miss must not put an operational resource
+      // back into cold-start loading. This is display data, not checkout
+      // authority; cache entry count/byte limits and explicit scope clears
+      // govern durable retention.
+      const prior = stateRef.current;
+      const retainedPrior = dataClearVersionRef.current === clearVersion &&
+        prior.keyFingerprint === activeFingerprint &&
+        prior.data !== null && prior.lastUpdated !== null
+        ? prior : null;
+      const display = cached ?? (retainedPrior ? {
+        data: retainedPrior.data as T,
+        expiresAt: 0,
+        fetchedAt: retainedPrior.lastUpdated as number,
+        isStale: true,
+      } : null);
 
       // Cached rows remain usable during outages. When there is no cached row,
       // however, let the request reach Frappe and classify the real failure
       // instead of treating Expo Network's hint as authoritative.
       // A forced retry/reconnect follows an observed server action, so an
       // outdated device network hint must not prevent the actual request.
-      const canRequest = forceRefresh || connectionStatus !== "offline" || !cached;
+      const canRequest = forceRefresh || connectionStatus !== "offline" || !display;
 
       if (!forceRefresh && cached && !cached.isStale) {
         setActiveState({
@@ -182,22 +215,23 @@ export function usePosCachedResource<T>({
         return;
       }
 
-      if (cached) {
+      if (display) {
         setActiveState({
-          data: cached.data,
-          error: null,
+          data: display.data,
+          error: readError,
           hasHydratedCache: true,
           isLoading: false,
           isRefreshing: canRequest,
-          isStale: cached.isStale,
-          lastUpdated: cached.fetchedAt,
+          isStale: display.isStale,
+          lastUpdated: display.fetchedAt,
         });
       } else if (!canRequest) {
-        setActiveState({ ...emptyState, hasHydratedCache: true, isLoading: true });
+        setActiveState({ ...emptyState, error: readError, hasHydratedCache: true, isLoading: true });
         return;
       } else {
         setActiveState({
           ...emptyState,
+          error: readError,
           hasHydratedCache: true,
           isLoading: true,
         });
@@ -209,7 +243,7 @@ export function usePosCachedResource<T>({
         const controller = new AbortController();
         const data = await cache.fetch(
           activeKey,
-          () => loadRef.current(controller.signal, cached?.data ?? null),
+          () => loadRef.current(controller.signal, display?.data ?? null),
           ttlMs,
           { afterCurrent },
         );
@@ -254,9 +288,20 @@ export function usePosCachedResource<T>({
 
   useEffect(() => {
     if (!keyFingerprint || !cache.subscribe || !cacheKey) return;
-    const unsubscribe = cache.subscribe(cacheKey, () => {
+    const unsubscribe = cache.subscribe(cacheKey, (event) => {
+      if (event === "clear") {
+        clearVersionRef.current += 1;
+        clearedFingerprintRef.current = keyFingerprint;
+        setState((current) => current.keyFingerprint === keyFingerprint
+          ? { ...emptyState, hasHydratedCache: true, keyFingerprint }
+          : current);
+        return;
+      }
+      const readClearVersion = clearVersionRef.current;
       void cache.read<T>(cacheKey).then((cached) => {
-        if (!cached || posCacheKey(cacheKey) !== keyFingerprint) return;
+        if (!cached || posCacheKey(cacheKey) !== keyFingerprint ||
+          readClearVersion !== clearVersionRef.current) return;
+        dataClearVersionRef.current = readClearVersion;
         setState({
           data: cached.data,
           error: null,
@@ -302,6 +347,10 @@ export function usePosCachedResource<T>({
 
   return {
     ...currentState,
+    isScopeInvalidated: Boolean(
+      keyFingerprint && clearedFingerprintRef.current === keyFingerprint &&
+      dataClearVersionRef.current !== clearVersionRef.current,
+    ),
     isLoading: currentState.isLoading || isHydratingCache,
     isHydratingCache,
     hasHydratedCache,

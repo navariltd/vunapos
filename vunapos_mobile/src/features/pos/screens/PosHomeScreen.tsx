@@ -5,12 +5,12 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -77,6 +77,7 @@ export function PosHomeScreen({
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
+  const { width: windowWidth } = useWindowDimensions();
   const toast = useToast();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
@@ -145,27 +146,6 @@ export function PosHomeScreen({
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
   });
-  useEffect(() => {
-    const message =
-      bootstrap.error ||
-      itemSearch.error ||
-      variantActionError ||
-      templateVariants.error ||
-      productBundle.error;
-    if (message) {
-      toast.error(message, {
-        title: "Could not load catalogue",
-        dedupeKey: `catalogue-error:${message}`,
-      });
-    }
-  }, [
-    bootstrap.error,
-    itemSearch.error,
-    productBundle.error,
-    templateVariants.error,
-    toast,
-    variantActionError,
-  ]);
   const handledRefreshKey = useRef(refreshKey);
   const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
@@ -199,6 +179,34 @@ export function PosHomeScreen({
   const visibleItems = hideUnavailableItems
     ? items.filter((item) => !isOutOfStock(item))
     : items;
+  const itemSearchError = itemSearch.error;
+
+  useEffect(() => {
+    const message =
+      (bootstrap.data ? bootstrap.error : null) ||
+      (visibleItems.length > 0 ? itemSearchError : null) ||
+      variantActionError ||
+      templateVariants.error ||
+      productBundle.error;
+    if (!message) return;
+    toast.error(message, {
+      title: "Could not load catalogue",
+      dedupeKey: `catalogue-error:${message}`,
+      ...(message === itemSearchError && visibleItems.length > 0
+        ? { action: { label: "Retry", onPress: () => void reloadCatalogue() } }
+        : {}),
+    });
+  }, [
+    bootstrap.data,
+    bootstrap.error,
+    itemSearchError,
+    productBundle.error,
+    reloadCatalogue,
+    templateVariants.error,
+    toast,
+    variantActionError,
+    visibleItems.length,
+  ]);
 
   const addItem = useCallback(
     async (item: PosCatalogueItem): Promise<boolean> => {
@@ -330,20 +338,25 @@ export function PosHomeScreen({
           onAdd={addItem}
         />
       ) : (
-        <PosItemCard
-          currency={currency}
-          currencyPrecision={currencyPrecision}
-          imageUrl={itemImageUrl(item.image, companyUrl)}
-          isAdding={pendingItemCode === item.item_code}
-          isOffline={isOffline}
-          item={item}
-          onAdd={addItem}
-        />
+        <View
+          style={{ width: (windowWidth - spacing.md * 2 - spacing.sm) / 2 }}
+          testID={`catalogue-cell-${item.item_code}`}
+        >
+          <PosItemCard
+            currency={currency}
+            currencyPrecision={currencyPrecision}
+            imageUrl={itemImageUrl(item.image, companyUrl)}
+            isAdding={pendingItemCode === item.item_code}
+            isOffline={isOffline}
+            item={item}
+            onAdd={addItem}
+          />
+        </View>
       ),
-    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode],
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode, windowWidth],
   );
 
-  if (bootstrap.isLoading)
+  if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)
     return (
       <View style={styles.state}>
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -351,7 +364,7 @@ export function PosHomeScreen({
         </Text>
       </View>
     );
-  if (bootstrap.error || !bootstrap.data) {
+  if (!bootstrap.data || bootstrap.isScopeInvalidated) {
     return (
       <View style={styles.state}>
         <Text style={[styles.errorText, { color: palette.error }]}>
@@ -380,21 +393,28 @@ export function PosHomeScreen({
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
         ListEmptyComponent={
-          <Text
-            style={[
-              styles.emptyState,
-              {
-                color: itemSearch.error
-                  ? palette.error
-                  : palette.onSurfaceMuted,
-              },
-            ]}
-          >
-            {itemSearch.isLoading
-              ? "Searching the catalogue…"
-              : itemSearch.error ||
-                "No items found. Try another item name, code, or barcode."}
-          </Text>
+          <View>
+            <Text
+              style={[
+                styles.emptyState,
+                { color: itemSearch.error ? palette.error : palette.onSurfaceMuted },
+              ]}
+            >
+              {itemSearch.isLoading
+                ? "Searching the catalogue…"
+                : itemSearch.error ||
+                  "No items found. Try another item name, code, or barcode."}
+            </Text>
+            {itemSearch.error ? (
+              <Pressable
+                accessibilityLabel="Retry catalogue search"
+                onPress={() => void itemSearch.reload()}
+                style={[styles.retryButton, { borderColor: palette.border }]}
+              >
+                <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>Try again</Text>
+              </Pressable>
+            ) : null}
+          </View>
         }
         ListHeaderComponent={
           <View>
@@ -405,51 +425,12 @@ export function PosHomeScreen({
               scanDisabled={false}
               value={searchQuery}
             />
-            {itemSearch.error ? (
-              <View
-                style={[
-                  styles.catalogueError,
-                  {
-                    backgroundColor: palette.errorSurface,
-                    borderColor: palette.errorSurface,
-                  },
-                ]}
-              >
-                <Text style={[styles.addError, { color: palette.error }]}>
-                  {itemSearch.error}
-                </Text>
-                <Pressable
-                  accessibilityLabel="Retry catalogue search"
-                  onPress={itemSearch.reload}
-                  style={[styles.retryButton, { borderColor: palette.border }]}
-                >
-                  <Text
-                    style={[
-                      styles.retryButtonLabel,
-                      { color: palette.onSurface },
-                    ]}
-                  >
-                    Try again
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             {addError ? (
               <Text style={[styles.addError, { color: palette.error }]}>
                 {addError}
               </Text>
             ) : null}
           </View>
-        }
-        ListFooterComponent={
-          <PosCacheStatus
-            isOffline={isOffline}
-            isRefreshing={
-              Boolean(bootstrap.isRefreshing) || Boolean(itemSearch.isRefreshing)
-            }
-            isStale={Boolean(bootstrap.isStale) || Boolean(itemSearch.isStale)}
-            lastUpdated={itemSearch.lastUpdated ?? bootstrap.lastUpdated}
-          />
         }
         numColumns={hideImages ? 1 : 2}
         maxToRenderPerBatch={8}
@@ -507,14 +488,6 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
-  catalogueError: {
-    alignItems: "center",
-    borderWidth: 1,
-    gap: spacing.sm,
-    marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    paddingBottom: spacing.sm,
-  },
   addError: {
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,

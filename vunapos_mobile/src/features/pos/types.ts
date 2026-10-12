@@ -415,6 +415,8 @@ export type PosCheckoutResult = {
   doctype: string;
   name: string;
   queue_status?: string | null;
+  /** Client-side workflow failure after the document was successfully created. */
+  workflowActionError?: string;
 };
 
 export type PosInvoiceHistoryFilters = {

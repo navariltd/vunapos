@@ -285,7 +285,11 @@ export function PosCustomerDetailsScreen({
     }
   }, [customer, error, toast]);
 
-  if (bootstrap.isLoading || details.isLoading) {
+  const hasUsableDetails = Boolean(
+    bootstrap.data && !bootstrap.isScopeInvalidated && details.data &&
+    (!details.error || details.isRecoverableError),
+  );
+  if ((bootstrap.isLoading || details.isLoading) && !hasUsableDetails) {
     return (
       <View style={[styles.state, { backgroundColor: palette.background }]}>
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -295,7 +299,7 @@ export function PosCustomerDetailsScreen({
     );
   }
 
-  if (!details.data || error) {
+  if (!details.data || !hasUsableDetails) {
     const message = error
       ? error
       : isOffline

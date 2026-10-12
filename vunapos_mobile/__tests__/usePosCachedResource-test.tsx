@@ -19,7 +19,7 @@ const key: PosCacheKey = {
 };
 
 function cached<T>(data: T, isStale = false): PosCacheEntry<T> {
-  return { data, expiresAt: 2_000, fetchedAt: 1_000, isStale };
+  return { data, expiresAt: Date.now() + 1_000, fetchedAt: Date.now(), isStale };
 }
 
 function createCache<T>(entry: PosCacheEntry<T> | null, fetchResult: Promise<T>) {
@@ -311,5 +311,64 @@ describe("usePosCachedResource", () => {
     await waitFor(() => expect(hook.result.current.error).toBe("Network unavailable"));
     expect(hook.result.current.data).toEqual(["milk"]);
     expect(hook.result.current.isLoading).toBe(false);
+  });
+
+  it("keeps same-scope data mounted when a later cache read misses", async () => {
+    let resolveRefresh: ((value: string[]) => void) | undefined;
+    const cache = {
+      read: jest.fn().mockResolvedValueOnce(cached(["milk"]))
+        .mockResolvedValueOnce(null),
+      fetch: jest.fn(() => new Promise<string[]>((resolve) => { resolveRefresh = resolve; })),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() => usePosCachedResource({
+      cache, cacheKey: key, connectionStatus: "online", load: jest.fn(),
+    }));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+
+    await act(async () => { void hook.result.current.refresh(); await Promise.resolve(); });
+    expect(hook.result.current.data).toEqual(["milk"]);
+    expect(hook.result.current.isInitialNetworkLoading).toBe(false);
+    expect(hook.result.current.isRefreshing).toBe(true);
+    resolveRefresh?.(["fresh milk"]);
+    await waitFor(() => expect(hook.result.current.data).toEqual(["fresh milk"]));
+  });
+
+  it("retains a mounted same-scope snapshot beyond the cart-specific seven-day lifetime", async () => {
+    const old = {
+      data: ["milk"], expiresAt: 0,
+      fetchedAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      isStale: false,
+    };
+    let resolveRefresh: ((value: string[]) => void) | undefined;
+    const cache = {
+      read: jest.fn().mockResolvedValueOnce(old).mockResolvedValueOnce(null),
+      fetch: jest.fn(() => new Promise<string[]>((resolve) => { resolveRefresh = resolve; })),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() => usePosCachedResource({
+      cache, cacheKey: key, connectionStatus: "online", load: jest.fn(),
+    }));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+
+    await act(async () => { void hook.result.current.refresh(); await Promise.resolve(); });
+    expect(hook.result.current.data).toEqual(["milk"]);
+    expect(hook.result.current.isInitialNetworkLoading).toBe(false);
+    resolveRefresh?.(["fresh milk"]);
+    await waitFor(() => expect(hook.result.current.data).toEqual(["fresh milk"]));
+  });
+
+  it("keeps same-scope data and exposes a failed refresh after a local read error", async () => {
+    const cache = {
+      read: jest.fn().mockResolvedValueOnce(cached(["milk"]))
+        .mockRejectedValueOnce(new Error("SQLite unavailable")),
+      fetch: jest.fn().mockRejectedValue(new Error("Network unavailable")),
+    } as PosCachedResourceClient;
+    const hook = await renderHook(() => usePosCachedResource({
+      cache, cacheKey: key, connectionStatus: "online", load: jest.fn(),
+    }));
+    await waitFor(() => expect(hook.result.current.data).toEqual(["milk"]));
+    await act(async () => { await hook.result.current.refresh(); });
+    expect(hook.result.current.data).toEqual(["milk"]);
+    expect(hook.result.current.error).toBe("Network unavailable");
+    expect(hook.result.current.isInitialNetworkLoading).toBe(false);
   });
 });

@@ -117,6 +117,40 @@ def ensure_test_customer():
 		"customer_group": frappe.db.get_value("Customer Group", {"is_group": 0}, "name"),
 		"territory": frappe.db.get_value("Territory", {"is_group": 0}, "name"),
 	}
+	# Other installed apps may require explicit customer payment terms. Keep
+	# this disposable fixture valid without changing the site's customer group
+	# or disabling its validation hook.
+	if frappe.get_meta("Customer").has_field("payment_terms"):
+		payment_terms = frappe.db.get_value("Payment Terms Template", {}, "name")
+		if not payment_terms:
+			payment_terms = "_Test VunaPOS Payment Terms"
+			if not frappe.db.exists("Payment Term", payment_terms):
+				frappe.get_doc(
+					{
+						"doctype": "Payment Term",
+						"payment_term_name": payment_terms,
+						"due_date_based_on": "Day(s) after invoice date",
+						"invoice_portion": 100,
+						"credit_days": 0,
+					}
+				).insert(ignore_permissions=True)
+			if not frappe.db.exists("Payment Terms Template", payment_terms):
+				values_for_template = {
+					"doctype": "Payment Terms Template",
+					"template_name": payment_terms,
+					"terms": [
+						{
+							"payment_term": payment_terms,
+							"due_date_based_on": "Day(s) after invoice date",
+							"invoice_portion": 100,
+							"credit_days": 0,
+						}
+					],
+				}
+				if frappe.get_meta("Payment Terms Template").has_field("custom_payment_terms_type"):
+					values_for_template["custom_payment_terms_type"] = "Credit"
+				frappe.get_doc(values_for_template).insert(ignore_permissions=True)
+		values["payment_terms"] = payment_terms
 	# Keep this fixture valid when the site has an additional required
 	# Customer Link, while allowing sites without that custom field.
 	if frappe.get_meta("Customer").has_field("custom_order_type"):

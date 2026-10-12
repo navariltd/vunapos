@@ -213,11 +213,15 @@ export function PosInvoicesScreen({
     setFilterSheetVisible(false);
   }
 
-  function clearDraftFilters() {
-    setDraftFilters({
+  function clearFilters() {
+    const clearedFilters = {
       ...initialFilters,
-      documentType: draftFilters.documentType,
-    });
+      documentType: filters.documentType,
+    };
+    setDraftFilters(clearedFilters);
+    setFilters(clearedFilters);
+    setStart(0);
+    setFilterSheetVisible(false);
   }
 
   async function restoreHeld(invoice: PosHeldInvoice) {
@@ -618,7 +622,7 @@ export function PosInvoicesScreen({
         filters={draftFilters}
         onApply={applyFilters}
         onChange={updateDraftFilter}
-        onClear={clearDraftFilters}
+        onClear={clearFilters}
         onDismiss={() => setFilterSheetVisible(false)}
         paymentModes={
           bootstrap.data?.payment_modes.map(
@@ -691,7 +695,8 @@ function createStyles(palette: AppPalette) {
       borderRadius: radii.md,
       borderWidth: 1,
       justifyContent: "center",
-      paddingHorizontal: spacing.sm,
+      minHeight: 38,
+      paddingHorizontal: spacing.md,
     },
     filtersButtonLabel: {
       color: palette.onSurface,

@@ -23,6 +23,7 @@ type PosSessionGateScreenProps = {
   onShiftOpened?: (result: OpenPosShiftResult) => Promise<void> | void;
   paymentModes?: PosPaymentMode[];
   posProfile?: string;
+  preservedDraft?: boolean;
   session: PosSession | null;
 };
 
@@ -43,6 +44,7 @@ export function PosSessionGateScreen({
   onShiftOpened,
   paymentModes = [],
   posProfile,
+  preservedDraft = false,
   session,
 }: PosSessionGateScreenProps) {
   const { palette } = useAppearance();
@@ -67,6 +69,7 @@ export function PosSessionGateScreen({
         <Text style={[styles.message, { color: palette.onSurfaceMuted }]}>
           Checking POS session…
         </Text>
+        {preservedDraft ? <Text>Your unfinished sale is preserved.</Text> : null}
       </View>
     );
   }
@@ -118,7 +121,10 @@ export function PosSessionGateScreen({
       : closingInProgress
         ? "ERPNext is consolidating this shift. Sales remain blocked until it completes."
         : "The POS session could not be verified. Refresh and try again.";
-    return <SessionMessage message={message} title={title} />;
+    return <SessionMessage
+      message={preservedDraft ? `${message} Your unfinished sale is preserved.` : message}
+      title={title}
+    />;
   }
 
   return (
@@ -135,6 +141,11 @@ export function PosSessionGateScreen({
           Enter the opening balance for each payment mode in{" "}
           {posProfile || "your POS profile"}.
         </Text>
+        {preservedDraft ? (
+          <Text style={[styles.message, { color: palette.onSurfaceMuted }]}>
+            Your unfinished sale is preserved. Review it after opening the shift before submitting.
+          </Text>
+        ) : null}
       </View>
 
       <View

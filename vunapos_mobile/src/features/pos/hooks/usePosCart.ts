@@ -100,6 +100,8 @@ type UsePosCartArgs = {
   customer: PosSaleCustomer | null;
   orderType?: PosOrderType;
   posProfile?: string;
+  profileCompany?: string | null;
+  profileWarehouse?: string | null;
   priceList?: string;
   /** Changes only when transaction-affecting POS configuration changes. */
   configurationRefreshKey?: string | number;
@@ -222,6 +224,8 @@ export function usePosCart({
   configurationRefreshKey = 0,
   orderType = "Invoice",
   posProfile,
+  profileCompany,
+  profileWarehouse,
   priceList,
 }: UsePosCartArgs) {
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
@@ -266,15 +270,24 @@ export function usePosCart({
   // unset preserves the POS Settings-selected invoice doctype (Sales Invoice
   // or POS Invoice) on the server.
   const invoiceDoctype = orderType === "Order" ? "Sales Order" : undefined;
+  // Legacy carts lack ERP company/warehouse identity and cannot safely be
+  // restored after a POS Profile's operational scope changes.
   const cartCacheScope = useMemo<PosCacheScope | null>(
     () =>
-      companyUrl && posProfile && sessionId
-        ? { companyUrl, posProfile, userId: sessionId }
+      companyUrl && posProfile && sessionId && profileCompany && profileWarehouse
+        ? {
+            company: profileCompany,
+            companyUrl,
+            posProfile,
+            userId: sessionId,
+            warehouse: profileWarehouse,
+          }
         : null,
-    [companyUrl, posProfile, sessionId],
+    [companyUrl, posProfile, profileCompany, profileWarehouse, sessionId],
   );
   const hydrationStartedRef = useRef<string | null>(null);
   const hydratedScopeRef = useRef<string | null>(null);
+  const [hydrationResolved, setHydrationResolved] = useState(0);
   // Reading a durable cart must not rewrite its fetchedAt/expiry metadata before
   // the server re-preview completes. Otherwise an offline, stale cart would be
   // made to look fresh merely by being restored into React state.
@@ -409,6 +422,11 @@ export function usePosCart({
     const scopeKey = JSON.stringify(cartCacheScope);
     if (hydrationStartedRef.current === scopeKey) return;
     hydrationStartedRef.current = scopeKey;
+    const initialData = dataRef.current;
+    const initialRequest = requestNumber.current;
+    const initialCustomer = customerRef.current;
+    const initialPriceList = priceListRef.current;
+    const initialSource = sourceInvoiceRef.current;
     let cancelled = false;
     void posCache
       .read<PersistedCart>({
@@ -418,7 +436,20 @@ export function usePosCart({
       .then((cached) => {
         if (cancelled) return;
         hydratedScopeRef.current = scopeKey;
-        if (!cached?.data?.data?.items?.length) {
+        // The read began before a cashier edit or preview. Never restore that
+        // older durable draft over the newer in-memory cart. Wake the normal
+        // persistence effect so the edited cart replaces the old durable row.
+        if (dataRef.current !== initialData ||
+          requestNumber.current !== initialRequest ||
+          customerRef.current !== initialCustomer ||
+          priceListRef.current !== initialPriceList ||
+          sourceInvoiceRef.current !== initialSource) {
+          restoredCachePendingWriteRef.current = false;
+          setHydrationResolved((value) => value + 1);
+          return;
+        }
+        if (!cached?.data?.data?.items?.length ||
+          Date.now() - cached.fetchedAt >= ACTIVE_CART_TTL_MS) {
           setCartCacheIsStale(false);
           setCartCacheLastUpdated(null);
           return;
@@ -444,6 +475,10 @@ export function usePosCart({
       });
     return () => {
       cancelled = true;
+      if (hydrationStartedRef.current === scopeKey &&
+        hydratedScopeRef.current !== scopeKey) {
+        hydrationStartedRef.current = null;
+      }
     };
   }, [cartCacheScope, isOffline, refresh]);
 
@@ -486,7 +521,7 @@ export function usePosCart({
       draft,
       ACTIVE_CART_TTL_MS,
     );
-  }, [cartCacheScope, customerKey, data, priceListKey]);
+  }, [cartCacheScope, customerKey, data, hydrationResolved, priceListKey]);
 
   useEffect(() => {
     const configurationChanged =

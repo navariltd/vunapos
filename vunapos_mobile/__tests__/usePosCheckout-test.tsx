@@ -39,7 +39,7 @@ import {
   usePosCheckoutPreview,
   useSubmitPosCheckout,
 } from "@/features/pos/hooks/usePosCheckout";
-import { getVunaMethod, postVunaMethod } from "@/services/frappeClient";
+import { FrappeClientError, getVunaMethod, postVunaMethod } from "@/services/frappeClient";
 
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockGetVunaMethod = jest.mocked(getVunaMethod);
@@ -171,6 +171,60 @@ describe("POS checkout hooks", () => {
     expect(hook.result.current.isLoading).toBe(false);
   });
 
+  it("requires a fresh preview after session closure and recovery, even for the same opening", async () => {
+    const original = { totals: { grand_total: 290, net_total: 250 } };
+    mockGetVunaMethod.mockResolvedValueOnce(original);
+    const hook = await renderHook(
+      ({ ready }: { ready: boolean }) => usePosCheckoutPreview(ready ? {
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+        verificationKey: "OPEN-001",
+      } : null),
+      { initialProps: { ready: true } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(original));
+    await hook.rerender({ ready: false });
+    expect(hook.result.current.data).toBeNull();
+
+    let finishRecovery!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(() => new Promise((resolve) => {
+      finishRecovery = resolve;
+    }));
+    await hook.rerender({ ready: true });
+    expect(hook.result.current.data).toEqual(original);
+    expect(hook.result.current.isLoading).toBe(true);
+    await act(async () => finishRecovery({ totals: { grand_total: 300, net_total: 259 } }));
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(300));
+    expect(hook.result.current.isLoading).toBe(false);
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+  });
+
+  it("revalidates an unchanged cart when transaction-affecting configuration changes", async () => {
+    const original = { totals: { grand_total: 290, net_total: 250 } };
+    mockGetVunaMethod.mockResolvedValueOnce(original);
+    const hook = await renderHook(
+      ({ configuration }: { configuration: string }) => usePosCheckoutPreview({
+        customer: "CUST-001",
+        items: [item],
+        posProfile: "POS-001",
+        verificationKey: `OPEN-001:${configuration}`,
+      }),
+      { initialProps: { configuration: "tax-a" } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual(original));
+    let finishRevalidation!: (value: unknown) => void;
+    mockGetVunaMethod.mockImplementationOnce(() => new Promise((resolve) => {
+      finishRevalidation = resolve;
+    }));
+    await hook.rerender({ configuration: "tax-b" });
+    expect(hook.result.current.data).toEqual(original);
+    expect(hook.result.current.isLoading).toBe(true);
+    await act(async () => finishRevalidation({ totals: { grand_total: 310, net_total: 250 } }));
+    await waitFor(() => expect(hook.result.current.data?.totals.grand_total).toBe(310));
+    expect(mockGetVunaMethod).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the last valid preview when revalidation fails", async () => {
     const initial = { totals: { grand_total: 290, net_total: 250 } };
     mockGetVunaMethod.mockResolvedValueOnce(initial);
@@ -296,6 +350,34 @@ describe("POS checkout hooks", () => {
     });
   });
 
+  it("returns an accepted sale before background stock repair finishes", async () => {
+    mockPostVunaMethod.mockResolvedValue({
+      doctype: "Sales Invoice",
+      name: "SINV-FAST-001",
+    });
+    let finishStockRefresh: (() => void) | undefined;
+    mockRefreshSoldItemStock.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { finishStockRefresh = resolve; }),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    let result: Awaited<ReturnType<typeof hook.result.current.submit>> = null;
+
+    await act(async () => {
+      result = await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Invoice",
+        payments: [{ amount: 290, mode_of_payment: "Cash" }],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(result).toEqual({ doctype: "Sales Invoice", name: "SINV-FAST-001" });
+    expect(mockRefreshSoldItemStock).toHaveBeenCalledTimes(1);
+    finishStockRefresh?.();
+  });
+
   it("registers queued invoice and order context for later targeted reconciliation", async () => {
     mockPostVunaMethod.mockResolvedValue({
       doctype: "Sales Order",
@@ -394,6 +476,7 @@ describe("POS checkout hooks", () => {
       docstatus: 0,
       doctype: "Sales Invoice",
       name: "SINV-WORKFLOW-002",
+      workflowActionError: "Action is not allowed for this user.",
     });
     expect(hook.result.current.workflowError).toBe(
       "Action is not allowed for this user.",
@@ -515,6 +598,85 @@ describe("POS checkout hooks", () => {
     expect(hook.result.current.error).toBe(
       "Purchase order is required before checkout.",
     );
+    expect(hook.result.current.isRequiredFieldError).toBe(false);
+  });
+
+  it("turns ERPNext mandatory fields into readable checkout guidance", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      new Error("[Sales Order, SAL-ORD-2026-00142]:shipping_address_name"),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(hook.result.current.error).toBe(
+      "Shipping address is required. Select one in the cart and try again.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+  });
+
+  it("formats multiple ERPNext mandatory fields without leaking document identifiers", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      new Error("[Sales Order, SAL-ORD-2026-00142]:delivery_date, custom_purchase_order"),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+
+    await act(async () => {
+      await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [item],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+      });
+    });
+
+    expect(hook.result.current.error).toBe(
+      "Delivery date and purchase order are required.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+  });
+
+  it("hides unrecognized ERPNext mandatory details and clears the toast-only state for retry", async () => {
+    mockPostVunaMethod.mockRejectedValue(
+      Object.assign(new FrappeClientError("Internal mandatory field details", "api"), {
+        domainCode: "MandatoryError",
+      }),
+    );
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    const input = {
+      customer: "CUST-001",
+      isCreditSale: false,
+      items: [item],
+      orderType: "Order" as const,
+      payments: [],
+      posProfile: "POS-001",
+    };
+
+    await act(async () => {
+      await hook.result.current.submit(input);
+    });
+    expect(hook.result.current.error).toBe(
+      "Required sale details are missing. Review the cart and checkout, then try again.",
+    );
+    expect(hook.result.current.isRequiredFieldError).toBe(true);
+
+    mockPostVunaMethod.mockRejectedValue(new Error("Network request failed"));
+    await act(async () => {
+      await hook.result.current.submit(input);
+    });
+    expect(hook.result.current.error).toBe("Network request failed");
+    expect(hook.result.current.isRequiredFieldError).toBe(false);
   });
 
   it("updates and submits the restored draft instead of creating a new invoice", async () => {
@@ -565,6 +727,59 @@ describe("POS checkout hooks", () => {
         payments: '[{"amount":290,"mode_of_payment":"Cash"}]',
       }),
     );
+  });
+
+  it("saves an edited workflow Sales Order without replaying its initial transition", async () => {
+    const savedOrder = {
+      docstatus: 0,
+      doctype: "Sales Order",
+      name: "SAL-ORD-00141",
+      workflow_state: "Pending Payment Confirmation",
+    };
+    mockPostVunaMethod
+      .mockResolvedValueOnce(savedOrder)
+      .mockResolvedValueOnce(savedOrder)
+      .mockRejectedValueOnce(new Error("Not a valid Workflow Action"));
+    const hook = await renderHook(() => useSubmitPosCheckout());
+    let result: Awaited<ReturnType<typeof hook.result.current.submit>> = null;
+
+    await act(async () => {
+      result = await hook.result.current.submit({
+        customer: "CUST-001",
+        isCreditSale: false,
+        items: [{ ...item, qty: 3 }],
+        orderType: "Order",
+        payments: [],
+        posProfile: "POS-001",
+        sourceInvoice: { doctype: "Sales Order", name: savedOrder.name },
+        workflowAction: "Send for Payment Confirmation",
+      });
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenCalledTimes(2);
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      1,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.update_invoice_from_cart",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        invoice_name: savedOrder.name,
+        items: '[{"item_code":"ITEM-001","qty":3,"uom":"Nos"}]',
+      }),
+    );
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.checkout_invoice",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        invoice_name: savedOrder.name,
+      }),
+    );
+    expect(result).toEqual(savedOrder);
+    expect(hook.result.current.workflowError).toBeNull();
   });
 
   it("sends credit-only fields only when the cashier enables a credit sale", async () => {

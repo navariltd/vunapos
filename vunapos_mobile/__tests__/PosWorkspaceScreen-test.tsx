@@ -101,12 +101,25 @@ jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
 }));
 
 let mockSetConfigData: ((data: unknown) => void) | undefined;
+let mockCheckoutVerificationKey: string | undefined;
+let mockInitialSession: unknown = {
+  has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+};
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
   usePosBootstrapConfig: () => ({
     data: (() => {
       const { useState } = require("react");
-      const [data, setData] = useState(null);
-      mockSetConfigData = setData;
+      const [data, setData] = useState({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: mockInitialSession,
+      });
+      mockSetConfigData = (next) => setData((current: { pos_session?: unknown }) => ({
+        ...(next as Record<string, unknown>),
+        pos_session: Object.prototype.hasOwnProperty.call(next, "pos_session")
+          ? (next as { pos_session?: unknown }).pos_session
+          : current.pos_session,
+      }));
       return data;
     })(),
     error: null,
@@ -375,12 +388,16 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
     onCheckout,
     onClear,
     onRemove,
+    onSelectShippingAddress,
     saleCustomer,
+    shippingAddressName,
   }: {
     onCheckout: () => void;
     onClear: () => boolean;
     onRemove: (itemCode: string) => Promise<void>;
+    onSelectShippingAddress: (addressName: string) => void;
     saleCustomer: { customerName: string } | null;
+    shippingAddressName: string;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
@@ -402,6 +419,13 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
         <Pressable accessibilityRole="button" onPress={onCheckout}>
           <Text>Open checkout</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSelectShippingAddress("ADDR-002")}
+        >
+          <Text>Select cart shipping address</Text>
+        </Pressable>
+        <Text>{`Cart shipping address: ${shippingAddressName || "none"}`}</Text>
       </>
     );
   },
@@ -409,15 +433,27 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
   PosCheckoutScreen: ({
+    bootstrapData,
     onComplete,
+    shippingAddressName,
+    transactionReady,
+    sessionVerificationKey,
   }: {
+    bootstrapData?: { payment_modes?: { mode_of_payment: string }[] } | null;
     onComplete: (result: { doctype: string; name: string }) => void;
+    shippingAddressName?: string;
+    transactionReady?: boolean;
+    sessionVerificationKey?: string;
   }) => {
     const { useState } = require("react");
     const { Pressable, Text, TextInput, View } = require("react-native");
     const [note, setNote] = useState("");
+    mockCheckoutVerificationKey = sessionVerificationKey;
     return (
       <View>
+        <Text>{`Checkout modes: ${bootstrapData?.payment_modes?.map((mode) => mode.mode_of_payment).join(", ") || "none"}`}</Text>
+        <Text>{`Checkout shipping address: ${shippingAddressName || "none"}`}</Text>
+        <Text>{`Checkout ready: ${transactionReady ? "yes" : "no"}`}</Text>
         <TextInput accessibilityLabel="Checkout note" onChangeText={setNote} value={note} />
         <Pressable
           accessibilityRole="button"
@@ -437,6 +473,14 @@ jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
           }
         >
           <Text>Complete test sale</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onComplete({ doctype: "Sales Invoice", name: "SINV-TEST-0001" })
+          }
+        >
+          <Text>Complete test invoice</Text>
         </Pressable>
       </View>
     );
@@ -562,6 +606,9 @@ import { PosWorkspaceScreen } from "@/features/pos/screens/PosWorkspaceScreen";
 describe("PosWorkspaceScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInitialSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
     mockCart.itemCount = 0;
     mockCart.clear.mockReturnValue(true);
     mockCart.remove.mockResolvedValue(true);
@@ -598,6 +645,18 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByText("POS home")).toBeTruthy();
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
+  });
+
+  it("carries the cart shipping address into checkout without a second selection", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select cart shipping address" }),
+    );
+    expect(screen.getByText("Cart shipping address: ADDR-002")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    expect(screen.getByText("Checkout shipping address: ADDR-002")).toBeTruthy();
   });
 
   it("returns to the POS Profile default customer when a cart is cleared", async () => {
@@ -694,14 +753,29 @@ describe("PosWorkspaceScreen", () => {
     );
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
     await fireEvent.press(
       screen.getByRole("button", { name: "Complete test sale" }),
     );
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
+    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+  });
+
+  it("returns Home and clears the cart after an invoice completes", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
+
     await fireEvent.press(
-      screen.getByRole("button", { name: "Back to previous invoice" }),
+      screen.getByRole("button", { name: "Complete test invoice" }),
     );
 
-    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
   });
 
   it("resets an Order override to the Invoice POS default after submission", async () => {
@@ -791,6 +865,147 @@ describe("PosWorkspaceScreen", () => {
     await waitFor(() =>
       expect(screen.getAllByText("Start POS shift")).toHaveLength(2),
     );
+  });
+
+  it("does not expose a cold workspace before session readiness is known", async () => {
+    mockInitialSession = null;
+    const screen = await render(<PosWorkspaceScreen />);
+    expect(screen.getByText("Checking POS session…")).toBeTruthy();
+    expect(screen.queryByText("POS home")).toBeNull();
+  });
+
+  it("keeps an active checkout mounted when session verification temporarily becomes unknown", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep uncertain draft");
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001" }, pos_session: null,
+    }));
+    expect(screen.getByText("Checking POS session…")).toBeTruthy();
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep uncertain draft");
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+  });
+
+  it("preserves checkout-local input when a session gate appears and later clears", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN" },
+      });
+    });
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Cashier draft");
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+    expect(screen.getAllByText("Start POS shift")).toHaveLength(2);
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: true, ready: true, status: "OPEN" },
+      });
+    });
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("keeps checkout mounted but unavailable while a shift is closing", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: { has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN" },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Unsubmitted order");
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: {
+        closing_entry: "CLOSE-001", has_opening_entry: true,
+        opening_entry: "OPEN-001", ready: false, status: "CLOSING",
+      },
+    }));
+    expect(screen.getByText("POS closing in progress")).toBeTruthy();
+    expect(screen.getByText(/Your unfinished sale is preserved/)).toBeTruthy();
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Unsubmitted order");
+  });
+
+  it("keeps checkout fields while changing the preview key for a pricing configuration update", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    const posSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001", price_list: "Retail" }, pos_session: posSession,
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep pricing note");
+    const originalKey = mockCheckoutVerificationKey;
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001", price_list: "Wholesale" }, pos_session: posSession,
+    }));
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep pricing note");
+    expect(mockCheckoutVerificationKey).not.toBe(originalKey);
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("updates checkout payment modes without an unnecessary pricing preview", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    const posSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [{ mode_of_payment: "Cash" }],
+      pos_profile: { name: "POS-001" }, pos_session: posSession,
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep payment note");
+    const originalKey = mockCheckoutVerificationKey;
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [{ mode_of_payment: "Cash" }, { mode_of_payment: "M-Pesa" }],
+      pos_profile: { name: "POS-001" }, pos_session: posSession,
+    }));
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep payment note");
+    expect(screen.getByText("Checkout modes: Cash, M-Pesa")).toBeTruthy();
+    expect(mockCheckoutVerificationKey).toBe(originalKey);
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("does not accept an open session belonging to another POS Profile", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: {
+        has_opening_entry: true, opening_entry: "OPEN-OTHER", pos_profile: "POS-002",
+        ready: true, status: "OPEN",
+      },
+    }));
+    expect(screen.getByText("POS session unavailable")).toBeTruthy();
+    // The prior workspace remains mounted behind the blocking native gate.
+    expect(screen.getByText("POS home")).toBeTruthy();
   });
 
   it("does not carry an optimistic opened shift into another POS Profile", async () => {

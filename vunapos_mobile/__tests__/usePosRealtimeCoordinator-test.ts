@@ -42,6 +42,7 @@ import { usePosRealtimeCoordinator } from "@/sync/usePosRealtimeCoordinator";
 const mockUseAppSession = jest.mocked(useAppSession);
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
 const catalogueReload = jest.fn();
+const mockInvalidateSession = jest.fn().mockResolvedValue(undefined);
 
 describe("usePosRealtimeCoordinator", () => {
   beforeEach(() => {
@@ -50,6 +51,7 @@ describe("usePosRealtimeCoordinator", () => {
     mockUseAppSession.mockReturnValue({
       authState: "signedIn",
       companyUrl: "https://pos.example.com",
+      invalidateSession: mockInvalidateSession,
       sessionId: "sid-1",
     } as never);
     mockUsePosBootstrap.mockReturnValue({
@@ -114,6 +116,126 @@ describe("usePosRealtimeCoordinator", () => {
       "workspace-configuration",
     );
     expect(catalogueReload).toHaveBeenCalledWith({ full: true });
+  });
+
+  it("fails closed if the old workspace cannot be durably invalidated", async () => {
+    mockClearResource.mockResolvedValueOnce(false);
+    renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const profileHandler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () => Promise<void>;
+
+    await act(async () => profileHandler());
+
+    expect(mockInvalidateSession).toHaveBeenCalledTimes(1);
+    expect(catalogueReload).not.toHaveBeenCalled();
+  });
+
+  it("fails closed if previous-profile browse rows cannot be durably invalidated", async () => {
+    mockRead.mockResolvedValueOnce({ data: { pos_profile: { name: "POS-OLD" } } });
+    mockClearOperationalCache.mockResolvedValueOnce(false);
+    renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const profileHandler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () => Promise<void>;
+
+    await act(async () => profileHandler());
+
+    expect(mockInvalidateSession).toHaveBeenCalledTimes(1);
+    expect(mockClearResource).not.toHaveBeenCalled();
+    expect(catalogueReload).not.toHaveBeenCalled();
+  });
+
+  it("blocks interactions as soon as profile revalidation starts", async () => {
+    let finishRead: ((value: unknown) => void) | undefined;
+    mockRead.mockImplementationOnce(() => new Promise((resolve) => { finishRead = resolve; }));
+    const hook = await renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const handler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () => Promise<void>;
+    let pending: Promise<void> | undefined;
+    await act(async () => {
+      pending = handler();
+      await Promise.resolve();
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+    expect(mockClearResource).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishRead?.({ data: { pos_profile: { name: "POS-OLD" } } });
+      await pending;
+    });
+    expect(hook.result.current.isScopeInvalidated).toBeFalsy();
+  });
+
+  it("does not let an old session's revalidation release the new session's gate", async () => {
+    let finishOldRead: ((value: unknown) => void) | undefined;
+    let finishNewRead: ((value: unknown) => void) | undefined;
+    mockRead
+      .mockImplementationOnce(() => new Promise((resolve) => { finishOldRead = resolve; }))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishNewRead = resolve; }));
+    const hook = await renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const oldHandler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () => Promise<void>;
+    let oldRequest: Promise<void> | undefined;
+    await act(async () => {
+      oldRequest = oldHandler();
+      await Promise.resolve();
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+
+    mockUseAppSession.mockReturnValue({
+      authState: "signedIn",
+      companyUrl: "https://pos.example.com",
+      sessionId: "sid-2",
+    } as never);
+    await hook.rerender({});
+    expect(hook.result.current.isScopeInvalidated).toBeFalsy();
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(4));
+    const newHandler = mockRegisterRealtimeRefresh.mock.calls[3][1] as () => Promise<void>;
+    let newRequest: Promise<void> | undefined;
+    await act(async () => {
+      newRequest = newHandler();
+      await Promise.resolve();
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+
+    await act(async () => {
+      finishOldRead?.(null);
+      await oldRequest;
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+    await act(async () => {
+      finishNewRead?.(null);
+      await newRequest;
+    });
+    expect(hook.result.current.isScopeInvalidated).toBeFalsy();
+  });
+
+  it("keeps the access gate up until every overlapping profile event has been checked", async () => {
+    const finishReads: Array<(value: unknown) => void> = [];
+    mockRead.mockImplementation(() => new Promise((resolve) => {
+      finishReads.push(resolve);
+    }));
+    const hook = await renderHook(() => usePosRealtimeCoordinator());
+    await waitFor(() => expect(mockRegisterRealtimeRefresh).toHaveBeenCalledTimes(2));
+    const handler = mockRegisterRealtimeRefresh.mock.calls[1][1] as () => Promise<void>;
+    let first: Promise<void> | undefined;
+    let second: Promise<void> | undefined;
+    await act(async () => {
+      first = handler();
+      second = handler();
+      await Promise.resolve();
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+    expect(finishReads).toHaveLength(2);
+    await act(async () => {
+      finishReads[0](null);
+      await first;
+    });
+    expect(hook.result.current.isScopeInvalidated).toBe(true);
+    await act(async () => {
+      finishReads[1](null);
+      await second;
+    });
+    expect(hook.result.current.isScopeInvalidated).toBeFalsy();
   });
 
   it("registers root recovery for unmounted profile-scoped browse data", async () => {

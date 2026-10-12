@@ -1,4 +1,4 @@
-import { cleanup, renderHook, waitFor } from "@testing-library/react-native";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react-native";
 
 jest.mock("@/features/auth/AppSessionProvider", () => ({
   useAppSession: jest.fn(),
@@ -15,7 +15,7 @@ jest.mock("@/services/frappeClient", () => ({
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
-import { getVunaMethod } from "@/services/frappeClient";
+import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
 import { posCache } from "@/services/posCache";
 
 const mockUseAppSession = jest.mocked(useAppSession);
@@ -70,6 +70,37 @@ describe("usePosCustomerDetails", () => {
         isLoading: false,
       }),
     );
+  });
+
+  it("retains loaded customer details through a connection failure without treating access errors as recoverable", async () => {
+    const data = {
+      as_of: "2026-09-07 10:00:00",
+      balance: 0,
+      customer: { customer: "CUST-001", customer_name: "Example customer" },
+      loyalty: null,
+    };
+    mockGetVunaMethod.mockResolvedValueOnce(data);
+    const hook = await renderHook(() =>
+      usePosCustomerDetails({ customer: "CUST-001", posProfile: "POS-001" }),
+    );
+    await waitFor(() => expect(hook.result.current.data).toMatchObject(data));
+
+    mockGetVunaMethod.mockRejectedValueOnce(Object.assign(
+      new FrappeClientError("Connection interrupted", "connection"),
+      { code: "connection" },
+    ));
+    await act(async () => hook.result.current.reload());
+    await waitFor(() => expect(hook.result.current.error).toBe("Connection interrupted"));
+    expect(hook.result.current.data).toMatchObject(data);
+    expect(hook.result.current.isRecoverableError).toBe(true);
+
+    mockGetVunaMethod.mockRejectedValueOnce(Object.assign(
+      new FrappeClientError("Customer access denied", "api"),
+      { code: "api" },
+    ));
+    await act(async () => hook.result.current.reload());
+    await waitFor(() => expect(hook.result.current.error).toBe("Customer access denied"));
+    expect(hook.result.current.isRecoverableError).toBe(false);
   });
 
   it("does not request customer data before the customer and POS profile are available", async () => {

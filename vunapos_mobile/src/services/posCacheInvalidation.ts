@@ -41,9 +41,10 @@ export async function clearOperationalPosCache({
   sessionId,
 }: Omit<InvalidateSaleCacheArgs, "sourceInvoice">) {
   const scope: PosCacheScope = { companyUrl, posProfile, userId: sessionId };
-  await Promise.all(
+  const cleared = await Promise.all(
     operationalResources.map((resource) => posCache.clearResource(scope, resource)),
   );
+  return cleared.every(Boolean);
 }
 
 type InvalidateSaleCacheArgs = {

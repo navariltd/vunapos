@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -13,6 +13,7 @@ import {
   PosDefaultCustomer,
 } from "@/features/pos/types";
 import { FrappeClientError, getVunaMethod } from "@/services/frappeClient";
+import { posCache } from "@/services/posCache";
 import { useRootPosBootstrapSnapshot } from "@/sync/PosBootstrapSnapshot";
 
 export const POS_BOOTSTRAP_DELTA_TTL_MS = POS_CACHE_TTL_MS;
@@ -25,6 +26,8 @@ export type PosBootstrapState = {
   isInitialNetworkLoading?: boolean;
   isLoading: boolean;
   isRefreshing?: boolean;
+  /** Explicit profile/access clear; unlike a recoverable background miss. */
+  isScopeInvalidated?: boolean;
   isStale?: boolean;
   lastUpdated?: number | null;
   reload: (options?: { full?: boolean }) => void | Promise<void>;
@@ -38,6 +41,19 @@ const CHECKOUT_FIELD_DOCTYPES = new Set<PosCheckoutFieldDefinition["doctype"]>([
   "Sales Invoice",
   "Sales Order",
 ]);
+
+const PROFILE_ACCESS_DENIAL_CODES = new Set([
+  "POS_PROFILE_NOT_ASSIGNED",
+  "POS_PROFILE_NOT_ENABLED",
+  "POS_PROFILE_READ_DENIED",
+  "POS_PROFILE_DISABLED",
+  "PermissionError",
+]);
+
+function isProfileAccessDenied(error: unknown): error is FrappeClientError {
+  return error instanceof FrappeClientError && error.code === "api" &&
+    Boolean(error.domainCode && PROFILE_ACCESS_DENIAL_CODES.has(error.domainCode));
+}
 
 function optionalText(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
@@ -244,6 +260,13 @@ export function usePosBootstrap(options?: {
   const enabled = options?.enabled !== false;
   const manageFreshness = options?.manageFreshness === true;
   const pendingFullRefreshesRef = useRef(0);
+  const activeScope = companyUrl && sessionId
+    ? JSON.stringify([companyUrl, sessionId]) : null;
+  const [accessDenial, setAccessDenial] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
+  const currentDenial = accessDenial?.scope === activeScope ? accessDenial : null;
   const cacheKey =
     !rootSnapshot && companyUrl && sessionId
       ? {
@@ -301,6 +324,8 @@ export function usePosBootstrap(options?: {
           );
         }
         const normalized = normalizeBootstrap(data);
+        const requestScope = JSON.stringify([companyUrl, sessionId]);
+        setAccessDenial((current) => current?.scope === requestScope ? null : current);
         return normalizeBootstrap(
           withSyncMetadata(
             cached,
@@ -311,6 +336,16 @@ export function usePosBootstrap(options?: {
       } catch (error) {
         if (error instanceof FrappeClientError && error.code === "session") {
           void invalidateSession();
+        } else if (isProfileAccessDenied(error)) {
+          const requestScope = JSON.stringify([companyUrl, sessionId]);
+          setAccessDenial({ scope: requestScope, message: error.message });
+          // A confirmed server denial is not a recoverable cache miss. Remove
+          // the old workspace so a later read cannot grant access from SQLite.
+          const cleared = await posCache.clearResource(
+            { companyUrl, posProfile: "workspace", userId: sessionId },
+            POS_WORKSPACE_RESOURCE,
+          );
+          if (!cleared) await invalidateSession();
         }
         throw error;
       }
@@ -355,12 +390,13 @@ export function usePosBootstrap(options?: {
 
   return {
     data,
-    error: resource.error,
+    error: currentDenial?.message ?? resource.error,
     isLoading: resource.isLoading,
     hasHydratedCache: resource.hasHydratedCache,
     isHydratingCache: resource.isHydratingCache,
     isInitialNetworkLoading: resource.isInitialNetworkLoading,
     isRefreshing: resource.isRefreshing,
+    isScopeInvalidated: Boolean(resource.isScopeInvalidated || currentDenial),
     isStale: resource.isStale,
     lastUpdated: resource.lastUpdated,
     reload,

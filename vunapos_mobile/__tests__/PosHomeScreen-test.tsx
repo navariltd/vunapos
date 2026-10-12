@@ -14,6 +14,12 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
   PosCartButton: () => null,
 }));
 
+const mockItemMount = jest.fn();
+const mockItemUnmount = jest.fn();
+const mockToastError = jest.fn();
+jest.mock("@/components/feedback/ToastProvider", () => ({
+  useToast: () => ({ error: mockToastError }),
+}));
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
@@ -29,6 +35,10 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
+    require("react").useEffect(() => {
+      mockItemMount();
+      return () => mockItemUnmount();
+    }, []);
     return (
       <Pressable
         accessibilityRole="button"
@@ -282,6 +292,41 @@ describe("PosHomeScreen", () => {
     );
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
+  });
+
+  it("keeps a lone final grid card one column wide and hides cache timestamps", async () => {
+    const items = ["ONE", "TWO", "THREE"].map((item_code) => ({
+      actual_qty: 3,
+      item_code,
+      item_name: item_code,
+      rate: 150,
+    }));
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items,
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      lastUpdated: Date.now(),
+      reload: jest.fn(),
+    });
+
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+      />,
+    );
+
+    const firstWidth = screen.getByTestId("catalogue-cell-ONE").props.style.width;
+    const lastWidth = screen.getByTestId("catalogue-cell-THREE").props.style.width;
+    expect(firstWidth).toBeGreaterThan(0);
+    expect(lastWidth).toBe(firstWidth);
+    expect(screen.queryByText(/Updated \d{2}\/\d{2}\/\d{4}/)).toBeNull();
   });
 
   it("keeps cached browsing available while allowing server actions to classify failures", async () => {
@@ -592,6 +637,134 @@ describe("PosHomeScreen", () => {
     expect(screen.getByText("Could not reach your company site.")).toBeTruthy();
     await fireEvent.press(screen.getByLabelText("Retry loading POS catalogue"));
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a usable catalogue visible after a background bootstrap error", async () => {
+    const data = {
+      default_customer: null,
+      items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+      payment_modes: [],
+      pos_profile: { currency: "KES", name: "POS-001" },
+    };
+    mockUsePosBootstrap.mockReturnValue({
+      data,
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByText("Card: Milk")).toBeTruthy();
+    const unmountsBeforeRefresh = mockItemUnmount.mock.calls.length;
+
+    mockUsePosBootstrap.mockReturnValue({
+      data,
+      error: "Temporary refresh failure",
+      isLoading: false,
+      isRefreshing: false,
+      reload: jest.fn(),
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByText("Card: Milk")).toBeTruthy();
+    expect(mockItemUnmount).toHaveBeenCalledTimes(unmountsBeforeRefresh);
+    expect(view.queryByText("Temporary refresh failure")).toBeNull();
+  });
+
+  it("keeps the catalogue header and rows mounted through a failed retry", async () => {
+    const item = { item_code: "ONE", item_name: "one item", actual_qty: 4, rate: 100 };
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: "Could not reach your company site.", hasLoaded: true,
+      isLoading: false, items: [item], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    const mounts = mockItemMount.mock.calls.length;
+    expect(view.queryByLabelText("Retry catalogue search")).toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Could not reach your company site.",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Retry" }) }),
+    );
+    const options = mockToastError.mock.calls.at(-1)?.[1] as { action: { onPress: () => void } };
+    options.action.onPress();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: null, hasLoaded: true,
+      isLoading: false, isRefreshing: true, items: [item], reload,
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Search for one item")).toBeTruthy();
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    expect(mockItemMount).toHaveBeenCalledTimes(mounts);
+    expect(mockItemUnmount).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline retry instead of a duplicate toast when no catalogue rows exist", async () => {
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [], error: "Could not reach your company site.", hasLoaded: false,
+      isLoading: false, items: [], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Retry catalogue search")).toBeTruthy();
+    expect(mockToastError).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText("Retry catalogue search"));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains an active search through a background bootstrap error", async () => {
+    const data = {
+      default_customer: null,
+      items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+      payment_modes: [],
+      pos_profile: { currency: "KES", name: "POS-001" },
+    };
+    mockUsePosBootstrap.mockReturnValue({ data, error: null, isLoading: false, reload: jest.fn() });
+    const view = await render(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
+    expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "one" }));
+
+    mockUsePosBootstrap.mockReturnValue({
+      data, error: "Temporary refresh failure", isLoading: false, reload: jest.fn(),
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+
+    expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "one" }));
+    expect(view.getByLabelText("Search for one item")).toBeTruthy();
+  });
+
+  it("does not show cached catalogue rows after confirmed profile invalidation", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: "POS access was revoked.",
+      isLoading: false,
+      isScopeInvalidated: true,
+      reload: jest.fn(),
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.queryByText("Card: Milk")).toBeNull();
+    expect(view.getByText("POS access was revoked.")).toBeTruthy();
   });
 
   it("reloads the live catalogue after a completed sale invalidates the POS snapshot", async () => {

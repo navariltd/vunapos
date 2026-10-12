@@ -160,6 +160,25 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			resolve_pos_profile(profile_name)
 
+	def test_missing_explicit_assignment_has_stable_denial_code(self):
+		with patch("vunapos.services.profile_service.frappe.db.exists", return_value=False):
+			with self.assertRaises(frappe.PermissionError) as raised:
+				resolve_pos_profile("POS-REVOKED")
+		self.assertEqual(raised.exception.vuna_error_code, "POS_PROFILE_NOT_ASSIGNED")
+
+	def test_disabled_profile_exposes_a_stable_access_denial_code(self):
+		with (
+			patch("vunapos.services.profile_service.require_pos_profile_assignment"),
+			patch("vunapos.services.profile_service._require_profile_read"),
+			patch(
+				"vunapos.services.profile_service.frappe.get_cached_doc",
+				return_value=frappe._dict(name="POS-DISABLED", disabled=1),
+			),
+		):
+			with self.assertRaises(frappe.ValidationError) as raised:
+				resolve_pos_profile("POS-DISABLED")
+		self.assertEqual(raised.exception.vuna_error_code, "POS_PROFILE_DISABLED")
+
 	def test_credit_sale_default_is_exposed_only_when_credit_sales_are_allowed(self):
 		profile = ensure_test_pos_profile()
 		frappe.db.set_value(

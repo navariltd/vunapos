@@ -6,11 +6,13 @@ import {
 } from "@expo-google-fonts/inter";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useCallback } from "react";
+import { useCallback, useRef, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
+import { LaunchReadyContext } from "@/components/splash/LaunchReadiness";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 import {
   AppSessionProvider,
@@ -58,30 +60,53 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   usePosRefreshTriggers();
   const { authState, isBootstrapping, signOut } = useAppSession();
   const { isReady: isAppearanceReady } = useAppearance();
+  const [launchVisible, setLaunchVisible] = useState(true);
+  const nativeSplashHidden = useRef(false);
+  const destinationReady = useRef(false);
   const hideNativeSplash = useCallback(() => {
+    if (nativeSplashHidden.current) return;
+    nativeSplashHidden.current = true;
     void SplashScreen.hideAsync();
   }, []);
+  const finishInitialLaunch = useCallback(() => {
+    if (destinationReady.current) return;
+    destinationReady.current = true;
+    requestAnimationFrame(() => {
+      hideNativeSplash();
+      setLaunchVisible(false);
+    });
+  }, [hideNativeSplash]);
 
-  if (!fontsLoaded || isBootstrapping || !isAppearanceReady) {
-    return (
-      <AppLaunchScreen
-        message="Preparing your workspace…"
-        onReady={hideNativeSplash}
-      />
-    );
-  }
+  const canRoute = fontsLoaded && !isBootstrapping && isAppearanceReady;
 
   return (
-    <PosBootstrapSnapshotBoundary
-      authState={authState}
-      onSignOut={signOut}
-      value={posBootstrap}
-    >
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(app)" />
-      </Stack>
-    </PosBootstrapSnapshotBoundary>
+    <LaunchReadyContext.Provider value={finishInitialLaunch}>
+      <View style={styles.root}>
+        {canRoute ? (
+          <PosBootstrapSnapshotBoundary
+            authState={authState}
+            initialFallback={launchVisible ? null : undefined}
+            onSignOut={signOut}
+            value={posBootstrap}
+          >
+            <Stack screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="index" />
+              <Stack.Screen name="(auth)" />
+              <Stack.Screen name="(app)" />
+            </Stack>
+          </PosBootstrapSnapshotBoundary>
+        ) : null}
+        {launchVisible ? (
+          <View style={StyleSheet.absoluteFill}>
+            <AppLaunchScreen
+              message="Preparing your workspace…"
+              onReady={hideNativeSplash}
+            />
+          </View>
+        ) : null}
+      </View>
+    </LaunchReadyContext.Provider>
   );
 }
+
+const styles = StyleSheet.create({ root: { flex: 1 } });
