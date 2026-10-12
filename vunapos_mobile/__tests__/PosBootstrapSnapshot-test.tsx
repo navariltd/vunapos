@@ -26,6 +26,7 @@ import {
   PosBootstrapState,
   usePosBootstrapConfig,
 } from "@/features/pos/hooks/usePosBootstrap";
+import { LaunchReadyContext } from "@/components/splash/LaunchReadiness";
 import { PosBootstrapSnapshotBoundary } from "@/sync/PosBootstrapSnapshot";
 
 const snapshot = {
@@ -90,6 +91,48 @@ describe("PosBootstrapSnapshotBoundary", () => {
     await waitFor(() => expect(screen.getByText("POS-001")).toBeTruthy());
     expect(screen.queryByText("Preparing your workspace…")).toBeNull();
     expect(mounted).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the root's persistent launch layer cover cold hydration without mounting a second fallback", async () => {
+    const view = await render(
+      <PosBootstrapSnapshotBoundary
+        authState="signedIn"
+        initialFallback={null}
+        value={{ ...snapshot, data: null, hasHydratedCache: false, isHydratingCache: true }}
+      >
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.queryByText("Preparing your workspace…")).toBeNull();
+    expect(screen.queryByText("No POS profile")).toBeNull();
+
+    await view.rerender(
+      <PosBootstrapSnapshotBoundary authState="signedIn" initialFallback={null} value={snapshot}>
+        <WorkspaceConsumer />
+      </PosBootstrapSnapshotBoundary>,
+    );
+    expect(screen.getByText("POS-001")).toBeTruthy();
+  });
+
+  it("allows the launch layer to end on an actionable cold-start failure", async () => {
+    const markReady = jest.fn();
+    await render(
+      <LaunchReadyContext.Provider value={markReady}>
+        <PosBootstrapSnapshotBoundary authState="signedIn" initialFallback={null} value={{
+          ...snapshot,
+          data: null,
+          error: "Could not reach the POS server.",
+        }}>
+          <WorkspaceConsumer />
+        </PosBootstrapSnapshotBoundary>
+      </LaunchReadyContext.Provider>,
+    );
+
+    expect(screen.getByText("POS unavailable")).toBeTruthy();
+    expect(screen.getByText("Try again")).toBeTruthy();
+    expect(markReady).not.toHaveBeenCalled();
+    fireEvent(screen.getByText("POS unavailable").parent!, "layout");
+    expect(markReady).toHaveBeenCalledTimes(1);
   });
 
   it("keeps consumers mounted and on one snapshot during background refresh", async () => {

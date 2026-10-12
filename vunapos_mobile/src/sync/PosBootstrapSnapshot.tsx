@@ -1,8 +1,9 @@
-import { createContext, PropsWithChildren, useContext, useState } from "react";
+import { createContext, PropsWithChildren, ReactNode, useContext, useState } from "react";
 import { ActivityIndicator, Modal, StyleSheet, View } from "react-native";
 import { Button, Text } from "react-native-paper";
 
 import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
+import { useLaunchRouteReady } from "@/components/splash/LaunchReadiness";
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import type { PosBootstrapState } from "@/features/pos/hooks/usePosBootstrap";
 import type { PosBootstrapData } from "@/features/pos/types";
@@ -39,10 +40,13 @@ export function posWorkspaceScopeKey(data: PosBootstrapData | null | undefined) 
 export function PosBootstrapSnapshotBoundary({
   authState,
   children,
+  initialFallback,
   onSignOut,
   value,
 }: PropsWithChildren<{
   authState: string;
+  /** The app root supplies its persistent launch overlay instead. */
+  initialFallback?: ReactNode;
   onSignOut?: () => void | Promise<void>;
   value: PosBootstrapState;
 }>) {
@@ -93,7 +97,9 @@ export function PosBootstrapSnapshotBoundary({
     !displayValue.data &&
     (value.isHydratingCache || value.isInitialNetworkLoading)
   ) {
-    return <AppLaunchScreen message="Preparing your workspace…" />;
+    return initialFallback === undefined
+      ? <AppLaunchScreen message="Preparing your workspace…" />
+      : <>{initialFallback}</>;
   }
   if (authState === "signedIn" && !displayValue.data) {
     return (
@@ -158,8 +164,9 @@ function PosWorkspaceUnavailable({
   onSignOut?: () => void | Promise<void>;
 }) {
   const { palette } = useAppearance();
+  const markLaunchReady = useLaunchRouteReady();
   return (
-    <View style={[styles.unavailable, { backgroundColor: palette.background }]}>
+    <View onLayout={markLaunchReady} style={[styles.unavailable, { backgroundColor: palette.background }]}>
       <Text variant="titleMedium">POS unavailable</Text>
       <Text style={{ color: palette.onSurfaceMuted, textAlign: "center" }}>{message}</Text>
       <Button mode="contained" onPress={onRetry}>Try again</Button>
