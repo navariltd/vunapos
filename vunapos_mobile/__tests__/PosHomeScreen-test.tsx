@@ -16,6 +16,10 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
 
 const mockItemMount = jest.fn();
 const mockItemUnmount = jest.fn();
+const mockToastError = jest.fn();
+jest.mock("@/components/feedback/ToastProvider", () => ({
+  useToast: () => ({ error: mockToastError }),
+}));
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
@@ -669,6 +673,56 @@ describe("PosHomeScreen", () => {
     expect(view.queryByText("Temporary refresh failure")).toBeNull();
   });
 
+  it("keeps the catalogue header and rows mounted through a failed retry", async () => {
+    const item = { item_code: "ONE", item_name: "one item", actual_qty: 4, rate: 100 };
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: "Could not reach your company site.", hasLoaded: true,
+      isLoading: false, items: [item], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    const mounts = mockItemMount.mock.calls.length;
+    expect(view.queryByLabelText("Retry catalogue search")).toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Could not reach your company site.",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Retry" }) }),
+    );
+    const options = mockToastError.mock.calls.at(-1)?.[1] as { action: { onPress: () => void } };
+    options.action.onPress();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: null, hasLoaded: true,
+      isLoading: false, isRefreshing: true, items: [item], reload,
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Search for one item")).toBeTruthy();
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    expect(mockItemMount).toHaveBeenCalledTimes(mounts);
+    expect(mockItemUnmount).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline retry instead of a duplicate toast when no catalogue rows exist", async () => {
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [], error: "Could not reach your company site.", hasLoaded: false,
+      isLoading: false, items: [], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Retry catalogue search")).toBeTruthy();
+    expect(mockToastError).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText("Retry catalogue search"));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it("retains an active search through a background bootstrap error", async () => {
     const data = {
       default_customer: null,
@@ -680,7 +734,7 @@ describe("PosHomeScreen", () => {
     const view = await render(
       <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
     );
-    await fireEvent.press(view.getByLabelText("Search for one item"));
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
     expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "one" }));
 
     mockUsePosBootstrap.mockReturnValue({

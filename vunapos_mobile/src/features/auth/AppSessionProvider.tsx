@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -58,6 +59,8 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
   const [passwordResetKey, setPasswordResetKey] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>("needsCompanyUrl");
   const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const activeSession = useRef<string | null>(null);
+  const invalidation = useRef<{ sessionId: string; promise: Promise<void> } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -89,6 +92,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
         if (sessionStatus === "expired") {
           await Promise.all([clearStoredSession(), posCache.clearAll()]);
+          activeSession.current = null;
           setSessionId(null);
           setAuthState("sessionExpired");
           return;
@@ -96,6 +100,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
         // Do not treat a temporary offline failure as an expired session. Future feature
         // requests will redirect through invalidateSession when the server rejects the SID.
+        activeSession.current = storedSessionId;
         setSessionId(storedSessionId);
         setAuthState("signedIn");
       } catch {
@@ -117,6 +122,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
   const clearCompanyUrl = useCallback(async () => {
     await Promise.all([clearStoredCompanyUrl(), posCache.clearAll()]);
+    activeSession.current = null;
     setSessionId(null);
     setPasswordResetKey(null);
     setCompanyUrl(null);
@@ -142,6 +148,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
         const isDifferentCompany = companyUrl !== normalized.url;
         if (isDifferentCompany) {
           await Promise.all([clearStoredSession(), posCache.clearAll()]);
+          activeSession.current = null;
           setSessionId(null);
           setPasswordResetKey(null);
         }
@@ -177,6 +184,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
           password,
         );
         await persistSessionId(sessionId);
+        activeSession.current = sessionId;
         setSessionId(sessionId);
         setPasswordResetKey(null);
         setAuthState("signedIn");
@@ -236,6 +244,7 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
           newPassword,
         );
         await persistSessionId(nextSessionId);
+        activeSession.current = nextSessionId;
         setSessionId(nextSessionId);
         setPasswordResetKey(null);
         setAuthState("signedIn");
@@ -253,17 +262,38 @@ export function AppSessionProvider({ children }: PropsWithChildren) {
 
   const signOut = useCallback(async () => {
     await Promise.all([clearStoredSession(), posCache.clearAll()]);
+    activeSession.current = null;
     setSessionId(null);
     setPasswordResetKey(null);
     setAuthState(companyUrl ? "signedOut" : "needsCompanyUrl");
   }, [companyUrl]);
 
-  const invalidateSession = useCallback(async () => {
-    await Promise.all([clearStoredSession(), posCache.clearAll()]);
-    setSessionId(null);
-    setPasswordResetKey(null);
-    setAuthState(companyUrl ? "sessionExpired" : "needsCompanyUrl");
-  }, [companyUrl]);
+  const invalidateSession = useCallback((): Promise<void> => {
+    if (!sessionId) return Promise.resolve();
+    if (invalidation.current?.sessionId === sessionId) {
+      return invalidation.current.promise;
+    }
+    // A late response from a previous SID must not clear a newer login.
+    if (activeSession.current !== sessionId) return Promise.resolve();
+    activeSession.current = null;
+    const promise = (async () => {
+      const cleanup = await Promise.allSettled([clearStoredSession(), posCache.clearAll()]);
+      if (cleanup.some((result) => result.status === "rejected")) {
+        // Local cleanup failure cannot restore a session Frappe has rejected.
+        console.warn("Could not fully clear local POS data after session expiry.");
+      }
+      if (activeSession.current !== null) return;
+      setSessionId(null);
+      setPasswordResetKey(null);
+      setAuthState(companyUrl ? "sessionExpired" : "needsCompanyUrl");
+    })();
+    invalidation.current = { sessionId, promise };
+    void promise.then(
+      () => { if (invalidation.current?.promise === promise) invalidation.current = null; },
+      () => { if (invalidation.current?.promise === promise) invalidation.current = null; },
+    );
+    return promise;
+  }, [companyUrl, sessionId]);
 
   const value = useMemo(
     () => ({
