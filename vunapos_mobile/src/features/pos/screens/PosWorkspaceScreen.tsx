@@ -17,6 +17,7 @@ import {
 } from "@/features/pos/screens/PosCustomersScreen";
 import { PosCustomerDetailsScreen } from "@/features/pos/screens/PosCustomerDetailsScreen";
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
+import { PosInvoiceReturnScreen } from "@/features/pos/screens/PosInvoiceReturnScreen";
 import { PosInvoicesScreen } from "@/features/pos/screens/PosInvoicesScreen";
 import { PosPaymentEntryDetailsScreen } from "@/features/pos/screens/PosPaymentEntryDetailsScreen";
 import { PosPaymentsScreen } from "@/features/pos/screens/PosPaymentsScreen";
@@ -144,6 +145,7 @@ export function PosWorkspaceScreen() {
   }>({ addressName: "" });
   const [selectedInvoice, setSelectedInvoice] =
     useState<SelectedInvoice | null>(null);
+  const [returnInvoiceName, setReturnInvoiceName] = useState<string | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
   const [customerDirectoryState, setCustomerDirectoryState] =
     useState<PosCustomerDirectoryViewState>(initialCustomerDirectoryViewState);
@@ -263,6 +265,7 @@ export function PosWorkspaceScreen() {
   }, [cart.sourceInvoice, posProfileConfig, selectedPriceList, toast]);
 
   function changeTab(tab: PosNavigationTab) {
+    setReturnInvoiceName(null);
     setSelectedInvoice(null);
     setSelectedCustomer(null);
     setSelectedPaymentEntry(null);
@@ -279,6 +282,7 @@ export function PosWorkspaceScreen() {
     setSelectedSaleCustomer(customer);
     setSelectedCustomer(null);
     setSelectedInvoice(null);
+    setReturnInvoiceName(null);
     setSelectedPaymentEntry(null);
     setReceivePaymentContext(null);
     setCheckoutVisible(false);
@@ -348,6 +352,7 @@ export function PosWorkspaceScreen() {
       onTabChange={changeTab}
       orderType={orderType}
       paymentsEnabled={allowsCustomerPayments}
+      showBottomNavigation={!returnInvoiceName}
     >
       {sessionUnavailable && !preserveWorkspaceBehindSessionGate ? (
         sessionGate
@@ -396,6 +401,22 @@ export function PosWorkspaceScreen() {
           }}
           onReceivePayment={openReceivePayment}
           onStartSale={startSale}
+        />
+      ) : selectedInvoice && returnInvoiceName ? (
+        <PosInvoiceReturnScreen
+          currency={posProfileConfig?.currency ?? "KES"}
+          currencyPrecision={posProfileConfig?.currency_precision ?? 2}
+          invoiceName={returnInvoiceName}
+          onBack={() => setReturnInvoiceName(null)}
+          onComplete={(returnInvoice) => {
+            setReturnInvoiceName(null);
+            setSelectedInvoice({
+              doctype: selectedInvoice.doctype,
+              name: returnInvoice.name,
+              returnTo: selectedInvoice,
+            });
+          }}
+          posProfile={posProfile ?? ""}
         />
       ) : selectedInvoice ? (
         <PosInvoiceDetailsScreen
@@ -458,6 +479,7 @@ export function PosWorkspaceScreen() {
               returnTo: selectedInvoice,
             })
           }
+          onStartReturn={setReturnInvoiceName}
           onReceivePayment={openReceivePayment}
           onStartSale={startSale}
         />

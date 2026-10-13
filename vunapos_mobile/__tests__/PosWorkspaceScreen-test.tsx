@@ -17,11 +17,13 @@ jest.mock("@/features/shell/components/AppShell", () => ({
     onOrderTypeChange,
     onTabChange,
     orderType,
+    showBottomNavigation = true,
   }: {
     children: React.ReactNode;
     onOrderTypeChange: (orderType: "Invoice" | "Order") => void;
     onTabChange: (tab: "Home" | "Invoices" | "Customers") => void;
     orderType: "Invoice" | "Order";
+    showBottomNavigation?: boolean;
   }) => {
     const { Pressable, Text, View } = require("react-native");
 
@@ -36,18 +38,22 @@ jest.mock("@/features/shell/components/AppShell", () => ({
         >
           <Text>Switch order type</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onTabChange("Invoices")}
-        >
-          <Text>Open invoices</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onTabChange("Customers")}
-        >
-          <Text>Open customers</Text>
-        </Pressable>
+        {showBottomNavigation ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onTabChange("Invoices")}
+            >
+              <Text>Open invoices</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onTabChange("Customers")}
+            >
+              <Text>Open customers</Text>
+            </Pressable>
+          </>
+        ) : null}
         {children}
       </View>
     );
@@ -514,6 +520,7 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
     onEditDraft,
     onOpenPaymentEntry,
     onOpenReturn,
+    onStartReturn,
     onStartSale,
   }: {
     invoiceName: string;
@@ -530,6 +537,7 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
       currency: string,
     ) => void;
     onOpenReturn: (invoiceReturn: { name: string }) => void;
+    onStartReturn: (invoiceName: string) => void;
     onStartSale: (customer: { customer: string; customerName: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
@@ -570,6 +578,12 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
         >
           <Text>Open return</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onStartReturn(invoiceName)}
+        >
+          <Text>Return items</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" onPress={onBack}>
           <Text>Back to previous invoice</Text>
         </Pressable>
@@ -578,6 +592,34 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
           onPress={() => void onEditDraft({ doctype: "Sales Order", name: invoiceName })}
         >
           <Text>Edit draft</Text>
+        </Pressable>
+      </>
+    );
+  },
+}));
+
+jest.mock("@/features/pos/screens/PosInvoiceReturnScreen", () => ({
+  PosInvoiceReturnScreen: ({
+    invoiceName,
+    onBack,
+    onComplete,
+  }: {
+    invoiceName: string;
+    onBack: () => void;
+    onComplete: (result: { name: string }) => void;
+  }) => {
+    const { Pressable, Text } = require("react-native");
+    return (
+      <>
+        <Text>{`Return screen for ${invoiceName}`}</Text>
+        <Pressable accessibilityRole="button" onPress={onBack}>
+          <Text>Back to invoice from return</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onComplete({ name: "POS-INV-RET-NEW" })}
+        >
+          <Text>Complete return</Text>
         </Pressable>
       </>
     );
@@ -853,6 +895,25 @@ describe("PosWorkspaceScreen", () => {
     );
 
     expect(screen.getByRole("button", { name: "Open return" })).toBeTruthy();
+  });
+
+  it("opens returns as a workspace screen and navigates back or into the new credit note", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoices" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Return items" }));
+
+    expect(screen.getByText("Return screen for POS-INV-0001")).toBeTruthy();
+    expect(screen.queryByText("Invoice details: POS-INV-0001")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open invoices" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Back to invoice from return" }));
+    expect(screen.getByText("Invoice details: POS-INV-0001")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Return items" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Complete return" }));
+    expect(screen.getByText("Invoice details: POS-INV-RET-NEW")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Back to previous invoice" }));
+    expect(screen.getByText("Invoice details: POS-INV-0001")).toBeTruthy();
   });
 
   it("blocks the POS workspace when the current session is not ready for sales", async () => {

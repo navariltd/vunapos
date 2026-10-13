@@ -15,6 +15,7 @@ type AppShellProps = PropsWithChildren<{
   customersEnabled?: boolean;
   allowOrderTypeChange?: boolean;
   paymentsEnabled?: boolean;
+  showBottomNavigation?: boolean;
 }>;
 
 export function AppShell({
@@ -26,6 +27,7 @@ export function AppShell({
   customersEnabled,
   allowOrderTypeChange,
   paymentsEnabled,
+  showBottomNavigation = true,
 }: AppShellProps) {
   const { palette } = useAppearance();
   const [localDataGeneration, setLocalDataGeneration] = useState(0);
@@ -40,12 +42,14 @@ export function AppShell({
       <View key={localDataGeneration} style={styles.content}>
         {children}
       </View>
-      <PosBottomNavigation
-        activeTab={activeTab}
-        customersEnabled={customersEnabled}
-        onTabChange={onTabChange}
-        paymentsEnabled={paymentsEnabled}
-      />
+      {showBottomNavigation ? (
+        <PosBottomNavigation
+          activeTab={activeTab}
+          customersEnabled={customersEnabled}
+          onTabChange={onTabChange}
+          paymentsEnabled={paymentsEnabled}
+        />
+      ) : null}
     </Screen>
   );
 }

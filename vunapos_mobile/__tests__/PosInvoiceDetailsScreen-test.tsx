@@ -32,16 +32,11 @@ jest.mock("@/features/pos/hooks/useErpNextRecord", () => ({
   useErpNextRecord: jest.fn(),
 }));
 
-jest.mock("@/features/pos/hooks/useInvoiceReturnPreview", () => ({
-  useInvoiceReturnPreview: jest.fn(),
-}));
-
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
 import { usePosInvoiceDetails } from "@/features/pos/hooks/usePosInvoiceDetails";
 import { usePosWorkflowActions } from "@/features/pos/hooks/usePosWorkflowActions";
 import { useInvoiceReceipt } from "@/features/pos/hooks/useInvoiceReceipt";
 import { useErpNextRecord } from "@/features/pos/hooks/useErpNextRecord";
-import { useInvoiceReturnPreview } from "@/features/pos/hooks/useInvoiceReturnPreview";
 import { PosInvoiceDetailsScreen } from "@/features/pos/screens/PosInvoiceDetailsScreen";
 
 const mockUsePosBootstrap = jest.mocked(usePosBootstrap);
@@ -49,11 +44,11 @@ const mockUsePosInvoiceDetails = jest.mocked(usePosInvoiceDetails);
 const mockUsePosWorkflowActions = jest.mocked(usePosWorkflowActions);
 const mockUseInvoiceReceipt = jest.mocked(useInvoiceReceipt);
 const mockUseErpNextRecord = jest.mocked(useErpNextRecord);
-const mockUseInvoiceReturnPreview = jest.mocked(useInvoiceReturnPreview);
 const onBack = jest.fn();
 const onOpenCustomer = jest.fn();
 const onOpenPaymentEntry = jest.fn();
 const onOpenReturn = jest.fn();
+const onStartReturn = jest.fn();
 const onReceivePayment = jest.fn();
 const onStartSale = jest.fn();
 
@@ -70,11 +65,6 @@ describe("PosInvoiceDetailsScreen", () => {
       error: null,
       isOpening: false,
       openRecord: jest.fn(),
-    });
-    mockUseInvoiceReturnPreview.mockReturnValue({
-      data: null,
-      error: null,
-      isLoading: false,
     });
     mockUsePosBootstrap.mockReturnValue({
       data: {
@@ -180,6 +170,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -197,6 +188,8 @@ describe("PosInvoiceDetailsScreen", () => {
     expect(screen.getByLabelText("Share receipt")).toBeTruthy();
     expect(screen.getByLabelText("Open in ERPNext")).toBeTruthy();
     expect(screen.getByLabelText("Return items")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Return items"));
+    expect(onStartReturn).toHaveBeenCalledWith("POS-INV-0001");
   });
 
   it("keeps loaded invoice details visible when background configuration refresh fails", async () => {
@@ -212,6 +205,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -237,6 +231,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -257,6 +252,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -272,6 +268,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -306,6 +303,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -330,6 +328,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -361,6 +360,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -377,6 +377,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -394,6 +395,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -414,6 +416,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onReceivePayment={onReceivePayment}
         onStartSale={onStartSale}
       />,
@@ -436,6 +439,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
@@ -460,6 +464,7 @@ describe("PosInvoiceDetailsScreen", () => {
         onOpenCustomer={onOpenCustomer}
         onOpenPaymentEntry={onOpenPaymentEntry}
         onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
         onStartSale={onStartSale}
       />,
     );
