@@ -17,6 +17,7 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
 const mockItemMount = jest.fn();
 const mockItemUnmount = jest.fn();
 const mockToastError = jest.fn();
+const mockDismissHomeCustomerOptions = jest.fn();
 jest.mock("@/components/feedback/ToastProvider", () => ({
   useToast: () => ({ error: mockToastError }),
 }));
@@ -161,13 +162,15 @@ jest.mock("@/features/pos/components/PosProductBundleSheet", () => ({
 }));
 
 jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
-  PosCustomerComboBox: ({ accessibilityLabel, onSelect, selectedCustomer }: { accessibilityLabel: string; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }) => {
-    const { Pressable, TextInput } = require("react-native");
+  PosCustomerComboBox: require("react").forwardRef(({ accessibilityLabel, floatingOptions, onSelect, selectedCustomer }: { accessibilityLabel: string; floatingOptions?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }, ref: React.Ref<{ dismiss: () => void }>) => {
+    const { Pressable, TextInput, View } = require("react-native");
+    require("react").useImperativeHandle(ref, () => ({ dismiss: mockDismissHomeCustomerOptions }));
     return <>
+      {floatingOptions ? <View testID="home-customer-options-float" /> : null}
       <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
       <Pressable accessibilityLabel="Choose searched customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
     </>;
-  },
+  }),
 }));
 
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
@@ -273,6 +276,12 @@ describe("PosHomeScreen", () => {
     );
 
     expect(screen.getByLabelText("Search home customers")).toBeTruthy();
+    expect(screen.getByTestId("home-customer-options-float")).toBeTruthy();
+    expect(screen.getByTestId("pos-home-catalogue-list").props.ListHeaderComponentStyle).toEqual(
+      expect.objectContaining({ zIndex: expect.any(Number) }),
+    );
+    await fireEvent(screen.getByLabelText("Search for one item"), "touchStart");
+    expect(mockDismissHomeCustomerOptions).toHaveBeenCalledTimes(1);
     await fireEvent.press(screen.getByLabelText("Choose searched customer"));
     expect(onSelectSaleCustomer).toHaveBeenCalledWith({
       customer: "CUST-002",

@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
 import { Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
@@ -15,22 +15,30 @@ type PosCustomerComboBoxProps = {
   disabled?: boolean;
   floatingOptions?: boolean;
   invalid?: boolean;
+  onOpen?: () => void;
   onSelect: (customer: PosCustomerSearchResult) => void;
+  optionAccessibilityPrefix?: string;
+  placeholder?: string;
   posProfile?: string;
   selectedCustomer?: PosSaleCustomer | null;
 };
 
+export type PosCustomerComboBoxHandle = { dismiss: () => void };
+
 /** Search permitted customers inline; typed text never changes the active sale. */
-export function PosCustomerComboBox({
+export const PosCustomerComboBox = forwardRef<PosCustomerComboBoxHandle, PosCustomerComboBoxProps>(function PosCustomerComboBox({
   accessibilityLabel,
   allowCustomerCreation,
   disabled = false,
   floatingOptions = false,
   invalid = false,
+  onOpen,
   onSelect,
+  optionAccessibilityPrefix = "Select customer",
+  placeholder = "Search and select a customer",
   posProfile,
   selectedCustomer,
-}: PosCustomerComboBoxProps) {
+}: PosCustomerComboBoxProps, ref) {
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const inputRef = useRef<TextInput>(null);
@@ -56,6 +64,8 @@ export function PosCustomerComboBox({
     Keyboard.dismiss();
   }
 
+  useImperativeHandle(ref, () => ({ dismiss: () => { if (isOpen) close(); } }));
+
   function select(customer: PosCustomerSearchResult) {
     if (customer.customer !== selectedCustomer?.customer) onSelect(customer);
     close();
@@ -69,7 +79,7 @@ export function PosCustomerComboBox({
   }
 
   return (
-    <View style={[styles.container, floatingOptions && styles.floatingContainer]}>
+    <View onTouchStart={(event) => event.stopPropagation()} style={[styles.container, floatingOptions && styles.floatingContainer]}>
       <View style={[styles.inputRow, invalid && styles.invalid, disabled && styles.disabled]} testID="customer-combobox-input-row">
         <TextInput
           ref={inputRef}
@@ -78,16 +88,18 @@ export function PosCustomerComboBox({
           editable={!disabled}
           onChangeText={(value) => {
             if (disabled) return;
+            if (!isOpen) onOpen?.();
             setQuery(value);
             setIsOpen(true);
             setShowCreate(false);
           }}
           onFocus={() => {
             if (disabled) return;
+            onOpen?.();
             setQuery("");
             setIsOpen(true);
           }}
-          placeholder="Search and select a customer"
+          placeholder={placeholder}
           placeholderTextColor={palette.onSurfaceMuted}
           style={styles.input}
           value={isOpen ? query : selectedCustomer?.customerName || ""}
@@ -126,7 +138,8 @@ export function PosCustomerComboBox({
               ) : null}
               {rows.map((customer) => (
                 <Pressable
-                  accessibilityLabel={`Select customer ${customer.customerName}`}
+                  accessibilityLabel={`${optionAccessibilityPrefix} ${customer.customerName}`}
+                  accessibilityRole="button"
                   key={customer.customer}
                   onPress={() => select(customer)}
                   style={styles.option}
@@ -187,7 +200,7 @@ export function PosCustomerComboBox({
       ) : null}
     </View>
   );
-}
+});
 
 function createStyles(palette: AppPalette) {
   return StyleSheet.create({

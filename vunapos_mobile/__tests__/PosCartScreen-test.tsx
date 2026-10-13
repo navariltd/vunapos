@@ -1,18 +1,21 @@
 import { cleanup, fireEvent, render, within } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 
+const mockDismissCartCustomerOptions = jest.fn();
+
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
 jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
-  PosCustomerComboBox: ({ accessibilityLabel, invalid, onSelect, selectedCustomer }: { accessibilityLabel: string; invalid?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }) => {
+  PosCustomerComboBox: require("react").forwardRef(({ accessibilityLabel, invalid, onSelect, selectedCustomer }: { accessibilityLabel: string; invalid?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }, ref: React.Ref<{ dismiss: () => void }>) => {
     const { Pressable, TextInput, View } = require("react-native");
+    require("react").useImperativeHandle(ref, () => ({ dismiss: mockDismissCartCustomerOptions }));
     return <View testID="customer-combobox-input-row" style={{ borderColor: invalid ? "#cc2929" : "#c7c7c7" }}>
       <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
       <Pressable accessibilityLabel="Choose cart customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
     </View>;
-  },
+  }),
 }));
 
 jest.mock("@/features/pos/components/PosPriceListPickerSheet", () => ({
@@ -340,6 +343,44 @@ describe("PosCartScreen", () => {
     expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-002");
     expect(screen.queryByLabelText("Select shipping address Market branch")).toBeNull();
     expect(screen.queryByLabelText("Close shipping address picker")).toBeNull();
+  });
+
+  it("dismisses customer and shipping options on an outside cart touch without changing the sale", async () => {
+    const onSelectShippingAddress = jest.fn();
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        customerShippingAddresses={[{ address_line1: "1 Main Street", name: "ADDR-001" }]}
+        error={null}
+        isUpdating={false}
+        items={[{ allow_negative_stock: true, available_qty: null, is_stock_item: false, item_code: "ITEM-001", item_name: "Stock item", qty: 1, rate: 10, uom: "Nos" }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onSelectShippingAddress={onSelectShippingAddress}
+        onClear={onClear}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={{ customer: "CUST-001", customerName: "Example customer" }}
+        shippingAddressName="ADDR-001"
+        subtotal={10}
+        taxes={[]}
+        totals={{ grand_total: 10, net_total: 10 }}
+      />,
+    );
+
+    await fireEvent(screen.getByLabelText("Search shipping addresses"), "focus");
+    expect(screen.getByTestId("cart-shipping-address-options")).toBeTruthy();
+    await fireEvent(screen.getByTestId("cart-footer"), "touchStart");
+    expect(screen.queryByTestId("cart-shipping-address-options")).toBeNull();
+    expect(mockDismissCartCustomerOptions).toHaveBeenCalled();
+    expect(onSelectShippingAddress).not.toHaveBeenCalled();
+    expect(onSelectSaleCustomer).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Search shipping addresses").props.value).toBe("1 Main Street");
   });
 
   it("shows a long selected shipping address from its beginning without constraining search typing", async () => {

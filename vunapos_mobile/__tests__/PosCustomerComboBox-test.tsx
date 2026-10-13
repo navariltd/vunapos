@@ -1,10 +1,13 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { createRef } from "react";
+import { Pressable, View } from "react-native";
 
 jest.mock("react-native-paper", () => ({ Text: require("react-native").Text }));
 jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({ usePosCustomerSearch: jest.fn() }));
 jest.mock("@/features/pos/hooks/useCreatePosCustomer", () => ({ useCreatePosCustomer: jest.fn() }));
 
 import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { useCreatePosCustomer } from "@/features/pos/hooks/useCreatePosCustomer";
 import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
 import { lightPalette } from "@/theme/tokens";
@@ -74,6 +77,30 @@ describe("PosCustomerComboBox", () => {
     });
     await fireEvent.press(screen.getByLabelText("Select customer Brian Kamau"));
     expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ customer: "CUST-002" }));
+  });
+
+  it("dismisses floating options on an outside touch without selecting a customer", async () => {
+    const comboRef = createRef<PosCustomerComboBoxHandle>();
+    const screen = await render(
+      <View onTouchStart={() => comboRef.current?.dismiss()}>
+        <PosCustomerComboBox
+          accessibilityLabel="Search customers"
+          allowCustomerCreation={false}
+          floatingOptions
+          onSelect={onSelect}
+          ref={comboRef}
+        />
+        <Pressable accessibilityLabel="Outside the customer selector" />
+      </View>,
+    );
+
+    await fireEvent(screen.getByLabelText("Search customers"), "focus");
+    expect(screen.getByTestId("customer-combobox-options")).toHaveStyle({ position: "absolute" });
+    await fireEvent(screen.getByLabelText("Select customer Brian Kamau"), "touchStart", { stopPropagation: jest.fn() });
+    expect(screen.getByTestId("customer-combobox-options")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Outside the customer selector"), "touchStart");
+    expect(screen.queryByTestId("customer-combobox-options")).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("only offers customer creation when permitted, then selects the created customer", async () => {

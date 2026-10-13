@@ -12,6 +12,7 @@ import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
 import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -87,6 +88,7 @@ export function PosHomeScreen({
   showCustomerSelector = false,
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const { palette } = useAppearance();
   const { width: windowWidth } = useWindowDimensions();
   const toast = useToast();
@@ -397,7 +399,7 @@ export function PosHomeScreen({
   }
 
   return (
-    <View style={styles.content}>
+    <View onTouchStart={() => customerComboRef.current?.dismiss()} style={styles.content}>
       <FlatList
         columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
@@ -405,6 +407,7 @@ export function PosHomeScreen({
         initialNumToRender={hideImages ? 12 : 8}
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
+        ListHeaderComponentStyle={showCustomerSelector ? styles.listHeaderLayer : undefined}
         ListEmptyComponent={
           <View>
             <Text
@@ -430,7 +433,7 @@ export function PosHomeScreen({
           </View>
         }
         ListHeaderComponent={
-          <View>
+          <View style={styles.listHeader}>
             {showCustomerSelector && onSelectSaleCustomer ? (
               <View
                 style={[
@@ -445,8 +448,10 @@ export function PosHomeScreen({
                   accessibilityLabel="Search home customers"
                   allowCustomerCreation={false}
                   disabled={customerSelectionDisabled}
+                  floatingOptions
                   onSelect={onSelectSaleCustomer}
                   posProfile={bootstrap.data?.pos_profile.name}
+                  ref={customerComboRef}
                   selectedCustomer={saleCustomer}
                 />
               </View>
@@ -479,6 +484,7 @@ export function PosHomeScreen({
           />
         }
         showsVerticalScrollIndicator={false}
+        testID="pos-home-catalogue-list"
         updateCellsBatchingPeriod={50}
         windowSize={7}
       />
@@ -530,7 +536,10 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.md,
     marginTop: spacing.md,
     padding: spacing.md,
+    zIndex: 2,
   },
+  listHeader: { zIndex: 2 },
+  listHeaderLayer: { zIndex: 2 },
   customerCardLabel: {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,

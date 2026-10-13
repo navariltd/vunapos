@@ -6,6 +6,7 @@ import { Text } from "react-native-paper";
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
 import { filterShippingAddresses } from "@/features/pos/shippingAddressSearch";
 import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
@@ -1165,6 +1166,7 @@ export function PosCartScreen({
   const [showRequiredFields, setShowRequiredFields] = useState(false);
   const [shippingAddressQuery, setShippingAddressQuery] = useState("");
   const shippingAddressInputRef = useRef<TextInput>(null);
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
   const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
@@ -1210,7 +1212,13 @@ export function PosCartScreen({
   }
 
   return (
-    <View style={styles.screen}>
+    <View
+      onTouchStart={() => {
+        customerComboRef.current?.dismiss();
+        if (shippingAddressPickerVisible) dismissShippingAddressPicker();
+      }}
+      style={styles.screen}
+    >
       {showHeader ? (
         <PosFixedPageHeader>
           <View style={styles.header}>
@@ -1249,15 +1257,26 @@ export function PosCartScreen({
               disabled={isCartBusy}
               floatingOptions
               invalid={showRequiredFields && missingCustomer}
+              onOpen={() => {
+                setShippingAddressPickerVisible(false);
+                setShippingAddressQuery("");
+              }}
               onSelect={(customer) => {
                 dismissShippingAddressPicker();
                 onSelectSaleCustomer(customer);
               }}
               posProfile={posProfile}
+              ref={customerComboRef}
               selectedCustomer={saleCustomer}
             />
           </View>
-          <View style={styles.shippingAddressCombo}>
+          <View
+            onTouchStart={(event) => {
+              customerComboRef.current?.dismiss();
+              event.stopPropagation();
+            }}
+            style={styles.shippingAddressCombo}
+          >
             <Text style={styles.requiredFieldLabel} testID="cart-shipping-address-label">
               Shipping address <Text style={styles.requiredStar}>*</Text>
             </Text>
