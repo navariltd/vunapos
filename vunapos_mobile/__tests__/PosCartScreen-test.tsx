@@ -513,6 +513,46 @@ describe("PosCartScreen", () => {
     expect(onHold).toHaveBeenCalledTimes(1);
   });
 
+  it("offers Hold for a Sales Order cart", async () => {
+    const onHold = jest.fn().mockResolvedValue({ name: "SAL-ORD-0001" });
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        defaultSaleCustomer={null}
+        error={null}
+        isUpdating={false}
+        items={[{
+          allow_negative_stock: false,
+          available_qty: 4,
+          is_stock_item: true,
+          item_code: "ITEM-001",
+          item_name: "Stock item",
+          qty: 1,
+          rate: 125,
+        }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onClear={onClear}
+        onClearSaleCustomer={onClearSaleCustomer}
+        onHold={onHold}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Order"
+        requiresCustomer={false}
+        saleCustomer={null}
+        subtotal={125}
+        taxes={[]}
+        totals={{ grand_total: 125, net_total: 125 }}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Hold cart"));
+    expect(onHold).toHaveBeenCalledTimes(1);
+  });
+
   it("labels checkout as continuing when the cart comes from a held draft", async () => {
     const screen = await render(
       <PosCartScreen

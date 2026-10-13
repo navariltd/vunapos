@@ -1200,7 +1200,7 @@ export function PosCartScreen({
     setShippingAddressQuery("");
   }
   const isCartBusy = isUpdating || isHolding || hasPendingHold;
-  const canHold = Boolean(onHold) && orderType === "Invoice";
+  const canHold = Boolean(onHold);
 
   async function holdCart() {
     const heldInvoice = await onHold?.();

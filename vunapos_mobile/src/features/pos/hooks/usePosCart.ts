@@ -751,6 +751,7 @@ export function usePosCart({
               {
                 customer: customerRef.current?.customer,
                 items: JSON.stringify(toCartPayload(cartItems)),
+                ...(invoiceDoctype ? { invoice_doctype: invoiceDoctype } : {}),
                 pos_profile: posProfile,
                 price_list: priceListRef.current,
               },
