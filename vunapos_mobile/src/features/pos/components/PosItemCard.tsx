@@ -18,6 +18,7 @@ type PosItemCardProps = {
   currency: string;
   currencyPrecision?: number;
   imageUrl?: string | null;
+  ignoreStock?: boolean;
   isAdding?: boolean;
   isOffline?: boolean;
   item: PosCatalogueItem;
@@ -42,6 +43,7 @@ export const PosItemCard = memo(function PosItemCard({
   currency,
   currencyPrecision = 2,
   imageUrl,
+  ignoreStock = false,
   isAdding = false,
   isOffline = false,
   item,
@@ -54,6 +56,7 @@ export const PosItemCard = memo(function PosItemCard({
     !item.is_product_bundle &&
     !item.allow_negative_stock &&
     Number(item.actual_qty || 0) <= 0;
+  const stockBlocked = outOfStock && !ignoreStock;
 
   return (
     <View
@@ -64,12 +67,14 @@ export const PosItemCard = memo(function PosItemCard({
     >
       <Pressable
         accessibilityHint={
-          outOfStock
+          stockBlocked
             ? "This item is out of stock"
+            : outOfStock
+              ? "Out of stock; adds this item to the Sales Order"
             : "Adds this item to the cart"
         }
         accessibilityLabel={item.item_name}
-        disabled={outOfStock || isAdding}
+        disabled={stockBlocked || isAdding}
         onPress={() => onAdd(item)}
         style={[
           styles.previewArea,
@@ -143,8 +148,10 @@ export const PosItemCard = memo(function PosItemCard({
           </View>
           <Pressable
             accessibilityHint={
-              outOfStock
+              stockBlocked
                 ? "This item is out of stock"
+                : outOfStock
+                  ? "Out of stock; adds this item to the Sales Order"
                 : isAdding
                   ? "This item is being added to the cart"
                   : "Adds this item to the cart"
@@ -152,13 +159,13 @@ export const PosItemCard = memo(function PosItemCard({
             accessibilityLabel={
               isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
             }
-            disabled={outOfStock || isAdding}
+            disabled={stockBlocked || isAdding}
             onPress={() => onAdd(item)}
             style={[
               styles.addButton,
               {
                 backgroundColor:
-                  outOfStock || isAdding
+                  stockBlocked || isAdding
                     ? palette.disabled
                     : palette.primary,
               },

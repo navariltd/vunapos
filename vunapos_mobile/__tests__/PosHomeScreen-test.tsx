@@ -23,15 +23,17 @@ jest.mock("@/components/feedback/ToastProvider", () => ({
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
+    ignoreStock,
     isAdding,
     isOffline,
     item,
     onAdd,
   }: {
     imageUrl?: string | null;
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
@@ -42,7 +44,7 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -57,11 +59,13 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
 jest.mock("@/features/pos/components/PosItemListRow", () => ({
   PosItemListRow: ({
     item,
+    ignoreStock,
     isAdding,
     isOffline,
     onAdd,
   }: {
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
     onAdd: (item: { item_name: string }) => void;
@@ -70,7 +74,7 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -293,6 +297,44 @@ describe("PosHomeScreen", () => {
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
   });
+
+  it.each([false, true])(
+    "allows out-of-stock Sales Order items in %s image mode but blocks invoices",
+    async (hideImages) => {
+      const stockItem = {
+        actual_qty: 0,
+        is_stock_item: true,
+        item_code: "STOCK-001",
+        item_name: "Out-of-stock item",
+        rate: 50,
+      };
+      mockUsePosBootstrap.mockReturnValue({
+        data: {
+          items: [stockItem],
+          payment_modes: [],
+          pos_profile: { currency: "KES", hide_images: hideImages, name: "POS-001" },
+        },
+        error: null,
+        isLoading: false,
+        reload: jest.fn(),
+      });
+      const props = {
+        cartItemCount: 0,
+        onAddToCart,
+        onOpenCart: jest.fn(),
+      };
+      const screen = await render(<PosHomeScreen {...props} orderType="Order" />);
+      const itemLabel = `${hideImages ? "List" : "Card"}: Out-of-stock item`;
+
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).toHaveBeenCalledWith(stockItem, "KES");
+
+      onAddToCart.mockClear();
+      await screen.rerender(<PosHomeScreen {...props} orderType="Invoice" />);
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps a lone final grid card one column wide and hides cache timestamps", async () => {
     const items = ["ONE", "TWO", "THREE"].map((item_code) => ({

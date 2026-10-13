@@ -325,6 +325,48 @@ describe("PosCartScreen", () => {
     expect(screen.getByLabelText("Search shipping addresses").props.value).toBe("");
   });
 
+  it("lets a Sales Order quantity exceed displayed stock without relaxing invoice controls", async () => {
+    const props = {
+      allowCustomerCreation: false,
+      currency: "KES",
+      defaultSaleCustomer: null,
+      error: null,
+      isUpdating: false,
+      items: [{
+        allow_negative_stock: false,
+        available_qty: 0,
+        is_stock_item: true,
+        item_code: "ITEM-001",
+        item_name: "Out-of-stock item",
+        qty: 1,
+        rate: 10,
+        uom: "Nos",
+      }],
+      onBack,
+      onCheckout,
+      onClear,
+      onClearSaleCustomer,
+      onRemove,
+      onRetry,
+      onSelectSaleCustomer,
+      onUpdateQuantity,
+      requiresCustomer: false,
+      saleCustomer: { customer: "CUST-001", customerName: "Customer" },
+      subtotal: 10,
+      taxes: [],
+      totals: { grand_total: 10, net_total: 10 },
+    };
+    const screen = await render(<PosCartScreen {...props} orderType="Order" />);
+
+    await fireEvent.press(screen.getByLabelText("Increase quantity for Out-of-stock item"));
+    expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 2);
+
+    onUpdateQuantity.mockClear();
+    await screen.rerender(<PosCartScreen {...props} orderType="Invoice" />);
+    await fireEvent.press(screen.getByLabelText("Increase quantity for Out-of-stock item"));
+    expect(onUpdateQuantity).not.toHaveBeenCalled();
+  });
+
   it("keeps cart actions available without network gating", async () => {
     const screen = await render(
       <PosCartScreen

@@ -11,6 +11,7 @@ import { radii, spacing, typography } from "@/theme/tokens";
 type PosItemListRowProps = {
   currency: string;
   currencyPrecision?: number;
+  ignoreStock?: boolean;
   isAdding?: boolean;
   isOffline?: boolean;
   item: PosCatalogueItem;
@@ -30,6 +31,7 @@ function taxLabel(item: PosCatalogueItem) {
 export const PosItemListRow = memo(function PosItemListRow({
   currency,
   currencyPrecision = 2,
+  ignoreStock = false,
   isAdding = false,
   isOffline = false,
   item,
@@ -42,12 +44,15 @@ export const PosItemListRow = memo(function PosItemListRow({
     !item.is_product_bundle &&
     !item.allow_negative_stock &&
     Number(item.actual_qty || 0) <= 0;
+  const stockBlocked = outOfStock && !ignoreStock;
 
   return (
     <Pressable
       accessibilityHint={
-        outOfStock
+        stockBlocked
           ? "This item is out of stock"
+          : outOfStock
+            ? "Out of stock; adds this item to the Sales Order"
           : isAdding
             ? "This item is being added to the cart"
             : "Adds this item to the cart"
@@ -55,14 +60,14 @@ export const PosItemListRow = memo(function PosItemListRow({
       accessibilityLabel={
         isAdding ? `Adding ${item.item_name}` : `Add ${item.item_name}`
       }
-    disabled={outOfStock || isAdding}
+      disabled={stockBlocked || isAdding}
       onPress={() => onAdd(item)}
       style={[
         styles.row,
         {
           backgroundColor: palette.surface,
           borderColor: palette.borderSubtle,
-          opacity: outOfStock || isAdding ? 0.72 : 1,
+          opacity: stockBlocked || isAdding ? 0.72 : 1,
         },
       ]}
     >
@@ -123,7 +128,7 @@ export const PosItemListRow = memo(function PosItemListRow({
           styles.addButton,
           {
             backgroundColor:
-              outOfStock || isAdding
+              stockBlocked || isAdding
                 ? palette.disabled
                 : palette.primary,
           },

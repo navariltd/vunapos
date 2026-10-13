@@ -332,6 +332,7 @@ export function PosHomeScreen({
         <PosItemListRow
           currency={currency}
           currencyPrecision={currencyPrecision}
+          ignoreStock={isSalesOrder}
           isAdding={pendingItemCode === item.item_code}
           isOffline={isOffline}
           item={item}
@@ -346,6 +347,7 @@ export function PosHomeScreen({
             currency={currency}
             currencyPrecision={currencyPrecision}
             imageUrl={itemImageUrl(item.image, companyUrl)}
+            ignoreStock={isSalesOrder}
             isAdding={pendingItemCode === item.item_code}
             isOffline={isOffline}
             item={item}
@@ -353,7 +355,7 @@ export function PosHomeScreen({
           />
         </View>
       ),
-    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode, windowWidth],
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, isSalesOrder, pendingItemCode, windowWidth],
   );
 
   if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)

@@ -729,19 +729,20 @@ function CartLine({
   const [batchExpanded, setBatchExpanded] = useState(false);
   const [serialExpanded, setSerialExpanded] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
-  const maximum =
+  const availableQuantity =
     item.is_stock_item &&
     !item.allow_negative_stock &&
     item.available_qty !== null
       ? item.available_qty / Number(item.conversion_factor || 1)
       : null;
+  const maximum = orderType === "Order" ? null : availableQuantity;
   const isCarton = item.uom?.trim().toLowerCase() === "carton";
   const displayedMaximum =
-    maximum === null
+    availableQuantity === null
       ? null
       : isCarton
-        ? Math.floor(maximum + 1e-9)
-        : Number(maximum.toFixed(3));
+        ? Math.floor(availableQuantity + 1e-9)
+        : Number(availableQuantity.toFixed(3));
   const availableUom = isCarton ? "Cartons" : item.uom || "units";
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
