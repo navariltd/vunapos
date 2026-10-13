@@ -32,7 +32,7 @@ def ensure_vunapos_custom_fields():
 				"insert_after": "vunapos_allow_payment_history",
 				"description": "Allow cashiers using this POS Profile to create returns and credit notes.",
 				"default": "1",
-			}
+			},
 		],
 		"POS Settings": [
 			{
