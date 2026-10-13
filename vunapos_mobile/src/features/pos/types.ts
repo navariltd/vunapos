@@ -238,6 +238,7 @@ export type PosBootstrapData = {
     company?: string;
     warehouse?: string;
     allow_customer_creation?: boolean;
+    enable_home_customer_selection?: boolean;
     allow_customer_management?: boolean;
     allow_customer_payments?: boolean;
     allow_payment_history?: boolean;

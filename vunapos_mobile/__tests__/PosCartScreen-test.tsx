@@ -1,12 +1,18 @@
-import { cleanup, fireEvent, render } from "@testing-library/react-native";
+import { cleanup, fireEvent, render, within } from "@testing-library/react-native";
 import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
 }));
 
-jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
-  PosCustomerPickerSheet: () => null,
+jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
+  PosCustomerComboBox: ({ accessibilityLabel, invalid, onSelect, selectedCustomer }: { accessibilityLabel: string; invalid?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }) => {
+    const { Pressable, TextInput, View } = require("react-native");
+    return <View testID="customer-combobox-input-row" style={{ borderColor: invalid ? "#cc2929" : "#c7c7c7" }}>
+      <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
+      <Pressable accessibilityLabel="Choose cart customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
+    </View>;
+  },
 }));
 
 jest.mock("@/features/pos/components/PosPriceListPickerSheet", () => ({
@@ -83,7 +89,6 @@ import { lightPalette } from "@/theme/tokens";
 
 const onBack = jest.fn();
 const onCheckout = jest.fn();
-const onClearSaleCustomer = jest.fn();
 const onSelectSaleCustomer = jest.fn();
 const onClear = jest.fn();
 const onRemove = jest.fn();
@@ -152,7 +157,6 @@ describe("PosCartScreen", () => {
         ]}
         onBack={onBack}
         onCheckout={onCheckout}
-        onClearSaleCustomer={onClearSaleCustomer}
         onSelectSaleCustomer={onSelectSaleCustomer}
         onClear={onClear}
         onRemove={onRemove}
@@ -160,15 +164,12 @@ describe("PosCartScreen", () => {
         onUpdateQuantity={onUpdateQuantity}
         orderType="Invoice"
         requiresCustomer={false}
-        defaultSaleCustomer={{
-          customer: "WALK-IN",
-          customerName: "Walk-in customer",
-          isWalkin: true,
-        }}
         saleCustomer={{
           customer: "CUST-001",
           customerName: "Example customer",
         }}
+        customerShippingAddresses={[{ address_line1: "1 Main Street", name: "ADDR-001" }]}
+        shippingAddressName="ADDR-001"
         subtotal={250}
         taxes={[{ description: "VAT", tax_amount: 40 }]}
         totals={{ grand_total: 290, net_total: 250 }}
@@ -178,9 +179,18 @@ describe("PosCartScreen", () => {
     expect(screen.getAllByText("KES 250.00")).toHaveLength(2);
     expect(screen.getByText("KES 290.00")).toBeTruthy();
     expect(screen.getByText("Subtotal")).toBeTruthy();
-    expect(screen.getByText("VAT Added")).toBeTruthy();
+    expect(screen.getByText("Taxes")).toBeTruthy();
+    expect(screen.getByText("KES 40.00")).toBeTruthy();
+    expect(screen.queryByText("VAT Added")).toBeNull();
+    expect(screen.queryByText("Total taxes and charges")).toBeNull();
     expect(screen.queryByText("Payment is collected at checkout.")).toBeNull();
     expect(screen.queryByText(/Updated /)).toBeNull();
+    expect(screen.getByLabelText("Search cart customers").props.value).toBe("Example customer");
+    await fireEvent.press(screen.getByLabelText("Choose cart customer"));
+    expect(onSelectSaleCustomer).toHaveBeenCalledWith({
+      customer: "CUST-002",
+      customerName: "Brian Kamau",
+    });
     await fireEvent.press(
       screen.getByLabelText("Increase quantity for Stock item"),
     );
@@ -204,14 +214,14 @@ describe("PosCartScreen", () => {
     await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
     expect(onCheckout).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText("Proceed to checkout")).toHaveStyle({
-      backgroundColor: lightPalette.primary,
-      alignSelf: "center",
+      backgroundColor: lightPalette.onSurface,
       paddingHorizontal: 16,
-      width: "80%",
     });
+    expect(
+      within(screen.getByTestId("cart-footer")).getByLabelText("Proceed to checkout"),
+    ).toBeTruthy();
 
-    await fireEvent.press(screen.getByLabelText("Use default sale customer"));
-    expect(onClearSaleCustomer).toHaveBeenCalledTimes(1);
+    expect(screen.queryByLabelText("Use default sale customer")).toBeNull();
   });
 
   it("shows complete available cartons without a repeating decimal", async () => {
@@ -219,7 +229,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -239,7 +248,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -253,6 +261,8 @@ describe("PosCartScreen", () => {
       />,
     );
 
+    expect(screen.queryByText("Available Cartons: 104")).toBeNull();
+    await fireEvent.press(screen.getByLabelText("View details for Dairy Joy"));
     expect(screen.getByText("Available Cartons: 104")).toBeTruthy();
     expect(screen.queryByText(/104\.166/)).toBeNull();
     expect(
@@ -281,13 +291,11 @@ describe("PosCartScreen", () => {
             name: "ADDR-002",
           },
         ]}
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[{ allow_negative_stock: true, available_qty: null, is_stock_item: false, item_code: "ITEM-001", item_name: "Stock item", qty: 1, rate: 10, uom: "Nos" }]}
         onBack={onBack}
         onCheckout={onCheckout}
-        onClearSaleCustomer={onClearSaleCustomer}
         onSelectSaleCustomer={onSelectSaleCustomer}
         onSelectShippingAddress={onSelectShippingAddress}
         onClear={onClear}
@@ -297,39 +305,138 @@ describe("PosCartScreen", () => {
         orderType="Invoice"
         requiresCustomer={false}
         saleCustomer={{ customer: "CUST-001", customerName: "Example customer" }}
+        shippingAddressName="ADDR-001"
         subtotal={10}
         taxes={[]}
         totals={{ grand_total: 10, net_total: 10 }}
       />,
     );
 
-    expect(screen.getByText("Select shipping address")).toBeTruthy();
-    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
+    const addressInput = screen.getByLabelText("Search shipping addresses");
+    expect(addressInput.props.value).toBe("1 Main Street, Nairobi");
+    expect(screen.queryByLabelText("Select shipping address Main shop")).toBeNull();
+    await fireEvent(addressInput, "focus");
+    expect(screen.getByTestId("cart-shipping-address-options")).toHaveStyle({
+      position: "absolute",
+      top: "100%",
+    });
     await fireEvent.changeText(
-      screen.getByLabelText("Search shipping addresses"),
+      addressInput,
       "unknown place",
     );
     expect(screen.getByText("No matching shipping addresses.")).toBeTruthy();
+    expect(onSelectShippingAddress).toHaveBeenCalledWith("");
     await fireEvent.changeText(
-      screen.getByLabelText("Search shipping addresses"),
+      addressInput,
       "market road",
     );
     expect(
       screen.queryByLabelText("Select shipping address Main shop"),
     ).toBeNull();
+    expect(onSelectShippingAddress).not.toHaveBeenCalledWith("ADDR-002");
     await fireEvent.press(
       screen.getByLabelText("Select shipping address Market branch"),
     );
     expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-002");
-    await fireEvent.press(screen.getByLabelText("Choose shipping address"));
-    expect(screen.getByLabelText("Search shipping addresses").props.value).toBe("");
+    expect(screen.queryByLabelText("Select shipping address Market branch")).toBeNull();
+    expect(screen.queryByLabelText("Close shipping address picker")).toBeNull();
+  });
+
+  it("shows a long selected shipping address from its beginning without constraining search typing", async () => {
+    const address = "The first words of a very long delivery address, Warehouse Road, Industrial Area, Nairobi";
+    const screen = await render(
+      <PosCartScreen
+        allowCustomerCreation={false}
+        currency="KES"
+        customerShippingAddresses={[{ formatted_address: address, name: "ADDR-LONG" }]}
+        error={null}
+        isUpdating={false}
+        items={[{ allow_negative_stock: true, available_qty: null, is_stock_item: false, item_code: "ITEM-001", item_name: "Stock item", qty: 1, rate: 10, uom: "Nos" }]}
+        onBack={onBack}
+        onCheckout={onCheckout}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        onClear={onClear}
+        onRemove={onRemove}
+        onRetry={onRetry}
+        onUpdateQuantity={onUpdateQuantity}
+        orderType="Invoice"
+        requiresCustomer={false}
+        saleCustomer={{ customer: "CUST-001", customerName: "Example customer" }}
+        shippingAddressName="ADDR-LONG"
+        subtotal={10}
+        taxes={[]}
+        totals={{ grand_total: 10, net_total: 10 }}
+      />,
+    );
+
+    const addressInput = screen.getByLabelText("Search shipping addresses");
+    expect(addressInput.props.value).toBe(address);
+    expect(addressInput.props.selection).toEqual({ start: 0, end: 0 });
+
+    await fireEvent(addressInput, "focus");
+    expect(addressInput.props.value).toBe("");
+    expect(addressInput.props.selection).toBeUndefined();
+    await fireEvent.changeText(addressInput, "warehouse");
+    expect(addressInput.props.value).toBe("warehouse");
+    expect(addressInput.props.selection).toBeUndefined();
+  });
+
+  it("highlights missing customer and shipping address, then permits checkout once both are selected", async () => {
+    const onSelectShippingAddress = jest.fn();
+    const props = {
+      allowCustomerCreation: false,
+      currency: "KES",
+      customerShippingAddresses: [{ address_line1: "1 Main Street", name: "ADDR-001" }],
+      error: null,
+      isUpdating: false,
+      items: [{ allow_negative_stock: true, available_qty: null, is_stock_item: false, item_code: "ITEM-001", item_name: "Stock item", qty: 1, rate: 10, uom: "Nos" }],
+      onBack,
+      onCheckout,
+      onSelectSaleCustomer,
+      onSelectShippingAddress,
+      onClear,
+      onRemove,
+      onRetry,
+      onUpdateQuantity,
+      orderType: "Order" as const,
+      subtotal: 10,
+      taxes: [],
+      totals: { grand_total: 10 },
+    };
+    const screen = await render(
+      <PosCartScreen {...props} requiresCustomer saleCustomer={null} shippingAddressName="" />,
+    );
+
+    const checkoutButton = screen.getByLabelText("Proceed to checkout");
+    expect(checkoutButton).toHaveStyle({ backgroundColor: lightPalette.disabled });
+    await fireEvent.press(checkoutButton);
+    expect(onCheckout).not.toHaveBeenCalled();
+    expect(screen.getByTestId("customer-combobox-input-row")).toHaveStyle({ borderColor: lightPalette.error });
+    expect(screen.getByTestId("cart-shipping-address-input-row")).toHaveStyle({ borderColor: lightPalette.error });
+    expect(screen.getByText("Select a customer and shipping address above.")).toBeTruthy();
+
+    const customer = { customer: "CUST-001", customerName: "Example customer" };
+    await screen.rerender(<PosCartScreen {...props} requiresCustomer={false} saleCustomer={customer} shippingAddressName="" />);
+    expect(screen.getByTestId("customer-combobox-input-row")).toHaveStyle({ borderColor: lightPalette.border });
+    expect(screen.getByText("Select a shipping address above.")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
+    expect(onCheckout).not.toHaveBeenCalled();
+
+    await fireEvent(screen.getByLabelText("Search shipping addresses"), "focus");
+    await fireEvent.press(screen.getByLabelText("Select shipping address ADDR-001"));
+    expect(onSelectShippingAddress).toHaveBeenCalledWith("ADDR-001");
+    await screen.rerender(<PosCartScreen {...props} requiresCustomer={false} saleCustomer={customer} shippingAddressName="ADDR-001" />);
+    expect(screen.queryByText("Select a shipping address above.")).toBeNull();
+    expect(screen.getByTestId("cart-shipping-address-input-row")).toHaveStyle({ borderColor: lightPalette.border });
+    expect(screen.getByLabelText("Proceed to checkout")).toHaveStyle({ backgroundColor: lightPalette.onSurface });
+    await fireEvent.press(screen.getByLabelText("Proceed to checkout"));
+    expect(onCheckout).toHaveBeenCalledTimes(1);
   });
 
   it("lets a Sales Order quantity exceed displayed stock without relaxing invoice controls", async () => {
     const props = {
       allowCustomerCreation: false,
       currency: "KES",
-      defaultSaleCustomer: null,
       error: null,
       isUpdating: false,
       items: [{
@@ -345,7 +452,6 @@ describe("PosCartScreen", () => {
       onBack,
       onCheckout,
       onClear,
-      onClearSaleCustomer,
       onRemove,
       onRetry,
       onSelectSaleCustomer,
@@ -372,7 +478,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -390,7 +495,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -414,12 +518,16 @@ describe("PosCartScreen", () => {
     expect(screen.getByTestId("clear-cart-icon")).toBeTruthy();
     expect(StyleSheet.flatten(clearButton.props.style)).toMatchObject({
       backgroundColor: "#b4232b",
-      minHeight: 42,
+      minHeight: 48,
     });
+    expect(
+      within(screen.getByTestId("cart-secondary-actions")).getByLabelText("Clear cart"),
+    ).toBeTruthy();
     await fireEvent.press(clearButton);
 
     expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 2);
-    expect(onCheckout).toHaveBeenCalled();
+    expect(onCheckout).not.toHaveBeenCalled();
+    expect(screen.getByText("Select a customer and shipping address above.")).toBeTruthy();
     expect(onClear).not.toHaveBeenCalled();
   });
 
@@ -428,7 +536,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -446,7 +553,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -476,7 +582,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -494,7 +599,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onHold={onHold}
         onRemove={onRemove}
         onRetry={onRetry}
@@ -511,6 +615,12 @@ describe("PosCartScreen", () => {
 
     await fireEvent.press(screen.getByLabelText("Hold cart"));
     expect(onHold).toHaveBeenCalledTimes(1);
+    const secondaryActions = within(screen.getByTestId("cart-secondary-actions"));
+    expect(secondaryActions.getByLabelText("Hold cart")).toBeTruthy();
+    expect(secondaryActions.getByLabelText("Clear cart")).toBeTruthy();
+    expect(
+      within(screen.getByTestId("cart-footer")).getByLabelText("Proceed to checkout"),
+    ).toBeTruthy();
   });
 
   it("offers Hold for a Sales Order cart", async () => {
@@ -519,7 +629,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[{
@@ -534,7 +643,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onHold={onHold}
         onRemove={onRemove}
         onRetry={onRetry}
@@ -558,7 +666,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -576,7 +683,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -616,14 +722,12 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
         onUpdateQuantity={onUpdateQuantity}
         orderType="Invoice"
         requiresCustomer
-        defaultSaleCustomer={null}
         saleCustomer={null}
         subtotal={125}
         taxes={[]}
@@ -631,30 +735,27 @@ describe("PosCartScreen", () => {
       />,
     );
 
-    expect(
-      screen.getByText(
-        "Select a customer to calculate current pricing, tax, and stock before checkout.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByTestId("cart-customer-label")).toHaveStyle({ fontSize: 12 });
+    expect(screen.getByTestId("cart-shipping-address-label")).toHaveStyle({ fontSize: 12 });
+    expect(screen.getAllByText("*")).toHaveLength(2);
     const checkoutButton = screen.getByLabelText("Proceed to checkout");
-    expect(checkoutButton.props.accessibilityState.disabled).toBe(true);
+    expect(checkoutButton.props.accessibilityState.disabled).toBe(false);
     expect(checkoutButton).toHaveStyle({
       backgroundColor: lightPalette.disabled,
-      opacity: 0.5,
     });
+    expect(screen.getByText("Proceed to checkout")).toHaveStyle({ color: lightPalette.onSurface });
+    await fireEvent.press(checkoutButton);
+    expect(onCheckout).not.toHaveBeenCalled();
+    expect(screen.getByTestId("customer-combobox-input-row")).toHaveStyle({ borderColor: lightPalette.error });
+    expect(screen.getByLabelText("Search shipping addresses").props.editable).toBe(false);
+    expect(screen.getByText("Select a customer and shipping address above.")).toBeTruthy();
   });
 
-  it("does not offer a reset when the profile default customer is already active", async () => {
-    const defaultSaleCustomer = {
-      customer: "WALK-IN",
-      customerName: "Walk-in customer",
-      isWalkin: true,
-    };
+  it("shows the profile default customer without a separate reset action", async () => {
     const screen = await render(
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={defaultSaleCustomer}
         error={null}
         isUpdating={false}
         items={[
@@ -672,20 +773,20 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
         onUpdateQuantity={onUpdateQuantity}
         orderType="Invoice"
         requiresCustomer={false}
-        saleCustomer={defaultSaleCustomer}
+        saleCustomer={{ customer: "WALK-IN", customerName: "Walk-in customer", isWalkin: true }}
         subtotal={125}
         taxes={[]}
         totals={{ grand_total: 125, net_total: 125 }}
       />,
     );
 
+    expect(screen.getByLabelText("Search cart customers").props.value).toBe("Walk-in customer");
     expect(screen.queryByLabelText("Use default sale customer")).toBeNull();
   });
 
@@ -706,7 +807,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -724,7 +824,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -757,7 +856,6 @@ describe("PosCartScreen", () => {
         allowCustomerCreation={false}
         allowPriceListSwitching
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -775,7 +873,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectPriceList={jest.fn()}
@@ -806,7 +903,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -832,7 +928,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -851,6 +946,10 @@ describe("PosCartScreen", () => {
 
     expect(screen.getByText("Free item")).toBeTruthy();
     expect(screen.getByText("Bundle")).toBeTruthy();
+    expect(screen.queryByText("Tax: VAT 16%")).toBeNull();
+    await fireEvent.press(
+      screen.getByLabelText("View details for Promotional bundle"),
+    );
     expect(screen.getByText("Tax: VAT 16%")).toBeTruthy();
     expect(
       screen.getByText("Promotion applied: September promotion · 20% off"),
@@ -867,7 +966,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -895,7 +993,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -934,7 +1031,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -957,7 +1053,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -984,7 +1079,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -1002,7 +1096,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -1039,7 +1132,6 @@ describe("PosCartScreen", () => {
         allowDiscountChange
         allowRateChange
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -1060,7 +1152,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -1107,7 +1198,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -1126,7 +1216,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -1172,7 +1261,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -1191,7 +1279,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}
@@ -1229,7 +1316,6 @@ describe("PosCartScreen", () => {
       <PosCartScreen
         allowCustomerCreation={false}
         currency="KES"
-        defaultSaleCustomer={null}
         error={null}
         isUpdating={false}
         items={[
@@ -1247,7 +1333,6 @@ describe("PosCartScreen", () => {
         onBack={onBack}
         onCheckout={onCheckout}
         onClear={onClear}
-        onClearSaleCustomer={onClearSaleCustomer}
         onRemove={onRemove}
         onRetry={onRetry}
         onSelectSaleCustomer={onSelectSaleCustomer}

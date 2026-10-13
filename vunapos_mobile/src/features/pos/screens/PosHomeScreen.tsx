@@ -11,6 +11,7 @@ import {
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
+import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -27,7 +28,9 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosCatalogueItem,
+  PosCustomerSearchResult,
   PosOrderType,
+  PosSaleCustomer,
   PosTemplateVariant,
 } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -61,9 +64,13 @@ type PosHomeScreenProps = {
     currency: string,
   ) => Promise<boolean | string | void> | boolean | string | void;
   onOpenCart: () => void;
+  customerSelectionDisabled?: boolean;
+  onSelectSaleCustomer?: (customer: PosCustomerSearchResult) => void;
   orderType?: PosOrderType;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
+  saleCustomer?: PosSaleCustomer | null;
+  showCustomerSelector?: boolean;
   useBootstrapCatalogue?: boolean;
 };
 
@@ -71,9 +78,13 @@ export function PosHomeScreen({
   cartItemCount,
   onAddToCart,
   onOpenCart,
+  customerSelectionDisabled = false,
+  onSelectSaleCustomer,
   orderType = "Invoice",
   pricingContext,
   refreshKey = 0,
+  saleCustomer,
+  showCustomerSelector = false,
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
   const { palette } = useAppearance();
@@ -420,6 +431,26 @@ export function PosHomeScreen({
         }
         ListHeaderComponent={
           <View>
+            {showCustomerSelector && onSelectSaleCustomer ? (
+              <View
+                style={[
+                  styles.customerCard,
+                  { backgroundColor: palette.surface, borderColor: palette.border },
+                ]}
+              >
+                <Text style={[styles.customerCardLabel, { color: palette.onSurface }]}>
+                  Select Customer
+                </Text>
+                <PosCustomerComboBox
+                  accessibilityLabel="Search home customers"
+                  allowCustomerCreation={false}
+                  disabled={customerSelectionDisabled}
+                  onSelect={onSelectSaleCustomer}
+                  posProfile={bootstrap.data?.pos_profile.name}
+                  selectedCustomer={saleCustomer}
+                />
+              </View>
+            ) : null}
             <PosItemSearch
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
@@ -435,6 +466,7 @@ export function PosHomeScreen({
           </View>
         }
         numColumns={hideImages ? 1 : 2}
+        keyboardShouldPersistTaps="handled"
         maxToRenderPerBatch={8}
         removeClippedSubviews
         renderItem={renderItem}
@@ -490,6 +522,19 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
+  customerCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    padding: spacing.md,
+  },
+  customerCardLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
   addError: {
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,

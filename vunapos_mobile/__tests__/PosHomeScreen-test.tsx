@@ -160,8 +160,14 @@ jest.mock("@/features/pos/components/PosProductBundleSheet", () => ({
       : null,
 }));
 
-jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
-  PosCustomerPickerSheet: () => null,
+jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
+  PosCustomerComboBox: ({ accessibilityLabel, onSelect, selectedCustomer }: { accessibilityLabel: string; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }) => {
+    const { Pressable, TextInput } = require("react-native");
+    return <>
+      <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
+      <Pressable accessibilityLabel="Choose searched customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
+    </>;
+  },
 }));
 
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
@@ -252,6 +258,42 @@ describe("PosHomeScreen", () => {
 
   afterEach(async () => {
     await cleanup();
+  });
+
+  it("shows the searchable customer selector only when enabled and reports the choice", async () => {
+    const onSelectSaleCustomer = jest.fn();
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        showCustomerSelector
+      />,
+    );
+
+    expect(screen.getByLabelText("Search home customers")).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText("Choose searched customer"));
+    expect(onSelectSaleCustomer).toHaveBeenCalledWith({
+      customer: "CUST-002",
+      customerName: "Brian Kamau",
+    });
+
+    await screen.rerender(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        saleCustomer={{ customer: "CUST-002", customerName: "Brian Kamau" }}
+        showCustomerSelector
+      />,
+    );
+    expect(screen.getByLabelText("Search home customers").props.value).toBe("Brian Kamau");
+    await screen.rerender(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(screen.queryByLabelText("Search home customers")).toBeNull();
   });
 
   it("adds catalogue items without asking for a customer first", async () => {

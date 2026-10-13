@@ -145,6 +145,23 @@ describe("POS configuration identity", () => {
     );
   });
 
+  it("updates Home visibility without triggering an active-cart preview", () => {
+    const first = bootstrap();
+    const second = bootstrap({
+      pos_profile: {
+        ...first.pos_profile,
+        enable_home_customer_selection: true,
+      },
+    });
+
+    expect(effectivePosConfigurationFingerprint(first)).not.toBe(
+      effectivePosConfigurationFingerprint(second),
+    );
+    expect(transactionConfigurationFingerprint(first)).toBe(
+      transactionConfigurationFingerprint(second),
+    );
+  });
+
   it("does not require a pricing preview solely because required form fields change", () => {
     const first = bootstrap();
     const second = bootstrap({

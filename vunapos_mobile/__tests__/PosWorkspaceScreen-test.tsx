@@ -1,4 +1,17 @@
-import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, cleanup, fireEvent, render as renderWithTestingLibrary, waitFor } from "@testing-library/react-native";
+import type { ReactElement } from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+const safeAreaMetrics = {
+  frame: { height: 800, width: 400, x: 0, y: 0 },
+  insets: { bottom: 24, left: 0, right: 0, top: 24 },
+};
+
+function render(ui: ReactElement) {
+  return renderWithTestingLibrary(
+    <SafeAreaProvider initialMetrics={safeAreaMetrics}>{ui}</SafeAreaProvider>,
+  );
+}
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
@@ -69,6 +82,8 @@ const mockCart = {
   items: [],
   refresh: jest.fn(),
   remove: jest.fn(async () => true),
+  restoredPriceList: undefined as string | undefined,
+  sourceInvoice: null as { doctype: string; name: string } | null,
   restoreHeldInvoice: jest.fn(async () => ({
     source: { doctype: "Sales Order", name: "SAL-ORD-001" },
   })),
@@ -108,6 +123,8 @@ jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
 
 let mockSetConfigData: ((data: unknown) => void) | undefined;
 let mockCheckoutVerificationKey: string | undefined;
+const mockHomeMount = jest.fn();
+const mockHomeUnmount = jest.fn();
 let mockInitialSession: unknown = {
   has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
 };
@@ -140,19 +157,49 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
 jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
   PosHomeScreen: ({
     onOpenCart,
+    onSelectSaleCustomer,
     pricingContext,
+    showCustomerSelector,
   }: {
     onOpenCart: () => void;
+    onSelectSaleCustomer?: (customer: { customer: string; customerName: string }) => void;
     pricingContext?: { customer?: string };
+    showCustomerSelector?: boolean;
   }) => {
-    const { Pressable, Text } = require("react-native");
+    const { useEffect, useState } = require("react");
+    const { Pressable, Text, TextInput } = require("react-native");
+    const [searchDraft, setSearchDraft] = useState("");
+    useEffect(() => {
+      mockHomeMount();
+      return () => mockHomeUnmount();
+    }, []);
     return (
       <>
         <Text>POS home</Text>
+        <TextInput accessibilityLabel="Catalogue search draft" onChangeText={setSearchDraft} value={searchDraft} />
         <Text>{`Catalogue customer: ${pricingContext?.customer || "none"}`}</Text>
         <Pressable accessibilityRole="button" onPress={onOpenCart}>
           <Text>Open cart</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => mockSetConfigData?.({
+            payment_modes: [],
+            pos_profile: { name: "POS-001", enable_home_customer_selection: true },
+          })}
+        >
+          <Text>Enable home customer selection</Text>
+        </Pressable>
+        {showCustomerSelector ? (
+          <>
+            <Pressable accessibilityRole="button" onPress={() => onSelectSaleCustomer?.({ customer: "CUST-HOME", customerName: "Home customer" })}>
+              <Text>Select home customer</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => onSelectSaleCustomer?.({ customer: "CUST-OTHER", customerName: "Other customer" })}>
+              <Text>Select other home customer</Text>
+            </Pressable>
+          </>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           onPress={() =>
@@ -391,28 +438,49 @@ jest.mock("@/features/pos/screens/PosPaymentsScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosCartScreen", () => ({
   PosCartScreen: ({
+    allowPriceListSwitching,
+    onBack,
     onCheckout,
     onClear,
     onRemove,
+    onSelectPriceList,
     onSelectShippingAddress,
+    priceList,
     saleCustomer,
     shippingAddressName,
   }: {
+    allowPriceListSwitching: boolean;
+    onBack: () => void;
     onCheckout: () => void;
     onClear: () => boolean;
     onRemove: (itemCode: string) => Promise<void>;
+    onSelectPriceList: (priceList: string) => void;
     onSelectShippingAddress: (addressName: string) => void;
+    priceList?: string;
     saleCustomer: { customerName: string } | null;
     shippingAddressName: string;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
       <>
+        <Pressable accessibilityRole="button" onPress={onBack}>
+          <Text>Back to Home from cart</Text>
+        </Pressable>
         <Text>
           {saleCustomer
             ? `Cart customer: ${saleCustomer.customerName}`
             : "Cart has no customer"}
         </Text>
+        <Text>{`Price list switching: ${allowPriceListSwitching ? "enabled" : "disabled"}`}</Text>
+        <Text>{`Selected price list: ${priceList || "none"}`}</Text>
+        {allowPriceListSwitching ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onSelectPriceList("Wholesale")}
+          >
+            <Text>Select Wholesale price list</Text>
+          </Pressable>
+        ) : null}
         <Pressable accessibilityRole="button" onPress={onClear}>
           <Text>Clear cart</Text>
         </Pressable>
@@ -652,6 +720,8 @@ describe("PosWorkspaceScreen", () => {
       has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
     };
     mockCart.itemCount = 0;
+    mockCart.restoredPriceList = undefined;
+    mockCart.sourceInvoice = null;
     mockCart.clear.mockReturnValue(true);
     mockCart.remove.mockResolvedValue(true);
     mockCart.restoreHeldInvoice.mockResolvedValue({
@@ -689,6 +759,24 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
   });
 
+  it("opens Cart over the mounted catalogue and restores the same Home state on close", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Catalogue search draft"), "milk");
+    const initialMounts = mockHomeMount.mock.calls.length;
+
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart has no customer")).toBeTruthy();
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.getByLabelText("Catalogue search draft").props.value).toBe("milk");
+    expect(mockHomeMount).toHaveBeenCalledTimes(initialMounts);
+    expect(mockHomeUnmount).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Close cart" }));
+    await waitFor(() => expect(screen.queryByText("Cart has no customer")).toBeNull());
+    expect(screen.getByLabelText("Catalogue search draft").props.value).toBe("milk");
+    expect(mockHomeUnmount).not.toHaveBeenCalled();
+  });
+
   it("carries the cart shipping address into checkout without a second selection", async () => {
     const screen = await render(<PosWorkspaceScreen />);
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
@@ -699,6 +787,126 @@ describe("PosWorkspaceScreen", () => {
 
     await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
     expect(screen.getByText("Checkout shipping address: ADDR-002")).toBeTruthy();
+  });
+
+  it("carries a Home-selected customer into Cart without choosing a shipping address", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    expect(screen.queryByText("Select home customer")).toBeNull();
+    await fireEvent.press(screen.getByText("Enable home customer selection"));
+    await fireEvent.press(screen.getByText("Select home customer"));
+    expect(screen.getByText("Catalogue customer: CUST-HOME")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart customer: Home customer")).toBeTruthy();
+    expect(screen.getByText("Cart shipping address: none")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Select cart shipping address"));
+    expect(screen.getByText("Cart shipping address: ADDR-002")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Back to Home from cart"));
+    await fireEvent.press(screen.getByText("Select other home customer"));
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart customer: Other customer")).toBeTruthy();
+    expect(screen.getByText("Cart shipping address: none")).toBeTruthy();
+  });
+
+  it("drops a manual price list when the POS Profile disables switching", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    expect(screen.getByText("Price list switching: enabled")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Select Wholesale price list"));
+    expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy();
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy();
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+
+    expect(screen.getByText("Price list switching: disabled")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: none")).toBeTruthy(),
+    );
+  });
+
+  it("does not reapply a restored manual list when switching is disabled", async () => {
+    mockCart.restoredPriceList = "Wholesale";
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    expect(screen.getByText("Selected price list: none")).toBeTruthy();
+  });
+
+  it("drops a manual list removed from the profile's allowed choices", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Select Wholesale price list"));
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        allow_price_list_switching: true,
+        allowed_price_lists: [],
+      },
+    }));
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: none")).toBeTruthy(),
+    );
+  });
+
+  it("keeps a restored draft's price list for server validation", async () => {
+    mockCart.restoredPriceList = "Wholesale";
+    mockCart.sourceInvoice = { doctype: "Sales Order", name: "SAL-ORD-001" };
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy(),
+    );
   });
 
   it("returns to the POS Profile default customer when a cart is cleared", async () => {

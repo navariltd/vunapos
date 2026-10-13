@@ -12,6 +12,20 @@ def ensure_vunapos_custom_fields():
 	custom_fields = {
 		"POS Profile": [
 			{
+				"fieldname": "vunapos_home_screen_section",
+				"label": "Home Screen",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_new_item_position",
+			},
+			{
+				"fieldname": "vunapos_enable_home_customer_selection",
+				"label": "Enable Customer Selection on Home Screen",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_home_screen_section",
+				"description": "Show a searchable customer selector above the item catalogue in VunaPOS Mobile.",
+				"default": "0",
+			},
+			{
 				"fieldname": "vunapos_allow_returns",
 				"label": "Allow Returns",
 				"fieldtype": "Check",
