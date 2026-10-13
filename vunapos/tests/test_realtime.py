@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -6,6 +6,7 @@ from frappe.tests import IntegrationTestCase
 from vunapos.realtime import (
 	CHECKOUT_QUEUE_EVENT,
 	CONFIGURATION_EVENT,
+	DOMAIN_DATA_CHANGED_EVENT,
 	GATEWAY_PAYMENT_EVENT,
 	capture_pos_profile_realtime_recipients,
 	publish_checkout_queue_change,
@@ -20,6 +21,33 @@ from vunapos.services.gateway_payment_service import (
 
 
 class TestConfigurationRealtime(IntegrationTestCase):
+	def test_spa_and_mobile_use_distinct_event_names(self):
+		self.assertEqual(CONFIGURATION_EVENT, "vunapos_configuration_changed")
+		self.assertEqual(DOMAIN_DATA_CHANGED_EVENT, "vunapos_domain_data_changed")
+
+	def assert_dual_events(self, publish_realtime, *, doctype, action, resource, users):
+		self.assertCountEqual(
+			publish_realtime.call_args_list,
+			[
+				event
+				for user in users
+				for event in (
+					call(
+						CONFIGURATION_EVENT,
+						{"doctype": doctype, "action": action, "refresh": "full"},
+						user=user,
+						after_commit=True,
+					),
+					call(
+						DOMAIN_DATA_CHANGED_EVENT,
+						{"resource": resource},
+						user=user,
+						after_commit=True,
+					),
+				)
+			],
+		)
+
 	def test_captures_previous_profile_members_and_scope_before_save(self):
 		doc = frappe._dict(
 			doctype="POS Profile",
@@ -61,7 +89,29 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		self.assertEqual(doc.flags.vunapos_previous_profile_users, set())
 		self.assertIsNone(doc.flags.vunapos_previous_profile_access_signature)
 
-	def test_publishes_only_configuration_metadata_after_commit(self):
+	def test_new_profile_notifies_its_assigned_user_on_both_channels(self):
+		doc = frappe._dict(
+			doctype="POS Profile",
+			name="Counter 1",
+			company="Test Company",
+			warehouse="Main Warehouse",
+			disabled=0,
+			applicable_for_users=[frappe._dict(user="cashier@example.com", default=1)],
+			flags=frappe._dict(),
+		)
+
+		with patch("frappe.publish_realtime") as publish_realtime:
+			publish_configuration_change(doc, "on_update")
+
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="POS Profile",
+			action="on_update",
+			resource="posProfileChanged",
+			users={"cashier@example.com"},
+		)
+
+	def test_profile_settings_publish_spa_and_mobile_events_after_commit(self):
 		doc = frappe._dict(
 			doctype="POS Profile",
 			name="Counter 1",
@@ -85,11 +135,21 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		):
 			publish_configuration_change(doc, "on_update")
 
-		publish_realtime.assert_called_once_with(
-			CONFIGURATION_EVENT,
-			{"resource": "referenceDataChanged"},
-			user="cashier@example.com",
-			after_commit=True,
+		self.assertEqual(
+			[call.args for call in publish_realtime.call_args_list],
+			[
+				(
+					CONFIGURATION_EVENT,
+					{"doctype": "POS Profile", "action": "on_update", "refresh": "full"},
+				),
+				(DOMAIN_DATA_CHANGED_EVENT, {"resource": "referenceDataChanged"}),
+			],
+		)
+		self.assertTrue(
+			all(
+				call.kwargs == {"user": "cashier@example.com", "after_commit": True}
+				for call in publish_realtime.call_args_list
+			)
 		)
 
 	def test_profile_scope_change_notifies_old_and_new_users(self):
@@ -114,15 +174,13 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		with patch("frappe.publish_realtime") as publish_realtime:
 			publish_configuration_change(doc, "on_update")
 
-		self.assertCountEqual(
-			[call.kwargs for call in publish_realtime.call_args_list],
-			[
-				{"user": "removed@example.com", "after_commit": True},
-				{"user": "new@example.com", "after_commit": True},
-			],
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="POS Profile",
+			action="on_update",
+			resource="posProfileChanged",
+			users={"removed@example.com", "new@example.com"},
 		)
-		for call in publish_realtime.call_args_list:
-			self.assertEqual(call.args, (CONFIGURATION_EVENT, {"resource": "posProfileChanged"}))
 
 	def test_profile_delete_notifies_former_users(self):
 		doc = frappe._dict(
@@ -138,11 +196,42 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		with patch("frappe.publish_realtime") as publish_realtime:
 			publish_configuration_change(doc, "on_trash")
 
-		publish_realtime.assert_called_once_with(
-			CONFIGURATION_EVENT,
-			{"resource": "posProfileChanged"},
-			user="former@example.com",
-			after_commit=True,
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="POS Profile",
+			action="on_trash",
+			resource="posProfileChanged",
+			users={"former@example.com"},
+		)
+
+	def test_disabling_profile_notifies_its_user_on_both_channels(self):
+		doc = frappe._dict(
+			doctype="POS Profile",
+			name="Counter 1",
+			company="Test Company",
+			warehouse="Main Warehouse",
+			disabled=1,
+			applicable_for_users=[frappe._dict(user="cashier@example.com", default=1)],
+			flags=frappe._dict(
+				vunapos_previous_profile_users={"cashier@example.com"},
+				vunapos_previous_profile_access_signature=(
+					"Test Company",
+					"Main Warehouse",
+					False,
+					(("cashier@example.com", True),),
+				),
+			),
+		)
+
+		with patch("frappe.publish_realtime") as publish_realtime:
+			publish_configuration_change(doc, "on_update")
+
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="POS Profile",
+			action="on_update",
+			resource="posProfileChanged",
+			users={"cashier@example.com"},
 		)
 
 	def test_skips_publication_when_no_enabled_profile_exists(self):
@@ -175,11 +264,12 @@ class TestConfigurationRealtime(IntegrationTestCase):
 				"on_update",
 			)
 
-		publish_realtime.assert_called_once_with(
-			CONFIGURATION_EVENT,
-			{"resource": "referenceDataChanged"},
-			user="cashier-a@example.com",
-			after_commit=True,
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="Item Tax Template",
+			action="on_update",
+			resource="referenceDataChanged",
+			users={"cashier-a@example.com"},
 		)
 
 	def test_company_move_notifies_both_old_and_new_company(self):
@@ -209,9 +299,12 @@ class TestConfigurationRealtime(IntegrationTestCase):
 				):
 					publish_configuration_change(doc, "on_update")
 
-				self.assertCountEqual(
-					[call.kwargs["user"] for call in publish_realtime.call_args_list],
-					["cashier-a@example.com", "cashier-b@example.com"],
+				self.assert_dual_events(
+					publish_realtime,
+					doctype=doctype,
+					action="on_update",
+					resource="referenceDataChanged",
+					users={"cashier-a@example.com", "cashier-b@example.com"},
 				)
 
 	def test_company_scoped_delete_uses_current_company_only(self):
@@ -233,11 +326,12 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		):
 			publish_configuration_change(doc, "on_trash")
 
-		publish_realtime.assert_called_once_with(
-			CONFIGURATION_EVENT,
-			{"resource": "referenceDataChanged"},
-			user="cashier-a@example.com",
-			after_commit=True,
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="Pricing Rule",
+			action="on_trash",
+			resource="referenceDataChanged",
+			users={"cashier-a@example.com"},
 		)
 
 	def test_payment_mode_change_only_notifies_profiles_using_it(self):
@@ -256,8 +350,13 @@ class TestConfigurationRealtime(IntegrationTestCase):
 		):
 			publish_configuration_change(frappe._dict(doctype="Mode of Payment", name="Cash"), "on_update")
 
-		self.assertEqual(publish_realtime.call_args.kwargs["user"], "cashier-b@example.com")
-		publish_realtime.assert_called_once()
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="Mode of Payment",
+			action="on_update",
+			resource="referenceDataChanged",
+			users={"cashier-b@example.com"},
+		)
 
 	def test_global_item_price_change_keeps_customer_pricing_profiles_in_scope(self):
 		def get_all(doctype, filters=None, pluck=None):
@@ -274,9 +373,12 @@ class TestConfigurationRealtime(IntegrationTestCase):
 				frappe._dict(doctype="Item Price", price_list="Customer Price List"), "on_update"
 			)
 
-		self.assertCountEqual(
-			[call.kwargs["user"] for call in publish_realtime.call_args_list],
-			["cashier-a@example.com", "cashier-b@example.com"],
+		self.assert_dual_events(
+			publish_realtime,
+			doctype="Item Price",
+			action="on_update",
+			resource="referenceDataChanged",
+			users={"cashier-a@example.com", "cashier-b@example.com"},
 		)
 
 

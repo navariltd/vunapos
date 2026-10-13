@@ -5,8 +5,7 @@ from frappe.utils import cint, flt
 from vunapos.services.catalogue_cache import invalidate_catalogue_cache
 
 DOMAIN_DATA_CHANGED_EVENT = "vunapos_domain_data_changed"
-# Keep the descriptive alias for callers that import the old constant name.
-CONFIGURATION_EVENT = DOMAIN_DATA_CHANGED_EVENT
+CONFIGURATION_EVENT = "vunapos_configuration_changed"
 CHECKOUT_QUEUE_EVENT = "vunapos_checkout_queue_changed"
 GATEWAY_PAYMENT_EVENT = "vunapos_gateway_payment_changed"
 COMPANY_SCOPED_CONFIGURATION_DOCTYPES = (
@@ -61,9 +60,16 @@ def capture_pos_profile_realtime_recipients(doc: Document, method: str | None = 
 	flags.vunapos_previous_profile_access_signature = _profile_access_signature(previous)
 
 
-def _publish_domain_data_changed(resource: str, users: set[str]) -> None:
+def _publish_configuration_events(doc: Document, method: str | None, resource: str, users: set[str]) -> None:
+	legacy_payload = {"doctype": doc.doctype, "action": method or "on_update", "refresh": "full"}
 	for user in users:
 		if user:
+			frappe.publish_realtime(
+				CONFIGURATION_EVENT,
+				legacy_payload,
+				user=user,
+				after_commit=True,
+			)
 			frappe.publish_realtime(
 				DOMAIN_DATA_CHANGED_EVENT,
 				{"resource": resource},
@@ -122,7 +128,7 @@ def publish_configuration_change(doc: Document, method: str | None = None) -> No
 			if method == "on_trash" or previous_signature != _profile_access_signature(doc)
 			else "referenceDataChanged"
 		)
-		_publish_domain_data_changed(resource, users)
+		_publish_configuration_events(doc, method, resource, users)
 		return
 	affected_profiles = _configuration_profile_names(doc, method)
 	if not affected_profiles:
@@ -134,7 +140,7 @@ def publish_configuration_change(doc: Document, method: str | None = None) -> No
 			pluck="user",
 		)
 	)
-	_publish_domain_data_changed("referenceDataChanged", set(users))
+	_publish_configuration_events(doc, method, "referenceDataChanged", set(users))
 
 
 def publish_checkout_queue_change(doc: Document) -> None:
