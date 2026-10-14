@@ -13,9 +13,9 @@ def ensure_vunapos_custom_fields():
 		"POS Profile": [
 			{
 				"fieldname": "vunapos_home_screen_section",
-				"label": "Home Screen",
+				"label": "Mobile Settings",
 				"fieldtype": "Section Break",
-				"insert_after": "vunapos_new_item_position",
+				"insert_after": "vunapos_operations_section",
 			},
 			{
 				"fieldname": "vunapos_enable_home_customer_selection",
