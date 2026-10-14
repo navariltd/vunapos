@@ -1,10 +1,12 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useEffect, useState } from "react";
-import { Pressable, StyleSheet, TextInput, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
 import { ClearCartConfirmationDialog } from "@/features/pos/components/ClearCartConfirmationDialog";
-import { PosCustomerPickerSheet } from "@/features/pos/components/PosCustomerPickerSheet";
+import { filterShippingAddresses } from "@/features/pos/shippingAddressSearch";
+import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
 import { ManagerPinApprovalDialog } from "@/features/pos/components/ManagerPinApprovalDialog";
 import { PosPriceListPickerSheet } from "@/features/pos/components/PosPriceListPickerSheet";
@@ -14,14 +16,13 @@ import { usePosItemBatches } from "@/features/pos/hooks/usePosItemBatches";
 import { usePosCustomerLoyalty } from "@/features/pos/hooks/usePosCustomerLoyalty";
 import { KeyboardAwareFormScroll } from "@/components/layout/KeyboardAwareFormScroll";
 import { useToast } from "@/components/feedback/ToastProvider";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
-import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import { useAppearance } from "@/theme/AppearanceProvider";
 import {
   PosBatchAllocation,
   PosCartItem,
   PosCartTax,
   PosCartTotals,
+  PosCustomerShippingAddress,
   PosCustomerSearchResult,
   PosOrderType,
   PosPricingOverride,
@@ -33,8 +34,6 @@ import { AppPalette, radii, spacing, typography } from "@/theme/tokens";
 
 type PosCartScreenProps = {
   allowCustomerCreation: boolean;
-  cartCacheIsStale?: boolean;
-  cartCacheLastUpdated?: number | null;
   allowDiscountChange?: boolean;
   allowPriceListSwitching?: boolean;
   allowRateChange?: boolean;
@@ -44,13 +43,15 @@ type PosCartScreenProps = {
   hasPendingHold?: boolean;
   holdError?: string | null;
   isHolding?: boolean;
-  isOffline?: boolean;
   isUpdating: boolean;
   items: PosCartItem[];
   onBack: () => void;
   onCheckout: () => void;
-  onClearSaleCustomer: () => void;
   onSelectSaleCustomer: (customer: PosCustomerSearchResult) => void;
+  customerShippingAddresses?: PosCustomerShippingAddress[];
+  customerShippingAddressesLoading?: boolean;
+  shippingAddressName?: string;
+  onSelectShippingAddress?: (addressName: string) => void;
   onSelectPriceList?: (priceList?: string) => void;
   onClear: () => void;
   onHold?: () => Promise<{ name: string } | null>;
@@ -74,8 +75,8 @@ type PosCartScreenProps = {
   priceListOptions?: PosPriceList[];
   requireManagerPinForItemRemoval?: boolean;
   requiresCustomer: boolean;
+  showHeader?: boolean;
   sourceInvoice?: { doctype: string; name: string } | null;
-  defaultSaleCustomer: PosSaleCustomer | null;
   defaultPriceList?: string | null;
   resolvedPriceList?: string;
   saleCustomer: PosSaleCustomer | null;
@@ -86,6 +87,16 @@ type PosCartScreenProps = {
 
 function formatCurrency(amount: number, currency: string, precision = 2) {
   return formatPosCurrency(amount, currency, precision);
+}
+
+function shippingAddressText(address?: PosCustomerShippingAddress) {
+  if (!address) return "";
+  return (
+    address.formatted_address ||
+    [address.address_line1, address.city, address.state]
+      .filter(Boolean)
+      .join(", ")
+  );
 }
 
 function pricingRuleLabel(pricingRules: PosCartItem["pricing_rules"]) {
@@ -287,11 +298,13 @@ function PricingEditor({
 
 function BatchAllocationEditor({
   disabled,
+  ignoreStock = false,
   item,
   onSave,
   posProfile,
 }: {
   disabled: boolean;
+  ignoreStock?: boolean;
   item: PosCartItem;
   onSave: (allocations: PosBatchAllocation[]) => void;
   posProfile?: string;
@@ -334,7 +347,7 @@ function BatchAllocationEditor({
     (row) =>
       !Number.isFinite(row.qty) ||
       row.qty < 0 ||
-      row.qty > Number(row.available_qty || 0),
+      (!ignoreStock && row.qty > Number(row.available_qty || 0)),
   );
   const isComplete =
     !hasInvalidQuantity &&
@@ -681,6 +694,7 @@ function CartLine({
   currencyPrecision,
   disabled,
   item,
+  orderType,
   onOpenUomPicker,
   onRemove,
   onUpdateBatchAllocations,
@@ -696,6 +710,7 @@ function CartLine({
   currencyPrecision: number;
   disabled: boolean;
   item: PosCartItem;
+  orderType: PosOrderType;
   onOpenUomPicker: () => void;
   onRemove: () => void;
   onUpdateBatchAllocations: (allocations: PosBatchAllocation[]) => void;
@@ -713,12 +728,21 @@ function CartLine({
   const [batchExpanded, setBatchExpanded] = useState(false);
   const [serialExpanded, setSerialExpanded] = useState(false);
   const [noteExpanded, setNoteExpanded] = useState(false);
-  const maximum =
+  const availableQuantity =
     item.is_stock_item &&
     !item.allow_negative_stock &&
     item.available_qty !== null
       ? item.available_qty / Number(item.conversion_factor || 1)
       : null;
+  const maximum = orderType === "Order" ? null : availableQuantity;
+  const isCarton = item.uom?.trim().toLowerCase() === "carton";
+  const displayedMaximum =
+    availableQuantity === null
+      ? null
+      : isCarton
+        ? Math.floor(availableQuantity + 1e-9)
+        : Number(availableQuantity.toFixed(3));
+  const availableUom = isCarton ? "Cartons" : item.uom || "units";
   const itemDisabled = disabled || Boolean(item.is_free_item);
   const pricingRule = pricingRuleLabel(item.pricing_rules);
   const hasRuleDiscount = Boolean(
@@ -733,7 +757,15 @@ function CartLine({
   const canChangeUom = !item.is_free_item && uomOptions.length > 1;
   const isBatchTracked = Boolean(item.has_batch_no && !item.has_serial_no);
   const isSerialTracked = Boolean(item.has_serial_no);
-  const canExpandDetails = !item.is_free_item;
+  const canExpandDetails =
+    !item.is_free_item ||
+    Boolean(
+      item.description ||
+        item.item_tax_template ||
+        pricingRule ||
+        hasRuleDiscount ||
+        item.bundle_items?.length,
+    );
 
   useEffect(() => {
     if (disabled) return;
@@ -769,43 +801,27 @@ function CartLine({
           onPress={() => setDetailsExpanded((current) => !current)}
           style={styles.itemMain}
         >
-          <View style={styles.itemNameRow}>
-            <Text numberOfLines={2} style={styles.itemName}>
-              {item.item_name}
-            </Text>
-            {item.is_free_item ? (
-              <Text style={styles.freeBadge}>Free item</Text>
-            ) : null}
-            {item.is_product_bundle ? (
-              <Text style={styles.bundleBadge}>Bundle</Text>
-            ) : null}
-          </View>
-          <Text style={styles.itemCode}>{item.item_code}</Text>
-          {hasRuleDiscount ? (
-            <Text style={styles.originalRate}>
-              {formatCurrency(
-                item.price_list_rate || 0,
-                currency,
-                currencyPrecision,
-              )}
-            </Text>
-          ) : null}
-          <Text style={styles.itemRate}>
-            {formatCurrency(item.rate, currency, currencyPrecision)} ·{" "}
-            {item.uom || "Unit"}
-          </Text>
-          {canExpandDetails ? (
-            <View style={styles.detailsHint}>
-              <Text style={styles.detailsHintLabel}>
-                {detailsExpanded ? "Hide details" : "View details"}
+          <View style={styles.itemMainText}>
+            <View style={styles.itemNameRow}>
+              <Text numberOfLines={2} style={styles.itemName}>
+                {item.item_name}
               </Text>
-              <MaterialCommunityIcons
-                color={palette.onSurfaceMuted}
-                name={detailsExpanded ? "chevron-up" : "chevron-down"}
-                size={18}
-              />
+              {item.is_free_item ? (
+                <Text style={styles.freeBadge}>Free item</Text>
+              ) : null}
+              {item.is_product_bundle ? (
+                <Text style={styles.bundleBadge}>Bundle</Text>
+              ) : null}
             </View>
-          ) : null}
+            <Text style={styles.itemCode}>{item.item_code}</Text>
+          </View>
+          {canExpandDetails ? (
+            <MaterialCommunityIcons
+              color={palette.onSurfaceMuted}
+              name={detailsExpanded ? "chevron-up" : "chevron-down"}
+              size={20}
+            />
+            ) : null}
         </Pressable>
         <Pressable
           accessibilityLabel={`Remove ${item.item_name} from cart`}
@@ -827,6 +843,31 @@ function CartLine({
         >
           {item.description?.trim() ? (
             <Text style={styles.description}>{item.description.trim()}</Text>
+          ) : null}
+          {displayedMaximum !== null ? (
+            <Text style={styles.stockHint}>
+              Available {availableUom}: {displayedMaximum}
+            </Text>
+          ) : null}
+          {hasRuleDiscount ? (
+            <Text style={styles.originalRate}>
+              Price-list rate: {formatCurrency(item.price_list_rate || 0, currency, currencyPrecision)}
+            </Text>
+          ) : null}
+          {item.item_tax_template ? (
+            <Text style={styles.itemContext}>Tax: {item.item_tax_template}</Text>
+          ) : null}
+          {pricingRule ? (
+            <Text style={styles.pricingRule}>
+              Promotion applied: {pricingRule}
+              {item.discount_percentage ? ` · ${item.discount_percentage}% off` : ""}
+            </Text>
+          ) : null}
+          {item.is_product_bundle && item.bundle_items?.length ? (
+            <Text style={styles.itemContext}>
+              Includes {item.bundle_items.length} bundle component
+              {item.bundle_items.length === 1 ? "" : "s"}.
+            </Text>
           ) : null}
           <PricingEditor
             allowDiscountChange={allowDiscountChange}
@@ -874,6 +915,7 @@ function CartLine({
               {batchExpanded ? (
                 <BatchAllocationEditor
                   disabled={itemDisabled}
+                  ignoreStock={orderType === "Order"}
                   item={item}
                   key={`${item.qty}-${item.conversion_factor || 1}-${JSON.stringify(item.batch_allocations || [])}`}
                   onSave={onUpdateBatchAllocations}
@@ -1021,11 +1063,11 @@ function CartLine({
           />
           <Pressable
             accessibilityLabel={`Increase quantity for ${item.item_name}`}
-            disabled={itemDisabled || (maximum !== null && item.qty >= maximum)}
+            disabled={itemDisabled || (maximum !== null && item.qty + 1 > maximum)}
             onPress={() => onUpdateQuantity(item.qty + 1)}
             style={[
               styles.quantityButton,
-              (itemDisabled || (maximum !== null && item.qty >= maximum)) &&
+              (itemDisabled || (maximum !== null && item.qty + 1 > maximum)) &&
                 styles.quantityButtonDisabled,
             ]}
           >
@@ -1037,7 +1079,9 @@ function CartLine({
           </Pressable>
         </View>
         <View style={styles.lineTotal}>
-          <Text style={styles.lineTotalLabel}>Line total</Text>
+          <Text style={styles.lineTotalLabel}>
+            {item.qty} × {formatCurrency(item.rate, currency, currencyPrecision)}
+          </Text>
           <Text style={styles.lineTotalAmount}>
             {formatCurrency(
               item.amount ?? item.qty * item.rate,
@@ -1047,58 +1091,35 @@ function CartLine({
           </Text>
         </View>
       </View>
-      {maximum !== null ? (
-        <Text style={styles.stockHint}>
-          Available {maximum} {item.uom || ""}
-        </Text>
-      ) : null}
-      {item.item_tax_template ? (
-        <Text style={styles.itemContext}>Tax: {item.item_tax_template}</Text>
-      ) : null}
-      {pricingRule ? (
-        <Text style={styles.pricingRule}>
-          Promotion applied: {pricingRule}
-          {item.discount_percentage
-            ? ` · ${item.discount_percentage}% off`
-            : ""}
-        </Text>
-      ) : null}
-      {item.is_product_bundle && item.bundle_items?.length ? (
-        <Text style={styles.itemContext}>
-          Includes {item.bundle_items.length} bundle component
-          {item.bundle_items.length === 1 ? "" : "s"}.
-        </Text>
-      ) : null}
     </View>
   );
 }
 
 export function PosCartScreen({
   allowCustomerCreation,
-  cartCacheIsStale = false,
-  cartCacheLastUpdated,
   allowDiscountChange = false,
   allowPriceListSwitching = false,
   allowRateChange = false,
   currency,
   currencyPrecision = 2,
-  defaultSaleCustomer,
   error,
   hasPendingHold = false,
   holdError,
   isHolding = false,
-  isOffline: isOfflineProp,
   isUpdating,
   items,
   onBack,
   onCheckout,
   onClear,
   onHold,
-  onClearSaleCustomer,
   onRemove,
   onRetry,
   onSelectPriceList,
   onSelectSaleCustomer,
+  customerShippingAddresses = [],
+  customerShippingAddressesLoading = false,
+  shippingAddressName = "",
+  onSelectShippingAddress,
   onUpdateBatchAllocations,
   onUpdateItemNote,
   onUpdatePricing,
@@ -1113,13 +1134,14 @@ export function PosCartScreen({
   resolvedPriceList,
   requireManagerPinForItemRemoval = false,
   requiresCustomer,
+  showHeader = true,
   saleCustomer,
   sourceInvoice,
   subtotal,
   taxes,
   totals,
 }: PosCartScreenProps) {
-  const { palette } = useAppearance();
+  const { appearance, palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
   useEffect(() => {
@@ -1135,13 +1157,16 @@ export function PosCartScreen({
       toast.error(holdError, { title: "Could not hold sale" });
     }
   }, [holdError, toast]);
-  const { connectionStatus } = useNetworkStatus();
-  const isOffline = isOfflineProp ?? connectionStatus !== "online";
   const displayCurrency = (amount: number, amountCurrency = currency) =>
     formatCurrency(amount, amountCurrency, currencyPrecision);
   const [clearConfirmationVisible, setClearConfirmationVisible] =
     useState(false);
-  const [customerPickerVisible, setCustomerPickerVisible] = useState(false);
+  const [shippingAddressPickerVisible, setShippingAddressPickerVisible] =
+    useState(false);
+  const [showRequiredFields, setShowRequiredFields] = useState(false);
+  const [shippingAddressQuery, setShippingAddressQuery] = useState("");
+  const shippingAddressInputRef = useRef<TextInput>(null);
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const [priceListPickerVisible, setPriceListPickerVisible] = useState(false);
   const [uomPickerItem, setUomPickerItem] = useState<PosCartItem | null>(null);
   const [managerPinItem, setManagerPinItem] = useState<PosCartItem | null>(
@@ -1151,16 +1176,35 @@ export function PosCartScreen({
     saleCustomer?.customer,
     posProfile,
   );
-  const isUsingDefaultCustomer = Boolean(
-    saleCustomer?.customer &&
-    defaultSaleCustomer?.customer &&
-    saleCustomer.customer === defaultSaleCustomer.customer,
-  );
   const defaultPriceList = saleCustomer?.defaultPriceList || undefined;
   const activePriceList =
     resolvedPriceList || priceList || defaultPriceList || profileDefaultPriceList;
+  const selectedShippingAddress =
+    customerShippingAddresses.find(
+      (address) => address.name === shippingAddressName,
+    );
+  const matchingShippingAddresses = filterShippingAddresses(
+    customerShippingAddresses,
+    shippingAddressQuery,
+  );
+  function dismissShippingAddressPicker() {
+    setShippingAddressPickerVisible(false);
+    setShippingAddressQuery("");
+    Keyboard.dismiss();
+  }
   const isCartBusy = isUpdating || isHolding || hasPendingHold;
-  const canHold = Boolean(onHold) && orderType === "Invoice";
+  const canHold = Boolean(onHold);
+  const missingCustomer = requiresCustomer || !saleCustomer?.customer;
+  const missingShippingAddress = !shippingAddressName;
+  const missingRequiredFields = missingCustomer || missingShippingAddress;
+
+  function proceedToCheckout() {
+    if (missingRequiredFields) {
+      setShowRequiredFields(true);
+      return;
+    }
+    onCheckout();
+  }
 
   async function holdCart() {
     const heldInvoice = await onHold?.();
@@ -1168,83 +1212,166 @@ export function PosCartScreen({
   }
 
   return (
-    <View style={styles.screen}>
-      <PosFixedPageHeader>
-        <View style={styles.header}>
-        <Pressable
-          accessibilityLabel="Back to items"
-          onPress={onBack}
-          style={styles.backButton}
-        >
-          <MaterialCommunityIcons
-            color={palette.onSurface}
-            name="arrow-left"
-            size={22}
-          />
-        </Pressable>
-        <View style={styles.heading}>
-          <Text style={styles.title}>Cart</Text>
-          <Text style={styles.subtitle}>{orderType}</Text>
-        </View>
-        {items.length ? (
-          <Pressable
-            accessibilityLabel="Clear cart"
-            disabled={isCartBusy}
-            onPress={() => setClearConfirmationVisible(true)}
-            style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
-          >
-            <Text style={styles.clearButtonLabel}>Clear</Text>
-          </Pressable>
-        ) : null}
-        </View>
-      </PosFixedPageHeader>
+    <View
+      onTouchStart={() => {
+        customerComboRef.current?.dismiss();
+        if (shippingAddressPickerVisible) dismissShippingAddressPicker();
+      }}
+      style={styles.screen}
+    >
+      {showHeader ? (
+        <PosFixedPageHeader>
+          <View style={styles.header}>
+            <Pressable
+              accessibilityLabel="Back to items"
+              onPress={onBack}
+              style={styles.backButton}
+            >
+              <MaterialCommunityIcons
+                color={palette.onSurface}
+                name="arrow-left"
+                size={22}
+              />
+            </Pressable>
+            <View style={styles.heading}>
+              <Text style={styles.title}>Cart</Text>
+              <Text style={styles.subtitle}>{orderType}</Text>
+            </View>
+          </View>
+        </PosFixedPageHeader>
+      ) : null}
       <KeyboardAwareFormScroll
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
         style={styles.scrollView}
       >
-
       {items.length ? (
         <>
-          <Pressable
-            accessibilityHint="Opens a searchable customer list"
-            accessibilityLabel="Select sale customer"
-            disabled={isCartBusy}
-            onPress={() => setCustomerPickerVisible(true)}
-            style={[
-              styles.customerSelector,
-              isCartBusy && styles.controlDisabled,
-            ]}
-          >
-            <View style={styles.customerSelectorMain}>
-              <Text numberOfLines={1} style={styles.customerSelectorValue}>
-                {saleCustomer?.customerName || "Select customer"}
-              </Text>
-              <Text numberOfLines={1} style={styles.customerSelectorMeta}>
-                {saleCustomer?.customer || "Search or choose from the list"}
-              </Text>
-            </View>
-            <MaterialCommunityIcons
-              color={palette.onSurfaceMuted}
-              name="chevron-down"
-              size={20}
-            />
-          </Pressable>
-          {saleCustomer && !isUsingDefaultCustomer ? (
-            <Pressable
-              accessibilityLabel="Use default sale customer"
+          <View style={styles.requiredField}>
+            <Text style={styles.requiredFieldLabel} testID="cart-customer-label">
+              Customer <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <PosCustomerComboBox
+              accessibilityLabel="Search cart customers"
+              allowCustomerCreation={allowCustomerCreation}
               disabled={isCartBusy}
-              onPress={onClearSaleCustomer}
+              floatingOptions
+              invalid={showRequiredFields && missingCustomer}
+              onOpen={() => {
+                setShippingAddressPickerVisible(false);
+                setShippingAddressQuery("");
+              }}
+              onSelect={(customer) => {
+                dismissShippingAddressPicker();
+                onSelectSaleCustomer(customer);
+              }}
+              posProfile={posProfile}
+              ref={customerComboRef}
+              selectedCustomer={saleCustomer}
+            />
+          </View>
+          <View
+            onTouchStart={(event) => {
+              customerComboRef.current?.dismiss();
+              event.stopPropagation();
+            }}
+            style={styles.shippingAddressCombo}
+          >
+            <Text style={styles.requiredFieldLabel} testID="cart-shipping-address-label">
+              Shipping address <Text style={styles.requiredStar}>*</Text>
+            </Text>
+            <View
+              testID="cart-shipping-address-input-row"
               style={[
-                styles.clearCustomerButton,
-                isCartBusy && styles.controlDisabled,
+                styles.shippingAddressSelector,
+                showRequiredFields && missingShippingAddress && styles.invalidField,
+                (isCartBusy || !saleCustomer) && styles.controlDisabled,
               ]}
             >
-              <Text style={styles.clearCustomerButtonLabel}>
-                Use default customer
-              </Text>
-            </Pressable>
-          ) : null}
+              <TextInput
+                ref={shippingAddressInputRef}
+                accessibilityLabel="Search shipping addresses"
+                autoCorrect={false}
+                editable={!isCartBusy && Boolean(saleCustomer)}
+                onChangeText={(value) => {
+                  if (selectedShippingAddress) onSelectShippingAddress?.("");
+                  setShippingAddressQuery(value);
+                  setShippingAddressPickerVisible(true);
+                }}
+                onFocus={() => {
+                  setShippingAddressQuery("");
+                  setShippingAddressPickerVisible(true);
+                }}
+                placeholder={saleCustomer ? "Search and select an address" : "Select a customer first"}
+                placeholderTextColor={palette.onSurfaceMuted}
+                selection={shippingAddressPickerVisible ? undefined : { start: 0, end: 0 }}
+                style={styles.shippingAddressSearchInput}
+                value={
+                  shippingAddressPickerVisible
+                    ? shippingAddressQuery
+                    : shippingAddressText(selectedShippingAddress) ||
+                      selectedShippingAddress?.address_title ||
+                      selectedShippingAddress?.name ||
+                      ""
+                }
+              />
+              <Pressable
+                accessibilityLabel={
+                  shippingAddressPickerVisible
+                    ? "Close shipping address options"
+                    : "Show shipping address options"
+                }
+                disabled={isCartBusy || !saleCustomer}
+                onPress={() => {
+                  if (shippingAddressPickerVisible) dismissShippingAddressPicker();
+                  else shippingAddressInputRef.current?.focus();
+                }}
+              >
+                <MaterialCommunityIcons
+                  color={palette.onSurfaceMuted}
+                  name={shippingAddressPickerVisible ? "chevron-up" : "chevron-down"}
+                  size={20}
+                />
+              </Pressable>
+            </View>
+            {shippingAddressPickerVisible && saleCustomer ? (
+              <ScrollView
+                contentContainerStyle={styles.shippingAddressOptions}
+                keyboardShouldPersistTaps="always"
+                nestedScrollEnabled
+                style={styles.shippingAddressOptionsList}
+                testID="cart-shipping-address-options"
+              >
+                {matchingShippingAddresses.map((address) => (
+                  <Pressable
+                    accessibilityLabel={`Select shipping address ${address.address_title || address.name}`}
+                    key={address.name}
+                    onPress={() => {
+                      onSelectShippingAddress?.(address.name);
+                      dismissShippingAddressPicker();
+                    }}
+                    style={styles.shippingAddressOption}
+                  >
+                    <Text style={styles.shippingAddressTitle}>
+                      {address.address_title || address.name}
+                    </Text>
+                    <Text style={styles.customerSelectorMeta}>
+                      {shippingAddressText(address)}
+                    </Text>
+                  </Pressable>
+                ))}
+                {!matchingShippingAddresses.length ? (
+                  <Text style={styles.customerSelectorMeta}>
+                    {customerShippingAddressesLoading
+                      ? "Loading shipping addresses…"
+                      : customerShippingAddresses.length
+                        ? "No matching shipping addresses."
+                        : "No saved shipping addresses for this customer."}
+                  </Text>
+                ) : null}
+              </ScrollView>
+            ) : null}
+          </View>
           {saleCustomer && customerLoyalty.isLoading ? (
             <Text style={styles.loyaltyLoading}>Checking loyalty balance…</Text>
           ) : null}
@@ -1295,9 +1422,9 @@ export function PosCartScreen({
               ]}
             >
               <View>
-                <Text style={styles.priceListLabel}>Price list</Text>
                 <Text style={styles.priceListValue}>
                   {activePriceList || "Profile default"}
+                  {activePriceList === profileDefaultPriceList ? " (Default)" : ""}
                 </Text>
               </View>
               <MaterialCommunityIcons
@@ -1316,6 +1443,7 @@ export function PosCartScreen({
                 currencyPrecision={currencyPrecision}
                 disabled={isCartBusy}
                 item={item}
+                orderType={orderType}
                 key={item.item_code}
                 onOpenUomPicker={() => setUomPickerItem(item)}
                 onRemove={() =>
@@ -1378,108 +1506,6 @@ export function PosCartScreen({
               </Pressable>
             </View>
           ) : null}
-          {requiresCustomer ? (
-            <Text style={styles.customerRequired}>
-              Select a customer to calculate current pricing, tax, and stock
-              before checkout.
-            </Text>
-          ) : null}
-          <View style={styles.summary}>
-            <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryAmount}>
-              {displayCurrency(subtotal)}
-            </Text>
-          </View>
-          {taxes.map((tax, index) => (
-            <View
-              key={`${tax.account_head || tax.description || "tax"}-${index}`}
-              style={styles.summaryRow}
-            >
-              <Text
-                style={styles.summaryRowLabel}
-              >{`${tax.description || tax.account_head || "Tax"}${tax.rate ? ` ${tax.rate}% ·` : ""} ${tax.included_in_print_rate ? "Included" : "Added"}`}</Text>
-              <Text style={styles.summaryRowAmount}>
-                {displayCurrency(tax.tax_amount || 0)}
-              </Text>
-            </View>
-          ))}
-          {totals.total_taxes_and_charges !== undefined ? (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryRowLabel}>
-                Total taxes and charges
-              </Text>
-              <Text style={styles.summaryRowAmount}>
-                {displayCurrency(totals.total_taxes_and_charges)}
-              </Text>
-            </View>
-          ) : null}
-          <View style={styles.grandTotal}>
-            <Text style={styles.grandTotalLabel}>Grand total</Text>
-            <Text style={styles.grandTotalAmount}>
-              {displayCurrency(totals.grand_total ?? subtotal)}
-            </Text>
-          </View>
-          {totals.rounded_total !== undefined &&
-          totals.rounded_total !== totals.grand_total ? (
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryRowLabel}>Rounded total</Text>
-              <Text style={styles.summaryRowAmount}>
-                {displayCurrency(totals.rounded_total)}
-              </Text>
-            </View>
-          ) : null}
-          <Text style={styles.checkoutNote}>
-            Payment is collected at checkout.
-          </Text>
-          <PosCacheStatus
-            isOffline={isOffline}
-            isStale={cartCacheIsStale}
-            lastUpdated={cartCacheLastUpdated}
-          />
-          <View
-            style={[
-              styles.cartActions,
-              !canHold && styles.cartActionsStandalone,
-            ]}
-          >
-            {canHold ? (
-              <Pressable
-                accessibilityLabel="Hold cart"
-                disabled={isCartBusy}
-                onPress={() => void holdCart()}
-                style={[
-                  styles.holdButton,
-                  isCartBusy && styles.controlDisabled,
-                ]}
-              >
-                <MaterialCommunityIcons
-                  color={palette.onSurface}
-                  name="pause"
-                  size={18}
-                />
-                <Text style={styles.holdButtonLabel}>Hold</Text>
-              </Pressable>
-            ) : null}
-            <Pressable
-              accessibilityLabel={
-                sourceInvoice ? "Continue checkout" : "Proceed to checkout"
-              }
-              disabled={isCartBusy || Boolean(error) || requiresCustomer}
-              onPress={onCheckout}
-              style={[
-                styles.checkoutButton,
-                canHold
-                  ? styles.checkoutButtonWithHold
-                  : styles.checkoutButtonStandalone,
-                (isCartBusy || error || requiresCustomer) &&
-                  styles.checkoutButtonDisabled,
-              ]}
-            >
-              <Text style={styles.checkoutButtonLabel}>
-                {sourceInvoice ? "Continue checkout" : "Proceed to checkout"}
-              </Text>
-            </Pressable>
-          </View>
         </>
       ) : (
         <View style={styles.emptyState}>
@@ -1515,17 +1541,107 @@ export function PosCartScreen({
           </Pressable>
         </View>
       )}
-      <PosCustomerPickerSheet
-        allowCustomerCreation={allowCustomerCreation}
-        isOffline={false}
-        onDismiss={() => setCustomerPickerVisible(false)}
-        onSelect={(customer) => {
-          onSelectSaleCustomer(customer);
-          setCustomerPickerVisible(false);
-        }}
-        posProfile={posProfile}
-        visible={customerPickerVisible}
-      />
+      </KeyboardAwareFormScroll>
+      {items.length ? (
+        <View style={styles.cartFooter} testID="cart-footer">
+          <ScrollView
+            contentContainerStyle={styles.footerSummaryContent}
+            showsVerticalScrollIndicator={false}
+            style={styles.footerSummaryScroll}
+          >
+            <View style={styles.summary}>
+              <Text style={styles.summaryLabel}>Subtotal</Text>
+              <Text style={styles.summaryRowAmount}>
+                {displayCurrency(subtotal)}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryRowLabel}>Taxes</Text>
+              <Text style={styles.summaryRowAmount}>
+                {displayCurrency(
+                  totals.total_taxes_and_charges ??
+                    taxes.reduce((sum, tax) => sum + (tax.tax_amount || 0), 0),
+                )}
+              </Text>
+            </View>
+            <View style={styles.grandTotal}>
+              <Text style={styles.grandTotalLabel}>Grand total</Text>
+              <Text style={styles.grandTotalAmount}>
+                {displayCurrency(totals.rounded_total ?? totals.grand_total ?? subtotal)}
+              </Text>
+            </View>
+          </ScrollView>
+          <View style={styles.cartActions}>
+            <View style={styles.secondaryActions} testID="cart-secondary-actions">
+              {canHold ? (
+                <Pressable
+                  accessibilityLabel="Hold cart"
+                  disabled={isCartBusy}
+                  onPress={() => void holdCart()}
+                  style={[
+                    styles.holdButton,
+                    isCartBusy && styles.controlDisabled,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    color="#ffffff"
+                    name="pause"
+                    size={18}
+                  />
+                  <Text style={styles.holdButtonLabel}>Hold</Text>
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityLabel="Clear cart"
+                disabled={isCartBusy}
+                onPress={() => setClearConfirmationVisible(true)}
+                style={[styles.clearButton, isCartBusy && styles.controlDisabled]}
+              >
+                <MaterialCommunityIcons
+                  color="#ffffff"
+                  name="delete-outline"
+                  size={18}
+                  testID="clear-cart-icon"
+                />
+                <Text style={styles.clearButtonLabel}>Clear Cart</Text>
+              </Pressable>
+            </View>
+            {showRequiredFields && missingRequiredFields ? (
+              <Text accessibilityRole="alert" style={styles.checkoutRequirementError}>
+                {missingCustomer && missingShippingAddress
+                  ? "Select a customer and shipping address above."
+                  : missingCustomer
+                    ? "Select a customer above."
+                    : "Select a shipping address above."}
+              </Text>
+            ) : null}
+            <Pressable
+              accessibilityLabel={
+                sourceInvoice ? "Continue checkout" : "Proceed to checkout"
+              }
+              accessibilityHint={missingRequiredFields ? "Select a customer and shipping address to continue" : undefined}
+              disabled={isCartBusy || Boolean(error)}
+              onPress={proceedToCheckout}
+              style={[
+                styles.checkoutButton,
+                (isCartBusy || error || missingRequiredFields) &&
+                  styles.checkoutButtonDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.checkoutButtonLabel,
+                  (isCartBusy || error || missingRequiredFields) && {
+                    color: appearance === "dark" ? palette.surface : palette.onSurface,
+                  },
+                ]}
+              >
+                {sourceInvoice ? "Continue checkout" : "Proceed to checkout"}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
       <PosPriceListPickerSheet
         defaultPriceList={defaultPriceList}
         isOffline={false}
@@ -1570,7 +1686,6 @@ export function PosCartScreen({
         onDismiss={() => setClearConfirmationVisible(false)}
         visible={clearConfirmationVisible}
       />
-      </KeyboardAwareFormScroll>
     </View>
   );
 }
@@ -1786,63 +1901,73 @@ function createStyles(palette: AppPalette) {
   },
   checkoutButton: {
     alignItems: "center",
-    backgroundColor: palette.primary,
+    backgroundColor: palette.onSurface,
     borderRadius: radii.md,
     justifyContent: "center",
     minHeight: 48,
     paddingHorizontal: spacing.md,
   },
-  checkoutButtonStandalone: {
-    alignSelf: "center",
-    width: "80%",
-  },
-  checkoutButtonWithHold: { flex: 1 },
   checkoutButtonDisabled: {
     backgroundColor: palette.disabled,
-    opacity: 0.5,
   },
   checkoutButtonLabel: {
-    color: palette.onPrimary,
+    color: palette.surface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
-  checkoutNote: {
+  checkoutRequirementError: {
+    color: palette.error,
+    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.size.small,
+  },
+  clearButton: {
+    alignItems: "center",
+    backgroundColor: "#b4232b",
+    borderRadius: radii.md,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "center",
+    minHeight: 48,
+    paddingHorizontal: spacing.md,
+  },
+  clearButtonLabel: {
+    color: "#ffffff",
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.small,
+  },
+  cartActions: { gap: spacing.xs, paddingTop: spacing.sm },
+  cartFooter: {
+    backgroundColor: palette.surface,
+    borderTopColor: palette.border,
+    borderTopWidth: 1,
+    maxHeight: "52%",
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  footerSummaryContent: { gap: spacing.xs, paddingTop: spacing.sm },
+  footerSummaryScroll: { flexShrink: 1 },
+  secondaryActions: { flexDirection: "row", gap: spacing.xs },
+  controlDisabled: { opacity: 0.5 },
+  content: { gap: spacing.sm, padding: spacing.sm, paddingBottom: spacing.md },
+  customerSelectorMeta: {
     color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
-    lineHeight: typography.lineHeight.body,
-    textAlign: "center",
   },
-  clearButton: {
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 7,
-  },
-  clearButtonLabel: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
-  },
-  cartActions: { flexDirection: "row", gap: spacing.sm },
-  cartActionsStandalone: { justifyContent: "center" },
-  clearCustomerButton: {
-    alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  clearCustomerButtonLabel: {
+  requiredField: { gap: spacing.xs, zIndex: 2 },
+  requiredFieldLabel: {
     color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.semibold,
-    fontSize: typography.size.tiny,
+    fontSize: 12,
   },
-  controlDisabled: { opacity: 0.5 },
-  content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.xxl },
-  customerSelector: {
+  requiredStar: { color: palette.error },
+  invalidField: { borderColor: palette.error },
+  shippingAddressCombo: {
+    gap: spacing.xs,
+    zIndex: 1,
+  },
+  shippingAddressSelector: {
     alignItems: "center",
     backgroundColor: palette.surfaceContainer,
     borderColor: palette.border,
@@ -1850,43 +1975,49 @@ function createStyles(palette: AppPalette) {
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 54,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
-  customerSelectorMain: { flex: 1, gap: 1 },
-  customerSelectorMeta: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
+  shippingAddressOptions: { gap: spacing.xs, padding: spacing.xs },
+  shippingAddressOptionsList: {
+    backgroundColor: palette.surfaceContainer,
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    elevation: 8,
+    left: 0,
+    marginTop: spacing.xs,
+    maxHeight: 240,
+    position: "absolute",
+    right: 0,
+    top: "100%",
+    zIndex: 1,
   },
-  customerSelectorValue: {
+  shippingAddressSearchInput: {
+    color: palette.onSurface,
+    flex: 1,
+    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.size.body,
+    paddingVertical: 0,
+  },
+  shippingAddressOption: {
+    borderColor: palette.border,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.md,
+  },
+  shippingAddressTitle: {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
-  },
-  customerRequired: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-    lineHeight: typography.lineHeight.body,
-    textAlign: "center",
   },
   description: {
     color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
     lineHeight: typography.lineHeight.body,
-  },
-  detailsHint: {
-    alignItems: "center",
-    flexDirection: "row",
-    marginTop: spacing.xs,
-  },
-  detailsHintLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.medium,
-    fontSize: typography.size.tiny,
   },
   detailsPanel: {
     backgroundColor: palette.surfaceContainer,
@@ -1931,12 +2062,12 @@ function createStyles(palette: AppPalette) {
   header: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   heading: { flex: 1, gap: 2 },
   item: {
-    backgroundColor: palette.surface,
+    backgroundColor: palette.surfaceContainer,
     borderColor: palette.border,
     borderRadius: radii.md,
     borderWidth: 1,
     gap: spacing.sm,
-    padding: spacing.md,
+    padding: spacing.sm,
   },
   itemCode: {
     color: palette.onSurfaceMuted,
@@ -1955,13 +2086,14 @@ function createStyles(palette: AppPalette) {
     justifyContent: "space-between",
   },
   itemHeader: {
-    alignItems: "flex-start",
+    alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",
   },
-  itemList: { gap: spacing.sm },
-  itemMain: { flex: 1, gap: 2 },
+  itemList: { gap: spacing.xs },
+  itemMain: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.xs },
+  itemMainText: { flex: 1, gap: 2 },
   itemNameRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -2050,11 +2182,6 @@ function createStyles(palette: AppPalette) {
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
   },
-  priceListLabel: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
   priceListSelector: {
     alignItems: "center",
     backgroundColor: palette.surfaceContainer,
@@ -2063,7 +2190,7 @@ function createStyles(palette: AppPalette) {
     borderWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    minHeight: 54,
+    minHeight: 48,
     paddingHorizontal: spacing.md,
   },
   priceListValue: {
@@ -2172,16 +2299,10 @@ function createStyles(palette: AppPalette) {
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.body,
   },
-  itemRate: {
-    color: palette.onSurfaceMuted,
-    fontFamily: typography.fontFamily.regular,
-    fontSize: typography.size.tiny,
-  },
   originalRate: {
     color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.tiny,
-    textDecorationLine: "line-through",
   },
   lineTotal: { alignItems: "flex-end", gap: 2 },
   lineTotalAmount: {
@@ -2199,15 +2320,16 @@ function createStyles(palette: AppPalette) {
     borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
-    height: 34,
+    backgroundColor: palette.surface,
+    height: 40,
     justifyContent: "center",
-    width: 34,
+    width: 40,
   },
   quantityButtonDisabled: { opacity: 0.4 },
   quantityControl: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.xs,
+    gap: 0,
   },
   retryButton: {
     borderColor: palette.border,
@@ -2222,14 +2344,14 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.tiny,
   },
   quantityInput: {
-    backgroundColor: palette.surfaceContainer,
+    backgroundColor: palette.surface,
     borderColor: palette.border,
     borderRadius: radii.sm,
     borderWidth: 1,
     color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
-    height: 34,
+    height: 40,
     includeFontPadding: false,
     lineHeight: typography.lineHeight.compact,
     minWidth: 52,
@@ -2240,12 +2362,9 @@ function createStyles(palette: AppPalette) {
   },
   removeButton: {
     alignItems: "center",
-    borderColor: palette.border,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    height: 36,
+    height: 32,
     justifyContent: "center",
-    width: 36,
+    width: 32,
   },
   stockHint: {
     color: palette.onSurfaceMuted,
@@ -2373,30 +2492,24 @@ function createStyles(palette: AppPalette) {
     fontSize: typography.size.small,
   },
   summary: {
-    borderTopColor: palette.border,
-    borderTopWidth: 1,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingTop: spacing.md,
-  },
-  summaryAmount: {
-    color: palette.onSurface,
-    fontFamily: typography.fontFamily.semibold,
-    fontSize: 20,
   },
   summaryLabel: {
     color: palette.onSurfaceMuted,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.body,
   },
-  summaryRow: { flexDirection: "row", justifyContent: "space-between" },
+  summaryRow: { flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" },
   summaryRowAmount: {
     color: palette.onSurface,
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,
+    flexShrink: 0,
   },
   summaryRowLabel: {
     color: palette.onSurfaceMuted,
+    flex: 1,
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,
   },
@@ -2451,10 +2564,9 @@ function createStyles(palette: AppPalette) {
   },
   holdButton: {
     alignItems: "center",
-    backgroundColor: palette.surfaceContainerHigh,
-    borderColor: palette.border,
+    backgroundColor: "#9a4a0a",
     borderRadius: radii.md,
-    borderWidth: 1,
+    flex: 1,
     flexDirection: "row",
     gap: spacing.xs,
     justifyContent: "center",
@@ -2463,7 +2575,7 @@ function createStyles(palette: AppPalette) {
     paddingHorizontal: spacing.sm,
   },
   holdButtonLabel: {
-    color: palette.onSurface,
+    color: "#ffffff",
     fontFamily: typography.fontFamily.semibold,
     fontSize: typography.size.small,
   },

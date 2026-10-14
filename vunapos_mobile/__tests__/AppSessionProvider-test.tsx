@@ -248,9 +248,56 @@ describe("AppSessionProvider", () => {
     await act(async () => {
       await session.result.current.invalidateSession();
     });
+    expect(session.result.current.authState).toBe("signedOut");
+    expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces simultaneous expiry reports for the same session", async () => {
+    sessionStore.loadStoredCompanyUrl.mockResolvedValue("https://vuna.example.com");
+    sessionStore.loadStoredSessionId.mockResolvedValue("sid-1");
+    const session = await renderSession();
+    const invalidate = session.result.current.invalidateSession;
+
+    await act(async () => {
+      await Promise.all([invalidate(), invalidate()]);
+    });
+
     expect(session.result.current.authState).toBe("sessionExpired");
-    expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(2);
-    expect(posCache.clearAll).toHaveBeenCalledTimes(2);
+    expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+    expect(posCache.clearAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores an old protected request after a different session signs in", async () => {
+    sessionStore.loadStoredCompanyUrl.mockResolvedValue("https://vuna.example.com");
+    sessionStore.loadStoredSessionId.mockResolvedValue("sid-1");
+    frappeClient.signInToFrappe.mockResolvedValue("sid-2");
+    const session = await renderSession();
+    const oldInvalidate = session.result.current.invalidateSession;
+
+    await act(async () => { await session.result.current.signOut(); });
+    await act(async () => { await session.result.current.signIn("cashier-2", "secret"); });
+    await act(async () => { await oldInvalidate(); });
+
+    expect(session.result.current.authState).toBe("signedIn");
+    expect(session.result.current.sessionId).toBe("sid-2");
+    expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks an expired session even if local cache cleanup fails", async () => {
+    const warning = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    sessionStore.loadStoredCompanyUrl.mockResolvedValue("https://vuna.example.com");
+    sessionStore.loadStoredSessionId.mockResolvedValue("sid-1");
+    jest.mocked(posCache.clearAll).mockRejectedValueOnce(new Error("SQLite unavailable"));
+    const session = await renderSession();
+
+    await act(async () => { await session.result.current.invalidateSession(); });
+
+    expect(session.result.current.authState).toBe("sessionExpired");
+    expect(session.result.current.sessionId).toBeNull();
+    expect(sessionStore.clearStoredSession).toHaveBeenCalledTimes(1);
+    expect(warning).toHaveBeenCalledWith("Could not fully clear local POS data after session expiry.");
+    warning.mockRestore();
   });
 
   it("keeps the user signed out when Frappe rejects their sign-in", async () => {

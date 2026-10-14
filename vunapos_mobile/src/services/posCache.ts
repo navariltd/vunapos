@@ -3,13 +3,17 @@ import { openPosDatabase } from "@/services/posDatabase";
 
 /**
  * The cache is deliberately scoped more narrowly than the device. A caller
- * must identify the signed-in account and POS profile so one cashier cannot
- * browse another cashier's data after a company or profile change.
+ * must identify the signed-in account and POS profile; transaction drafts also
+ * include their ERP company and warehouse so a changed profile cannot restore
+ * an unverified cart from the old operational scope.
  */
 export type PosCacheScope = {
   companyUrl: string;
   posProfile: string;
   userId: string;
+  /** ERP company and warehouse are required for transaction-draft persistence. */
+  company?: string;
+  warehouse?: string;
 };
 
 export type PosCacheKey = {
@@ -47,7 +51,6 @@ type CacheStorage = {
     namespace: string,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ): Promise<void>;
   write(entry: StoredCacheEntry): Promise<void>;
   /** Optional atomic replacement used by SQLite-backed production storage. */
@@ -55,7 +58,6 @@ type CacheStorage = {
     entry: StoredCacheEntry,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) => Promise<void>;
 };
 
@@ -67,11 +69,16 @@ export type PosCacheOptions = {
   schemaVersion?: number;
 };
 
+export class SupersededCacheRequestError extends Error {
+  constructor() {
+    super("This cached request was superseded.");
+  }
+}
+
 const CACHE_SCHEMA_VERSION = 1;
 const DEFAULT_MAXIMUM_BYTES_PER_NAMESPACE = 5_000_000;
 const DEFAULT_MAXIMUM_ENTRY_BYTES = 2_000_000;
 const DEFAULT_MAXIMUM_ENTRIES_PER_NAMESPACE = 80;
-
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -103,9 +110,11 @@ function cachedRowCount(value: unknown) {
 
 export function posCacheNamespace(scope: PosCacheScope) {
   return stableJson({
+    company: scope.company,
     companyUrl: scope.companyUrl,
     posProfile: scope.posProfile,
     userId: scope.userId,
+    warehouse: scope.warehouse,
   });
 }
 
@@ -115,6 +124,10 @@ export function posCacheKey(key: PosCacheKey) {
     query: key.query,
     resource: key.resource,
   });
+}
+
+function resourceScopeKey(namespace: string, resource: string) {
+  return `${namespace}\u0000${resource}`;
 }
 
 class ExpoSqliteCacheStorage implements CacheStorage {
@@ -172,7 +185,6 @@ class ExpoSqliteCacheStorage implements CacheStorage {
     entry: StoredCacheEntry,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) {
     const database = await this.database();
     await database.withTransactionAsync(async () => {
@@ -188,10 +200,6 @@ class ExpoSqliteCacheStorage implements CacheStorage {
         entry.fetchedAt,
         entry.expiresAt,
         entry.accessedAt,
-      );
-      await database.runAsync(
-        "DELETE FROM pos_cache_entries WHERE expires_at <= ?",
-        now,
       );
       await database.runAsync(
         `DELETE FROM pos_cache_entries
@@ -257,24 +265,31 @@ class ExpoSqliteCacheStorage implements CacheStorage {
 
   async clearResource(namespace: string, resource: string) {
     const database = await this.database();
+    // Make the rows unreadable durably before attempting physical deletion.
+    // A failed DELETE must not resurrect a revoked workspace on process restart.
     await database.runAsync(
-      "DELETE FROM pos_cache_entries WHERE namespace = ? AND resource = ?",
+      "UPDATE pos_cache_entries SET schema_version = 0 WHERE namespace = ? AND resource = ?",
       namespace,
       resource,
     );
+    try {
+      await database.runAsync(
+        "DELETE FROM pos_cache_entries WHERE namespace = ? AND resource = ?",
+        namespace,
+        resource,
+      );
+    } catch {
+      // Incompatible rows remain bounded by normal namespace pruning and can
+      // no longer hydrate as an authorized snapshot.
+    }
   }
 
   async prune(
     namespace: string,
     maximumEntries: number,
     maximumBytes: number,
-    now: number,
   ) {
     const database = await this.database();
-    await database.runAsync(
-      "DELETE FROM pos_cache_entries WHERE expires_at <= ?",
-      now,
-    );
     await database.runAsync(
       `DELETE FROM pos_cache_entries
        WHERE cache_key IN (
@@ -312,9 +327,17 @@ class ExpoSqliteCacheStorage implements CacheStorage {
  * a database problem must never prevent the live POS from making a request.
  */
 export class PosCache {
-  private readonly inFlight = new Map<string, Promise<unknown>>();
-  private readonly listeners = new Map<string, Set<() => void>>();
+  private readonly inFlight = new Map<string, {
+    invalidated: boolean;
+    namespace: string;
+    promise: Promise<unknown>;
+    resource: string;
+  }>();
+  private readonly listeners = new Map<string, Set<(event: "write" | "clear") => void>>();
   private readonly memory = new Map<string, StoredCacheEntry>();
+  private clearGeneration = 0;
+  /** Failed explicit clears hide old durable rows until each key is replaced by a live write. */
+  private readonly blockedResourceRows = new Map<string, Set<string>>();
   private readonly maximumBytesPerNamespace: number;
   private readonly maximumEntryBytes: number;
   private readonly maximumEntriesPerNamespace: number;
@@ -339,23 +362,37 @@ export class PosCache {
   async read<T>(key: PosCacheKey): Promise<PosCacheEntry<T> | null> {
     const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
+    const blockedRows = this.blockedResourceRows.get(
+      resourceScopeKey(posCacheNamespace(key.scope), key.resource),
+    );
+    if (blockedRows && !blockedRows.has(cacheKey)) return null;
     let stored = this.memory.get(cacheKey);
     let source: "memory" | "sqlite" = "memory";
 
     if (!stored) {
+      const clearGeneration = this.clearGeneration;
       try {
-        stored = await this.storage.get(cacheKey) ?? undefined;
+        const durable = await this.storage.get(cacheKey) ?? undefined;
+        // A clear must not be undone by a read started before it. A write
+        // completed during the read is newer than the row SQLite returned.
+        stored = this.memory.get(cacheKey) ??
+          (clearGeneration === this.clearGeneration ? durable : undefined);
         source = "sqlite";
         if (stored) this.memory.set(cacheKey, stored);
       } catch {
-        recordCacheDiagnostic({
-          durationMs: Date.now() - startedAt,
-          operation: "read",
-          outcome: "error",
-          resource: key.resource,
-          source: "sqlite",
-        });
-        return null;
+        stored = this.memory.get(cacheKey);
+        if (stored) {
+          source = "memory";
+        } else {
+          recordCacheDiagnostic({
+            durationMs: Date.now() - startedAt,
+            operation: "read",
+            outcome: "error",
+            resource: key.resource,
+            source: "sqlite",
+          });
+          return null;
+        }
       }
     }
 
@@ -400,7 +437,14 @@ export class PosCache {
     }
   }
 
-  async write<T>(key: PosCacheKey, data: T, ttlMs: number) {
+  async write<T>(
+    key: PosCacheKey,
+    data: T,
+    ttlMs: number,
+    isCurrent: () => boolean = () => true,
+  ) {
+    if (!isCurrent()) return;
+    const clearGeneration = this.clearGeneration;
     const now = this.now();
     const payload = JSON.stringify(data);
     if (utf8ByteLength(payload) > this.maximumEntryBytes) {
@@ -432,7 +476,6 @@ export class PosCache {
           entry,
           this.maximumEntriesPerNamespace,
           this.maximumBytesPerNamespace,
-          now,
         );
       } else {
         await this.storage.write(entry);
@@ -440,10 +483,13 @@ export class PosCache {
           entry.namespace,
           this.maximumEntriesPerNamespace,
           this.maximumBytesPerNamespace,
-          now,
         );
       }
     } catch {
+      if (!isCurrent()) {
+        await this.delete(entry.cacheKey);
+        return;
+      }
       // A first live response may still be useful for this running process
       // when persistence is unavailable. Once a previous snapshot exists,
       // restore it so a failed refresh cannot replace approved data.
@@ -455,6 +501,12 @@ export class PosCache {
         // The durable store may be unavailable; retain the live candidate only
         // when there was no prior approved snapshot.
       }
+      if (!previousEntry && clearGeneration === this.clearGeneration) {
+        // The live server result is still safe to show in this process after
+        // an explicit clear, even when SQLite cannot persist it.
+        this.blockedResourceRows.get(resourceScopeKey(entry.namespace, entry.resource))
+          ?.add(entry.cacheKey);
+      }
       recordCacheDiagnostic({
         operation: "write",
         outcome: "error",
@@ -463,11 +515,21 @@ export class PosCache {
       });
       return;
     }
+    if (!isCurrent()) {
+      // A profile/session may have been cleared while SQLite was committing.
+      // Do not publish that obsolete snapshot to mounted readers.
+      await this.delete(entry.cacheKey);
+      return;
+    }
+    if (clearGeneration === this.clearGeneration) {
+      this.blockedResourceRows.get(resourceScopeKey(entry.namespace, entry.resource))
+        ?.add(entry.cacheKey);
+    }
     // Publish the new snapshot only after the durable replacement succeeds.
     // A failed SQLite write leaves the previous in-memory and durable entries
     // available to stale-while-revalidate readers.
-    for (const listener of this.listeners.get(entry.cacheKey) ?? []) listener();
-    this.pruneMemory(entry.namespace, now);
+    for (const listener of this.listeners.get(entry.cacheKey) ?? []) listener("write");
+    this.pruneMemory(entry.namespace);
     recordCacheDiagnostic({
       operation: "write",
       outcome: "success",
@@ -478,9 +540,9 @@ export class PosCache {
   }
 
   /** Allows mounted resource hooks to observe targeted cache patches. */
-  subscribe(key: PosCacheKey, listener: () => void) {
+  subscribe(key: PosCacheKey, listener: (event: "write" | "clear") => void) {
     const cacheKey = posCacheKey(key);
-    const listeners = this.listeners.get(cacheKey) ?? new Set<() => void>();
+    const listeners = this.listeners.get(cacheKey) ?? new Set<(event: "write" | "clear") => void>();
     listeners.add(listener);
     this.listeners.set(cacheKey, listeners);
     return () => {
@@ -490,23 +552,45 @@ export class PosCache {
   }
 
   /** Shares the one live request for a resource between all interested views. */
-  async fetch<T>(key: PosCacheKey, loader: () => Promise<T>, ttlMs: number) {
+  async fetch<T>(
+    key: PosCacheKey,
+    loader: () => Promise<T>,
+    ttlMs: number,
+    options?: { afterCurrent?: boolean },
+  ): Promise<T> {
     const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
-    const existing = this.inFlight.get(cacheKey) as Promise<T> | undefined;
+    const existing = this.inFlight.get(cacheKey);
     if (existing) {
+      if (options?.afterCurrent || existing.invalidated) {
+        // A full rebootstrap must not adopt an older delta response. A request
+        // invalidated by a scope change must not become the new scope's data.
+        return existing.promise.catch(() => undefined).then(() =>
+          this.fetch<T>(key, loader, ttlMs, options),
+        );
+      }
       recordCacheDiagnostic({
         operation: "fetch",
         outcome: "deduplicated",
         resource: key.resource,
         source: "network",
       });
-      return existing;
+      return existing.promise as Promise<T>;
     }
 
+    const entry = {
+      invalidated: false,
+      namespace: posCacheNamespace(key.scope),
+      promise: Promise.resolve() as Promise<unknown>,
+      resource: key.resource,
+    };
     const request = loader()
       .then(async (data) => {
-        await this.write(key, data, ttlMs);
+        if (entry.invalidated) throw new SupersededCacheRequestError();
+        await this.write(key, data, ttlMs, () => !entry.invalidated);
+        if (entry.invalidated) {
+          throw new SupersededCacheRequestError();
+        }
         recordCacheDiagnostic({
           durationMs: Date.now() - startedAt,
           operation: "fetch",
@@ -526,52 +610,94 @@ export class PosCache {
         });
         throw error;
       })
-      .finally(() => this.inFlight.delete(cacheKey));
-    this.inFlight.set(cacheKey, request);
+      .finally(() => {
+        if (this.inFlight.get(cacheKey) === entry) this.inFlight.delete(cacheKey);
+      });
+    entry.promise = request;
+    this.inFlight.set(cacheKey, entry);
     return request;
   }
 
   async clearNamespace(scope: PosCacheScope) {
+    this.clearGeneration += 1;
     const namespace = posCacheNamespace(scope);
+    for (const entry of this.inFlight.values()) {
+      if (entry.namespace === namespace) entry.invalidated = true;
+    }
     for (const [cacheKey, entry] of this.memory) {
       if (entry.namespace === namespace) {
         this.memory.delete(cacheKey);
-        this.listeners.delete(cacheKey);
       }
     }
     try {
       await this.storage.clearNamespace(namespace);
+      for (const key of this.blockedResourceRows.keys()) {
+        if (key.startsWith(`${namespace}\u0000`)) this.blockedResourceRows.delete(key);
+      }
     } catch {
       // Cache cleanup cannot block a sign-out or company change.
+    }
+    for (const [cacheKey, listeners] of this.listeners) {
+      const listenerKey = JSON.parse(cacheKey) as { namespace: string };
+      if (listenerKey.namespace === namespace) {
+        for (const listener of listeners) listener("clear");
+      }
     }
     recordCacheDiagnostic({ operation: "clear", outcome: "success", resource: "namespace" });
   }
 
   /** Used when the active account changes, so no POS data outlives its owner. */
   async clearAll() {
+    this.clearGeneration += 1;
+    for (const entry of this.inFlight.values()) entry.invalidated = true;
     this.memory.clear();
-    this.listeners.clear();
     try {
       await this.storage.clearAll();
+      this.blockedResourceRows.clear();
     } catch {
       // A cache cleanup failure must not block sign-out or company switching.
     }
+    for (const listeners of this.listeners.values()) {
+      for (const listener of listeners) listener("clear");
+    }
+    this.listeners.clear();
     recordCacheDiagnostic({ operation: "clear", outcome: "success", resource: "all" });
   }
 
   async clearResource(scope: PosCacheScope, resource: string) {
+    this.clearGeneration += 1;
     const namespace = posCacheNamespace(scope);
+    const blockedKey = resourceScopeKey(namespace, resource);
+    this.blockedResourceRows.set(blockedKey, new Set());
+    for (const entry of this.inFlight.values()) {
+      if (entry.namespace === namespace && entry.resource === resource) {
+        entry.invalidated = true;
+      }
+    }
     for (const [cacheKey, entry] of this.memory) {
       if (entry.namespace === namespace && entry.resource === resource) {
         this.memory.delete(cacheKey);
       }
     }
+    let clearedDurably = false;
     try {
       await this.storage.clearResource(namespace, resource);
+      this.blockedResourceRows.delete(blockedKey);
+      clearedDurably = true;
     } catch {
-      // Invalidating browse data must never block a successful mutation.
+      // The in-process block is only provisional. Callers clearing an access
+      // boundary must fail closed if SQLite could not durably invalidate it.
     }
-    recordCacheDiagnostic({ operation: "clear", outcome: "success", resource });
+    for (const [cacheKey, listeners] of this.listeners) {
+      const entryKey = JSON.parse(cacheKey) as { namespace: string; resource: string };
+      if (entryKey.namespace === namespace && entryKey.resource === resource) {
+        for (const listener of listeners) listener("clear");
+      }
+    }
+    recordCacheDiagnostic({
+      operation: "clear", outcome: clearedDurably ? "success" : "error", resource,
+    });
+    return clearedDurably;
   }
 
   /**
@@ -603,11 +729,7 @@ export class PosCache {
     }
   }
 
-  private pruneMemory(namespace: string, now: number) {
-    for (const [cacheKey, entry] of this.memory) {
-      if (entry.expiresAt <= now) this.memory.delete(cacheKey);
-    }
-
+  private pruneMemory(namespace: string) {
     const namespaceEntries = [...this.memory.values()]
       .filter((entry) => entry.namespace === namespace)
       .sort((left, right) => {

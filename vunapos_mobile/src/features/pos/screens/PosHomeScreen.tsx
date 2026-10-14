@@ -5,12 +5,14 @@ import {
   Pressable,
   RefreshControl,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
-import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
+import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -27,6 +29,9 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosCatalogueItem,
+  PosCustomerSearchResult,
+  PosOrderType,
+  PosSaleCustomer,
   PosTemplateVariant,
 } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -60,8 +65,13 @@ type PosHomeScreenProps = {
     currency: string,
   ) => Promise<boolean | string | void> | boolean | string | void;
   onOpenCart: () => void;
+  customerSelectionDisabled?: boolean;
+  onSelectSaleCustomer?: (customer: PosCustomerSearchResult) => void;
+  orderType?: PosOrderType;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
+  saleCustomer?: PosSaleCustomer | null;
+  showCustomerSelector?: boolean;
   useBootstrapCatalogue?: boolean;
 };
 
@@ -69,15 +79,23 @@ export function PosHomeScreen({
   cartItemCount,
   onAddToCart,
   onOpenCart,
+  customerSelectionDisabled = false,
+  onSelectSaleCustomer,
+  orderType = "Invoice",
   pricingContext,
   refreshKey = 0,
+  saleCustomer,
+  showCustomerSelector = false,
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const { palette } = useAppearance();
+  const { width: windowWidth } = useWindowDimensions();
   const toast = useToast();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const isOffline = connectionStatus !== "online";
+  const isSalesOrder = orderType === "Order";
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
@@ -88,7 +106,9 @@ export function PosHomeScreen({
     null,
   );
   const [bundleItem, setBundleItem] = useState<PosCatalogueItem | null>(null);
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+  });
   const itemSearch = usePosItemSearch({
     customer: useBootstrapCatalogue ? undefined : pricingContext?.customer,
     enabled: true,
@@ -139,27 +159,6 @@ export function PosHomeScreen({
     posProfile: bootstrap.data?.pos_profile.name,
     priceList: pricingContext?.priceList,
   });
-  useEffect(() => {
-    const message =
-      bootstrap.error ||
-      itemSearch.error ||
-      variantActionError ||
-      templateVariants.error ||
-      productBundle.error;
-    if (message) {
-      toast.error(message, {
-        title: "Could not load catalogue",
-        dedupeKey: `catalogue-error:${message}`,
-      });
-    }
-  }, [
-    bootstrap.error,
-    itemSearch.error,
-    productBundle.error,
-    templateVariants.error,
-    toast,
-    variantActionError,
-  ]);
   const handledRefreshKey = useRef(refreshKey);
   const autoAddedSearchKey = useRef<string | null>(null);
   const reloadBootstrap = bootstrap.reload;
@@ -181,17 +180,46 @@ export function PosHomeScreen({
 
   const isOutOfStock = useCallback(
     (item: PosCatalogueItem) =>
+      !isSalesOrder &&
       Boolean(item.is_stock_item) &&
       !item.has_variants &&
       !item.is_product_bundle &&
       !item.allow_negative_stock &&
       Number(item.actual_qty || 0) <= 0,
-    [],
+    [isSalesOrder],
   );
 
   const visibleItems = hideUnavailableItems
     ? items.filter((item) => !isOutOfStock(item))
     : items;
+  const itemSearchError = itemSearch.error;
+
+  useEffect(() => {
+    const message =
+      (bootstrap.data ? bootstrap.error : null) ||
+      (visibleItems.length > 0 ? itemSearchError : null) ||
+      variantActionError ||
+      templateVariants.error ||
+      productBundle.error;
+    if (!message) return;
+    toast.error(message, {
+      title: "Could not load catalogue",
+      dedupeKey: `catalogue-error:${message}`,
+      ...(message === itemSearchError && visibleItems.length > 0
+        ? { action: { label: "Retry", onPress: () => void reloadCatalogue() } }
+        : {}),
+    });
+  }, [
+    bootstrap.data,
+    bootstrap.error,
+    itemSearchError,
+    productBundle.error,
+    reloadCatalogue,
+    templateVariants.error,
+    toast,
+    variantActionError,
+    visibleItems.length,
+  ]);
 
   const addItem = useCallback(
     async (item: PosCatalogueItem): Promise<boolean> => {
@@ -317,26 +345,33 @@ export function PosHomeScreen({
         <PosItemListRow
           currency={currency}
           currencyPrecision={currencyPrecision}
+          ignoreStock={isSalesOrder}
           isAdding={pendingItemCode === item.item_code}
           isOffline={isOffline}
           item={item}
           onAdd={addItem}
         />
       ) : (
-        <PosItemCard
-          currency={currency}
-          currencyPrecision={currencyPrecision}
-          imageUrl={itemImageUrl(item.image, companyUrl)}
-          isAdding={pendingItemCode === item.item_code}
-          isOffline={isOffline}
-          item={item}
-          onAdd={addItem}
-        />
+        <View
+          style={{ width: (windowWidth - spacing.md * 2 - spacing.sm) / 2 }}
+          testID={`catalogue-cell-${item.item_code}`}
+        >
+          <PosItemCard
+            currency={currency}
+            currencyPrecision={currencyPrecision}
+            imageUrl={itemImageUrl(item.image, companyUrl)}
+            ignoreStock={isSalesOrder}
+            isAdding={pendingItemCode === item.item_code}
+            isOffline={isOffline}
+            item={item}
+            onAdd={addItem}
+          />
+        </View>
       ),
-    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode],
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, isSalesOrder, pendingItemCode, windowWidth],
   );
 
-  if (bootstrap.isLoading)
+  if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)
     return (
       <View style={styles.state}>
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
@@ -344,7 +379,7 @@ export function PosHomeScreen({
         </Text>
       </View>
     );
-  if (bootstrap.error || !bootstrap.data) {
+  if (!bootstrap.data || bootstrap.isScopeInvalidated) {
     return (
       <View style={styles.state}>
         <Text style={[styles.errorText, { color: palette.error }]}>
@@ -364,7 +399,7 @@ export function PosHomeScreen({
   }
 
   return (
-    <View style={styles.content}>
+    <View onTouchStart={() => customerComboRef.current?.dismiss()} style={styles.content}>
       <FlatList
         columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
@@ -372,25 +407,55 @@ export function PosHomeScreen({
         initialNumToRender={hideImages ? 12 : 8}
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
+        ListHeaderComponentStyle={showCustomerSelector ? styles.listHeaderLayer : undefined}
         ListEmptyComponent={
-          <Text
-            style={[
-              styles.emptyState,
-              {
-                color: itemSearch.error
-                  ? palette.error
-                  : palette.onSurfaceMuted,
-              },
-            ]}
-          >
-            {itemSearch.isLoading
-              ? "Searching the catalogue…"
-              : itemSearch.error ||
-                "No items found. Try another item name, code, or barcode."}
-          </Text>
+          <View>
+            <Text
+              style={[
+                styles.emptyState,
+                { color: itemSearch.error ? palette.error : palette.onSurfaceMuted },
+              ]}
+            >
+              {itemSearch.isLoading
+                ? "Searching the catalogue…"
+                : itemSearch.error ||
+                  "No items found. Try another item name, code, or barcode."}
+            </Text>
+            {itemSearch.error ? (
+              <Pressable
+                accessibilityLabel="Retry catalogue search"
+                onPress={() => void itemSearch.reload()}
+                style={[styles.retryButton, { borderColor: palette.border }]}
+              >
+                <Text style={[styles.retryButtonLabel, { color: palette.onSurface }]}>Try again</Text>
+              </Pressable>
+            ) : null}
+          </View>
         }
         ListHeaderComponent={
-          <View>
+          <View style={styles.listHeader}>
+            {showCustomerSelector && onSelectSaleCustomer ? (
+              <View
+                style={[
+                  styles.customerCard,
+                  { backgroundColor: palette.surface, borderColor: palette.border },
+                ]}
+              >
+                <Text style={[styles.customerCardLabel, { color: palette.onSurface }]}>
+                  Select Customer
+                </Text>
+                <PosCustomerComboBox
+                  accessibilityLabel="Search home customers"
+                  allowCustomerCreation={false}
+                  disabled={customerSelectionDisabled}
+                  floatingOptions
+                  onSelect={onSelectSaleCustomer}
+                  posProfile={bootstrap.data?.pos_profile.name}
+                  ref={customerComboRef}
+                  selectedCustomer={saleCustomer}
+                />
+              </View>
+            ) : null}
             <PosItemSearch
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
@@ -398,35 +463,6 @@ export function PosHomeScreen({
               scanDisabled={false}
               value={searchQuery}
             />
-            {itemSearch.error ? (
-              <View
-                style={[
-                  styles.catalogueError,
-                  {
-                    backgroundColor: palette.errorSurface,
-                    borderColor: palette.errorSurface,
-                  },
-                ]}
-              >
-                <Text style={[styles.addError, { color: palette.error }]}>
-                  {itemSearch.error}
-                </Text>
-                <Pressable
-                  accessibilityLabel="Retry catalogue search"
-                  onPress={itemSearch.reload}
-                  style={[styles.retryButton, { borderColor: palette.border }]}
-                >
-                  <Text
-                    style={[
-                      styles.retryButtonLabel,
-                      { color: palette.onSurface },
-                    ]}
-                  >
-                    Try again
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             {addError ? (
               <Text style={[styles.addError, { color: palette.error }]}>
                 {addError}
@@ -434,17 +470,8 @@ export function PosHomeScreen({
             ) : null}
           </View>
         }
-        ListFooterComponent={
-          <PosCacheStatus
-            isOffline={isOffline}
-            isRefreshing={
-              Boolean(bootstrap.isRefreshing) || Boolean(itemSearch.isRefreshing)
-            }
-            isStale={Boolean(bootstrap.isStale) || Boolean(itemSearch.isStale)}
-            lastUpdated={itemSearch.lastUpdated ?? bootstrap.lastUpdated}
-          />
-        }
         numColumns={hideImages ? 1 : 2}
+        keyboardShouldPersistTaps="handled"
         maxToRenderPerBatch={8}
         removeClippedSubviews
         renderItem={renderItem}
@@ -457,6 +484,7 @@ export function PosHomeScreen({
           />
         }
         showsVerticalScrollIndicator={false}
+        testID="pos-home-catalogue-list"
         updateCellsBatchingPeriod={50}
         windowSize={7}
       />
@@ -474,6 +502,7 @@ export function PosHomeScreen({
         isOffline={isOffline}
         isLoading={templateVariants.isLoading}
         isSelecting={Boolean(pendingItemCode)}
+        ignoreStock={isSalesOrder}
         onDismiss={() => {
           if (!pendingItemCode) setVariantTemplate(null);
         }}
@@ -499,13 +528,21 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
-  catalogueError: {
-    alignItems: "center",
+  customerCard: {
+    borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.sm,
+    marginBottom: spacing.sm,
     marginHorizontal: spacing.md,
-    marginTop: spacing.sm,
-    paddingBottom: spacing.sm,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    zIndex: 2,
+  },
+  listHeader: { zIndex: 2 },
+  listHeaderLayer: { zIndex: 2 },
+  customerCardLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
   },
   addError: {
     fontFamily: typography.fontFamily.medium,

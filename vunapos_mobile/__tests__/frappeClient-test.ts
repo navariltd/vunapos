@@ -25,12 +25,14 @@ function mockResponse({
   setCookies = [],
   status = ok ? 200 : 500,
 }: MockResponseOptions = {}): Response {
+  const body = typeof json === "string" ? json : JSON.stringify(json);
   return {
     headers: {
       get: jest.fn(() => setCookies[0] ?? null),
       getSetCookie: jest.fn(() => setCookies),
     },
     json: jest.fn().mockResolvedValue(json),
+    text: jest.fn().mockResolvedValue(body),
     ok,
     status,
   } as unknown as Response;
@@ -244,14 +246,18 @@ describe("frappeClient", () => {
   describe("validateFrappeSession", () => {
     it.each([
       [200, "valid"],
-      [401, "expired"],
-      [403, "expired"],
       [500, "unavailable"],
     ] as const)(
       "maps session validation status %s to %s",
       async (status, expected) => {
         fetchMock.mockResolvedValue(
-          mockResponse({ ok: status === 200, status }),
+          mockResponse({
+            json: status === 200
+              ? { message: { ok: true, data: { csrf_token: "csrf-1" } } }
+              : {},
+            ok: status === 200,
+            status,
+          }),
         );
 
         await expect(
@@ -274,6 +280,29 @@ describe("frappeClient", () => {
       await expect(
         validateFrappeSession("https://vuna.example.com", "sid"),
       ).resolves.toBe("unavailable");
+    });
+
+    it("expires only on a recognizable Frappe login-required response", async () => {
+      fetchMock.mockResolvedValue(mockResponse({
+        json: {
+          exc_type: "PermissionError",
+          exception: "frappe.exceptions.PermissionError: Login to accessFunction vunapos.api.auth.get_csrf_token is not whitelisted.",
+        },
+        ok: false,
+        status: 403,
+      }));
+      await expect(validateFrappeSession("https://vuna.example.com", "sid"))
+        .resolves.toBe("expired");
+    });
+
+    it.each([
+      mockResponse({ json: "<html>Proxy authentication failed</html>", ok: false, status: 403 }),
+      mockResponse({ json: "<html>Gateway error</html>", ok: false, status: 502 }),
+      mockResponse({ json: "<html>Login page</html>", status: 200 }),
+    ])("does not expire a session for a proxy or malformed response", async (response) => {
+      fetchMock.mockResolvedValue(response);
+      await expect(validateFrappeSession("https://vuna.example.com", "sid"))
+        .resolves.toBe("unavailable");
     });
   });
 
@@ -309,12 +338,16 @@ describe("frappeClient", () => {
 
     it("distinguishes expired sessions, API envelopes, and connection failures", async () => {
       fetchMock
-        .mockResolvedValueOnce(mockResponse({ ok: false, status: 401 }))
+        .mockResolvedValueOnce(mockResponse({
+          json: { exc_type: "AuthenticationError", exception: "Session expired" },
+          ok: false,
+          status: 401,
+        }))
         .mockResolvedValueOnce(
           mockResponse({
             json: {
               message: {
-                errors: [{ message: "No active POS shift." }],
+                errors: [{ code: "POS_OPENING_REQUIRED", message: "No active POS shift." }],
                 ok: false,
               },
             },
@@ -327,25 +360,63 @@ describe("frappeClient", () => {
       ).rejects.toMatchObject({ code: "session" });
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
-      ).rejects.toMatchObject({ code: "api", message: "No active POS shift." });
+      ).rejects.toMatchObject({
+        code: "api",
+        domainCode: "POS_OPENING_REQUIRED",
+        message: "No active POS shift.",
+      });
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
       ).rejects.toMatchObject({ code: "connection" });
     });
 
-    it("uses a status-based API error when a proxy returns non-JSON", async () => {
+    it("classifies a non-JSON proxy response explicitly", async () => {
       const response = mockResponse({ ok: false, status: 502 });
       (response.json as jest.Mock).mockRejectedValue(
         new Error("HTML proxy response"),
       );
+      (response.text as jest.Mock).mockResolvedValue("<html>proxy error</html>");
       fetchMock.mockResolvedValue(response);
 
       await expect(
         getVunaMethod("https://vuna.example.com", "sid", "method"),
       ).rejects.toMatchObject({
-        code: "api",
-        message: "The server could not complete this request (502).",
+        code: "server",
+        status: 502,
       });
+    });
+
+    it("does not log out for a proxy 403 or a Frappe permission denial", async () => {
+      fetchMock
+        .mockResolvedValueOnce(mockResponse({ json: "<html>Proxy denied</html>", ok: false, status: 403 }))
+        .mockResolvedValueOnce(mockResponse({
+          json: { exc_type: "PermissionError", exception: "Not permitted to read this document" },
+          ok: false,
+          status: 403,
+        }));
+      await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "INVALID_SERVER_RESPONSE" });
+      await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "api", status: 403 });
+    });
+
+    it("treats valid JSON with the wrong shape as a server response error", async () => {
+      fetchMock.mockResolvedValue(mockResponse({ json: null }));
+      await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "INVALID_SERVER_RESPONSE" });
+    });
+
+    it("classifies a Frappe login-required 403 as session expiry", async () => {
+      fetchMock.mockResolvedValue(mockResponse({
+        json: {
+          exc_type: "PermissionError",
+          exception: "frappe.exceptions.PermissionError: Login to accessFunction method is not whitelisted.",
+        },
+        ok: false,
+        status: 403,
+      }));
+      await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "session" });
     });
 
     it("normalizes an aborted request while preserving its cancellation cause", async () => {
@@ -498,6 +569,17 @@ describe("frappeClient", () => {
         }),
       );
     });
+
+    it("reports a failed server-side mutation as unavailable, not an expired session", async () => {
+      fetchMock
+        .mockResolvedValueOnce(mockResponse({
+          json: { message: { data: { csrf_token: "csrf-1" }, ok: true } },
+        }))
+        .mockResolvedValueOnce(mockResponse({ json: "<html>upstream unavailable</html>", ok: false, status: 503 }));
+
+      await expect(postVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "server", status: 503 });
+    });
   });
 
   describe("postVunaJsonMethod", () => {
@@ -591,6 +673,17 @@ describe("frappeClient", () => {
           signal: expect.any(AbortSignal),
         }),
       );
+    });
+
+    it("does not interpret a proxy 403 during mutation as session expiry", async () => {
+      fetchMock
+        .mockResolvedValueOnce(mockResponse({
+          json: { message: { data: { csrf_token: "csrf-1" }, ok: true } },
+        }))
+        .mockResolvedValueOnce(mockResponse({ json: "<html>Access denied by proxy</html>", ok: false, status: 403 }));
+
+      await expect(postFrappeJsonMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "INVALID_SERVER_RESPONSE", status: 403 });
     });
 
     it("surfaces Frappe validation messages from failed JSON requests", async () => {

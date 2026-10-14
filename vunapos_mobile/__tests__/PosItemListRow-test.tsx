@@ -47,6 +47,18 @@ describe("PosItemListRow", () => {
     expect(onAdd).not.toHaveBeenCalled();
   });
 
+  it("shows exhausted stock but allows adding it to a Sales Order", async () => {
+    const outOfStock = { ...item, actual_qty: 0 };
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemListRow currency="KES" ignoreStock item={outOfStock} onAdd={onAdd} />,
+    );
+
+    expect(screen.getByText("Out of stock")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Add Compact item"));
+    expect(onAdd).toHaveBeenCalledWith(outOfStock);
+  });
+
   it("marks bundles and keeps them available for authoritative bundle validation", async () => {
     const onAdd = jest.fn();
     const screen = await render(

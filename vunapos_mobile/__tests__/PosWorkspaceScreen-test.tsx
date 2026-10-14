@@ -1,4 +1,17 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, cleanup, fireEvent, render as renderWithTestingLibrary, waitFor } from "@testing-library/react-native";
+import type { ReactElement } from "react";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+
+const safeAreaMetrics = {
+  frame: { height: 800, width: 400, x: 0, y: 0 },
+  insets: { bottom: 24, left: 0, right: 0, top: 24 },
+};
+
+function render(ui: ReactElement) {
+  return renderWithTestingLibrary(
+    <SafeAreaProvider initialMetrics={safeAreaMetrics}>{ui}</SafeAreaProvider>,
+  );
+}
 
 jest.mock("@/services/NetworkStatusProvider", () => ({
   useNetworkStatus: () => ({ connectionStatus: "online" }),
@@ -17,11 +30,13 @@ jest.mock("@/features/shell/components/AppShell", () => ({
     onOrderTypeChange,
     onTabChange,
     orderType,
+    showBottomNavigation = true,
   }: {
     children: React.ReactNode;
     onOrderTypeChange: (orderType: "Invoice" | "Order") => void;
     onTabChange: (tab: "Home" | "Invoices" | "Customers") => void;
     orderType: "Invoice" | "Order";
+    showBottomNavigation?: boolean;
   }) => {
     const { Pressable, Text, View } = require("react-native");
 
@@ -36,18 +51,22 @@ jest.mock("@/features/shell/components/AppShell", () => ({
         >
           <Text>Switch order type</Text>
         </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onTabChange("Invoices")}
-        >
-          <Text>Open invoices</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => onTabChange("Customers")}
-        >
-          <Text>Open customers</Text>
-        </Pressable>
+        {showBottomNavigation ? (
+          <>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onTabChange("Invoices")}
+            >
+              <Text>Open invoices</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onTabChange("Customers")}
+            >
+              <Text>Open customers</Text>
+            </Pressable>
+          </>
+        ) : null}
         {children}
       </View>
     );
@@ -63,6 +82,11 @@ const mockCart = {
   items: [],
   refresh: jest.fn(),
   remove: jest.fn(async () => true),
+  restoredPriceList: undefined as string | undefined,
+  sourceInvoice: null as { doctype: string; name: string } | null,
+  restoreHeldInvoice: jest.fn(async () => ({
+    source: { doctype: "Sales Order", name: "SAL-ORD-001" },
+  })),
   retry: jest.fn(),
   subtotal: 0,
   taxes: [],
@@ -84,17 +108,41 @@ jest.mock("@/features/pos/hooks/useSalespersonPin", () => ({
   }),
 }));
 
+jest.mock("@/features/pos/hooks/useOpenPosShift", () => ({
+  useOpenPosShift: () => ({
+    clearError: jest.fn(),
+    error: null,
+    isOpening: false,
+    open: jest.fn(async () => ({ name: "OPEN-001" })),
+  }),
+}));
+
 jest.mock("@/features/pos/components/SalespersonPinLock", () => ({
   SalespersonPinLock: () => null,
 }));
 
 let mockSetConfigData: ((data: unknown) => void) | undefined;
+let mockCheckoutVerificationKey: string | undefined;
+const mockHomeMount = jest.fn();
+const mockHomeUnmount = jest.fn();
+let mockInitialSession: unknown = {
+  has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+};
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
   usePosBootstrapConfig: () => ({
     data: (() => {
       const { useState } = require("react");
-      const [data, setData] = useState(null);
-      mockSetConfigData = setData;
+      const [data, setData] = useState({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: mockInitialSession,
+      });
+      mockSetConfigData = (next) => setData((current: { pos_session?: unknown }) => ({
+        ...(next as Record<string, unknown>),
+        pos_session: Object.prototype.hasOwnProperty.call(next, "pos_session")
+          ? (next as { pos_session?: unknown }).pos_session
+          : current.pos_session,
+      }));
       return data;
     })(),
     error: null,
@@ -109,19 +157,49 @@ jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
 jest.mock("@/features/pos/screens/PosHomeScreen", () => ({
   PosHomeScreen: ({
     onOpenCart,
+    onSelectSaleCustomer,
     pricingContext,
+    showCustomerSelector,
   }: {
     onOpenCart: () => void;
+    onSelectSaleCustomer?: (customer: { customer: string; customerName: string }) => void;
     pricingContext?: { customer?: string };
+    showCustomerSelector?: boolean;
   }) => {
-    const { Pressable, Text } = require("react-native");
+    const { useEffect, useState } = require("react");
+    const { Pressable, Text, TextInput } = require("react-native");
+    const [searchDraft, setSearchDraft] = useState("");
+    useEffect(() => {
+      mockHomeMount();
+      return () => mockHomeUnmount();
+    }, []);
     return (
       <>
         <Text>POS home</Text>
+        <TextInput accessibilityLabel="Catalogue search draft" onChangeText={setSearchDraft} value={searchDraft} />
         <Text>{`Catalogue customer: ${pricingContext?.customer || "none"}`}</Text>
         <Pressable accessibilityRole="button" onPress={onOpenCart}>
           <Text>Open cart</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => mockSetConfigData?.({
+            payment_modes: [],
+            pos_profile: { name: "POS-001", enable_home_customer_selection: true },
+          })}
+        >
+          <Text>Enable home customer selection</Text>
+        </Pressable>
+        {showCustomerSelector ? (
+          <>
+            <Pressable accessibilityRole="button" onPress={() => onSelectSaleCustomer?.({ customer: "CUST-HOME", customerName: "Home customer" })}>
+              <Text>Select home customer</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => onSelectSaleCustomer?.({ customer: "CUST-OTHER", customerName: "Other customer" })}>
+              <Text>Select other home customer</Text>
+            </Pressable>
+          </>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           onPress={() =>
@@ -360,24 +438,49 @@ jest.mock("@/features/pos/screens/PosPaymentsScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosCartScreen", () => ({
   PosCartScreen: ({
+    allowPriceListSwitching,
+    onBack,
     onCheckout,
     onClear,
     onRemove,
+    onSelectPriceList,
+    onSelectShippingAddress,
+    priceList,
     saleCustomer,
+    shippingAddressName,
   }: {
+    allowPriceListSwitching: boolean;
+    onBack: () => void;
     onCheckout: () => void;
     onClear: () => boolean;
     onRemove: (itemCode: string) => Promise<void>;
+    onSelectPriceList: (priceList: string) => void;
+    onSelectShippingAddress: (addressName: string) => void;
+    priceList?: string;
     saleCustomer: { customerName: string } | null;
+    shippingAddressName: string;
   }) => {
     const { Pressable, Text } = require("react-native");
     return (
       <>
+        <Pressable accessibilityRole="button" onPress={onBack}>
+          <Text>Back to Home from cart</Text>
+        </Pressable>
         <Text>
           {saleCustomer
             ? `Cart customer: ${saleCustomer.customerName}`
             : "Cart has no customer"}
         </Text>
+        <Text>{`Price list switching: ${allowPriceListSwitching ? "enabled" : "disabled"}`}</Text>
+        <Text>{`Selected price list: ${priceList || "none"}`}</Text>
+        {allowPriceListSwitching ? (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => onSelectPriceList("Wholesale")}
+          >
+            <Text>Select Wholesale price list</Text>
+          </Pressable>
+        ) : null}
         <Pressable accessibilityRole="button" onPress={onClear}>
           <Text>Clear cart</Text>
         </Pressable>
@@ -390,6 +493,13 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
         <Pressable accessibilityRole="button" onPress={onCheckout}>
           <Text>Open checkout</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onSelectShippingAddress("ADDR-002")}
+        >
+          <Text>Select cart shipping address</Text>
+        </Pressable>
+        <Text>{`Cart shipping address: ${shippingAddressName || "none"}`}</Text>
       </>
     );
   },
@@ -397,20 +507,56 @@ jest.mock("@/features/pos/screens/PosCartScreen", () => ({
 
 jest.mock("@/features/pos/screens/PosCheckoutScreen", () => ({
   PosCheckoutScreen: ({
+    bootstrapData,
     onComplete,
+    shippingAddressName,
+    transactionReady,
+    sessionVerificationKey,
   }: {
+    bootstrapData?: { payment_modes?: { mode_of_payment: string }[] } | null;
     onComplete: (result: { doctype: string; name: string }) => void;
+    shippingAddressName?: string;
+    transactionReady?: boolean;
+    sessionVerificationKey?: string;
   }) => {
-    const { Pressable, Text } = require("react-native");
+    const { useState } = require("react");
+    const { Pressable, Text, TextInput, View } = require("react-native");
+    const [note, setNote] = useState("");
+    mockCheckoutVerificationKey = sessionVerificationKey;
     return (
-      <Pressable
-        accessibilityRole="button"
-        onPress={() =>
-          onComplete({ doctype: "Sales Order", name: "SO-TEST-0001" })
-        }
-      >
-        <Text>Complete test sale</Text>
-      </Pressable>
+      <View>
+        <Text>{`Checkout modes: ${bootstrapData?.payment_modes?.map((mode) => mode.mode_of_payment).join(", ") || "none"}`}</Text>
+        <Text>{`Checkout shipping address: ${shippingAddressName || "none"}`}</Text>
+        <Text>{`Checkout ready: ${transactionReady ? "yes" : "no"}`}</Text>
+        <TextInput accessibilityLabel="Checkout note" onChangeText={setNote} value={note} />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            mockSetConfigData?.({
+              payment_modes: [],
+              pos_profile: { name: "POS-001", price_list: "Updated" },
+            })
+          }
+        >
+          <Text>Refresh profile during checkout</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onComplete({ doctype: "Sales Order", name: "SO-TEST-0001" })
+          }
+        >
+          <Text>Complete test sale</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() =>
+            onComplete({ doctype: "Sales Invoice", name: "SINV-TEST-0001" })
+          }
+        >
+          <Text>Complete test invoice</Text>
+        </Pressable>
+      </View>
     );
   },
 }));
@@ -439,12 +585,15 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
   PosInvoiceDetailsScreen: ({
     invoiceName,
     onBack,
+    onEditDraft,
     onOpenPaymentEntry,
     onOpenReturn,
+    onStartReturn,
     onStartSale,
   }: {
     invoiceName: string;
     onBack: () => void;
+    onEditDraft: (source: { doctype: string; name: string }) => Promise<void>;
     onOpenPaymentEntry: (
       paymentEntry: {
         allocated_amount: number;
@@ -456,6 +605,7 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
       currency: string,
     ) => void;
     onOpenReturn: (invoiceReturn: { name: string }) => void;
+    onStartReturn: (invoiceName: string) => void;
     onStartSale: (customer: { customer: string; customerName: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
@@ -496,8 +646,48 @@ jest.mock("@/features/pos/screens/PosInvoiceDetailsScreen", () => ({
         >
           <Text>Open return</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onStartReturn(invoiceName)}
+        >
+          <Text>Return items</Text>
+        </Pressable>
         <Pressable accessibilityRole="button" onPress={onBack}>
           <Text>Back to previous invoice</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => void onEditDraft({ doctype: "Sales Order", name: invoiceName })}
+        >
+          <Text>Edit draft</Text>
+        </Pressable>
+      </>
+    );
+  },
+}));
+
+jest.mock("@/features/pos/screens/PosInvoiceReturnScreen", () => ({
+  PosInvoiceReturnScreen: ({
+    invoiceName,
+    onBack,
+    onComplete,
+  }: {
+    invoiceName: string;
+    onBack: () => void;
+    onComplete: (result: { name: string }) => void;
+  }) => {
+    const { Pressable, Text } = require("react-native");
+    return (
+      <>
+        <Text>{`Return screen for ${invoiceName}`}</Text>
+        <Pressable accessibilityRole="button" onPress={onBack}>
+          <Text>Back to invoice from return</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => onComplete({ name: "POS-INV-RET-NEW" })}
+        >
+          <Text>Complete return</Text>
         </Pressable>
       </>
     );
@@ -526,9 +716,17 @@ import { PosWorkspaceScreen } from "@/features/pos/screens/PosWorkspaceScreen";
 describe("PosWorkspaceScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockInitialSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
     mockCart.itemCount = 0;
+    mockCart.restoredPriceList = undefined;
+    mockCart.sourceInvoice = null;
     mockCart.clear.mockReturnValue(true);
     mockCart.remove.mockResolvedValue(true);
+    mockCart.restoreHeldInvoice.mockResolvedValue({
+      source: { doctype: "Sales Order", name: "SAL-ORD-001" },
+    });
   });
 
   afterEach(async () => {
@@ -561,6 +759,156 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByText("Cart customer: Example customer")).toBeTruthy();
   });
 
+  it("opens Cart over the mounted catalogue and restores the same Home state on close", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.changeText(screen.getByLabelText("Catalogue search draft"), "milk");
+    const initialMounts = mockHomeMount.mock.calls.length;
+
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart has no customer")).toBeTruthy();
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.getByLabelText("Catalogue search draft").props.value).toBe("milk");
+    expect(mockHomeMount).toHaveBeenCalledTimes(initialMounts);
+    expect(mockHomeUnmount).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Close cart" }));
+    await waitFor(() => expect(screen.queryByText("Cart has no customer")).toBeNull());
+    expect(screen.getByLabelText("Catalogue search draft").props.value).toBe("milk");
+    expect(mockHomeUnmount).not.toHaveBeenCalled();
+  });
+
+  it("carries the cart shipping address into checkout without a second selection", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Select cart shipping address" }),
+    );
+    expect(screen.getByText("Cart shipping address: ADDR-002")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    expect(screen.getByText("Checkout shipping address: ADDR-002")).toBeTruthy();
+  });
+
+  it("carries a Home-selected customer into Cart without choosing a shipping address", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    expect(screen.queryByText("Select home customer")).toBeNull();
+    await fireEvent.press(screen.getByText("Enable home customer selection"));
+    await fireEvent.press(screen.getByText("Select home customer"));
+    expect(screen.getByText("Catalogue customer: CUST-HOME")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart customer: Home customer")).toBeTruthy();
+    expect(screen.getByText("Cart shipping address: none")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Select cart shipping address"));
+    expect(screen.getByText("Cart shipping address: ADDR-002")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Back to Home from cart"));
+    await fireEvent.press(screen.getByText("Select other home customer"));
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    expect(screen.getByText("Cart customer: Other customer")).toBeTruthy();
+    expect(screen.getByText("Cart shipping address: none")).toBeTruthy();
+  });
+
+  it("drops a manual price list when the POS Profile disables switching", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    expect(screen.getByText("Price list switching: enabled")).toBeTruthy();
+    await fireEvent.press(screen.getByText("Select Wholesale price list"));
+    expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy();
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy();
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+
+    expect(screen.getByText("Price list switching: disabled")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: none")).toBeTruthy(),
+    );
+  });
+
+  it("does not reapply a restored manual list when switching is disabled", async () => {
+    mockCart.restoredPriceList = "Wholesale";
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    expect(screen.getByText("Selected price list: none")).toBeTruthy();
+  });
+
+  it("drops a manual list removed from the profile's allowed choices", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        allow_price_list_switching: true,
+        allowed_price_lists: [{ name: "Wholesale" }],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Select Wholesale price list"));
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        allow_price_list_switching: true,
+        allowed_price_lists: [],
+      },
+    }));
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: none")).toBeTruthy(),
+    );
+  });
+
+  it("keeps a restored draft's price list for server validation", async () => {
+    mockCart.restoredPriceList = "Wholesale";
+    mockCart.sourceInvoice = { doctype: "Sales Order", name: "SAL-ORD-001" };
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: {
+        name: "POS-001",
+        price_list: "Standard Selling",
+        allow_price_list_switching: false,
+        allowed_price_lists: [],
+      },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await waitFor(() =>
+      expect(screen.getByText("Selected price list: Wholesale")).toBeTruthy(),
+    );
+  });
+
   it("returns to the POS Profile default customer when a cart is cleared", async () => {
     const screen = await render(<PosWorkspaceScreen />);
     await fireEvent.press(
@@ -582,6 +930,40 @@ describe("PosWorkspaceScreen", () => {
 
     await fireEvent.press(screen.getByRole("button", { name: "Clear cart" }));
     expect(screen.getByText("Cart customer: Walk-in customer")).toBeTruthy();
+  });
+
+  it("keeps an active checkout mounted while the shared profile snapshot changes", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Deliver tomorrow");
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Refresh profile during checkout" }),
+    );
+
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Deliver tomorrow");
+    expect(screen.queryByText("Preparing your POS settings…")).toBeNull();
+    expect(screen.queryByText("Restoring your POS…")).toBeNull();
+  });
+
+  it("keeps a restored Sales Order as an Order even when mode switching is disabled", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Set Invoice as POS default" }));
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: {
+          allow_order_type_change: false,
+          default_order_type: "Sales Invoice",
+          name: "POS-001",
+        },
+      });
+    });
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoices" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Edit draft" }));
+    await waitFor(() => expect(screen.getByText("Current order type: Order")).toBeTruthy());
   });
 
   it("returns to the POS Profile default customer after the last cart item is removed", async () => {
@@ -621,14 +1003,29 @@ describe("PosWorkspaceScreen", () => {
     );
     await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
     await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
     await fireEvent.press(
       screen.getByRole("button", { name: "Complete test sale" }),
     );
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
+    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+  });
+
+  it("returns Home and clears the cart after an invoice completes", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open cart" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open checkout" }));
+    mockCart.clear.mockClear();
+
     await fireEvent.press(
-      screen.getByRole("button", { name: "Back to previous invoice" }),
+      screen.getByRole("button", { name: "Complete test invoice" }),
     );
 
-    expect(screen.getByText("Catalogue customer: WALK-IN")).toBeTruthy();
+    expect(mockCart.clear).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("POS home")).toBeTruthy();
+    expect(screen.queryByText("Invoice details")).toBeNull();
   });
 
   it("resets an Order override to the Invoice POS default after submission", async () => {
@@ -708,6 +1105,25 @@ describe("PosWorkspaceScreen", () => {
     expect(screen.getByRole("button", { name: "Open return" })).toBeTruthy();
   });
 
+  it("opens returns as a workspace screen and navigates back or into the new credit note", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoices" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Open invoice" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Return items" }));
+
+    expect(screen.getByText("Return screen for POS-INV-0001")).toBeTruthy();
+    expect(screen.queryByText("Invoice details: POS-INV-0001")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open invoices" })).toBeNull();
+    await fireEvent.press(screen.getByRole("button", { name: "Back to invoice from return" }));
+    expect(screen.getByText("Invoice details: POS-INV-0001")).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Return items" }));
+    await fireEvent.press(screen.getByRole("button", { name: "Complete return" }));
+    expect(screen.getByText("Invoice details: POS-INV-RET-NEW")).toBeTruthy();
+    await fireEvent.press(screen.getByRole("button", { name: "Back to previous invoice" }));
+    expect(screen.getByText("Invoice details: POS-INV-0001")).toBeTruthy();
+  });
+
   it("blocks the POS workspace when the current session is not ready for sales", async () => {
     const screen = await render(<PosWorkspaceScreen />);
 
@@ -718,6 +1134,169 @@ describe("PosWorkspaceScreen", () => {
     await waitFor(() =>
       expect(screen.getAllByText("Start POS shift")).toHaveLength(2),
     );
+  });
+
+  it("does not expose a cold workspace before session readiness is known", async () => {
+    mockInitialSession = null;
+    const screen = await render(<PosWorkspaceScreen />);
+    expect(screen.getByText("Checking POS session…")).toBeTruthy();
+    expect(screen.queryByText("POS home")).toBeNull();
+  });
+
+  it("keeps an active checkout mounted when session verification temporarily becomes unknown", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep uncertain draft");
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001" }, pos_session: null,
+    }));
+    expect(screen.getByText("Checking POS session…")).toBeTruthy();
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep uncertain draft");
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+  });
+
+  it("preserves checkout-local input when a session gate appears and later clears", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN" },
+      });
+    });
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Cashier draft");
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+    expect(screen.getAllByText("Start POS shift")).toHaveLength(2);
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: true, ready: true, status: "OPEN" },
+      });
+    });
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Cashier draft");
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("keeps checkout mounted but unavailable while a shift is closing", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: { has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN" },
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Unsubmitted order");
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: {
+        closing_entry: "CLOSE-001", has_opening_entry: true,
+        opening_entry: "OPEN-001", ready: false, status: "CLOSING",
+      },
+    }));
+    expect(screen.getByText("POS closing in progress")).toBeTruthy();
+    expect(screen.getByText(/Your unfinished sale is preserved/)).toBeTruthy();
+    expect(screen.getByText("Checkout ready: no")).toBeTruthy();
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Unsubmitted order");
+  });
+
+  it("keeps checkout fields while changing the preview key for a pricing configuration update", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    const posSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001", price_list: "Retail" }, pos_session: posSession,
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep pricing note");
+    const originalKey = mockCheckoutVerificationKey;
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [], pos_profile: { name: "POS-001", price_list: "Wholesale" }, pos_session: posSession,
+    }));
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep pricing note");
+    expect(mockCheckoutVerificationKey).not.toBe(originalKey);
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("updates checkout payment modes without an unnecessary pricing preview", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    const posSession = {
+      has_opening_entry: true, opening_entry: "OPEN-001", ready: true, status: "OPEN",
+    };
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [{ mode_of_payment: "Cash" }],
+      pos_profile: { name: "POS-001" }, pos_session: posSession,
+    }));
+    await fireEvent.press(screen.getByText("Open cart"));
+    await fireEvent.press(screen.getByText("Open checkout"));
+    await fireEvent.changeText(screen.getByLabelText("Checkout note"), "Keep payment note");
+    const originalKey = mockCheckoutVerificationKey;
+
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [{ mode_of_payment: "Cash" }, { mode_of_payment: "M-Pesa" }],
+      pos_profile: { name: "POS-001" }, pos_session: posSession,
+    }));
+    expect(screen.getByLabelText("Checkout note").props.value).toBe("Keep payment note");
+    expect(screen.getByText("Checkout modes: Cash, M-Pesa")).toBeTruthy();
+    expect(mockCheckoutVerificationKey).toBe(originalKey);
+    expect(screen.getByText("Checkout ready: yes")).toBeTruthy();
+  });
+
+  it("does not accept an open session belonging to another POS Profile", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => mockSetConfigData?.({
+      payment_modes: [],
+      pos_profile: { name: "POS-001" },
+      pos_session: {
+        has_opening_entry: true, opening_entry: "OPEN-OTHER", pos_profile: "POS-002",
+        ready: true, status: "OPEN",
+      },
+    }));
+    expect(screen.getByText("POS session unavailable")).toBeTruthy();
+    // The prior workspace remains mounted behind the blocking native gate.
+    expect(screen.getByText("POS home")).toBeTruthy();
+  });
+
+  it("does not carry an optimistic opened shift into another POS Profile", async () => {
+    const screen = await render(<PosWorkspaceScreen />);
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [{ mode_of_payment: "Cash" }],
+        pos_profile: { name: "POS-001" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    await fireEvent.press(screen.getByLabelText("Start POS shift"));
+    await waitFor(() => expect(screen.getByText("POS home")).toBeTruthy());
+
+    await act(async () => {
+      mockSetConfigData?.({
+        payment_modes: [{ mode_of_payment: "Cash" }],
+        pos_profile: { name: "POS-002" },
+        pos_session: { has_opening_entry: false, ready: false, status: "OPENING_REQUIRED" },
+      });
+    });
+    expect(screen.getByLabelText("Start POS shift")).toBeTruthy();
   });
 
   it("opens the Customer tab only after the POS Profile enables customer management", async () => {

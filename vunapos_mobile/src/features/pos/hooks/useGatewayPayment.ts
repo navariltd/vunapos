@@ -10,6 +10,7 @@ import { FrappeClientError, getVunaMethod, postVunaMethod } from '@/services/fra
 
 type InitiateGatewayPaymentInput = {
   amount: number;
+  accountReference?: string;
   currency: string;
   customer?: string;
   idempotencyKey: string;
@@ -51,6 +52,7 @@ export function useGatewayPayment() {
   function initiate(input: InitiateGatewayPaymentInput) {
     return request<PosGatewayPaymentLink>('vunapos.api.gateway.initiate_stk_gateway_payment', {
       amount: input.amount,
+      account_reference: input.accountReference,
       currency: input.currency,
       customer: input.customer,
       idempotency_key: input.idempotencyKey,

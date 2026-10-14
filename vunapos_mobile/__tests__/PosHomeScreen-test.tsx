@@ -14,25 +14,38 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
   PosCartButton: () => null,
 }));
 
+const mockItemMount = jest.fn();
+const mockItemUnmount = jest.fn();
+const mockToastError = jest.fn();
+const mockDismissHomeCustomerOptions = jest.fn();
+jest.mock("@/components/feedback/ToastProvider", () => ({
+  useToast: () => ({ error: mockToastError }),
+}));
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
+    ignoreStock,
     isAdding,
     isOffline,
     item,
     onAdd,
   }: {
     imageUrl?: string | null;
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
+    require("react").useEffect(() => {
+      mockItemMount();
+      return () => mockItemUnmount();
+    }, []);
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -47,11 +60,13 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
 jest.mock("@/features/pos/components/PosItemListRow", () => ({
   PosItemListRow: ({
     item,
+    ignoreStock,
     isAdding,
     isOffline,
     onAdd,
   }: {
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
     onAdd: (item: { item_name: string }) => void;
@@ -60,7 +75,7 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -146,8 +161,16 @@ jest.mock("@/features/pos/components/PosProductBundleSheet", () => ({
       : null,
 }));
 
-jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
-  PosCustomerPickerSheet: () => null,
+jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
+  PosCustomerComboBox: require("react").forwardRef(({ accessibilityLabel, floatingOptions, onSelect, selectedCustomer }: { accessibilityLabel: string; floatingOptions?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }, ref: React.Ref<{ dismiss: () => void }>) => {
+    const { Pressable, TextInput, View } = require("react-native");
+    require("react").useImperativeHandle(ref, () => ({ dismiss: mockDismissHomeCustomerOptions }));
+    return <>
+      {floatingOptions ? <View testID="home-customer-options-float" /> : null}
+      <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
+      <Pressable accessibilityLabel="Choose searched customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
+    </>;
+  }),
 }));
 
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
@@ -240,6 +263,48 @@ describe("PosHomeScreen", () => {
     await cleanup();
   });
 
+  it("shows the searchable customer selector only when enabled and reports the choice", async () => {
+    const onSelectSaleCustomer = jest.fn();
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        showCustomerSelector
+      />,
+    );
+
+    expect(screen.getByLabelText("Search home customers")).toBeTruthy();
+    expect(screen.getByTestId("home-customer-options-float")).toBeTruthy();
+    expect(screen.getByTestId("pos-home-catalogue-list").props.ListHeaderComponentStyle).toEqual(
+      expect.objectContaining({ zIndex: expect.any(Number) }),
+    );
+    await fireEvent(screen.getByLabelText("Search for one item"), "touchStart");
+    expect(mockDismissHomeCustomerOptions).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByLabelText("Choose searched customer"));
+    expect(onSelectSaleCustomer).toHaveBeenCalledWith({
+      customer: "CUST-002",
+      customerName: "Brian Kamau",
+    });
+
+    await screen.rerender(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        saleCustomer={{ customer: "CUST-002", customerName: "Brian Kamau" }}
+        showCustomerSelector
+      />,
+    );
+    expect(screen.getByLabelText("Search home customers").props.value).toBe("Brian Kamau");
+    await screen.rerender(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(screen.queryByLabelText("Search home customers")).toBeNull();
+  });
+
   it("adds catalogue items without asking for a customer first", async () => {
     const liveItem = {
       actual_qty: 3,
@@ -282,6 +347,79 @@ describe("PosHomeScreen", () => {
     );
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
+  });
+
+  it.each([false, true])(
+    "allows out-of-stock Sales Order items in %s image mode but blocks invoices",
+    async (hideImages) => {
+      const stockItem = {
+        actual_qty: 0,
+        is_stock_item: true,
+        item_code: "STOCK-001",
+        item_name: "Out-of-stock item",
+        rate: 50,
+      };
+      mockUsePosBootstrap.mockReturnValue({
+        data: {
+          items: [stockItem],
+          payment_modes: [],
+          pos_profile: { currency: "KES", hide_images: hideImages, name: "POS-001" },
+        },
+        error: null,
+        isLoading: false,
+        reload: jest.fn(),
+      });
+      const props = {
+        cartItemCount: 0,
+        onAddToCart,
+        onOpenCart: jest.fn(),
+      };
+      const screen = await render(<PosHomeScreen {...props} orderType="Order" />);
+      const itemLabel = `${hideImages ? "List" : "Card"}: Out-of-stock item`;
+
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).toHaveBeenCalledWith(stockItem, "KES");
+
+      onAddToCart.mockClear();
+      await screen.rerender(<PosHomeScreen {...props} orderType="Invoice" />);
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a lone final grid card one column wide and hides cache timestamps", async () => {
+    const items = ["ONE", "TWO", "THREE"].map((item_code) => ({
+      actual_qty: 3,
+      item_code,
+      item_name: item_code,
+      rate: 150,
+    }));
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items,
+        default_customer: null,
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: null,
+      isLoading: false,
+      lastUpdated: Date.now(),
+      reload: jest.fn(),
+    });
+
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+      />,
+    );
+
+    const firstWidth = screen.getByTestId("catalogue-cell-ONE").props.style.width;
+    const lastWidth = screen.getByTestId("catalogue-cell-THREE").props.style.width;
+    expect(firstWidth).toBeGreaterThan(0);
+    expect(lastWidth).toBe(firstWidth);
+    expect(screen.queryByText(/Updated \d{2}\/\d{2}\/\d{4}/)).toBeNull();
   });
 
   it("keeps cached browsing available while allowing server actions to classify failures", async () => {
@@ -592,6 +730,134 @@ describe("PosHomeScreen", () => {
     expect(screen.getByText("Could not reach your company site.")).toBeTruthy();
     await fireEvent.press(screen.getByLabelText("Retry loading POS catalogue"));
     expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a usable catalogue visible after a background bootstrap error", async () => {
+    const data = {
+      default_customer: null,
+      items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+      payment_modes: [],
+      pos_profile: { currency: "KES", name: "POS-001" },
+    };
+    mockUsePosBootstrap.mockReturnValue({
+      data,
+      error: null,
+      isLoading: false,
+      reload: jest.fn(),
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByText("Card: Milk")).toBeTruthy();
+    const unmountsBeforeRefresh = mockItemUnmount.mock.calls.length;
+
+    mockUsePosBootstrap.mockReturnValue({
+      data,
+      error: "Temporary refresh failure",
+      isLoading: false,
+      isRefreshing: false,
+      reload: jest.fn(),
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByText("Card: Milk")).toBeTruthy();
+    expect(mockItemUnmount).toHaveBeenCalledTimes(unmountsBeforeRefresh);
+    expect(view.queryByText("Temporary refresh failure")).toBeNull();
+  });
+
+  it("keeps the catalogue header and rows mounted through a failed retry", async () => {
+    const item = { item_code: "ONE", item_name: "one item", actual_qty: 4, rate: 100 };
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: "Could not reach your company site.", hasLoaded: true,
+      isLoading: false, items: [item], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    const mounts = mockItemMount.mock.calls.length;
+    expect(view.queryByLabelText("Retry catalogue search")).toBeNull();
+    expect(mockToastError).toHaveBeenCalledWith(
+      "Could not reach your company site.",
+      expect.objectContaining({ action: expect.objectContaining({ label: "Retry" }) }),
+    );
+    const options = mockToastError.mock.calls.at(-1)?.[1] as { action: { onPress: () => void } };
+    options.action.onPress();
+    expect(reload).toHaveBeenCalledTimes(1);
+
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [item], error: null, hasLoaded: true,
+      isLoading: false, isRefreshing: true, items: [item], reload,
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Search for one item")).toBeTruthy();
+    expect(view.getByText("Card: one item")).toBeTruthy();
+    expect(mockItemMount).toHaveBeenCalledTimes(mounts);
+    expect(mockItemUnmount).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline retry instead of a duplicate toast when no catalogue rows exist", async () => {
+    const reload = jest.fn();
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [], error: "Could not reach your company site.", hasLoaded: false,
+      isLoading: false, items: [], reload,
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.getByLabelText("Retry catalogue search")).toBeTruthy();
+    expect(mockToastError).not.toHaveBeenCalled();
+    fireEvent.press(view.getByLabelText("Retry catalogue search"));
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains an active search through a background bootstrap error", async () => {
+    const data = {
+      default_customer: null,
+      items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+      payment_modes: [],
+      pos_profile: { currency: "KES", name: "POS-001" },
+    };
+    mockUsePosBootstrap.mockReturnValue({ data, error: null, isLoading: false, reload: jest.fn() });
+    const view = await render(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await act(async () => fireEvent.press(view.getByLabelText("Search for one item")));
+    expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "one" }));
+
+    mockUsePosBootstrap.mockReturnValue({
+      data, error: "Temporary refresh failure", isLoading: false, reload: jest.fn(),
+    });
+    await view.rerender(
+      <PosHomeScreen cartItemCount={2} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+
+    expect(mockUsePosItemSearch).toHaveBeenLastCalledWith(expect.objectContaining({ query: "one" }));
+    expect(view.getByLabelText("Search for one item")).toBeTruthy();
+  });
+
+  it("does not show cached catalogue rows after confirmed profile invalidation", async () => {
+    mockUsePosBootstrap.mockReturnValue({
+      data: {
+        items: [{ item_code: "MILK", item_name: "Milk", actual_qty: 4, rate: 100 }],
+        payment_modes: [],
+        pos_profile: { currency: "KES", name: "POS-001" },
+      },
+      error: "POS access was revoked.",
+      isLoading: false,
+      isScopeInvalidated: true,
+      reload: jest.fn(),
+    });
+    const view = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(view.queryByText("Card: Milk")).toBeNull();
+    expect(view.getByText("POS access was revoked.")).toBeTruthy();
   });
 
   it("reloads the live catalogue after a completed sale invalidates the POS snapshot", async () => {

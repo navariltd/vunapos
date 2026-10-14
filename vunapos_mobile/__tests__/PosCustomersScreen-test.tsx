@@ -332,6 +332,19 @@ describe("PosCustomersScreen", () => {
       0,
     );
     expect(screen.getByText("3 active filters")).toBeTruthy();
+
+    await fireEvent.press(
+      screen.getByRole("button", { name: "Open customer filters" }),
+    );
+    await fireEvent.press(screen.getByText("Clear filters"));
+    expect(screen.queryByText("Clear filters")).toBeNull();
+    expect(mockUsePosCustomerDirectory).toHaveBeenLastCalledWith(
+      "POS-001",
+      "",
+      { customerGroup: "", customerType: "", territory: "" },
+      0,
+    );
+    expect(screen.queryByText("3 active filters")).toBeNull();
   });
 
   it("shows a retryable directory error", async () => {

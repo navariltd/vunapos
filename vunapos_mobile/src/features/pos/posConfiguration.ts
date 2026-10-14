@@ -51,6 +51,7 @@ export function effectivePosConfigurationFingerprint(
       allow_order_type_change: profile.allow_order_type_change,
       allow_customer_management: profile.allow_customer_management,
       allow_customer_creation: profile.allow_customer_creation,
+      enable_home_customer_selection: profile.enable_home_customer_selection,
       allow_customer_payments: profile.allow_customer_payments,
       allow_sales_order_payments: profile.allow_sales_order_payments,
       allow_payment_reconciliation: profile.allow_payment_reconciliation,

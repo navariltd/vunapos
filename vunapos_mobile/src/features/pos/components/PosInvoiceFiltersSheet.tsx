@@ -439,7 +439,7 @@ export function PosInvoiceFiltersSheet({
                   <Text style={styles.label}>Current shift only</Text>
                   <View style={styles.currentShiftControl}>
                     <Text style={styles.currentShiftValue}>
-                      {filters.currentShift ? "On" : "Off"}
+                      {filters.currentShift ? "Yes" : "No"}
                     </Text>
                     <Switch
                       accessibilityLabel="Current shift only"

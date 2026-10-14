@@ -178,10 +178,10 @@ doc_events["POS Settings"] = {
 }
 doc_events["POS Profile"] = {
 	"validate": "vunapos.services.checkout_field_service.validate_global_checkout_fields",
+	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
 	"on_trash": "vunapos.realtime.publish_configuration_change",
 }
-
 # Stock and tracking changes do not publish POS configuration events, but they
 # must invalidate cached catalogue balances immediately.
 for _doctype in ("Bin", "Stock Ledger Entry", "Batch", "Serial No", "Serial and Batch Bundle"):

@@ -6,12 +6,13 @@ import {
   validateFrappeSession,
 } from "@/services/frappeClient";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
-import { invalidateRealtimeResource } from "@/sync/realtimeInvalidation";
+import { recoverPosResources } from "@/sync/realtimeInvalidation";
 import {
   POS_CACHE_TTL_MS,
   refreshRegisteredPosResources,
 } from "@/hooks/usePosCachedResource";
 import {
+  getServerReachabilityDiagnostics,
   recordServerReachability,
   resetServerReachability,
 } from "@/sync/serverReachability";
@@ -24,54 +25,81 @@ const SERVER_REACHABILITY_INTERVAL_MS = 30_000;
  * successful probe asks the existing bootstrap owner for a timestamp delta.
  */
 export function usePosRefreshTriggers() {
-  const { authState, companyUrl, sessionId } = useAppSession();
+  const { authState, companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
+  const scope = `${authState}:${companyUrl ?? ""}:${sessionId ?? ""}`;
+  const currentScope = useRef(scope);
   const previousConnection = useRef(connectionStatus);
   const previousAppState = useRef<AppStateStatus>(AppState.currentState);
-  const probeInFlight = useRef(false);
-  const reachabilityProbeInFlight = useRef<Promise<boolean> | undefined>(
+  const probeInFlight = useRef<string | null>(null);
+  const reachabilityProbeInFlight = useRef<{
+    scope: string;
+    promise: Promise<{ reachable: boolean; repaired: boolean }>;
+  } | undefined>(
     undefined,
   );
+  const expiredSessionHandled = useRef<string | null>(null);
+
+  useEffect(() => {
+    currentScope.current = scope;
+  }, [scope]);
 
   const probeServerReachability = useCallback(async () => {
     if (
       authState !== "signedIn" ||
       connectionStatus !== "online" ||
       !companyUrl ||
-      !sessionId ||
-      reachabilityProbeInFlight.current
+      !sessionId
     ) {
-      return reachabilityProbeInFlight.current ?? false;
+      return { reachable: false, repaired: false };
+    }
+    if (reachabilityProbeInFlight.current?.scope === scope) {
+      return reachabilityProbeInFlight.current.promise;
     }
 
     const probe = (async () => {
       const status = await validateFrappeSession(companyUrl, sessionId);
+      if (currentScope.current !== scope) return { reachable: false, repaired: false };
       if (status === "valid") {
+        const wasUnreachable = getServerReachabilityDiagnostics().status === "unreachable";
         recordServerReachability({ status: "reachable" });
-        return true;
+        if (wasUnreachable) {
+          // A device can remain online while Frappe is down. Repair once on
+          // the server transition, using the existing root refresh owner.
+          try {
+            await recoverPosResources("reconnect");
+          } catch {
+            // Keep the last-known-good data; the next scheduler tick retries.
+          }
+        }
+        return { reachable: true, repaired: wasUnreachable };
       }
       if (status === "expired") {
         recordServerReachability({
           status: "session-expired",
           error: "Your session has expired. Sign in again to continue.",
         });
+        if (expiredSessionHandled.current !== sessionId) {
+          expiredSessionHandled.current = sessionId;
+          await invalidateSession();
+        }
       } else {
         recordServerReachability({
           status: "unreachable",
           error: "The company server could not be reached.",
         });
       }
-      return false;
+      return { reachable: false, repaired: false };
     })();
-    reachabilityProbeInFlight.current = probe;
+    reachabilityProbeInFlight.current = { scope, promise: probe };
     try {
       return await probe;
     } finally {
-      if (reachabilityProbeInFlight.current === probe) {
+      if (reachabilityProbeInFlight.current?.promise === probe) {
         reachabilityProbeInFlight.current = undefined;
       }
     }
-  }, [authState, companyUrl, connectionStatus, sessionId]);
+  }, [authState, companyUrl, connectionStatus, invalidateSession, scope, sessionId]);
 
   const probeAndRefresh = useCallback(async (source: "foreground" | "reconnect") => {
     if (
@@ -79,38 +107,38 @@ export function usePosRefreshTriggers() {
       connectionStatus !== "online" ||
       !companyUrl ||
       !sessionId ||
-      probeInFlight.current
+      probeInFlight.current === scope
     ) {
       return;
     }
-    probeInFlight.current = true;
+    probeInFlight.current = scope;
     try {
-      if (!(await probeServerReachability())) return;
+      const result = await probeServerReachability();
+      if (!result.reachable || result.repaired) return;
       // Reachability is already established by validateFrappeSession above.
       // Let the cache owner perform the one configuration request so a
       // foreground/reconnect repair cannot fetch and discard an identical
       // payload before invalidating the resource.
-      await invalidateRealtimeResource("workspace-configuration", {
-        full: false,
-        source,
-      });
+      await recoverPosResources(source);
     } catch {
       // A failed probe is expected during a transient outage. Existing cached
       // data remains visible and the next trigger retries it.
     } finally {
-      probeInFlight.current = false;
+      if (probeInFlight.current === scope) probeInFlight.current = null;
     }
   }, [
     authState,
     companyUrl,
     connectionStatus,
     probeServerReachability,
+    scope,
     sessionId,
   ]);
 
   useEffect(() => {
     if (authState !== "signedIn") {
       resetServerReachability();
+      expiredSessionHandled.current = null;
       return;
     }
     void probeServerReachability();

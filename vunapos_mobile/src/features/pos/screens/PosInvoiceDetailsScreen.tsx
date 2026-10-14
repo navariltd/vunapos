@@ -6,7 +6,6 @@ import { Text } from "react-native-paper";
 import { PosErpNextRecordLink } from "@/features/pos/components/PosErpNextRecordLink";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { PosFixedPageHeader } from "@/features/pos/components/PosFixedPageHeader";
-import { PosInvoiceReturnPreviewSheet } from "@/features/pos/components/PosInvoiceReturnPreviewSheet";
 import { PosInvoiceReceiptActions } from "@/features/pos/components/PosInvoiceReceiptActions";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { usePosBootstrap } from "@/features/pos/hooks/usePosBootstrap";
@@ -35,6 +34,7 @@ type PosInvoiceDetailsScreenProps = {
     currency: string,
   ) => void;
   onOpenReturn: (invoiceReturn: PosInvoiceReturn) => void;
+  onStartReturn: (invoiceName: string) => void;
   onReceivePayment?: (customer: PosSaleCustomer, invoice: string) => void;
   onStartSale: (customer: PosSaleCustomer) => void;
 };
@@ -149,15 +149,17 @@ export function PosInvoiceDetailsScreen({
   onOpenCustomer,
   onOpenPaymentEntry,
   onOpenReturn,
+  onStartReturn,
   onReceivePayment,
   onStartSale,
 }: PosInvoiceDetailsScreenProps) {
   const { palette } = useAppearance();
   const toast = useToast();
   const styles = createStyles(palette);
-  const [returnPreviewVisible, setReturnPreviewVisible] = useState(false);
   const [workflowActionsVisible, setWorkflowActionsVisible] = useState(false);
-  const bootstrap = usePosBootstrap();
+  const bootstrap = usePosBootstrap({
+    manageFreshness: false,
+  });
   const details = usePosInvoiceDetails({
     invoiceDoctype,
     invoiceName,
@@ -179,7 +181,11 @@ export function PosInvoiceDetailsScreen({
     }
   }, [error, invoiceDoctype, invoiceName, toast, workflowActions.error]);
 
-  if (bootstrap.isLoading || details.isLoading) {
+  const hasUsableDetails = Boolean(
+    bootstrap.data && !bootstrap.isScopeInvalidated && details.data &&
+    (!details.error || details.isRecoverableError),
+  );
+  if ((bootstrap.isLoading || details.isLoading) && !hasUsableDetails) {
     return (
       <View style={styles.state}>
         <Text style={styles.stateText}>Loading invoice…</Text>
@@ -187,7 +193,7 @@ export function PosInvoiceDetailsScreen({
     );
   }
 
-  if (!details.data || error) {
+  if (!details.data || !hasUsableDetails) {
     return (
       <View style={styles.state}>
         <Text style={styles.errorText}>{error || "Invoice not found."}</Text>
@@ -223,7 +229,8 @@ export function PosInvoiceDetailsScreen({
     invoice.docstatus === 1 &&
     invoice.doctype !== "Sales Order" &&
     !invoice.is_return &&
-    bootstrap.data?.pos_profile.name,
+    bootstrap.data?.pos_profile.name &&
+    bootstrap.data?.pos_profile.allow_returns !== false,
   );
   const canRunWorkflowAction = Boolean(
     invoice.docstatus === 0 && workflowActions.actions.length,
@@ -353,7 +360,7 @@ export function PosInvoiceDetailsScreen({
         {canStartReturn ? (
           <Pressable
             accessibilityLabel="Return items"
-            onPress={() => setReturnPreviewVisible(true)}
+            onPress={() => onStartReturn(invoice.name)}
             style={styles.returnButton}
           >
             <Text style={styles.returnButtonLabel}>Return items</Text>
@@ -615,20 +622,6 @@ export function PosInvoiceDetailsScreen({
           </View>
         </DetailCard>
 
-        {canStartReturn && returnPreviewVisible ? (
-          <PosInvoiceReturnPreviewSheet
-            currencyPrecision={precision}
-            currency={currency}
-            invoiceName={invoice.name}
-            onComplete={(returnInvoice) => {
-              setReturnPreviewVisible(false);
-              onOpenReturn(returnInvoice);
-            }}
-            onDismiss={() => setReturnPreviewVisible(false)}
-            posProfile={bootstrap.data?.pos_profile.name || ""}
-            visible={returnPreviewVisible}
-          />
-        ) : null}
       </ScrollView>
       <Modal
         animationType="fade"

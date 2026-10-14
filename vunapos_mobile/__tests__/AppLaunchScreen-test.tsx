@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -7,7 +8,7 @@ jest.mock("react-native-paper", () => ({
 import { AppLaunchScreen } from "@/components/splash/AppLaunchScreen";
 
 describe("AppLaunchScreen", () => {
-  it("uses one unbranded preparation state before routing begins", async () => {
+  it("continues the native splash branding until the destination is ready", async () => {
     const onReady = jest.fn();
     const screen = await render(
       <AppLaunchScreen
@@ -17,8 +18,10 @@ describe("AppLaunchScreen", () => {
     );
 
     expect(screen.getByText("Preparing your workspace…")).toBeTruthy();
-    expect(screen.queryByText("VunaPOS")).toBeNull();
-    expect(screen.queryByText("Mobile point of sale")).toBeNull();
+    expect(StyleSheet.flatten(screen.getByText("Preparing your workspace…").props.style))
+      .toEqual(expect.objectContaining({ alignSelf: "stretch" }));
+    expect(screen.getByLabelText("VunaPOS logo")).toBeTruthy();
+    expect(onReady).not.toHaveBeenCalled();
 
     fireEvent(screen.getByLabelText("Preparing your workspace…"), "layout");
     expect(onReady).toHaveBeenCalledTimes(1);

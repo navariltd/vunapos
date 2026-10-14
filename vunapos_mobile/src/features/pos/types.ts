@@ -211,6 +211,8 @@ export type PosDefaultCustomer = {
 };
 
 export type PosBootstrapData = {
+  /** Authoritative Frappe Socket.IO namespace for this API site. */
+  site_name?: string;
   /** Server watermark used by the SPA-compatible timestamp delta contract. */
   server_time?: string;
   /** Explicit SPA-compatible sync metadata persisted with the snapshot. */
@@ -236,9 +238,11 @@ export type PosBootstrapData = {
     company?: string;
     warehouse?: string;
     allow_customer_creation?: boolean;
+    enable_home_customer_selection?: boolean;
     allow_customer_management?: boolean;
     allow_customer_payments?: boolean;
     allow_payment_history?: boolean;
+    allow_returns?: boolean;
     allow_payment_reconciliation?: boolean;
     allow_delivery_charge_change?: boolean;
     allow_delivery_charges?: boolean;
@@ -412,6 +416,8 @@ export type PosCheckoutResult = {
   doctype: string;
   name: string;
   queue_status?: string | null;
+  /** Client-side workflow failure after the document was successfully created. */
+  workflowActionError?: string;
 };
 
 export type PosInvoiceHistoryFilters = {

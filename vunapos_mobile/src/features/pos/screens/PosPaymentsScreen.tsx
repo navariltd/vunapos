@@ -1,6 +1,7 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -17,8 +18,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { formatPosCurrency } from "@/features/pos/currency";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { PosCacheStatus } from "@/features/pos/components/PosCacheStatus";
+import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { usePosCustomerDetails } from "@/features/pos/hooks/usePosCustomerDetails";
-import { usePosCustomerSearch } from "@/features/pos/hooks/usePosCustomerSearch";
 import { useErpNextRecord } from "@/features/pos/hooks/useErpNextRecord";
 import { usePosPaymentHistory } from "@/features/pos/hooks/usePosPaymentHistory";
 import { usePosPaymentReconciliationAllocation } from "@/features/pos/hooks/usePosPaymentReconciliationAllocation";
@@ -128,6 +130,7 @@ export function PosPaymentsScreen({
   const paymentHistoryRefresh = useRef<(() => void | Promise<void>) | null>(
     null,
   );
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const [isHistoryRefreshing, setIsHistoryRefreshing] = useState(false);
 
   const activeTab = availableTabs.some(({ value }) => value === selectedTab)
@@ -162,6 +165,7 @@ export function PosPaymentsScreen({
   return (
     <ScrollView
       contentContainerStyle={styles.content}
+      onTouchStart={() => customerComboRef.current?.dismiss()}
       refreshControl={
         activeTab === "history" ? (
           <RefreshControl
@@ -224,12 +228,14 @@ export function PosPaymentsScreen({
           initialInvoice={initialReceiveInvoice}
           paymentModes={paymentModes}
           posProfile={posProfile}
+          customerComboRef={customerComboRef}
         />
       ) : activeTab === "reconcile" ? (
         <ReconcilePaymentContext
           currency={currency}
           currencyPrecision={currencyPrecision}
           posProfile={posProfile}
+          customerComboRef={customerComboRef}
         />
       ) : (
         <PaymentHistoryContext
@@ -981,6 +987,7 @@ function ReceivePaymentContext({
   initialInvoice,
   paymentModes,
   posProfile,
+  customerComboRef,
 }: {
   currency: string;
   currencyPrecision: number;
@@ -988,10 +995,10 @@ function ReceivePaymentContext({
   initialInvoice?: string;
   paymentModes: PosPaymentMode[];
   posProfile?: string;
+  customerComboRef: RefObject<PosCustomerComboBoxHandle | null>;
 }) {
   const toast = useToast();
   const { palette } = useAppearance();
-  const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(initialCustomer ?? null);
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(
@@ -1019,7 +1026,6 @@ function ReceivePaymentContext({
   const [isC2bSearching, setIsC2bSearching] = useState(false);
   const [hasC2bSearched, setHasC2bSearched] = useState(false);
   const gatewayIdempotencyKey = useRef<string | null>(null);
-  const customerSearch = usePosCustomerSearch(query, true, posProfile);
   const customerDetails = usePosCustomerDetails({
     customer: selectedCustomer?.customer || "",
     posProfile,
@@ -1052,14 +1058,14 @@ function ReceivePaymentContext({
   const receivePayment = useReceiveCustomerPayment();
   const gatewayPayment = useGatewayPayment();
   useEffect(() => {
-    const message = customerSearch.error || customerDetails.error;
+    const message = customerDetails.error;
     if (message) {
       toast.error(message, {
         title: "Could not load payment customer",
         dedupeKey: `receive-customer-error:${message}`,
       });
     }
-  }, [customerDetails.error, customerSearch.error, toast]);
+  }, [customerDetails.error, toast]);
   useEffect(() => {
     const message = validationError || receivePayment.error || gatewayPayment.error;
     if (message) {
@@ -1114,7 +1120,6 @@ function ReceivePaymentContext({
     setSelectedInvoice(null);
     setAmount("");
     setHasEditedAmount(false);
-    setQuery("");
     setGatewayPhone(customer.mobile || "");
     clearGatewayState();
   }
@@ -1365,69 +1370,16 @@ function ReceivePaymentContext({
           </Pressable>
         </View>
       ) : (
-        <>
-          <TextInput
-            accessibilityLabel="Search payment customers"
-            editable
-            onChangeText={setQuery}
-            placeholder="Search customer, phone, or email"
-            placeholderTextColor={palette.onSurfaceMuted}
-            style={[
-              styles.input,
-              {
-                backgroundColor: palette.surfaceContainer,
-                borderColor: palette.border,
-                color: palette.onSurface,
-              },
-            ]}
-            value={query}
-          />
-          {customerSearch.isLoading ? (
-            <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
-              Searching customers…
-            </Text>
-          ) : null}
-          {customerSearch.error ? (
-            <Text
-              accessibilityRole="alert"
-              style={[styles.errorText, { color: palette.error }]}
-            >
-              {customerSearch.error}
-            </Text>
-          ) : null}
-          {!customerSearch.isLoading &&
-          !customerSearch.error &&
-          customerSearch.rows.length ? (
-            <View style={styles.searchResults}>
-              {customerSearch.rows.map((customer) => (
-                <Pressable
-                  accessibilityLabel={`Select payment customer ${customer.customerName}`}
-                  accessibilityRole="button"
-                  key={customer.customer}
-                  onPress={() => selectCustomer(customer)}
-                  style={[
-                    styles.customerResult,
-                    { borderColor: palette.borderSubtle },
-                  ]}
-                >
-                  <Text
-                    style={[styles.customerName, { color: palette.onSurface }]}
-                  >
-                    {customer.customerName}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.customerMeta,
-                      { color: palette.onSurfaceMuted },
-                    ]}
-                  >
-                    {customer.mobile || customer.email || customer.customer}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-        </>
+        <PosCustomerComboBox
+          accessibilityLabel="Search payment customers"
+          allowCustomerCreation={false}
+          floatingOptions
+          onSelect={selectCustomer}
+          optionAccessibilityPrefix="Select payment customer"
+          placeholder="Search customer, phone, or email"
+          posProfile={posProfile}
+          ref={customerComboRef}
+        />
       )}
 
       {selectedCustomer ? (
@@ -2114,14 +2066,15 @@ function ReconcilePaymentContext({
   currency,
   currencyPrecision,
   posProfile,
+  customerComboRef,
 }: {
   currency: string;
   currencyPrecision: number;
   posProfile?: string;
+  customerComboRef: RefObject<PosCustomerComboBoxHandle | null>;
 }) {
   const toast = useToast();
   const { palette } = useAppearance();
-  const [query, setQuery] = useState("");
   const [selectedCustomer, setSelectedCustomer] =
     useState<PosCustomerSearchResult | null>(null);
   const [selectedPayments, setSelectedPayments] = useState<string[]>([]);
@@ -2129,7 +2082,6 @@ function ReconcilePaymentContext({
   const [allocationPreview, setAllocationPreview] = useState<
     PosPaymentReconciliationAllocation[]
   >([]);
-  const customerSearch = usePosCustomerSearch(query, true, posProfile);
   const allocation = usePosPaymentReconciliationAllocation();
   const reconciliation = usePosPaymentReconciliation();
   const candidates = usePosPaymentReconciliationCandidates(
@@ -2137,14 +2089,14 @@ function ReconcilePaymentContext({
     posProfile,
   );
   useEffect(() => {
-    const message = customerSearch.error || candidates.error;
+    const message = candidates.error;
     if (message) {
       toast.error(message, {
         title: "Could not load reconciliation data",
         dedupeKey: `reconciliation-data-error:${message}`,
       });
     }
-  }, [candidates.error, customerSearch.error, toast]);
+  }, [candidates.error, toast]);
   useEffect(() => {
     const message = allocation.error || reconciliation.error;
     if (message) {
@@ -2165,7 +2117,6 @@ function ReconcilePaymentContext({
 
   function selectCustomer(customer: PosCustomerSearchResult) {
     setSelectedCustomer(customer);
-    setQuery("");
     resetSelections();
   }
 
@@ -2303,69 +2254,16 @@ function ReconcilePaymentContext({
           </Pressable>
         </View>
       ) : (
-        <>
-          <TextInput
-            accessibilityLabel="Search reconciliation customers"
-            editable
-            onChangeText={setQuery}
-            placeholder="Search customer, phone, or email"
-            placeholderTextColor={palette.onSurfaceMuted}
-            style={[
-              styles.input,
-              {
-                backgroundColor: palette.surfaceContainer,
-                borderColor: palette.border,
-                color: palette.onSurface,
-              },
-            ]}
-            value={query}
-          />
-          {customerSearch.isLoading ? (
-            <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
-              Searching customers…
-            </Text>
-          ) : null}
-          {customerSearch.error ? (
-            <Text
-              accessibilityRole="alert"
-              style={[styles.errorText, { color: palette.error }]}
-            >
-              {customerSearch.error}
-            </Text>
-          ) : null}
-          {!customerSearch.isLoading &&
-          !customerSearch.error &&
-          customerSearch.rows.length ? (
-            <View style={styles.searchResults}>
-              {customerSearch.rows.map((customer) => (
-                <Pressable
-                  accessibilityLabel={`Select reconciliation customer ${customer.customerName}`}
-                  accessibilityRole="button"
-                  key={customer.customer}
-                  onPress={() => selectCustomer(customer)}
-                  style={[
-                    styles.customerResult,
-                    { borderColor: palette.borderSubtle },
-                  ]}
-                >
-                  <Text
-                    style={[styles.customerName, { color: palette.onSurface }]}
-                  >
-                    {customer.customerName}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.customerMeta,
-                      { color: palette.onSurfaceMuted },
-                    ]}
-                  >
-                    {customer.mobile || customer.email || customer.customer}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
-        </>
+        <PosCustomerComboBox
+          accessibilityLabel="Search reconciliation customers"
+          allowCustomerCreation={false}
+          floatingOptions
+          onSelect={selectCustomer}
+          optionAccessibilityPrefix="Select reconciliation customer"
+          placeholder="Search customer, phone, or email"
+          posProfile={posProfile}
+          ref={customerComboRef}
+        />
       )}
 
       {selectedCustomer ? (
@@ -2693,11 +2591,6 @@ const styles = StyleSheet.create({
     fontSize: typography.size.body,
     lineHeight: typography.lineHeight.compact,
   },
-  customerResult: {
-    borderBottomWidth: 1,
-    gap: 2,
-    paddingVertical: spacing.sm,
-  },
   customerSummary: { flex: 1, gap: 2 },
   c2bAmount: { alignItems: "flex-end", gap: 2 },
   c2bPayment: {
@@ -2990,7 +2883,6 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     textAlignVertical: "top",
   },
-  searchResults: { gap: 0 },
   sectionTitle: {
     fontFamily: typography.fontFamily.semibold,
     fontSize: 18,

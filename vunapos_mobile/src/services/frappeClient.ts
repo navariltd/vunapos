@@ -20,7 +20,7 @@ type FrappeErrorResponse = {
 
 type VunaEnvelope<T> = {
   data: T;
-  errors?: { message?: string }[];
+  errors?: { code?: string; message?: string }[];
   ok: boolean;
 };
 
@@ -40,10 +40,18 @@ export const FRAPPE_REQUEST_TIMEOUT_MS = {
 export class FrappeClientError extends Error {
   constructor(
     message: string,
-    readonly code: "api" | "connection" | "login" | "session" | "aborted",
+    readonly code:
+      | "api"
+      | "connection"
+      | "server"
+      | "login"
+      | "session"
+      | "aborted"
+      | "INVALID_SERVER_RESPONSE",
     readonly status?: number,
     readonly reason?: "network" | "timeout" | "aborted",
     readonly cause?: unknown,
+    readonly domainCode?: string,
   ) {
     super(message);
     this.name = "FrappeClientError";
@@ -229,11 +237,23 @@ function getResetKey(redirectTo: unknown): string | undefined {
   }
 }
 
-async function readJson<T>(response: Response): Promise<T | undefined> {
+async function readJson<T>(response: Response, path: string): Promise<T> {
+  const body = await response.text();
+  if (!body.trim()) {
+    throw new FrappeClientError(
+      `Request to ${path} returned an empty response.`,
+      "INVALID_SERVER_RESPONSE",
+      response.status,
+    );
+  }
   try {
-    return (await response.json()) as T;
+    return JSON.parse(body) as T;
   } catch {
-    return;
+    throw new FrappeClientError(
+      `Request to ${path} returned a non-JSON response. Try again or contact your administrator.`,
+      "INVALID_SERVER_RESPONSE",
+      response.status,
+    );
   }
 }
 
@@ -287,6 +307,43 @@ function getFrappeErrorMessage(payload: FrappeErrorResponse | undefined) {
   }
 }
 
+function isSessionDenial(payload: FrappeErrorResponse): boolean {
+  if (payload.exc_type === "AuthenticationError" || payload.exc_type === "SessionExpired") {
+    return true;
+  }
+  return payload.exc_type === "PermissionError" &&
+    typeof payload.exception === "string" &&
+    /login to access/i.test(payload.exception);
+}
+
+function serverError(status: number) {
+  return new FrappeClientError(
+    "The company server is temporarily unavailable. Try again shortly.",
+    "server",
+    status,
+  );
+}
+
+async function readMethodResponse<T>(response: Response, method: string): Promise<T> {
+  if (response.status >= 500) throw serverError(response.status);
+  const payload = await readJson<T & FrappeErrorResponse>(response, `/api/method/${method}`);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new FrappeClientError(
+      "The server returned an invalid JSON API response.",
+      "INVALID_SERVER_RESPONSE",
+      response.status,
+    );
+  }
+  if ((response.status === 401 || response.status === 403) && isSessionDenial(payload)) {
+    throw new FrappeClientError(
+      "Your session has expired. Sign in again to continue.",
+      "session",
+      response.status,
+    );
+  }
+  return payload;
+}
+
 export async function verifyVunaPosSite(companyUrl: string): Promise<void> {
   try {
     const response = await fetchWithTimeout(
@@ -298,13 +355,17 @@ export async function verifyVunaPosSite(companyUrl: string): Promise<void> {
       FRAPPE_REQUEST_TIMEOUT_MS.read,
     );
     if (!response.ok) {
+      if (response.status >= 500) throw serverError(response.status);
       throw new FrappeClientError(
         "That address did not respond as a VunaPOS site.",
         "connection",
       );
     }
 
-    const payload = (await response.json()) as FrappeMessage;
+    const payload = await readJson<FrappeMessage>(
+      response,
+      "/api/method/vunapos.api.pos.ping",
+    );
     if (payload.message?.ok !== true) {
       throw new FrappeClientError(
         "That address did not respond as a VunaPOS site.",
@@ -353,13 +414,14 @@ export async function signInToFrappe(
     );
 
     if (!response.ok) {
+      if (response.status >= 500) throw serverError(response.status);
       throw new FrappeClientError(
         "Sign-in failed. Check your details and try again.",
         "login",
       );
     }
 
-    const payload = await readJson<FrappeLoginResponse>(response);
+    const payload = await readJson<FrappeLoginResponse>(response, "/api/method/login");
     if (payload?.message === "Password Reset") {
       const resetKey = getResetKey(payload.redirect_to);
       if (resetKey) {
@@ -468,7 +530,10 @@ export async function updateFrappePassword(
       },
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
-    const payload = await readJson<FrappeErrorResponse>(response);
+    const payload = await readJson<FrappeErrorResponse>(
+      response,
+      "/api/method/frappe.core.doctype.user.user.update_password",
+    );
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -501,23 +566,16 @@ export async function validateFrappeSession(
   sessionId: string,
 ): Promise<"valid" | "expired" | "unavailable"> {
   try {
-    const response = await fetchWithTimeout(
-      requestUrl(companyUrl, "/api/method/vunapos.api.auth.get_csrf_token"),
-      {
-        headers: {
-          Accept: "application/json",
-          Cookie: `sid=${encodeURIComponent(sessionId)}`,
-        },
-        method: "GET",
-      },
-      FRAPPE_REQUEST_TIMEOUT_MS.read,
+    const result = await getVunaMethod<{ csrf_token: string }>(
+      companyUrl, sessionId, "vunapos.api.auth.get_csrf_token",
     );
-    if (response.status === 401 || response.status === 403) {
-      return "expired";
-    }
-    return response.ok ? "valid" : "unavailable";
-  } catch {
-    return "unavailable";
+    return typeof result.csrf_token === "string" && result.csrf_token.length > 0
+      ? "valid"
+      : "unavailable";
+  } catch (error) {
+    return error instanceof FrappeClientError && error.code === "session"
+      ? "expired"
+      : "unavailable";
   }
 }
 
@@ -547,19 +605,7 @@ export async function getVunaMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.read,
     );
 
-    if (response.status === 401 || response.status === 403) {
-      throw new FrappeClientError(
-        "Your session has expired. Sign in again to continue.",
-        "session",
-      );
-    }
-
-    let payload: { message?: VunaEnvelope<T> } | undefined;
-    try {
-      payload = (await response.json()) as { message?: VunaEnvelope<T> };
-    } catch {
-      // Preserve a useful status-based error when a proxy returns non-JSON.
-    }
+    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method);
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -570,11 +616,21 @@ export async function getVunaMethod<T>(
       );
     }
 
-    if (!payload?.message?.ok) {
+    if (!payload.message) {
+      throw new FrappeClientError(
+        "The server returned an invalid JSON API response.",
+        "INVALID_SERVER_RESPONSE",
+        response.status,
+      );
+    }
+    if (!payload.message.ok) {
       const message =
         payload?.message?.errors?.[0]?.message ??
         "The server could not complete this request.";
-      throw new FrappeClientError(message, "api");
+      throw new FrappeClientError(
+        message, "api", undefined, undefined, undefined,
+        payload.message.errors?.[0]?.code,
+      );
     }
 
     return payload.message.data;
@@ -668,19 +724,7 @@ async function postVunaEnvelopeMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
-    if (response.status === 401 || response.status === 403) {
-      throw new FrappeClientError(
-        "Your session has expired. Sign in again to continue.",
-        "session",
-      );
-    }
-
-    let payload: { message?: VunaEnvelope<T> } | undefined;
-    try {
-      payload = (await response.json()) as { message?: VunaEnvelope<T> };
-    } catch {
-      // Preserve a useful status-based error when a proxy returns non-JSON.
-    }
+    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method);
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -691,11 +735,21 @@ async function postVunaEnvelopeMethod<T>(
       );
     }
 
-    if (!payload?.message?.ok) {
+    if (!payload.message) {
+      throw new FrappeClientError(
+        "The server returned an invalid JSON API response.",
+        "INVALID_SERVER_RESPONSE",
+        response.status,
+      );
+    }
+    if (!payload.message.ok) {
       const message =
         payload?.message?.errors?.[0]?.message ??
         "The server could not complete this request.";
-      throw new FrappeClientError(message, "api");
+      throw new FrappeClientError(
+        message, "api", undefined, undefined, undefined,
+        payload.message.errors?.[0]?.code,
+      );
     }
 
     return payload.message.data;
@@ -748,19 +802,7 @@ export async function postFrappeJsonMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
-    if (response.status === 401 || response.status === 403) {
-      throw new FrappeClientError(
-        "Your session has expired. Sign in again to continue.",
-        "session",
-      );
-    }
-
-    let payload: { message?: T } | undefined;
-    try {
-      payload = (await response.json()) as { message?: T };
-    } catch {
-      // Preserve a useful status-based error when a proxy returns non-JSON.
-    }
+    const payload = await readMethodResponse<{ message?: T }>(response, method);
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -771,11 +813,10 @@ export async function postFrappeJsonMethod<T>(
       );
     }
 
-    if (payload?.message === undefined) {
+    if (payload.message === undefined) {
       throw new FrappeClientError(
-        getFrappeErrorMessage(payload) ??
-          "The server could not complete this request.",
-        "api",
+        "The server returned an invalid JSON API response.",
+        "INVALID_SERVER_RESPONSE",
         response.status,
       );
     }

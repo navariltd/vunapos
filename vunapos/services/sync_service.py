@@ -114,6 +114,7 @@ def _get_bootstrap_config(profile, invoice_mode, server_time):
 	item and customer snapshot hydrates in the background.
 	"""
 	return {
+		"site_name": frappe.local.site,
 		"server_time": server_time,
 		"pos_profile": profile_to_dict(profile, invoice_mode),
 		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),

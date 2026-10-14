@@ -31,6 +31,7 @@ class TestVunaPOSCatalogueBootstrap(IntegrationTestCase):
 		data = response["data"]
 		self.assertEqual(data["mode"], "full")
 		self.assertTrue(data["server_time"])
+		self.assertEqual(data["site_name"], frappe.local.site)
 		self.assertEqual(data["pos_profile"]["name"], profile)
 		self.assertIn(item_code, [row["item_code"] for row in data["items"]])
 		self.assertIsInstance(data["customers"], list)

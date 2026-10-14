@@ -136,6 +136,116 @@ describe("usePosCart", () => {
     ]);
   });
 
+  it("keeps and persists a newer user add when durable-cart hydration finishes late", async () => {
+    let resolveRead!: (value: unknown) => void;
+    mockPosCacheRead.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRead = resolve;
+    }));
+    const customer = { customer: "CUST-001", customerName: "Example customer" };
+    const hook = await renderHook(() => usePosCart({
+      customer, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    await act(async () => { await hook.result.current.add(item); });
+    expect(hook.result.current.items[0].qty).toBe(1);
+
+    await act(async () => {
+      resolveRead({
+        data: {
+          customer,
+          data: {
+            items: [{ ...item, qty: 3, uom: "Nos" }],
+            taxes: [],
+            totals: { grand_total: 375, net_total: 375 },
+          },
+          sourceInvoice: null,
+        },
+        expiresAt: Date.now() + 60_000,
+        fetchedAt: Date.now(),
+        isStale: false,
+      });
+    });
+    await waitFor(() => expect(hook.result.current.items[0].qty).toBe(1));
+    await waitFor(() => expect(mockPosCacheWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: "active-cart" }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          items: [expect.objectContaining({ item_code: "ITEM-001", qty: 1 })],
+        }),
+      }),
+      expect.any(Number),
+    ));
+    expect(mockPosCacheWrite).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ data: expect.objectContaining({
+        items: [expect.objectContaining({ qty: 3 })],
+      }) }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps an offline cart edit when durable-cart hydration finishes late", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    let resolveRead!: (value: unknown) => void;
+    mockPosCacheRead.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveRead = resolve;
+    }));
+    const hook = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    await act(async () => { await hook.result.current.add(item); });
+    await act(async () => { resolveRead({
+      data: {
+        customer: null,
+        data: { items: [{ ...item, qty: 3 }], taxes: [], totals: { grand_total: 375 } },
+        sourceInvoice: null,
+      },
+      expiresAt: Date.now() + 60_000, fetchedAt: Date.now(), isStale: false,
+    }); });
+    expect(hook.result.current.items[0].qty).toBe(1);
+    await waitFor(() => expect(mockPosCacheWrite).toHaveBeenCalledWith(
+      expect.objectContaining({ resource: "active-cart" }),
+      expect.objectContaining({ data: expect.objectContaining({
+        items: [expect.objectContaining({ qty: 1 })],
+      }) }),
+      expect.any(Number),
+    ));
+    expect(mockGetVunaMethod).not.toHaveBeenCalled();
+  });
+
+  it("retries initial durable-cart restoration if connectivity changes during the read", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    let resolveOldRead!: (value: unknown) => void;
+    mockPosCacheRead
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOldRead = resolve; }))
+      .mockResolvedValueOnce({
+        data: {
+          customer: null,
+          data: { items: [{ ...item, qty: 2 }], taxes: [], totals: { grand_total: 250 } },
+          sourceInvoice: null,
+        },
+        expiresAt: Date.now() + 60_000, fetchedAt: Date.now(), isStale: false,
+      });
+    const hook = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
+    await hook.rerender(undefined);
+    await waitFor(() => expect(hook.result.current.items[0]?.qty).toBe(2));
+    await act(async () => { resolveOldRead({
+      data: {
+        customer: null,
+        data: { items: [{ ...item, qty: 3 }], taxes: [], totals: { grand_total: 375 } },
+        sourceInvoice: null,
+      },
+      expiresAt: Date.now() + 60_000, fetchedAt: Date.now(), isStale: false,
+    }); });
+    expect(hook.result.current.items[0].qty).toBe(2);
+    expect(mockPosCacheRead).toHaveBeenCalledTimes(2);
+  });
+
   it("shows a selected-customer addition immediately while preview runs", async () => {
     let resolvePreview!: (value: unknown) => void;
     const pendingPreview = new Promise((resolve) => {
@@ -279,6 +389,47 @@ describe("usePosCart", () => {
     );
   });
 
+  it("keeps the selected sales UOM for Sales Orders even when stock is insufficient", async () => {
+    const catalogueItem = {
+      actual_qty: 22,
+      conversion_factor: 24,
+      is_stock_item: true,
+      item_code: "F61",
+      item_name: "Dairy Joy 200ml",
+      price_list_rate: 240,
+      rate: 240,
+      stock_uom: "Pcs",
+      uom: "Carton",
+      uoms: [
+        { conversion_factor: 1, rate: 10, uom: "Pcs" },
+        { conversion_factor: 24, rate: 240, uom: "Carton" },
+      ],
+    };
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        orderType: "Order",
+        posProfile: "POS-001",
+      }),
+    );
+
+    let result: boolean | string = false;
+    await act(async () => {
+      result = await hook.result.current.add(catalogueItem);
+    });
+
+    expect(result).toBe(true);
+    expect(mockGetVunaMethod).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.preview_invoice",
+      expect.objectContaining({
+        invoice_doctype: "Sales Order",
+        items: '[{"item_code":"F61","qty":1,"conversion_factor":24,"uom":"Carton"}]',
+      }),
+    );
+  });
+
   it("keeps cart editing local while server previews are attempted offline", async () => {
     const hook = await renderHook(() =>
       usePosCart({
@@ -350,7 +501,7 @@ describe("usePosCart", () => {
         sourceInvoice: null,
       },
       expiresAt: 1,
-      fetchedAt: 100,
+      fetchedAt: Date.now() - 60_000,
       isStale: true,
     });
 
@@ -358,14 +509,99 @@ describe("usePosCart", () => {
       usePosCart({
         customer: { customer: "CUST-001", customerName: "Example customer" },
         posProfile: "POS-001",
+        profileCompany: "Company A",
+        profileWarehouse: "Warehouse A",
       }),
     );
 
     await waitFor(() => expect(hook.result.current.items).toHaveLength(1));
     expect(hook.result.current.cartCacheIsStale).toBe(true);
-    expect(hook.result.current.cartCacheLastUpdated).toBe(100);
+    expect(hook.result.current.cartCacheLastUpdated).toBeGreaterThan(0);
     expect(mockGetVunaMethod).not.toHaveBeenCalled();
     expect(mockPosCacheWrite).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a cart from a prior warehouse after restart when deletion failed", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    const oldCart = {
+      data: {
+        customer: null,
+        data: { items: [{ ...item, qty: 3 }], taxes: [], totals: { grand_total: 375 } },
+        sourceInvoice: null,
+      },
+      expiresAt: Date.now() + 60_000,
+      fetchedAt: Date.now(),
+      isStale: false,
+    };
+    // The old row remains durable, as it would after a failed SQLite clear.
+    mockPosCacheRead.mockImplementation(async ({ scope }) =>
+      !scope.company || scope.company === "Company A" ? oldCart : null);
+
+    const previous = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    await waitFor(() => expect(previous.result.current.items).toHaveLength(1));
+    await previous.unmount();
+
+    const restarted = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company B", profileWarehouse: "Warehouse B",
+    }));
+    await waitFor(() => expect(mockPosCacheRead).toHaveBeenCalledTimes(2));
+    expect(restarted.result.current.items).toHaveLength(0);
+    expect(mockPosCacheRead).toHaveBeenLastCalledWith(expect.objectContaining({
+      scope: expect.objectContaining({ company: "Company B", warehouse: "Warehouse B" }),
+    }));
+  });
+
+  it("persists new cart changes only under the verified ERP company and warehouse", async () => {
+    const hook = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    await act(async () => { await hook.result.current.add(item); });
+    await waitFor(() => expect(mockPosCacheWrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: "active-cart",
+        scope: expect.objectContaining({
+          company: "Company A", warehouse: "Warehouse A",
+        }),
+      }),
+      expect.objectContaining({ data: expect.objectContaining({ items: expect.any(Array) }) }),
+      expect.any(Number),
+    ));
+  });
+
+  it("does not load unscoped legacy carts or persist when profile scope is unverifiable", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    const hook = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+    }));
+    await act(async () => { await Promise.resolve(); });
+    expect(mockPosCacheRead).not.toHaveBeenCalled();
+    expect(hook.result.current.items).toHaveLength(0);
+    expect(mockPosCacheWrite).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a cart beyond its existing seven-day draft lifetime", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "offline" });
+    mockPosCacheRead.mockResolvedValue({
+      data: {
+        customer: null,
+        data: { items: [{ ...item, qty: 3 }], taxes: [], totals: { grand_total: 375 } },
+        sourceInvoice: null,
+      },
+      expiresAt: 0,
+      fetchedAt: Date.now() - 8 * 24 * 60 * 60 * 1000,
+      isStale: true,
+    });
+    const hook = await renderHook(() => usePosCart({
+      customer: null, posProfile: "POS-001",
+      profileCompany: "Company A", profileWarehouse: "Warehouse A",
+    }));
+    await waitFor(() => expect(mockPosCacheRead).toHaveBeenCalledTimes(1));
+    expect(hook.result.current.items).toHaveLength(0);
   });
 
   it("repairs a restored cart after connectivity returns without clearing it", async () => {
@@ -382,13 +618,15 @@ describe("usePosCart", () => {
         sourceInvoice: null,
       },
       expiresAt: 1,
-      fetchedAt: 100,
+      fetchedAt: Date.now() - 60_000,
       isStale: true,
     });
     const hook = await renderHook(() =>
       usePosCart({
         customer: { customer: "CUST-001", customerName: "Example customer" },
         posProfile: "POS-001",
+        profileCompany: "Company A",
+        profileWarehouse: "Warehouse A",
       }),
     );
     await waitFor(() => expect(hook.result.current.items[0]?.qty).toBe(2));
@@ -522,7 +760,7 @@ describe("usePosCart", () => {
         "vunapos.api.sales.preview_invoice",
         expect.objectContaining({
           customer: "ABC-CORPS",
-          items: '[{"item_code":"F61","qty":1,"uom":"Carton"}]',
+          items: '[{"item_code":"F61","qty":1,"conversion_factor":24,"uom":"Carton"}]',
         }),
       ),
     );
@@ -650,6 +888,42 @@ describe("usePosCart", () => {
       posProfile: "POS-001",
       sessionId: "sid-1",
     });
+    expect(hook.result.current.items).toEqual([]);
+  });
+
+  it("creates and holds a Sales Order draft when holding a new order cart", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({ doctype: "Sales Order", name: "SAL-ORD-0001" })
+      .mockResolvedValueOnce({ doctype: "Sales Order", name: "SAL-ORD-0001" });
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        orderType: "Order",
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.hold();
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      1,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.create_invoice_from_cart",
+      expect.objectContaining({ invoice_doctype: "Sales Order" }),
+    );
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.hold_invoice",
+      { invoice_doctype: "Sales Order", invoice_name: "SAL-ORD-0001" },
+    );
     expect(hook.result.current.items).toEqual([]);
   });
 

@@ -9,6 +9,7 @@ import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 type PosCustomerDetailsState = {
   data: PosCustomerDetails | null;
   error: string | null;
+  isRecoverableError?: boolean;
   isLoading: boolean;
   isRefreshing?: boolean;
   isStale?: boolean;
@@ -46,6 +47,8 @@ export function usePosCustomerDetails({
   const { companyUrl, invalidateSession, sessionId } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
   const [sessionInvalid, setSessionInvalid] = useState(false);
+  const [recoverableFailure, setRecoverableFailure] = useState<string | null>(null);
+  const requestScope = JSON.stringify([companyUrl, sessionId, posProfile, customer]);
   const cacheKey =
     companyUrl && sessionId && posProfile && customer
       ? {
@@ -70,22 +73,27 @@ export function usePosCustomerDetails({
         if (!isPosCustomerDetails(data)) {
           throw new Error("The server returned incomplete customer details.");
         }
+        setRecoverableFailure(null);
         return data;
       } catch (error) {
         if (error instanceof FrappeClientError && error.code === "session") {
           setSessionInvalid(true);
           void invalidateSession();
         }
+        setRecoverableFailure(
+          error instanceof FrappeClientError && error.code === "connection" ? requestScope : null,
+        );
         throw error;
       }
     },
-    [companyUrl, customer, invalidateSession, posProfile, sessionId],
+    [companyUrl, customer, invalidateSession, posProfile, requestScope, sessionId],
   );
   const resource = usePosCachedResource({ cacheKey, connectionStatus, load });
 
   return {
     data: resource.data,
     error: sessionInvalid ? null : resource.error,
+    isRecoverableError: Boolean(resource.error && recoverableFailure === requestScope),
     isLoading: resource.isLoading,
     isRefreshing: resource.isRefreshing,
     isStale: resource.isStale,

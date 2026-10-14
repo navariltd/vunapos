@@ -22,6 +22,7 @@ type Props = {
   error: string | null;
   isOffline?: boolean;
   isLoading: boolean;
+  ignoreStock?: boolean;
   isSelecting?: boolean;
   onDismiss: () => void;
   onRetry: () => void;
@@ -46,6 +47,7 @@ export function PosVariantPickerSheet({
   error,
   isOffline = false,
   isLoading,
+  ignoreStock = false,
   isSelecting = false,
   onDismiss,
   onRetry,
@@ -172,6 +174,7 @@ export function PosVariantPickerSheet({
               }
               renderItem={({ item: variant }) => {
                 const unavailable = variantIsUnavailable(variant);
+                const blockedByStock = unavailable && !ignoreStock;
                 return (
                   <View
                     style={[
@@ -179,7 +182,7 @@ export function PosVariantPickerSheet({
                       {
                         backgroundColor: palette.surfaceContainer,
                         borderColor: palette.border,
-                        opacity: unavailable ? 0.7 : 1,
+                        opacity: blockedByStock ? 0.7 : 1,
                       },
                     ]}
                   >
@@ -233,7 +236,7 @@ export function PosVariantPickerSheet({
                         style={[
                           styles.variantMeta,
                           {
-                            color: unavailable
+                            color: blockedByStock
                               ? palette.error
                               : palette.onSurfaceMuted,
                           },
@@ -247,13 +250,13 @@ export function PosVariantPickerSheet({
                       </Text>
                       <Pressable
                         accessibilityLabel={`Add variant ${variant.item_name || variant.item_code}`}
-                        disabled={unavailable || isSelecting}
+                        disabled={blockedByStock || isSelecting}
                         onPress={() => onSelect(variant)}
                         style={[
                           styles.addButton,
                           {
                             backgroundColor:
-                              unavailable || isSelecting
+                              blockedByStock || isSelecting
                                 ? palette.disabled
                                 : palette.primary,
                           },

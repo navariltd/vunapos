@@ -4,6 +4,7 @@ import {
   render,
   waitFor,
 } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native/Libraries/Lists/FlatList", () => {
   const React = require("react");
@@ -294,7 +295,7 @@ describe("PosInvoicesScreen", () => {
     ).toBeTruthy();
   });
 
-  it("applies draft filters, resets pagination, and clears them without losing the document type", async () => {
+  it("applies draft filters, then clears active filters and closes the sheet without changing document type", async () => {
     const screen = await renderScreen();
 
     fireEvent.press(screen.getByText("Next"));
@@ -330,8 +331,9 @@ describe("PosInvoicesScreen", () => {
     fireEvent.press(screen.getByLabelText("Open invoice filters"));
     await screen.findByLabelText("Clear draft filters");
     fireEvent.press(screen.getByLabelText("Clear draft filters"));
-    await screen.findByText("Draft invoice: none");
-    fireEvent.press(screen.getByLabelText("Apply draft filters"));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("Clear draft filters")).toBeNull(),
+    );
 
     await waitFor(() =>
       expect(mockUsePosInvoiceHistory).toHaveBeenLastCalledWith(
@@ -345,6 +347,30 @@ describe("PosInvoicesScreen", () => {
         }),
       ),
     );
+    expect(screen.getByRole("tab", { name: "Sales history" }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(screen.queryByText("2 active filters")).toBeNull();
+  });
+
+  it("keeps the Sales orders tab selected when its filters are cleared", async () => {
+    const screen = await renderScreen();
+
+    await fireEvent.press(screen.getByRole("tab", { name: "Sales orders" }));
+    await fireEvent.press(screen.getByLabelText("Open invoice filters"));
+    await screen.findByLabelText("Clear draft filters");
+    await fireEvent.press(screen.getByLabelText("Clear draft filters"));
+
+    expect(screen.queryByLabelText("Clear draft filters")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Sales orders" }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(mockUsePosInvoiceHistory).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filters: expect.objectContaining({ documentType: "Order" }),
+        start: 0,
+      }),
+    );
   });
 
   it("loads held invoices only after the held tab is selected", async () => {
@@ -354,7 +380,7 @@ describe("PosInvoicesScreen", () => {
       expect.objectContaining({ enabled: false }),
     );
 
-    fireEvent.press(screen.getByText("Held invoices"));
+    fireEvent.press(screen.getByText("Draft invoices"));
 
     await waitFor(() =>
       expect(mockUsePosHeldInvoices).toHaveBeenLastCalledWith(
@@ -364,6 +390,22 @@ describe("PosInvoicesScreen", () => {
         }),
       ),
     );
-    expect(screen.getByText("No invoices are currently held.")).toBeTruthy();
+    expect(screen.getByText("No draft invoices are currently held.")).toBeTruthy();
+  });
+
+  it("gives the Filters and Refresh actions modestly larger tap targets", async () => {
+    const screen = await renderScreen();
+    expect(
+      StyleSheet.flatten(screen.getByLabelText("Open invoice filters").props.style),
+    ).toMatchObject({ minHeight: 38, paddingHorizontal: 16 });
+
+    fireEvent.press(screen.getByText("Draft invoices"));
+    await waitFor(() =>
+      expect(
+        StyleSheet.flatten(
+          screen.getByLabelText("Refresh held invoices").props.style,
+        ),
+      ).toMatchObject({ minHeight: 38, paddingHorizontal: 16 }),
+    );
   });
 });

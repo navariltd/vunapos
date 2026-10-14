@@ -39,6 +39,10 @@ jest.mock("@/features/pos/hooks/usePosCustomerSearch", () => ({
   usePosCustomerSearch: () => mockUsePosCustomerSearch(),
 }));
 
+jest.mock("@/features/pos/hooks/useCreatePosCustomer", () => ({
+  useCreatePosCustomer: () => ({ create: jest.fn(), error: null, isCreating: false }),
+}));
+
 jest.mock("@/features/pos/hooks/useErpNextRecord", () => ({
   useErpNextRecord: () => mockUseErpNextRecord(),
 }));
@@ -372,6 +376,37 @@ describe("PosPaymentsScreen", () => {
     ).toBeTruthy();
   });
 
+  it.each([
+    ["Search payment customers", true, false],
+    ["Search reconciliation customers", false, true],
+  ])("floats %s results and dismisses them without selecting", async (label, allowReceive, allowReconciliation) => {
+    mockUsePosCustomerSearch.mockReturnValue({
+      error: null,
+      isLoading: false,
+      rows: [{ customer: "CUST-001", customerName: "Example customer" }],
+    });
+    const screen = await render(
+      <PosPaymentsScreen
+        allowHistory={false}
+        allowReconciliation={allowReconciliation}
+        allowReceive={allowReceive}
+        currency="KES"
+        currencyPrecision={2}
+        paymentModes={[]}
+        posProfile="POS-001"
+      />,
+    );
+
+    expect(screen.queryByTestId("customer-combobox-options")).toBeNull();
+    await fireEvent(screen.getByLabelText(label), "focus");
+    expect(screen.getByTestId("customer-combobox-options")).toBeTruthy();
+    await fireEvent(screen.getByTestId("customer-combobox-options"), "touchStart", { stopPropagation: jest.fn() });
+    expect(screen.getByTestId("customer-combobox-options")).toBeTruthy();
+    await fireEvent(screen.getByText(allowReceive ? "Receive payment" : "Reconcile payments"), "touchStart");
+    expect(screen.queryByTestId("customer-combobox-options")).toBeNull();
+    expect(screen.getByLabelText(label).props.value).toBe("");
+  });
+
   it("loads server-authoritative reconciliation candidates for the selected customer", async () => {
     mockUsePosCustomerSearch.mockReturnValue({
       error: null,
@@ -426,6 +461,7 @@ describe("PosPaymentsScreen", () => {
     );
 
     expect(screen.getByText("Reconcile payments")).toBeTruthy();
+    await fireEvent(screen.getByLabelText("Search reconciliation customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select reconciliation customer Example customer",
@@ -466,6 +502,7 @@ describe("PosPaymentsScreen", () => {
     await fireEvent.press(
       screen.getByRole("button", { name: "Change reconciliation customer" }),
     );
+    await fireEvent(screen.getByLabelText("Search reconciliation customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select reconciliation customer Another customer",
@@ -550,6 +587,7 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
+    await fireEvent(screen.getByLabelText("Search reconciliation customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select reconciliation customer Example customer",
@@ -670,6 +708,7 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
+    await fireEvent(screen.getByLabelText("Search payment customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select payment customer Example customer",
@@ -809,6 +848,7 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
+    await fireEvent(screen.getByLabelText("Search payment customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select payment customer Example customer",
@@ -915,6 +955,7 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
+    await fireEvent(screen.getByLabelText("Search payment customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select payment customer Example customer",
@@ -1026,6 +1067,7 @@ describe("PosPaymentsScreen", () => {
       />,
     );
 
+    await fireEvent(screen.getByLabelText("Search payment customers"), "focus");
     await fireEvent.press(
       screen.getByRole("button", {
         name: "Select payment customer Example customer",
