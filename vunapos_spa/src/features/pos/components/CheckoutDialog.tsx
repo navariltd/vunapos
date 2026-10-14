@@ -80,7 +80,6 @@ type CheckoutDialogProps = {
     taxId?: string,
 	shippingAddressName?: string,
 	checkoutFields?: Record<string, string | number | boolean | null>,
-	workflowAction?: string,
   ) => void;
   onHold: () => void;
   onAttachC2bGatewayPayment?: (params: {
@@ -266,7 +265,6 @@ function CheckoutDialogContent({
   const isSalesOrder = orderType === "Sales Order";
   const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
   const activeWorkflow = workflow?.enabled ? workflow.workflows[orderType] : undefined;
-  const workflowAction = activeWorkflow?.transitions?.[0]?.action;
 
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
@@ -1013,7 +1011,7 @@ function CheckoutDialogContent({
               {activeWorkflow ? (
                 <div className="order-4 mb-4 rounded-md bg-primary/10 px-3 py-2 text-sm text-on-surface">
                   Workflow: <strong>{activeWorkflow.name}</strong>
-                  {workflowAction ? ` · Next action: ${workflowAction}` : ""}
+                  {activeWorkflow?.transitions?.length ? " · Actions available after checkout" : ""}
                 </div>
               ) : null}
               {customerAddressesLoading || customerAddresses?.length ? (
@@ -1435,7 +1433,6 @@ function CheckoutDialogContent({
                   : undefined,
                 shippingAddressName || undefined,
                 additionalFields,
-				workflowAction,
               );
             }}
           >

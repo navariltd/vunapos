@@ -25,7 +25,6 @@ import {
   getItemDetails,
   getCustomerAddresses,
   searchCheckoutLinkOptions,
-  applyWorkflowAction,
   getProductBundle,
   getTemplateVariants,
   vunaMethods,
@@ -252,7 +251,6 @@ export function POSHomePage({
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const checkoutLinkOptionsCall = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
-  const workflowActionCall = useFrappePostCall(vunaMethods.applyWorkflowAction);
   const activeCustomerName = activeCustomer?.customer;
 
   useEffect(() => {
@@ -878,7 +876,6 @@ export function POSHomePage({
     taxId?: string,
     shippingAddressName?: string,
     checkoutFields?: Record<string, string | number | boolean | null>,
-	workflowAction?: string,
   ) => {
     setPageError(null);
     if (!isReachable || navigator.onLine === false) {
@@ -905,19 +902,16 @@ export function POSHomePage({
         salesperson?.name,
         salesperson?.token,
       );
-		if (workflowAction && result?.invoice?.docstatus === 0) {
-			try {
-				await applyWorkflowAction(workflowActionCall.call, {
-					doctype: result.invoice.doctype,
-					docname: result.invoice.name,
-					action: workflowAction,
-					pos_profile: bootstrap.data?.pos_profile,
-				});
-				showToast({ type: "info", message: `Workflow action “${workflowAction}” applied.` });
-			} catch (workflowError) {
-				showToast({ type: "error", message: workflowError instanceof Error ? workflowError.message : "Workflow action could not be applied." });
-			}
-		}
+      if (
+        result?.invoice?.docstatus === 0 &&
+        bootstrap.data?.workflow?.enabled &&
+        bootstrap.data.workflow.workflows[result.invoice.doctype]
+      ) {
+        showToast({
+          type: "info",
+          message: `Draft ${result.invoice.name} saved. Review the available workflow action before advancing it.`,
+        });
+      }
       setIsCheckoutOpen(false);
       if (bootstrap.data?.require_pin_before_every_sale) {
         onLockSalesperson?.();
