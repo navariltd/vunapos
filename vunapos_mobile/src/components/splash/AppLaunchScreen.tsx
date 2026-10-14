@@ -76,6 +76,7 @@ const styles = StyleSheet.create({
     width: 64,
   },
   message: {
+    alignSelf: "stretch",
     color: "#415066",
     fontFamily: typography.fontFamily.regular,
     fontSize: typography.size.small,

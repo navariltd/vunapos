@@ -17,21 +17,24 @@ jest.mock("@/features/pos/components/PosCartButton", () => ({
 const mockItemMount = jest.fn();
 const mockItemUnmount = jest.fn();
 const mockToastError = jest.fn();
+const mockDismissHomeCustomerOptions = jest.fn();
 jest.mock("@/components/feedback/ToastProvider", () => ({
   useToast: () => ({ error: mockToastError }),
 }));
 jest.mock("@/features/pos/components/PosItemCard", () => ({
   PosItemCard: ({
     imageUrl,
+    ignoreStock,
     isAdding,
     isOffline,
     item,
     onAdd,
   }: {
     imageUrl?: string | null;
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
     onAdd: (item: { item_name: string }) => void;
   }) => {
     const { Pressable, Text } = require("react-native");
@@ -42,7 +45,7 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -57,11 +60,13 @@ jest.mock("@/features/pos/components/PosItemCard", () => ({
 jest.mock("@/features/pos/components/PosItemListRow", () => ({
   PosItemListRow: ({
     item,
+    ignoreStock,
     isAdding,
     isOffline,
     onAdd,
   }: {
-    item: { item_name: string };
+    item: { actual_qty?: number; is_stock_item?: boolean; item_name: string };
+    ignoreStock?: boolean;
     isAdding?: boolean;
     isOffline?: boolean;
     onAdd: (item: { item_name: string }) => void;
@@ -70,7 +75,7 @@ jest.mock("@/features/pos/components/PosItemListRow", () => ({
     return (
       <Pressable
         accessibilityRole="button"
-        disabled={isAdding}
+        disabled={isAdding || (Boolean(item.is_stock_item) && Number(item.actual_qty || 0) <= 0 && !ignoreStock)}
         onPress={() => onAdd(item)}
       >
         <Text>
@@ -156,8 +161,16 @@ jest.mock("@/features/pos/components/PosProductBundleSheet", () => ({
       : null,
 }));
 
-jest.mock("@/features/pos/components/PosCustomerPickerSheet", () => ({
-  PosCustomerPickerSheet: () => null,
+jest.mock("@/features/pos/components/PosCustomerComboBox", () => ({
+  PosCustomerComboBox: require("react").forwardRef(({ accessibilityLabel, floatingOptions, onSelect, selectedCustomer }: { accessibilityLabel: string; floatingOptions?: boolean; onSelect: (customer: { customer: string; customerName: string }) => void; selectedCustomer?: { customerName: string } }, ref: React.Ref<{ dismiss: () => void }>) => {
+    const { Pressable, TextInput, View } = require("react-native");
+    require("react").useImperativeHandle(ref, () => ({ dismiss: mockDismissHomeCustomerOptions }));
+    return <>
+      {floatingOptions ? <View testID="home-customer-options-float" /> : null}
+      <TextInput accessibilityLabel={accessibilityLabel} value={selectedCustomer?.customerName || ""} />
+      <Pressable accessibilityLabel="Choose searched customer" onPress={() => onSelect({ customer: "CUST-002", customerName: "Brian Kamau" })} />
+    </>;
+  }),
 }));
 
 jest.mock("@/features/pos/hooks/usePosBootstrap", () => ({
@@ -250,6 +263,48 @@ describe("PosHomeScreen", () => {
     await cleanup();
   });
 
+  it("shows the searchable customer selector only when enabled and reports the choice", async () => {
+    const onSelectSaleCustomer = jest.fn();
+    const screen = await render(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        showCustomerSelector
+      />,
+    );
+
+    expect(screen.getByLabelText("Search home customers")).toBeTruthy();
+    expect(screen.getByTestId("home-customer-options-float")).toBeTruthy();
+    expect(screen.getByTestId("pos-home-catalogue-list").props.ListHeaderComponentStyle).toEqual(
+      expect.objectContaining({ zIndex: expect.any(Number) }),
+    );
+    await fireEvent(screen.getByLabelText("Search for one item"), "touchStart");
+    expect(mockDismissHomeCustomerOptions).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByLabelText("Choose searched customer"));
+    expect(onSelectSaleCustomer).toHaveBeenCalledWith({
+      customer: "CUST-002",
+      customerName: "Brian Kamau",
+    });
+
+    await screen.rerender(
+      <PosHomeScreen
+        cartItemCount={0}
+        onAddToCart={onAddToCart}
+        onOpenCart={jest.fn()}
+        onSelectSaleCustomer={onSelectSaleCustomer}
+        saleCustomer={{ customer: "CUST-002", customerName: "Brian Kamau" }}
+        showCustomerSelector
+      />,
+    );
+    expect(screen.getByLabelText("Search home customers").props.value).toBe("Brian Kamau");
+    await screen.rerender(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    expect(screen.queryByLabelText("Search home customers")).toBeNull();
+  });
+
   it("adds catalogue items without asking for a customer first", async () => {
     const liveItem = {
       actual_qty: 3,
@@ -293,6 +348,44 @@ describe("PosHomeScreen", () => {
     await fireEvent.press(screen.getByText("Card: Live catalogue item"));
     expect(onAddToCart).toHaveBeenCalledWith(liveItem, "KES");
   });
+
+  it.each([false, true])(
+    "allows out-of-stock Sales Order items in %s image mode but blocks invoices",
+    async (hideImages) => {
+      const stockItem = {
+        actual_qty: 0,
+        is_stock_item: true,
+        item_code: "STOCK-001",
+        item_name: "Out-of-stock item",
+        rate: 50,
+      };
+      mockUsePosBootstrap.mockReturnValue({
+        data: {
+          items: [stockItem],
+          payment_modes: [],
+          pos_profile: { currency: "KES", hide_images: hideImages, name: "POS-001" },
+        },
+        error: null,
+        isLoading: false,
+        reload: jest.fn(),
+      });
+      const props = {
+        cartItemCount: 0,
+        onAddToCart,
+        onOpenCart: jest.fn(),
+      };
+      const screen = await render(<PosHomeScreen {...props} orderType="Order" />);
+      const itemLabel = `${hideImages ? "List" : "Card"}: Out-of-stock item`;
+
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).toHaveBeenCalledWith(stockItem, "KES");
+
+      onAddToCart.mockClear();
+      await screen.rerender(<PosHomeScreen {...props} orderType="Invoice" />);
+      await fireEvent.press(screen.getByText(itemLabel));
+      expect(onAddToCart).not.toHaveBeenCalled();
+    },
+  );
 
   it("keeps a lone final grid card one column wide and hides cache timestamps", async () => {
     const items = ["ONE", "TWO", "THREE"].map((item_code) => ({

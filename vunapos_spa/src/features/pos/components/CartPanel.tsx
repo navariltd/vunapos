@@ -112,11 +112,6 @@ export function CartPanel({
   const items = invoice?.items || [];
   const total = getInvoiceTotal(invoice);
   const taxes = invoice?.taxes || [];
-  const grandTotal = Number(invoice?.totals?.grand_total || 0);
-  const roundedTotal = Number(invoice?.totals?.rounded_total || 0);
-  const showRoundedTotal = Boolean(
-    roundedTotal && Math.abs(roundedTotal - grandTotal) > 0.0001,
-  );
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   return (
@@ -238,32 +233,12 @@ export function CartPanel({
               {formatCurrency(invoice?.totals?.net_total, currency)}
             </span>
           </div>
-          {taxes.map((tax, index) => (
-            <div
-              key={`${tax.account_head || tax.description || "tax"}-${index}`}
-              className="flex items-start justify-between gap-3 text-[11px]"
-            >
-              <span className="min-w-0 text-on-surface-variant">
-                <span className="truncate">
-                  {tax.description || tax.account_head || "Tax"}
-                </span>
-                <span className="ml-1">
-                  {tax.rate ? `${tax.rate}% · ` : ""}
-                  {tax.included_in_print_rate ? "Included" : "Added"}
-                </span>
-              </span>
-              <span className="shrink-0 font-medium text-on-surface">
-                {formatCurrency(tax.tax_amount, currency)}
-              </span>
-            </div>
-          ))}
           <div className="flex justify-between">
-            <span className="text-on-surface-variant">
-              Total taxes and charges
-            </span>
+            <span className="text-on-surface-variant">Taxes</span>
             <span className="font-medium">
               {formatCurrency(
-                invoice?.totals?.total_taxes_and_charges,
+                invoice?.totals?.total_taxes_and_charges ??
+                  taxes.reduce((sum, tax) => sum + Number(tax.tax_amount || 0), 0),
                 currency,
               )}
             </span>
@@ -271,19 +246,9 @@ export function CartPanel({
           <div className="flex justify-between text-sm">
             <span className="font-semibold text-on-surface">Grand total</span>
             <span className="font-semibold text-on-surface">
-              {formatCurrency(invoice?.totals?.grand_total, currency)}
+              {formatCurrency(total, currency)}
             </span>
           </div>
-          {showRoundedTotal ? (
-            <div className="flex justify-between text-sm">
-              <span className="font-semibold text-on-surface">
-                Rounded total
-              </span>
-              <span className="font-semibold text-on-surface">
-                {formatCurrency(total, currency)}
-              </span>
-            </div>
-          ) : null}
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">

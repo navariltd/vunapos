@@ -11,6 +11,8 @@ import {
 import { Text } from "react-native-paper";
 
 import { PosCartButton } from "@/features/pos/components/PosCartButton";
+import { PosCustomerComboBox } from "@/features/pos/components/PosCustomerComboBox";
+import type { PosCustomerComboBoxHandle } from "@/features/pos/components/PosCustomerComboBox";
 import { PosBarcodeScannerModal } from "@/features/pos/components/PosBarcodeScannerModal";
 import { PosItemCard } from "@/features/pos/components/PosItemCard";
 import { PosItemListRow } from "@/features/pos/components/PosItemListRow";
@@ -27,7 +29,9 @@ import { useAppSession } from "@/features/auth/AppSessionProvider";
 import { useNetworkStatus } from "@/services/NetworkStatusProvider";
 import {
   PosCatalogueItem,
+  PosCustomerSearchResult,
   PosOrderType,
+  PosSaleCustomer,
   PosTemplateVariant,
 } from "@/features/pos/types";
 import { useAppearance } from "@/theme/AppearanceProvider";
@@ -61,9 +65,13 @@ type PosHomeScreenProps = {
     currency: string,
   ) => Promise<boolean | string | void> | boolean | string | void;
   onOpenCart: () => void;
+  customerSelectionDisabled?: boolean;
+  onSelectSaleCustomer?: (customer: PosCustomerSearchResult) => void;
   orderType?: PosOrderType;
   pricingContext?: { customer?: string; priceList?: string };
   refreshKey?: number;
+  saleCustomer?: PosSaleCustomer | null;
+  showCustomerSelector?: boolean;
   useBootstrapCatalogue?: boolean;
 };
 
@@ -71,11 +79,16 @@ export function PosHomeScreen({
   cartItemCount,
   onAddToCart,
   onOpenCart,
+  customerSelectionDisabled = false,
+  onSelectSaleCustomer,
   orderType = "Invoice",
   pricingContext,
   refreshKey = 0,
+  saleCustomer,
+  showCustomerSelector = false,
   useBootstrapCatalogue = false,
 }: PosHomeScreenProps) {
+  const customerComboRef = useRef<PosCustomerComboBoxHandle>(null);
   const { palette } = useAppearance();
   const { width: windowWidth } = useWindowDimensions();
   const toast = useToast();
@@ -332,6 +345,7 @@ export function PosHomeScreen({
         <PosItemListRow
           currency={currency}
           currencyPrecision={currencyPrecision}
+          ignoreStock={isSalesOrder}
           isAdding={pendingItemCode === item.item_code}
           isOffline={isOffline}
           item={item}
@@ -346,6 +360,7 @@ export function PosHomeScreen({
             currency={currency}
             currencyPrecision={currencyPrecision}
             imageUrl={itemImageUrl(item.image, companyUrl)}
+            ignoreStock={isSalesOrder}
             isAdding={pendingItemCode === item.item_code}
             isOffline={isOffline}
             item={item}
@@ -353,7 +368,7 @@ export function PosHomeScreen({
           />
         </View>
       ),
-    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, pendingItemCode, windowWidth],
+    [addItem, companyUrl, currency, currencyPrecision, hideImages, isOffline, isSalesOrder, pendingItemCode, windowWidth],
   );
 
   if (bootstrap.isLoading && !bootstrap.data && !bootstrap.isScopeInvalidated)
@@ -384,7 +399,7 @@ export function PosHomeScreen({
   }
 
   return (
-    <View style={styles.content}>
+    <View onTouchStart={() => customerComboRef.current?.dismiss()} style={styles.content}>
       <FlatList
         columnWrapperStyle={hideImages ? undefined : styles.row}
         contentContainerStyle={styles.listContent}
@@ -392,6 +407,7 @@ export function PosHomeScreen({
         initialNumToRender={hideImages ? 12 : 8}
         keyExtractor={(item) => item.item_code}
         key={`catalogue-${hideImages ? "list" : "grid"}`}
+        ListHeaderComponentStyle={showCustomerSelector ? styles.listHeaderLayer : undefined}
         ListEmptyComponent={
           <View>
             <Text
@@ -417,7 +433,29 @@ export function PosHomeScreen({
           </View>
         }
         ListHeaderComponent={
-          <View>
+          <View style={styles.listHeader}>
+            {showCustomerSelector && onSelectSaleCustomer ? (
+              <View
+                style={[
+                  styles.customerCard,
+                  { backgroundColor: palette.surface, borderColor: palette.border },
+                ]}
+              >
+                <Text style={[styles.customerCardLabel, { color: palette.onSurface }]}>
+                  Select Customer
+                </Text>
+                <PosCustomerComboBox
+                  accessibilityLabel="Search home customers"
+                  allowCustomerCreation={false}
+                  disabled={customerSelectionDisabled}
+                  floatingOptions
+                  onSelect={onSelectSaleCustomer}
+                  posProfile={bootstrap.data?.pos_profile.name}
+                  ref={customerComboRef}
+                  selectedCustomer={saleCustomer}
+                />
+              </View>
+            ) : null}
             <PosItemSearch
               onChangeText={setSearchQuery}
               onScanBarcode={() => setBarcodeScannerVisible(true)}
@@ -433,6 +471,7 @@ export function PosHomeScreen({
           </View>
         }
         numColumns={hideImages ? 1 : 2}
+        keyboardShouldPersistTaps="handled"
         maxToRenderPerBatch={8}
         removeClippedSubviews
         renderItem={renderItem}
@@ -445,6 +484,7 @@ export function PosHomeScreen({
           />
         }
         showsVerticalScrollIndicator={false}
+        testID="pos-home-catalogue-list"
         updateCellsBatchingPeriod={50}
         windowSize={7}
       />
@@ -488,6 +528,22 @@ export function PosHomeScreen({
 }
 
 const styles = StyleSheet.create({
+  customerCard: {
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    marginHorizontal: spacing.md,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    zIndex: 2,
+  },
+  listHeader: { zIndex: 2 },
+  listHeaderLayer: { zIndex: 2 },
+  customerCardLabel: {
+    fontFamily: typography.fontFamily.semibold,
+    fontSize: typography.size.body,
+  },
   addError: {
     fontFamily: typography.fontFamily.medium,
     fontSize: typography.size.small,

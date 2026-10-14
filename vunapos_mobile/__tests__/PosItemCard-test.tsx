@@ -88,4 +88,26 @@ describe("PosItemCard", () => {
     fireEvent.press(screen.getByLabelText("Add Item with image"));
     expect(onAdd).toHaveBeenCalledWith(item);
   });
+
+  it("shows exhausted stock but allows adding it to a Sales Order", async () => {
+    const outOfStock = { ...item, actual_qty: 0 };
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemCard currency="KES" ignoreStock item={outOfStock} onAdd={onAdd} />,
+    );
+
+    expect(screen.getByText("Out of stock")).toBeTruthy();
+    fireEvent.press(screen.getByLabelText("Add Item with image"));
+    expect(onAdd).toHaveBeenCalledWith(outOfStock);
+  });
+
+  it("still blocks exhausted stock for invoices", async () => {
+    const onAdd = jest.fn();
+    const screen = await render(
+      <PosItemCard currency="KES" item={{ ...item, actual_qty: 0 }} onAdd={onAdd} />,
+    );
+
+    fireEvent.press(screen.getByLabelText("Add Item with image"));
+    expect(onAdd).not.toHaveBeenCalled();
+  });
 });

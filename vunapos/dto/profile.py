@@ -90,6 +90,7 @@ def profile_to_dict(profile, invoice_mode):
 		"allow_order_type_change": enabled("vunapos_allow_order_type_change"),
 		"allow_customer_management": enabled("vunapos_allow_customer_management"),
 		"allow_customer_creation": enabled("vunapos_allow_customer_creation"),
+		"enable_home_customer_selection": bool(profile.get("vunapos_enable_home_customer_selection")),
 		"allow_customer_payments": enabled("vunapos_allow_customer_payments"),
 		"allow_sales_order_payments": enabled("vunapos_allow_customer_payments")
 		and enabled("vunapos_allow_sales_order_payments"),

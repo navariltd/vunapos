@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -17,6 +18,8 @@ describe("AppLaunchScreen", () => {
     );
 
     expect(screen.getByText("Preparing your workspace…")).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByText("Preparing your workspace…").props.style))
+      .toEqual(expect.objectContaining({ alignSelf: "stretch" }));
     expect(screen.getByLabelText("VunaPOS logo")).toBeTruthy();
     expect(onReady).not.toHaveBeenCalled();
 

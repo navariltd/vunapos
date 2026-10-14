@@ -12,13 +12,27 @@ def ensure_vunapos_custom_fields():
 	custom_fields = {
 		"POS Profile": [
 			{
+				"fieldname": "vunapos_home_screen_section",
+				"label": "Mobile Settings",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_operations_section",
+			},
+			{
+				"fieldname": "vunapos_enable_home_customer_selection",
+				"label": "Enable Customer Selection on Home Screen",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_home_screen_section",
+				"description": "Show a searchable customer selector above the item catalogue in VunaPOS Mobile.",
+				"default": "0",
+			},
+			{
 				"fieldname": "vunapos_allow_returns",
 				"label": "Allow Returns",
 				"fieldtype": "Check",
 				"insert_after": "vunapos_allow_payment_history",
 				"description": "Allow cashiers using this POS Profile to create returns and credit notes.",
 				"default": "1",
-			}
+			},
 		],
 		"POS Settings": [
 			{

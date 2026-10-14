@@ -891,6 +891,42 @@ describe("usePosCart", () => {
     expect(hook.result.current.items).toEqual([]);
   });
 
+  it("creates and holds a Sales Order draft when holding a new order cart", async () => {
+    mockPostVunaMethod
+      .mockResolvedValueOnce({ doctype: "Sales Order", name: "SAL-ORD-0001" })
+      .mockResolvedValueOnce({ doctype: "Sales Order", name: "SAL-ORD-0001" });
+    const hook = await renderHook(() =>
+      usePosCart({
+        customer: { customer: "CUST-001", customerName: "Example customer" },
+        orderType: "Order",
+        posProfile: "POS-001",
+      }),
+    );
+
+    await act(async () => {
+      await hook.result.current.add(item);
+    });
+    await act(async () => {
+      await hook.result.current.hold();
+    });
+
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      1,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.create_invoice_from_cart",
+      expect.objectContaining({ invoice_doctype: "Sales Order" }),
+    );
+    expect(mockPostVunaMethod).toHaveBeenNthCalledWith(
+      2,
+      "https://vuna.example.com",
+      "sid-1",
+      "vunapos.api.sales.hold_invoice",
+      { invoice_doctype: "Sales Order", invoice_name: "SAL-ORD-0001" },
+    );
+    expect(hook.result.current.items).toEqual([]);
+  });
+
   it("retries holding the same draft instead of creating a duplicate after the hold request fails", async () => {
     mockPostVunaMethod
       .mockResolvedValueOnce({ doctype: "Sales Invoice", name: "SINV-0002" })

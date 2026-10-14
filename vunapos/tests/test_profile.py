@@ -128,6 +128,24 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertEqual(payment_fields["payment_gateway"].insert_after, "mode_of_payment")
 		self.assertEqual(fields["vunapos_tab"].label, "VunaPOS")
 		self.assertEqual(fields["vunapos_sales_section"].insert_after, "vunapos_tab")
+		self.assertEqual(fields["vunapos_home_screen_section"].fieldtype, "Section Break")
+		self.assertEqual(fields["vunapos_home_screen_section"].label, "Mobile Settings")
+		self.assertEqual(fields["vunapos_home_screen_section"].insert_after, "vunapos_operations_section")
+		self.assertEqual(
+			fields["vunapos_enable_home_customer_selection"].insert_after,
+			"vunapos_home_screen_section",
+		)
+		profile_fields = frappe.get_meta("POS Profile").fields
+		positions = {field.fieldname: index for index, field in enumerate(profile_fields)}
+		vunapos_tab = positions["vunapos_tab"]
+		next_tab = next(
+			index
+			for index, field in enumerate(profile_fields[vunapos_tab + 1 :], vunapos_tab + 1)
+			if field.fieldtype == "Tab Break"
+		)
+		self.assertLess(positions["vunapos_operations_section"], positions["vunapos_home_screen_section"])
+		self.assertLess(positions["vunapos_home_screen_section"], positions["vunapos_pin_security_section"])
+		self.assertLess(positions["vunapos_enable_home_customer_selection"], next_tab)
 		self.assertEqual(fields["vunapos_item_prices_include_tax"].insert_after, "vunapos_sales_section")
 		self.assertEqual(fields["vunapos_allow_credit_sales"].insert_after, "vunapos_item_prices_include_tax")
 		self.assertEqual(
@@ -230,3 +248,18 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertFalse(response["data"]["allow_customer_payments"])
 		self.assertFalse(response["data"]["allow_payment_reconciliation"])
 		self.assertFalse(response["data"]["allow_payment_history"])
+
+	def test_bootstrap_exposes_home_customer_selection_setting(self):
+		ensure_vunapos_custom_fields()
+		profile = ensure_test_pos_profile()
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_enable_home_customer_selection", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+		self.assertFalse(get_bootstrap_data(pos_profile=profile)["data"]["enable_home_customer_selection"])
+
+		frappe.db.set_value(
+			"POS Profile", profile, "vunapos_enable_home_customer_selection", 1, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+		self.assertTrue(get_bootstrap_data(pos_profile=profile)["data"]["enable_home_customer_selection"])
