@@ -1,9 +1,9 @@
 import { memo } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Info, Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
-import { formatAvailableStock } from "../utils";
+import { formatAvailableStock, formatStockBalanceTooltip } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 
 type ItemCardProps = {
@@ -74,15 +74,16 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
               <ItemTaxLabel item={item} />
               <ItemTaxPrice currency={currency} item={item} />
               {item.actual_qty !== undefined ? (
-                <p
+                <div
                   className={
                     outOfStock
-                      ? "text-xs font-medium text-error"
-                      : "text-xs text-on-surface-variant"
+                      ? "flex items-center gap-1 text-xs font-medium text-error"
+                      : "flex items-center gap-1 text-xs text-on-surface-variant"
                   }
                 >
-                  {outOfStock ? "Out of stock" : formatAvailableStock(item)}
-                </p>
+                  <span>{outOfStock ? "Out of stock" : formatAvailableStock(item)}</span>
+                  <span className="shrink-0 cursor-help" aria-label={formatStockBalanceTooltip(item)} title={formatStockBalanceTooltip(item)}><Info className="size-3.5" aria-hidden="true" /></span>
+                </div>
               ) : null}
             </div>
             <Button

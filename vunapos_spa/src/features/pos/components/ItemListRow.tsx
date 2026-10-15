@@ -1,9 +1,9 @@
 import { memo } from "react";
-import { Loader2, Plus } from "lucide-react";
+import { Info, Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
-import { formatAvailableStock } from "../utils";
+import { formatAvailableStock, formatStockBalanceTooltip } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 
 type ItemListRowProps = {
@@ -65,33 +65,27 @@ export const ItemListRow = memo(function ItemListRow({
       </button>
       <div className="text-right sm:order-none sm:text-left">
         <ItemTaxPrice currency={currency} item={item} align="right" />
-        <p
+        <div
           className={
             outOfStock
-              ? "text-xs font-medium text-error sm:hidden"
-              : "text-xs text-on-surface-variant sm:hidden"
+              ? "flex items-center justify-end gap-1 text-xs font-medium text-error sm:hidden"
+              : "flex items-center justify-end gap-1 text-xs text-on-surface-variant sm:hidden"
           }
         >
-          {outOfStock
-            ? "Out of stock"
-            : item.actual_qty === undefined
-              ? ""
-            : formatAvailableStock(item)}
-        </p>
+          <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "" : formatAvailableStock(item)}</span>
+          {item.actual_qty !== undefined ? <span className="shrink-0 cursor-help" aria-label={formatStockBalanceTooltip(item)} title={formatStockBalanceTooltip(item)}><Info className="size-3.5" aria-hidden="true" /></span> : null}
+        </div>
       </div>
-      <p
+      <div
         className={
           outOfStock
-            ? "hidden pl-6 text-left text-sm font-medium text-error sm:block"
-            : "hidden pl-6 text-left text-sm text-on-surface-variant sm:block"
+            ? "hidden items-center gap-1 pl-6 text-left text-sm font-medium text-error sm:flex"
+            : "hidden items-center gap-1 pl-6 text-left text-sm text-on-surface-variant sm:flex"
         }
       >
-        {outOfStock
-          ? "Out of stock"
-          : item.actual_qty === undefined
-            ? "—"
-            : formatAvailableStock(item)}
-      </p>
+        <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "—" : formatAvailableStock(item)}</span>
+        {item.actual_qty !== undefined ? <span className="shrink-0 cursor-help" aria-label={formatStockBalanceTooltip(item)} title={formatStockBalanceTooltip(item)}><Info className="size-3.5" aria-hidden="true" /></span> : null}
+      </div>
       <Button
         size="sm"
         className={`flex size-9 shrink-0 gap-1 p-0 sm:h-9 sm:w-auto sm:px-2 ${pending ? "bg-primary-container text-on-primary-container" : ""}`}

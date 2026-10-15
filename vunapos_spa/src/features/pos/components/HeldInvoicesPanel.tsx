@@ -43,9 +43,9 @@ export function HeldInvoicesPanel({
           Loading draft invoices...
         </p>
       ) : heldInvoices?.length ? (
-        <div className="overflow-x-auto rounded-lg border border-outline-variant">
+        <div className="h-[32rem] overflow-auto rounded-lg border border-outline-variant">
           <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-surface-container-low text-xs text-on-surface-variant">
+            <thead className="sticky top-0 z-10 bg-surface-container-low text-xs text-on-surface-variant">
               <tr>
                 <th className="px-4 py-3">Invoice</th>
                 <th>Customer</th>
@@ -58,7 +58,19 @@ export function HeldInvoicesPanel({
               {heldInvoices.map((invoice) => (
                 <tr
                   key={`${invoice.doctype}-${invoice.name}`}
-                  className="border-t border-outline-variant"
+                  className="h-16 cursor-pointer border-t border-outline-variant transition-colors hover:bg-surface-container-low focus-visible:bg-surface-container-low focus-visible:outline-none"
+                  role="button"
+                  tabIndex={0}
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("a, button")) return;
+                    navigateToInvoice(invoice.name, invoice.doctype);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigateToInvoice(invoice.name, invoice.doctype);
+                    }
+                  }}
                 >
                   <td className="px-4 py-3">
                     <a
@@ -75,10 +87,12 @@ export function HeldInvoicesPanel({
                       {invoice.doctype}
                     </span>
                   </td>
-                  <td>
-                    {invoice.customer_name || invoice.customer || "No customer"}
+                  <td className="max-w-[16rem]">
+                    <span className="block truncate" title={invoice.customer_name || invoice.customer || "No customer"}>
+                      {invoice.customer_name || invoice.customer || "No customer"}
+                    </span>
                     {invoice.customer_name && invoice.customer ? (
-                      <span className="block text-xs text-on-surface-variant">
+                      <span className="block truncate text-xs text-on-surface-variant" title={invoice.customer}>
                         {invoice.customer}
                       </span>
                     ) : null}

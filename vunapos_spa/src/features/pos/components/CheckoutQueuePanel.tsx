@@ -96,9 +96,9 @@ export function CheckoutQueuePanel({
           Loading checkout queue...
         </p>
       ) : rows.length ? (
-        <div className="overflow-x-auto rounded-lg border border-outline-variant">
+        <div className="h-[32rem] overflow-auto rounded-lg border border-outline-variant">
           <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-surface-container-low text-xs text-on-surface-variant">
+            <thead className="sticky top-0 z-10 bg-surface-container-low text-xs text-on-surface-variant">
               <tr>
                 <th className="px-4 py-3">Invoice</th>
                 <th>Customer</th>
@@ -115,7 +115,7 @@ export function CheckoutQueuePanel({
                 return (
                   <tr
                     key={row.name}
-                    className="border-t border-outline-variant"
+                    className="h-16 border-t border-outline-variant"
                   >
                     <td className="px-4 py-3">
                       <a
@@ -130,9 +130,11 @@ export function CheckoutQueuePanel({
                         {row.queued_at || row.posting_date || ""}
                       </span>
                     </td>
-                    <td>
-                      {row.customer_name || row.customer || "-"}
-                      <span className="block text-xs text-on-surface-variant">
+                    <td className="max-w-[16rem]">
+                      <span className="block truncate" title={row.customer_name || row.customer || "-"}>
+                        {row.customer_name || row.customer || "-"}
+                      </span>
+                      <span className="block truncate text-xs text-on-surface-variant" title={row.customer}>
                         {row.customer}
                       </span>
                     </td>

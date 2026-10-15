@@ -1,15 +1,16 @@
 import frappe
 from frappe import _
-from frappe.utils import flt, getdate, nowdate
+from frappe.utils import cint, cstr, flt, getdate, nowdate
 
 from vunapos.dto.invoice import invoice_to_dict
 from vunapos.services.profile_service import get_invoice_mode, require_open_pos_session, resolve_pos_profile
-from vunapos.services.workflow_service import assert_pos_workflow_editable
+from vunapos.services.workflow_service import assert_pos_workflow_editable, workflow_enabled_for
 from vunapos.utils.permissions import require_read
 
 
 def _status(row):
-	if row.docstatus == 2:
+	docstatus = cint(row.docstatus)
+	if docstatus == 2:
 		return "Cancelled"
 	if row.is_return:
 		return "Credit Note"
@@ -23,9 +24,13 @@ def _status(row):
 
 
 def _sales_order_status(row):
-	if row.docstatus == 0:
+	native_status = cstr(row.get("status") if hasattr(row, "get") else getattr(row, "status", "")).strip()
+	if native_status:
+		return native_status
+	docstatus = cint(row.docstatus)
+	if docstatus == 0:
 		return "Draft"
-	if row.docstatus == 2:
+	if docstatus == 2:
 		return "Cancelled"
 	total = flt(row.rounded_total or row.grand_total)
 	advance = flt(row.advance_paid)
@@ -86,6 +91,7 @@ def _get_sales_order_history(
 		"advance_paid",
 		"total_qty",
 		"delivery_date",
+		"status",
 		"workflow_state",
 		"docstatus",
 		"creation",
@@ -141,6 +147,7 @@ def _get_sales_order_history(
 			{"mode_of_payment": payment.mode_of_payment, "amount": flt(ref.allocated_amount)}
 		)
 	result = []
+	workflow_active = workflow_enabled_for(profile, "Sales Order")
 	for row in rows:
 		payments = payments_by_order.get(row.name, [])
 		row_status = _sales_order_status(row)
@@ -174,6 +181,7 @@ def _get_sales_order_history(
 				"payments": payments,
 				"status": row_status,
 				"workflow_state": row.get("workflow_state"),
+				"workflow_enabled": workflow_active,
 			}
 		)
 	active_rows = [row for row in result if row["docstatus"] == 1]
@@ -316,6 +324,7 @@ def get_invoice_history(
 			)
 
 	result = []
+	workflow_active = workflow_enabled_for(profile, doctype)
 	for row in rows:
 		row_status = _status(row)
 		payments = payment_modes.get(row.name, [])
@@ -332,6 +341,7 @@ def get_invoice_history(
 				**row,
 				"doctype": doctype,
 				"status": row_status,
+				"workflow_enabled": workflow_active,
 				"payments": payments,
 			}
 		)
@@ -435,6 +445,7 @@ def get_invoice_details(pos_profile=None, invoice_name=None, invoice_doctype=Non
 			"posting_time": doc.get("posting_time"),
 			"due_date": doc.get("due_date"),
 			"status": _sales_order_status(doc) if doctype == "Sales Order" else _status(doc),
+			"workflow_enabled": workflow_enabled_for(profile, doctype),
 			"is_return": bool(doc.get("is_return")),
 			"return_against": doc.get("return_against"),
 			"pos_profile": doc.get(profile_field),

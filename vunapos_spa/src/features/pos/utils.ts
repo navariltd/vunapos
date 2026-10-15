@@ -46,5 +46,32 @@ export function formatAvailableStock(item: Pick<ItemDTO, "actual_qty" | "stock_u
 		return `${stockQty} ${stockUom}`;
 	}
 	const salesQty = Number((stockQty / conversionFactor).toFixed(3));
-	return `${stockQty} ${stockUom} · ${salesQty} ${salesUom}`;
+	return `${salesQty} ${salesUom}`;
+}
+
+export function formatStockBalanceTooltip(item: Pick<ItemDTO, "actual_qty" | "stock_uom" | "sales_uom" | "uom" | "conversion_factor">) {
+	if (item.actual_qty === undefined || item.actual_qty === null) return "";
+	const stockQty = Number(item.actual_qty || 0);
+	const stockUom = item.stock_uom || "units";
+	const salesUom = item.sales_uom || item.uom;
+	const conversionFactor = Number(item.conversion_factor || 1);
+	if (!salesUom || salesUom === stockUom || conversionFactor <= 1) {
+		return `Stock balance: ${stockQty} ${stockUom}`;
+	}
+	const salesQty = Number((stockQty / conversionFactor).toFixed(3));
+	return `Stock balance: ${stockQty} ${stockUom} (${salesQty} ${salesUom})`;
+}
+
+export function statusBadgeClass(value: string, workflow = false) {
+	if (workflow) return "bg-primary-container text-on-primary-container";
+	if (["Paid", "Completed", "Submitted"].includes(value)) {
+		return "bg-secondary-container text-on-secondary-container";
+	}
+	if (["Cancelled", "Overdue", "Credit Note"].includes(value)) {
+		return "bg-error-container text-on-error-container";
+	}
+	if (["Unpaid", "Partly Paid", "Pending", "Awaiting Payment"].includes(value)) {
+		return "bg-tertiary-container text-on-tertiary-container";
+	}
+	return "bg-surface-container-high text-on-surface";
 }
