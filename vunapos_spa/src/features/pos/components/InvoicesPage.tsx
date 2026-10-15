@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/Button";
 import { navigateToInvoice } from "../../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { HeldInvoiceDTO, ModeOfPaymentDTO } from "../types";
+import { statusBadgeClass } from "../utils";
 import { HeldInvoicesPanel } from "./HeldInvoicesPanel";
 import { CheckoutQueuePanel } from "./CheckoutQueuePanel";
 
@@ -47,7 +48,10 @@ type HistoryInvoice = {
   paid_amount: number;
   outstanding_amount: number;
   total_qty: number;
+  docstatus: number;
   status: string;
+  workflow_state?: string | null;
+  workflow_enabled?: boolean;
   is_return: boolean;
   vunapos_credit_sale?: boolean;
   return_against?: string;
@@ -150,6 +154,7 @@ export function InvoicesPage({
     const matchesTo = !draftFilters.to_date || date <= draftFilters.to_date;
     return matchesText && matchesFrom && matchesTo;
   });
+  const isOrderTab = tab === "orders" || tab === "draft-orders";
   const openDetails = (event: MouseEvent<HTMLElement>) => {
     const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
       'a[href^="/app/"]',
@@ -248,15 +253,19 @@ export function InvoicesPage({
                 onChange={(event) => update("status", event.target.value)}
               >
                 <option value="">All statuses</option>
-                {[
-                  ...(tab === "orders" || tab === "draft-orders" ? ["Draft"] : []),
-                  "Paid",
-                  "Partly Paid",
-                  "Unpaid",
-                  "Overdue",
-                  "Credit Note",
-                  "Cancelled",
-                ].map((value) => (
+                {(isOrderTab
+                  ? [
+                      "Draft",
+                      "To Deliver and Bill",
+                      "To Deliver",
+                      "To Bill",
+                      "Completed",
+                      "On Hold",
+                      "Closed",
+                      "Cancelled",
+                    ]
+                  : ["Paid", "Partly Paid", "Unpaid", "Overdue", "Credit Note", "Cancelled"]
+                ).map((value) => (
                   <option key={value}>{value}</option>
                 ))}
               </select>
@@ -311,22 +320,26 @@ export function InvoicesPage({
                     label="Returns"
                     value={money(history.summary.returns, currency)}
                   />
-                  <Summary
-                    label="Outstanding"
-                    value={money(history.summary.outstanding, currency)}
-                  />
+                  {!isOrderTab ? (
+                    <Summary
+                      label="Outstanding"
+                      value={money(history.summary.outstanding, currency)}
+                    />
+                  ) : null}
                   <Summary
                     label="Credit sales"
                     value={money(history.summary.credit_sales, currency)}
                   />
-                  <Summary
-                    label="Credit outstanding"
-                    value={money(history.summary.credit_outstanding, currency)}
-                  />
+                  {!isOrderTab ? (
+                    <Summary
+                      label="Credit outstanding"
+                      value={money(history.summary.credit_outstanding, currency)}
+                    />
+                  ) : null}
                 </div>
-                <div className="overflow-x-auto rounded-lg border border-outline-variant">
+                <div className="h-[32rem] overflow-auto rounded-lg border border-outline-variant">
                   <table className="w-full min-w-[1050px] text-left text-sm">
-                    <thead className="bg-surface-container-low text-xs text-on-surface-variant">
+                    <thead className="sticky top-0 z-10 bg-surface-container-low text-xs text-on-surface-variant">
                       <tr>
                         <th className="px-3 py-3">{tab === "orders" ? "Order" : "Invoice"}</th>
                         <th>Date / time</th>
@@ -335,7 +348,7 @@ export function InvoicesPage({
                         <th>Items</th>
                         <th>Payment</th>
                         <th>Total</th>
-                        <th>Outstanding</th>
+                        {!isOrderTab ? <th>Outstanding</th> : null}
                         <th>Status</th>
                       </tr>
                     </thead>
@@ -344,7 +357,19 @@ export function InvoicesPage({
                         history.invoices.map((row) => (
                           <tr
                             key={row.name}
-                            className="border-t border-outline-variant"
+                            className="h-16 cursor-pointer border-t border-outline-variant transition-colors hover:bg-surface-container-low focus-visible:bg-surface-container-low focus-visible:outline-none"
+                            role="button"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              if ((event.target as HTMLElement).closest("a, button")) return;
+                              navigateToInvoice(row.name, row.doctype);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                navigateToInvoice(row.name, row.doctype);
+                              }
+                            }}
                           >
                             <td className="px-3 py-3">
                               <a
@@ -374,9 +399,11 @@ export function InvoicesPage({
                                 </span>
                               ) : null}
                             </td>
-                            <td>
-                              {row.customer_name || row.customer}
-                              <span className="block text-xs text-on-surface-variant">
+                            <td className="max-w-[16rem]">
+                              <span className="block truncate" title={row.customer_name || row.customer}>
+                                {row.customer_name || row.customer}
+                              </span>
+                              <span className="block truncate text-xs text-on-surface-variant" title={row.customer}>
                                 {row.customer}
                               </span>
                             </td>
@@ -403,21 +430,23 @@ export function InvoicesPage({
                             <td className="font-medium">
                               {money(row.grand_total, row.currency || currency)}
                             </td>
+                            {!isOrderTab ? (
+                              <td>
+                                {money(
+                                  row.outstanding_amount,
+                                  row.currency || currency,
+                                )}
+                              </td>
+                            ) : null}
                             <td>
-                              {money(
-                                row.outstanding_amount,
-                                row.currency || currency,
-                              )}
-                            </td>
-                            <td>
-                              <Status value={row.status} />
+                              <Status value={row.workflow_enabled && row.workflow_state ? row.workflow_state : row.status} workflow={Boolean(row.workflow_enabled && row.workflow_state)} />
                             </td>
                           </tr>
                         ))
                       ) : (
                         <tr>
                           <td
-                            colSpan={9}
+                            colSpan={isOrderTab ? 8 : 9}
                             className="p-8 text-center text-on-surface-variant"
                           >
                             No {tab === "orders" ? "orders" : "invoices"} match these filters.
@@ -467,7 +496,7 @@ function Tab({
 }) {
   return (
     <button
-      className={`px-5 py-3 text-sm font-medium ${active ? "border-b-2 border-primary text-primary" : "text-on-surface-variant"}`}
+      className={`cursor-pointer px-5 py-3 text-sm font-medium transition-colors hover:text-primary ${active ? "border-b-2 border-primary text-primary" : "text-on-surface-variant"}`}
       onClick={onClick}
     >
       {children}
@@ -520,10 +549,10 @@ function PaymentLine({
     </span>
   );
 }
-function Status({ value }: { value: string }) {
+function Status({ value, workflow = false }: { value: string; workflow?: boolean }) {
   return (
     <span
-      className={`rounded-full px-2 py-1 text-xs font-medium ${value === "Paid" ? "bg-secondary-container text-on-secondary-container" : value === "Cancelled" || value === "Overdue" ? "bg-error-container text-on-error-container" : "bg-surface-container-high text-on-surface"}`}
+      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(value, workflow)}`}
     >
       {value}
     </span>

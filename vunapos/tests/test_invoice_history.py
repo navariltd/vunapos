@@ -3,7 +3,11 @@ from frappe.tests import IntegrationTestCase
 from frappe.utils import nowdate
 
 from vunapos.api.sales import checkout_invoice
-from vunapos.services.invoice_history_service import get_invoice_details, get_invoice_history
+from vunapos.services.invoice_history_service import (
+	_sales_order_status,
+	get_invoice_details,
+	get_invoice_history,
+)
 from vunapos.services.invoice_return_service import (
 	create_invoice_return,
 	get_return_preview,
@@ -22,6 +26,16 @@ class TestVunaPOSInvoiceHistory(IntegrationTestCase):
 		self.profile = ensure_test_pos_profile()
 		self.customer = ensure_test_customer()
 		self.opening_entry = ensure_open_pos_opening_entry(self.profile)
+
+	def test_sales_order_history_treats_string_draft_status_as_draft(self):
+		row = frappe._dict({"docstatus": "0", "rounded_total": 100, "grand_total": 100, "advance_paid": 0})
+		self.assertEqual(_sales_order_status(row), "Draft")
+
+	def test_sales_order_history_uses_erpnext_native_status(self):
+		row = frappe._dict(
+			{"status": "To Deliver and Bill", "docstatus": 1, "rounded_total": 100, "grand_total": 100}
+		)
+		self.assertEqual(_sales_order_status(row), "To Deliver and Bill")
 
 	def test_lists_submitted_vunapos_invoice_in_current_shift(self):
 		invoice = create_invoice_with_item("Sales Invoice")

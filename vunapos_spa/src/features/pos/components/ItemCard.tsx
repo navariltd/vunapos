@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
 import { formatAvailableStock } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
+import { StockBalanceInfo } from "./StockBalanceInfo";
 
 type ItemCardProps = {
   currency?: string;
@@ -26,7 +27,7 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
   const isDisabled = disabled || (outOfStock && !ignoreStock);
 
   return (
-    <div className={`relative flex min-h-40 flex-col overflow-hidden rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}>
+    <div className={`relative flex min-h-40 flex-col overflow-visible rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}>
       {item.is_product_bundle ? (
         <span className="pointer-events-none absolute left-[-29px] top-3 z-10 w-24 -rotate-45 bg-secondary-container py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-on-secondary-container shadow-sm">
           Bundle
@@ -47,7 +48,7 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
           }
         }}
       >
-        <div className="flex h-32 shrink-0 items-center justify-center bg-surface-container sm:h-36">
+        <div className="flex h-32 shrink-0 items-center justify-center overflow-hidden rounded-t-md bg-surface-container sm:h-36">
           {item.image ? (
             <img
               src={item.image}
@@ -74,15 +75,16 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
               <ItemTaxLabel item={item} />
               <ItemTaxPrice currency={currency} item={item} />
               {item.actual_qty !== undefined ? (
-                <p
+                <div
                   className={
                     outOfStock
-                      ? "text-xs font-medium text-error"
-                      : "text-xs text-on-surface-variant"
+                      ? "flex items-center gap-1 text-xs font-medium text-error"
+                      : "flex items-center gap-1 text-xs text-on-surface-variant"
                   }
                 >
-                  {outOfStock ? "Out of stock" : formatAvailableStock(item)}
-                </p>
+                  <span>{outOfStock ? "Out of stock" : formatAvailableStock(item)}</span>
+                  <StockBalanceInfo item={item} />
+                </div>
               ) : null}
             </div>
             <Button
