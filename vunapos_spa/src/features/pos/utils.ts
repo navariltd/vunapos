@@ -1,5 +1,9 @@
 import type { BootstrapData, CustomerDTO, InvoiceDTO, ItemDTO } from "./types";
 
+function formatQuantity(value: number) {
+	return new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(value);
+}
+
 export function formatCurrency(value?: number | null, currency?: string, precision = 2) {
 	const amount = Number(value || 0);
 	try {
@@ -43,10 +47,10 @@ export function formatAvailableStock(item: Pick<ItemDTO, "actual_qty" | "stock_u
 	const salesUom = item.sales_uom || item.uom;
 	const conversionFactor = Number(item.conversion_factor || 1);
 	if (!salesUom || salesUom === stockUom || conversionFactor <= 1) {
-		return `${stockQty} ${stockUom}`;
+		return `${formatQuantity(stockQty)} ${stockUom}`;
 	}
 	const salesQty = Number((stockQty / conversionFactor).toFixed(3));
-	return `${salesQty} ${salesUom}`;
+	return `${formatQuantity(salesQty)} ${salesUom}`;
 }
 
 export function formatStockBalanceTooltip(item: Pick<ItemDTO, "actual_qty" | "stock_uom" | "sales_uom" | "uom" | "conversion_factor">) {
@@ -56,10 +60,10 @@ export function formatStockBalanceTooltip(item: Pick<ItemDTO, "actual_qty" | "st
 	const salesUom = item.sales_uom || item.uom;
 	const conversionFactor = Number(item.conversion_factor || 1);
 	if (!salesUom || salesUom === stockUom || conversionFactor <= 1) {
-		return `Stock balance: ${stockQty} ${stockUom}`;
+		return `Stock balance: ${formatQuantity(stockQty)} ${stockUom}`;
 	}
 	const salesQty = Number((stockQty / conversionFactor).toFixed(3));
-	return `Stock balance: ${stockQty} ${stockUom} (${salesQty} ${salesUom})`;
+	return `Stock balance: ${formatQuantity(stockQty)} ${stockUom} (${formatQuantity(salesQty)} ${salesUom})`;
 }
 
 export function statusBadgeClass(value: string, workflow = false) {
@@ -70,7 +74,16 @@ export function statusBadgeClass(value: string, workflow = false) {
 	if (["Cancelled", "Overdue", "Credit Note"].includes(value)) {
 		return "bg-error-container text-on-error-container";
 	}
-	if (["Unpaid", "Partly Paid", "Pending", "Awaiting Payment"].includes(value)) {
+	if ([
+		"Unpaid",
+		"Partly Paid",
+		"Pending",
+		"Awaiting Payment",
+		"To Deliver and Bill",
+		"To Deliver",
+		"To Bill",
+		"On Hold",
+	].includes(value)) {
 		return "bg-tertiary-container text-on-tertiary-container";
 	}
 	return "bg-surface-container-high text-on-surface";

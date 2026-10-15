@@ -1,10 +1,11 @@
 import { memo } from "react";
-import { Info, Loader2, Plus } from "lucide-react";
+import { Loader2, Plus } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import type { ItemDTO } from "../types";
-import { formatAvailableStock, formatStockBalanceTooltip } from "../utils";
+import { formatAvailableStock } from "../utils";
 import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
+import { StockBalanceInfo } from "./StockBalanceInfo";
 
 type ItemListRowProps = {
   currency?: string;
@@ -73,7 +74,7 @@ export const ItemListRow = memo(function ItemListRow({
           }
         >
           <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "" : formatAvailableStock(item)}</span>
-          {item.actual_qty !== undefined ? <span className="shrink-0 cursor-help" aria-label={formatStockBalanceTooltip(item)} title={formatStockBalanceTooltip(item)}><Info className="size-3.5" aria-hidden="true" /></span> : null}
+          {item.actual_qty !== undefined ? <StockBalanceInfo item={item} /> : null}
         </div>
       </div>
       <div
@@ -84,7 +85,7 @@ export const ItemListRow = memo(function ItemListRow({
         }
       >
         <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "—" : formatAvailableStock(item)}</span>
-        {item.actual_qty !== undefined ? <span className="shrink-0 cursor-help" aria-label={formatStockBalanceTooltip(item)} title={formatStockBalanceTooltip(item)}><Info className="size-3.5" aria-hidden="true" /></span> : null}
+        {item.actual_qty !== undefined ? <StockBalanceInfo item={item} /> : null}
       </div>
       <Button
         size="sm"
