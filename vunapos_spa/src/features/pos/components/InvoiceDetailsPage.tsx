@@ -20,12 +20,14 @@ import {
 } from "../../../lib/stores/navigationStore";
 import { applyWorkflowAction, unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { CustomerDTO, InvoiceDTO } from "../types";
+import { statusBadgeClass } from "../utils";
 
 type Details = InvoiceDTO & {
   currency?: string;
   posting_time?: string;
   due_date?: string;
   status: string;
+  workflow_enabled?: boolean;
   is_return: boolean;
   return_against?: string;
   pos_profile?: string;
@@ -257,11 +259,14 @@ export function InvoiceDetailsPage({
                   </span>
                 ) : null}
               </div>
-              <p className="text-sm text-on-surface-variant">
+              <div className="mt-2">
+                <span className={`inline-flex rounded-full px-2.5 py-1 text-sm font-semibold ${statusBadgeClass(details.workflow_enabled && details.workflow_state ? details.workflow_state : details.status, Boolean(details.workflow_enabled && details.workflow_state))}`}>
+                  {details.workflow_enabled && details.workflow_state ? details.workflow_state : details.status}
+                </span>
+              </div>
+              <p className="mt-2 text-sm text-on-surface-variant">
                 {formatDate(details.posting_date)}{" "}
-                {formatTime(details.posting_time || details.posting_date)} ·{" "}
-                {details.status}
-                {details.workflow_state ? ` · ${details.workflow_state}` : ""}
+                {formatTime(details.posting_time || details.posting_date)}
                 {details.is_credit_sale && details.due_date
                   ? ` · Due ${formatDate(details.due_date)}`
                   : ""}
@@ -347,13 +352,15 @@ export function InvoiceDetailsPage({
             label="Paid"
             value={money(details.totals.paid_amount || 0, details.currency)}
           />
-          <Summary
-            label="Outstanding"
-            value={money(
-              details.totals.outstanding_amount || 0,
-              details.currency,
-            )}
-          />
+          {details.doctype !== "Sales Order" ? (
+            <Summary
+              label="Outstanding"
+              value={money(
+                details.totals.outstanding_amount || 0,
+                details.currency,
+              )}
+            />
+          ) : null}
           <Summary
             label="Items"
             value={String(
@@ -369,7 +376,7 @@ export function InvoiceDetailsPage({
             <p className="text-sm text-on-surface-variant">
               {details.customer}
             </p>
-            {details.is_credit_sale ? (
+            {details.is_credit_sale && details.doctype !== "Sales Order" ? (
               <div className="mt-3">
                 <KeyValue label="Sale type" value="Credit Sale" />
                 <KeyValue
