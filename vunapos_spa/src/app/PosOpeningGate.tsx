@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
 import { Button } from "../components/ui/Button";
@@ -42,9 +42,22 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
     }
   }, [profilesCall.data]);
   const [switchingProfile, setSwitchingProfile] = useState(false);
+  const [pendingProfile, setPendingProfile] = useState<string>();
+  const selectedProfile = pendingProfile || posProfile;
+
+  useEffect(() => {
+    if (pendingProfile && pendingProfile === posProfile) {
+      setPendingProfile(undefined);
+    }
+  }, [pendingProfile, posProfile]);
 
   async function selectProfile(profile: string) {
-    if (!profile || profile === posProfile) return;
+    if (!profile) return;
+    if (profile === posProfile) {
+      setPendingProfile(undefined);
+      return;
+    }
+    setPendingProfile(profile);
     setSwitchingProfile(true);
     try {
       await hydrate(profile);
@@ -89,7 +102,8 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
     }
     return (
       <PosOpeningEntryDialog
-        posProfile={posProfile}
+        posProfile={selectedProfile || posProfile}
+        profileReady={selectedProfile === posProfile}
         profiles={profiles}
         onPosProfileChange={selectProfile}
         profileSwitching={switchingProfile}
