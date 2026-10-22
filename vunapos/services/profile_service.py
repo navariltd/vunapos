@@ -30,6 +30,47 @@ def _require_profile_read(pos_profile):
 		)
 
 
+def _validate_profile_price_list(profile) -> None:
+	# Lightweight profile stubs used by callers/tests may omit standard fields;
+	# persisted POS Profiles always expose selling_price_list.
+	meta = getattr(profile, "meta", None)
+	if meta is not None:
+		if not meta.has_field("selling_price_list"):
+			return
+	elif "selling_price_list" not in profile:
+		return
+	price_list = profile.get("selling_price_list")
+	if not price_list:
+		_profile_error(
+			"POS_PROFILE_PRICE_LIST_REQUIRED",
+			_("POS Profile {0} must have a Selling price list configured").format(profile.name),
+		)
+
+	details = frappe.db.get_value(
+		"Price List",
+		price_list,
+		["enabled", "selling", "currency"],
+		as_dict=True,
+	)
+	if not details:
+		_profile_error(
+			"POS_PROFILE_PRICE_LIST_NOT_FOUND",
+			_("Price List {0} configured on POS Profile {1} was not found").format(price_list, profile.name),
+		)
+	if not details.enabled or not details.selling:
+		_profile_error(
+			"POS_PROFILE_PRICE_LIST_NOT_SELLING",
+			_("Price List {0} on POS Profile {1} must be enabled for selling").format(
+				price_list, profile.name
+			),
+		)
+	if details.currency and profile.get("currency") and details.currency != profile.currency:
+		_profile_error(
+			"POS_PROFILE_PRICE_LIST_CURRENCY_MISMATCH",
+			_("Price List {0} must use the POS Profile currency {1}").format(price_list, profile.currency),
+		)
+
+
 def get_invoice_mode():
 	invoice_type = frappe.db.get_single_value("POS Settings", "invoice_type") or "Sales Invoice"
 	if invoice_type not in SUPPORTED_INVOICE_MODES:
@@ -88,6 +129,8 @@ def resolve_pos_profile(pos_profile=None):
 
 	if profile.disabled:
 		_profile_error("POS_PROFILE_DISABLED", _("POS Profile {0} is disabled").format(profile.name))
+
+	_validate_profile_price_list(profile)
 
 	return profile
 
