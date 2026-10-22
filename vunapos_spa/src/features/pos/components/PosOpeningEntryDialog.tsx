@@ -164,11 +164,6 @@ export function PosOpeningEntryDialog({
                       </option>
                     ))}
                   </select>
-                  {profiles.find((profile) => profile.name === posProfile)?.is_default ? (
-                    <span className="inline-flex rounded-full bg-primary-container px-2 py-0.5 text-xs font-medium text-on-primary-container">
-                      Default profile
-                    </span>
-                  ) : null}
                   {profileSwitching ? (
                     <span className="text-xs text-on-surface-variant">
                       Loading the selected profile...
