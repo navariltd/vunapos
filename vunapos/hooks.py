@@ -232,6 +232,7 @@ extend_doctype_class = {
 	"POS Opening Entry": "vunapos.overrides.pos_opening_entry.VunaPOSOpeningEntryMixin",
 	"Sales Invoice": "vunapos.overrides.sales_invoice.VunaPOSSalesInvoiceReservationMixin",
 	"POS Invoice": "vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
+	"Stock Reservation Entry": "vunapos.overrides.stock_reservation_entry.VunaPOSStockReservationEntryMixin",
 }
 
 # Overriding Methods
