@@ -27,7 +27,6 @@ export function ItemSearch({
         <input
           id="item-search"
           aria-label="Search or scan barcode"
-          autoFocus
           className="h-touch flex-1 rounded-md border border-outline-variant bg-surface-container-low px-3 text-sm text-on-surface outline-none focus:border-primary"
           placeholder="Search by item name, code, or barcode"
           value={value}
