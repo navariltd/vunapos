@@ -67,6 +67,17 @@ now so early work does not block them, and are implemented in later phases.
 - Dine in / takeaway / delivery is called `service_type`. This avoids a clash with the
   existing `OrderType` (`Sales Invoice` / `Sales Order`) used by the retail POS.
 
+### 9. Item visibility per outlet (later phase)
+
+- Which items an outlet sells is controlled by the standard POS Profile **Item Groups**
+  table (`item_groups`). Listing a group includes all of its descendant groups.
+- An empty table means all items are visible, which matches today's behaviour.
+- This applies to every POS mode, not only Restaurant.
+- The restaurant menu's category tabs are derived from these groups.
+- **Risk:** VunaPOS ignores this table today. Existing retail profiles that already have
+  it filled in will see fewer items once it is enforced. Release notes should call this
+  out, and it should be checked on live profiles before rollout.
+
 ## Data model (current phase)
 
 All doctypes are in module VunaPOS.
