@@ -112,17 +112,18 @@ same rules.
 
 Both methods use the standard VunaPOS response envelope.
 
-### `vunapos.api.restaurant.get_floor_plan(pos_profile, include_inactive=0)`
+### `vunapos.api.restaurant.get_floor_plan(pos_profile)`
 
 Returns the profile's floors with their tables and elements, sorted by `display_order`
-then `floor_name`:
+then `floor_name`. Tables are sorted by `table_label`:
 
 ```json
 {
   "pos_profile": "Main Restaurant",
   "pos_mode": "Restaurant",
   "canvas": { "width": 1000, "height": 700 },
-  "version": "2026-10-22 10:15:00.000000",
+  "version": "3f8a1c...",
+  "can_edit": true,
   "floors": [
     {
       "name": "a1b2c3", "floor_name": "Main Hall", "display_order": 0, "is_active": 1,
@@ -134,8 +135,17 @@ then `floor_name`:
 }
 ```
 
-Inactive floors and tables are included only when a manager passes
-`include_inactive=1`.
+- Who sees what is decided by role, not by a request parameter. Managers (VunaPOS
+  Restaurant Manager or System Manager) always receive inactive floors and tables, with
+  `is_active: false`, and `can_edit: true`. Everyone else receives active rows only and
+  `can_edit: false`.
+- There is deliberately no `include_inactive` option. `save_floor_plan` deletes any row
+  missing from its payload, so an editor that loaded only active rows and then saved
+  would delete every inactive floor and table.
+- `version` is an opaque token: a SHA-1 digest of every floor and table's name and
+  modified timestamp for the profile, including inactive rows. Unlike the newest
+  timestamp alone, it also changes when a row is deleted. Clients send it back unchanged.
+- The profile must be in Restaurant mode, so `pos_mode` is always `Restaurant`.
 
 ### `vunapos.api.restaurant.save_floor_plan(pos_profile, payload)` (POST)
 
@@ -145,14 +155,34 @@ Saves the whole layout in one atomic call.
   and the response maps each `client_id` to the name it was given.
 - Floors or tables missing from the payload are deleted. Deleting a floor deletes its
   tables. Elements are replaced as a whole child table.
-- The payload carries the `version` from the last load. A stale version is rejected
-  with `FLOOR_PLAN_CONFLICT`, so two managers cannot silently overwrite each other.
-- Everything is validated before anything is written. Writes run inside a database
-  savepoint, and any failure rolls back to it, so a failed save changes nothing.
+- Tables are nested under their floor. Listing an existing table under a different
+  floor moves it there.
+- The payload carries the `version` from the last load. A stale or missing version is
+  rejected with `FLOOR_PLAN_CONFLICT`, so two managers cannot silently overwrite each
+  other. The POS Profile row is locked for the duration of the save, so two saves for
+  the same profile run one after the other.
+- Everything is validated before anything is written. Uniqueness is checked against
+  the final layout, so swapping two table labels in one save works. Writes run inside a
+  database savepoint, and any failure rolls back to it, so a failed save changes
+  nothing.
+- The response is `{plan, id_map}`: the reloaded plan, plus `id_map.floors` and
+  `id_map.tables`, which map each `client_id` to the name it was given.
 
-Error codes: `POS_MODE_NOT_RESTAURANT`, `DUPLICATE_FLOOR_NAME`, `DUPLICATE_TABLE_LABEL`,
-`ELEMENT_OUT_OF_CANVAS`, `INVALID_SEATS`, `FLOOR_PROFILE_MISMATCH`,
-`FLOOR_PLAN_PERMISSION_DENIED`, `FLOOR_PLAN_CONFLICT`.
+Error codes:
+
+| Code | Meaning |
+| --- | --- |
+| `POS_PROFILE_NOT_FOUND` | The POS Profile does not exist. |
+| `POS_MODE_NOT_RESTAURANT` | The POS Profile is not in Restaurant mode. Applies to reads and saves. |
+| `POS_PROFILE_NOT_ASSIGNED` | A non-manager read the plan of a profile they are not assigned to. Raised by the existing profile service. |
+| `FLOOR_PLAN_PERMISSION_DENIED` | A user without a manager role tried to save. |
+| `FLOOR_PLAN_CONFLICT` | The `version` is stale or missing. Reload and retry. |
+| `INVALID_FLOOR_PLAN` | Malformed payload: not JSON, wrong types, a missing name or label, a missing or repeated `client_id`, a row listed twice, or an unsupported element type or table shape. |
+| `DUPLICATE_FLOOR_NAME` | Two floors in the profile share a name (case-insensitive, trimmed). |
+| `DUPLICATE_TABLE_LABEL` | Two tables in the profile share a label (case-insensitive, trimmed). |
+| `ELEMENT_OUT_OF_CANVAS` | A table or element has a zero or negative size, or falls outside the canvas. |
+| `INVALID_SEATS` | Seats is not a whole number of at least 1. |
+| `FLOOR_PROFILE_MISMATCH` | A floor or table name does not belong to this profile, a table has no valid floor, or a floor with tables is moved to another profile. |
 
 ### Deleting tables
 
@@ -165,10 +195,13 @@ tables that have linked orders. Its callers do not change.
 - New role: **VunaPOS Restaurant Manager**, created by `ensure_vunapos_roles()` during
   install, migrate and test setup.
 - Saving a floor plan requires VunaPOS Restaurant Manager or System Manager.
-- Reading a floor plan requires only that the user is assigned to the POS Profile. Reads
-  do not need DocType permissions or a POS Opening Entry, so waiters can load the floor.
+- Saving does not require the manager to be assigned to the POS Profile, so a manager
+  can set up floors for any profile.
+- Reading a floor plan requires that the user is assigned to the POS Profile, or is a
+  manager. Reads do not need DocType permissions or a POS Opening Entry, so waiters can
+  load the floor.
 - DocType permissions: VunaPOS Restaurant Manager and System Manager have full access to
-  Floor and Table; Sales User can read.
+  Floor and Table; Sales User has read only.
 
 ## SPA integration (later step)
 
