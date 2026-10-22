@@ -109,13 +109,31 @@ Current behaviour:
   Restaurant mode, but only until the next reload.
 - Restaurant mode has no picker at all.
 
-Proposed direction:
+Agreed proposal (documentation only, nothing built yet):
 
-- Persist the user's choice in `resolve_pos_profile`, either by respecting the Default
-  flag or by remembering the last chosen profile.
-- Offer a profile switcher in both modes.
+| Situation | Behaviour |
+| --- | --- |
+| One assigned profile | Open it directly. |
+| Several profiles, an open shift on one of them | Open the profile with the open shift directly, with no picker. Switching is blocked until that shift is closed. |
+| Several profiles, no open shift | Ask once at login, in both Retail and Restaurant modes. Remember the choice only until logout. |
+
+- A **Switch Profile** section is available in both Retail and Restaurant modes. It is
+  shown only to users with several assigned profiles, and only works when the user has
+  no open shift. This applies to managers too.
+- The **Default** tick on POS Profile User and the alphabetical fallback are not used.
 
 **Needs lead approval:** this changes how retail resolves profiles today.
+
+### 12. Waiter and kitchen roles (later phase)
+
+- The future **VunaPOS Waiter** and **VunaPOS Kitchen** roles must ship with read
+  permission on POS Profile. They are created in code, like the VunaPOS Restaurant
+  Manager role (`ensure_vunapos_roles()`), so no manual setup is needed per site.
+- Reason: VunaPOS reads the resolved POS Profile during bootstrap. Standard ERPNext
+  gives POS Profile read only to Accounts Manager, Accounts User and Sales Manager. A
+  user with only Sales User is stopped with "POS Profile access required" until an
+  administrator grants Sales User read on POS Profile in Role Permissions Manager.
+  This was found while testing the floor view with a Sales User.
 
 ## Data model (current phase)
 
@@ -238,7 +256,8 @@ tables that have linked orders. Its callers do not change.
   can set up floors for any profile.
 - Reading a floor plan requires that the user is assigned to the POS Profile, or is a
   manager. Reads do not need DocType permissions or a POS Opening Entry, so waiters can
-  load the floor.
+  load the floor. Opening VunaPOS at all still needs read permission on POS Profile,
+  which bootstrap checks (see decision 12).
 - DocType permissions: VunaPOS Restaurant Manager and System Manager have full access to
   Floor and Table; Sales User has read only.
 
