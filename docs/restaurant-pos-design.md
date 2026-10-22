@@ -120,6 +120,8 @@ Agreed proposal (documentation only, nothing built yet):
 - A **Switch Profile** section is available in both Retail and Restaurant modes. It is
   shown only to users with several assigned profiles, and only works when the user has
   no open shift. This applies to managers too.
+- The rules apply to any number of assigned profiles and to any POS mode, including
+  modes added later.
 - The **Default** tick on POS Profile User and the alphabetical fallback are not used.
 
 **Needs lead approval:** this changes how retail resolves profiles today.
