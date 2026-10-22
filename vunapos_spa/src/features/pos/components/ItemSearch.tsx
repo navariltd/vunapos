@@ -27,7 +27,6 @@ export function ItemSearch({
         <input
           id="item-search"
           aria-label="Search or scan barcode"
-          autoFocus
           className="h-touch flex-1 rounded-md border border-outline-variant bg-surface-container-low px-3 text-sm text-on-surface outline-none focus:border-primary"
           placeholder="Search by item name, code, or barcode"
           value={value}
@@ -39,6 +38,17 @@ export function ItemSearch({
             }
           }}
         />
+        {onViewChange ? (
+          <button
+            type="button"
+            aria-label={view === "grid" ? "Switch to list view" : "Switch to grid view"}
+            title={view === "grid" ? "Switch to list view" : "Switch to grid view"}
+            className="flex h-touch w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+            onClick={() => onViewChange(view === "grid" ? "list" : "grid")}
+          >
+            {view === "grid" ? <List className="size-4" /> : <Grid2X2 className="size-4" />}
+          </button>
+        ) : null}
         <button
           type="button"
           className="flex h-touch shrink-0 cursor-pointer items-center gap-2 rounded-md border border-outline-variant bg-surface-container-low px-3 text-sm font-medium text-on-surface hover:bg-surface-container"
@@ -50,16 +60,6 @@ export function ItemSearch({
         </button>
         {isLoading ? (
           <span className="text-sm text-on-surface-variant">Searching...</span>
-        ) : null}
-        {onViewChange ? (
-          <div className="hidden shrink-0 items-center rounded-md border border-outline-variant bg-surface-container-low p-0.5 sm:flex">
-            <button type="button" aria-label="Grid view" aria-pressed={view === "grid"} className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded ${view === "grid" ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:bg-surface-container"}`} onClick={() => onViewChange("grid")}>
-              <Grid2X2 className="size-4" />
-            </button>
-            <button type="button" aria-label="List view" aria-pressed={view === "list"} className={`flex h-9 w-9 cursor-pointer items-center justify-center rounded ${view === "list" ? "bg-primary-container text-on-primary-container" : "text-on-surface-variant hover:bg-surface-container"}`} onClick={() => onViewChange("list")}>
-              <List className="size-4" />
-            </button>
-          </div>
         ) : null}
       </div>
     </div>
