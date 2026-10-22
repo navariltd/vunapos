@@ -104,14 +104,7 @@ def resolve_pos_profile(pos_profile=None):
 
 		# A returning cashier must resume their existing shift rather than being
 		# prompted to open whichever assigned profile sorts first.
-		default_profiles = set(
-			frappe.get_all(
-				"POS Profile User",
-				filters={"parent": ["in", enabled_profiles], "user": frappe.session.user, "default": 1},
-				pluck="parent",
-			)
-		)
-		profile_name = frappe.db.get_value(
+		open_profile = frappe.db.get_value(
 			"POS Opening Entry",
 			{
 				"user": frappe.session.user,
@@ -121,7 +114,24 @@ def resolve_pos_profile(pos_profile=None):
 			},
 			"pos_profile",
 			order_by="period_start_date desc",
-		) or next((name for name in enabled_profiles if name in default_profiles), enabled_profiles[0])
+		)
+		if open_profile:
+			profile_name = open_profile
+		else:
+			default_profiles = set(
+				frappe.get_all(
+					"POS Profile User",
+					filters={
+						"parent": ["in", enabled_profiles],
+						"user": frappe.session.user,
+						"default": 1,
+					},
+					pluck="parent",
+				)
+			)
+			profile_name = next(
+				(name for name in enabled_profiles if name in default_profiles), enabled_profiles[0]
+			)
 
 		_require_profile_read(profile_name)
 
