@@ -16,7 +16,7 @@ export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
   const { setTheme } = useThemeSync();
 
   return (
-    <section className="h-full overflow-y-auto p-4 sm:p-6">
+    <section className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-24 sm:p-6 sm:pb-6">
       <div className="mx-auto max-w-3xl">
         <div className="flex items-start gap-4 border-b border-outline-variant pb-5">
           <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
@@ -39,32 +39,12 @@ export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
           </a>
         </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <ProfileField label="POS Profile" value={bootstrap?.pos_profile} />
-          <ProfileField label="Company" value={bootstrap?.company} />
-          <ProfileField label="Warehouse" value={bootstrap?.warehouse} />
-          <ProfileField label="Price List" value={bootstrap?.price_list} />
-          <ProfileField
-            label="Invoice Mode"
-            value={bootstrap?.invoice_mode || "Sales Invoice"}
-          />
-          <ProfileField
-            label="Default Sale Type"
-            value={bootstrap?.default_sale_type || "Cash Sale"}
-          />
-          <ProfileField label="Default Customer" value={defaultCustomer} />
-          <ProfileField label="Currency" value={bootstrap?.currency} />
-        </div>
-
         <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-semibold text-on-surface">
                 Appearance
               </h3>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Choose how VunaPOS should display for this user.
-              </p>
             </div>
             <div className="grid grid-cols-3 gap-1 rounded-md border border-outline-variant bg-surface p-1">
               <ThemeButton
@@ -91,6 +71,24 @@ export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
             </div>
           </div>
         </div>
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <ProfileField label="POS Profile" value={bootstrap?.pos_profile} />
+          <ProfileField label="Company" value={bootstrap?.company} />
+          <ProfileField label="Warehouse" value={bootstrap?.warehouse} />
+          <ProfileField label="Price List" value={bootstrap?.price_list} />
+          <ProfileField
+            label="Invoice Mode"
+            value={bootstrap?.invoice_mode || "Sales Invoice"}
+          />
+          <ProfileField
+            label="Default Sale Type"
+            value={bootstrap?.default_sale_type || "Cash Sale"}
+          />
+          <ProfileField label="Default Customer" value={defaultCustomer} />
+          <ProfileField label="Currency" value={bootstrap?.currency} />
+        </div>
+
       </div>
     </section>
   );
