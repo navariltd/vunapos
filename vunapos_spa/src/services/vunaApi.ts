@@ -42,12 +42,15 @@ export type FrappeCall<T = unknown> = (params: Record<string, unknown>) => Promi
 export class VunaApiError extends Error {
 	code?: string;
 	field?: string;
+	// The envelope's meta, e.g. which floor or table label failed validation.
+	meta?: Record<string, unknown>;
 
-	constructor(message: string, code?: string, field?: string) {
+	constructor(message: string, code?: string, field?: string, meta?: Record<string, unknown>) {
 		super(message);
 		this.name = "VunaApiError";
 		this.code = code;
 		this.field = field;
+		this.meta = meta;
 	}
 }
 
@@ -137,6 +140,7 @@ export function unwrapVunaResponse<T>(response: unknown): T {
 			error?.message || error?.code || "VunaPOS request failed",
 			error?.code,
 			error?.field,
+			envelope.meta,
 		);
 	}
 

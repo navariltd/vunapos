@@ -1,12 +1,8 @@
 import { useEffect } from "react";
-import { ArrowLeft } from "lucide-react";
 
 import { AppShell } from "../../components/layout/AppShell";
-import { Button } from "../../components/ui/Button";
-import { EmptyState } from "../../components/ui/EmptyState";
 import {
   RESTAURANT_PAGES,
-  navigateToPosPage,
   replacePosPage,
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
@@ -14,6 +10,7 @@ import { InstallPrompt } from "../../components/InstallPrompt";
 import { ConnectivityMonitor } from "../../app/ConnectivityMonitor";
 import { useBootstrapData } from "../pos/hooks/useBootstrapData";
 import { UserProfilePage } from "../pos/components/UserProfilePage";
+import { FloorEditor } from "./components/FloorEditor";
 import { FloorView } from "./components/FloorView";
 import { RestaurantToast } from "./components/RestaurantToast";
 
@@ -41,16 +38,7 @@ export function RestaurantApp() {
         {activePage === "Profile" ? (
           <UserProfilePage bootstrap={bootstrap.data} />
         ) : activePage === "Floor Editor" ? (
-          <EmptyState
-            title="Floor editor"
-            description="The floor editor is being built."
-            action={
-              <Button variant="ghost" className="gap-2" onClick={() => navigateToPosPage("Floor")}>
-                <ArrowLeft className="size-4" aria-hidden="true" />
-                <span>Back to floor</span>
-              </Button>
-            }
-          />
+          <FloorEditor posProfile={bootstrap.data?.pos_profile} />
         ) : (
           <FloorView posProfile={bootstrap.data?.pos_profile} />
         )}
