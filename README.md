@@ -88,7 +88,7 @@ VunaPOS uses standard ERPNext configuration wherever possible.
 
 ### Managed Hosting
 
-VunaPOS can be deployed on any environment that supports Frappe and ERPNext, including [Frappe Cloud](https://frappecloud.com).
+VunaPOS can be deployed on any environment that supports Frappe and ERPNext, including [Frappe Cloud](https://cloud.frappe.io/marketplace/apps/vunapos).
 
 Frappe Cloud handles installation, deployments, backups, monitoring, upgrades, and site management.
 
