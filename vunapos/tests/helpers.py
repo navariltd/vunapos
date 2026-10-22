@@ -242,6 +242,42 @@ def ensure_test_pos_profile():
 	return profile.name
 
 
+RESTAURANT_TEST_PROFILE = "_Test VunaPOS Restaurant Profile"
+
+
+def ensure_test_restaurant_profile():
+	if not frappe.db.exists("POS Profile", RESTAURANT_TEST_PROFILE):
+		profile = frappe.copy_doc(frappe.get_doc("POS Profile", ensure_test_pos_profile()))
+		profile.set("__newname", RESTAURANT_TEST_PROFILE)
+		profile.vunapos_pos_mode = "Restaurant"
+		profile.insert(ignore_permissions=True)
+	frappe.db.set_value("POS Profile", RESTAURANT_TEST_PROFILE, "vunapos_pos_mode", "Restaurant")
+	return RESTAURANT_TEST_PROFILE
+
+
+def ensure_test_user(email, roles=(), pos_profile=None):
+	if not frappe.db.exists("User", email):
+		frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": email.split("@")[0],
+				"send_welcome_email": 0,
+			}
+		).insert(ignore_permissions=True)
+	user = frappe.get_doc("User", email)
+	existing_roles = {row.role for row in user.roles}
+	missing_roles = [role for role in roles if role not in existing_roles]
+	if missing_roles:
+		user.add_roles(*missing_roles)
+	if pos_profile:
+		profile = frappe.get_doc("POS Profile", pos_profile)
+		if not any(row.user == email for row in profile.get("applicable_for_users", [])):
+			profile.append("applicable_for_users", {"user": email, "default": 0})
+			profile.save(ignore_permissions=True)
+	return email
+
+
 def ensure_sales_tax_template(rate=16, included_in_print_rate=0):
 	company = _company()
 	title = f"_Test Vuna {'Inclusive' if included_in_print_rate else 'Exclusive'} Tax {rate}"
