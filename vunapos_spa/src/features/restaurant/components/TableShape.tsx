@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from "react";
 
-import { boxCenter, legibleFontSize, screenPxToCanvas } from "../floorPlanGeometry";
+import { boxCenter, screenPxToCanvas, tableTextLayout } from "../floorPlanGeometry";
 import type { RestaurantTableDTO } from "../types";
 
 export type TableStatus = "free" | "occupied" | "bill-requested";
@@ -11,10 +11,6 @@ const STATUS_STYLE: Record<TableStatus, { stroke: string; label: string }> = {
   occupied: { stroke: "var(--color-tertiary)", label: "Occupied" },
   "bill-requested": { stroke: "var(--color-error)", label: "Bill requested" },
 };
-
-// Readable floors for labels on small screens, in screen pixels.
-const MIN_LABEL_PX = 12;
-const MIN_SEATS_PX = 10;
 
 type TableShapeProps = {
   table: Pick<
@@ -32,8 +28,15 @@ export function TableShape({ table, scale, status = "free", selected, muted, onA
   const center = boxCenter(table);
   const statusStyle = STATUS_STYLE[status];
   const strokeWidth = screenPxToCanvas(selected ? 3 : 2, scale);
-  const labelSize = legibleFontSize(Math.min(22, table.height * 0.3), MIN_LABEL_PX, scale);
-  const seatsSize = legibleFontSize(Math.min(14, table.height * 0.18), MIN_SEATS_PX, scale);
+  const seatsText = `${table.seats} ${table.seats === 1 ? "seat" : "seats"}`;
+  // Text stays upright, so a table turned on its side offers its height as width.
+  const turned = Math.round(table.rotation / 90) % 2 === 1;
+  // Keeps the text inside the shape; the seat count drops out when it would not fit.
+  const text = tableTextLayout(
+    turned ? { ...table, width: table.height, height: table.width } : table,
+    seatsText,
+    scale,
+  );
   const isRound = table.shape === "Round" || table.shape === "Oval";
   const fill = table.color || "var(--color-surface)";
   const interactive = Boolean(onActivate);
@@ -83,26 +86,28 @@ export function TableShape({ table, scale, status = "free", selected, muted, onA
         y={center.y}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={labelSize}
+        fontSize={text.labelSize}
         fontWeight={600}
         fill="var(--color-on-surface)"
         className="pointer-events-none select-none"
-        dy={-seatsSize * 0.45}
+        dy={text.labelDy}
       >
-        {table.table_label}
+        {text.label}
       </text>
-      <text
-        x={center.x}
-        y={center.y}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fontSize={seatsSize}
-        fill="var(--color-on-surface-variant)"
-        className="pointer-events-none select-none"
-        dy={labelSize * 0.65}
-      >
-        {table.seats} {table.seats === 1 ? "seat" : "seats"}
-      </text>
+      {text.seatsSize ? (
+        <text
+          x={center.x}
+          y={center.y}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={text.seatsSize}
+          fill="var(--color-on-surface-variant)"
+          className="pointer-events-none select-none"
+          dy={text.seatsDy}
+        >
+          {seatsText}
+        </text>
+      ) : null}
     </g>
   );
 }

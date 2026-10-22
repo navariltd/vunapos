@@ -15,6 +15,7 @@ import {
 	screenToCanvas,
 	snapAngle,
 	snapValue,
+	tableTextLayout,
 	type Box,
 } from "../floorPlanGeometry";
 
@@ -139,5 +140,65 @@ describe("rotationFromPointer", () => {
 		expect(rotationFromPointer(centered, { x: 300, y: 150 })).toBeCloseTo(90, 6);
 		expect(rotationFromPointer(centered, { x: 0, y: 150 })).toBeCloseTo(270, 6);
 		expect(rotationFromPointer(centered, { x: 300, y: 10 }, true)).toBe(45);
+	});
+});
+
+describe("tableTextLayout", () => {
+	const table = (values: Partial<{ table_label: string; seats: number; shape: string; width: number; height: number }> = {}) => ({
+		table_label: "T1",
+		seats: 4,
+		shape: "Square",
+		width: 80,
+		height: 80,
+		...values,
+	});
+	// At 320px wide, the canvas is about 286px across: a scale of roughly 0.286.
+	const PHONE_SCALE = 286 / 1000;
+
+	it("shows the label and seat count when there is room", () => {
+		const layout = tableTextLayout(table(), "4 seats", 1.2);
+		expect(layout.label).toBe("T1");
+		expect(layout.seatsSize).not.toBeNull();
+		expect(layout.labelDy).toBeLessThan(0);
+		expect(layout.seatsDy).toBeGreaterThan(0);
+	});
+
+	it("hides the seat count on a 320px screen but keeps the label inside the table", () => {
+		const t = table();
+		const layout = tableTextLayout(t, "4 seats", PHONE_SCALE);
+		expect(layout.seatsSize).toBeNull();
+		expect(layout.labelDy).toBe(0);
+		expect(layout.label.length * 0.62 * layout.labelSize).toBeLessThanOrEqual(t.width);
+		expect(layout.labelSize).toBeLessThanOrEqual(t.height);
+	});
+
+	it("shrinks a long label to fit instead of overflowing", () => {
+		const t = table({ table_label: "Window 12" });
+		const layout = tableTextLayout(t, "4 seats", 1);
+		expect(layout.label).toBe("Window 12");
+		expect(layout.labelSize).toBeLessThan(22);
+		expect(layout.label.length * 0.62 * layout.labelSize).toBeLessThanOrEqual(t.width * 0.86 + 1e-9);
+		// Shrunk below its preferred size, so the seat count makes way for it.
+		expect(layout.seatsSize).toBeNull();
+	});
+
+	it("truncates a long label on a 320px screen rather than spilling out", () => {
+		const t = table({ table_label: "Window 12" });
+		const layout = tableTextLayout(t, "4 seats", PHONE_SCALE);
+		expect(layout.label.endsWith("…")).toBe(true);
+		expect(layout.label.length * 0.62 * layout.labelSize).toBeLessThanOrEqual(t.width * 0.86 + 1e-9);
+	});
+
+	it("truncates only when the label would fall below the hard minimum", () => {
+		const layout = tableTextLayout(table({ table_label: "Private Dining Room", width: 40, height: 40 }), "4 seats", PHONE_SCALE);
+		expect(layout.label.endsWith("…")).toBe(true);
+		expect(layout.label.length).toBeLessThan("Private Dining Room".length);
+		expect(layout.seatsSize).toBeNull();
+	});
+
+	it("uses the smaller inscribed area of round tables", () => {
+		const square = tableTextLayout(table({ table_label: "Terrace 4" }), "4 seats", 1);
+		const round = tableTextLayout(table({ table_label: "Terrace 4", shape: "Round" }), "4 seats", 1);
+		expect(round.labelSize).toBeLessThan(square.labelSize);
 	});
 });

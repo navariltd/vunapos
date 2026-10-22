@@ -143,3 +143,71 @@ export function rotationFromPointer(box: Box, pointer: Point, snap = false): num
 	const degrees = (Math.atan2(pointer.y - center.y, pointer.x - center.x) * 180) / Math.PI + 90;
 	return snap ? snapAngle(degrees) : normalizeRotation(degrees);
 }
+
+// ---- table text layout ----
+
+// Rough advance width of Inter at 600 weight, as a fraction of the font size.
+const CHAR_WIDTH_EM = 0.62;
+// Preferred minimum on-screen sizes, and the hard floor before truncating.
+export const MIN_TABLE_LABEL_PX = 12;
+export const MIN_TABLE_SEATS_PX = 10;
+const MIN_TRUNCATED_LABEL_PX = 8;
+
+export type TableTextLayout = {
+	label: string;
+	labelSize: number;
+	// null when there is no room for the seat count at this scale.
+	seatsSize: number | null;
+	labelDy: number;
+	seatsDy: number;
+};
+
+function textWidth(text: string, fontSize: number): number {
+	return text.length * CHAR_WIDTH_EM * fontSize;
+}
+
+// Fits the label (and, when there is room, the seat count) inside the table.
+// Sizes are in canvas units. The label prefers MIN_TABLE_LABEL_PX on screen but
+// shrinks to stay inside small tables, and is truncated only as a last resort.
+export function tableTextLayout(
+	table: { table_label: string; seats: number; shape?: string; width: number; height: number },
+	seatsText: string,
+	scale: number,
+): TableTextLayout {
+	const round = table.shape === "Round" || table.shape === "Oval";
+	// An ellipse's inscribed rectangle is about 70% of its bounding box.
+	const innerWidth = table.width * (round ? 0.7 : 0.86);
+	const innerHeight = table.height * (round ? 0.7 : 0.82);
+	const label = table.table_label || "";
+
+	const preferredLabel = legibleFontSize(Math.min(22, table.height * 0.3), MIN_TABLE_LABEL_PX, scale);
+	const fitsWidth = label ? innerWidth / (label.length * CHAR_WIDTH_EM) : preferredLabel;
+	let labelSize = Math.min(preferredLabel, fitsWidth, innerHeight);
+	let shownLabel = label;
+	const floor = screenPxToCanvas(MIN_TRUNCATED_LABEL_PX, scale);
+	if (labelSize < floor) {
+		labelSize = Math.min(floor, innerHeight);
+		const maxChars = Math.max(1, Math.floor(innerWidth / (CHAR_WIDTH_EM * labelSize)));
+		if (label.length > maxChars) shownLabel = `${label.slice(0, Math.max(1, maxChars - 1))}…`;
+	}
+
+	const seatsSize = legibleFontSize(Math.min(14, table.height * 0.18), MIN_TABLE_SEATS_PX, scale);
+	const gap = seatsSize * 0.25;
+	const labelAtPreferredSize = labelSize >= preferredLabel - 1e-9;
+	const showSeats =
+		labelAtPreferredSize &&
+		labelSize + gap + seatsSize <= innerHeight &&
+		textWidth(seatsText, seatsSize) <= innerWidth;
+
+	if (!showSeats) {
+		return { label: shownLabel, labelSize, seatsSize: null, labelDy: 0, seatsDy: 0 };
+	}
+	const blockHeight = labelSize + gap + seatsSize;
+	return {
+		label: shownLabel,
+		labelSize,
+		seatsSize,
+		labelDy: -blockHeight / 2 + labelSize / 2,
+		seatsDy: blockHeight / 2 - seatsSize / 2,
+	};
+}
