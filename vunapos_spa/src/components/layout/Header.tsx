@@ -1,6 +1,7 @@
-import { ChevronDown, Lock, Unlock } from "lucide-react";
+import { ChevronDown, CircleUserRound, Lock, Unlock } from "lucide-react";
 
 import { useThemeSync } from "../../features/pos/hooks/useThemeSync";
+import { navigateToPosPage } from "../../lib/stores/navigationStore";
 
 export type OrderType = "Sales Invoice" | "Sales Order";
 
@@ -29,14 +30,33 @@ export function Header({
     : [orderType];
 
   return (
-    <header className="sticky top-0 z-40 h-12 shrink-0 border-b border-outline-variant bg-surface px-3 sm:px-5">
+    <header className="sticky top-0 z-40 h-12 shrink-0 border-b border-outline-variant bg-surface px-2 sm:px-3">
       <div className="flex h-full items-center justify-between gap-3">
         <div className="flex shrink-0 items-center gap-2">
-          <h1 className="text-sm font-semibold tracking-tight text-on-surface">
-            VunaPOS
-          </h1>
+          <button
+            type="button"
+            className="flex cursor-pointer items-center rounded-md p-1 hover:bg-surface-container-low focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={() => navigateToPosPage("Home")}
+            aria-label="Go to VunaPOS home"
+            title="Go to home"
+          >
+            <img
+              src="/assets/vunapos/vunapos/vuna-192x192.png"
+              alt="VunaPOS"
+              className="size-8 rounded-md object-contain sm:size-9"
+            />
+          </button>
         </div>
         <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={() => navigateToPosPage("Profile")}
+            aria-label="Open user profile"
+            title="User profile"
+          >
+            <CircleUserRound className="size-5" />
+          </button>
           {salespersonPinEnabled ? (
             <div className="hidden items-center gap-2 rounded-md bg-surface-container-low px-2 py-1 text-xs sm:flex">
               <span className="text-on-surface-variant">Sales Person</span>

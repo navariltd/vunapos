@@ -37,6 +37,7 @@ export type C2BGatewayPaymentDTO = {
 
 export type POSProfileOptionDTO = {
 	name: string;
+	is_default?: boolean;
 	company?: string;
 	warehouse?: string;
 	currency?: string;

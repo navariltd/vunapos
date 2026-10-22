@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
-import { Loader2, ShoppingCart, X } from "lucide-react";
+import { Loader2, RefreshCw, ShoppingCart, X } from "lucide-react";
 
 import type {
 	CustomerAddressDTO,
@@ -172,6 +172,9 @@ export function POSHomePage({
   const [bundleDetails, setBundleDetails] = useState<ProductBundleDetails | null>(null);
   const [bundleError, setBundleError] = useState<string | null>(null);
   const [pendingItemCode, setPendingItemCode] = useState<string | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const pullStartY = useRef<number | null>(null);
   const [clearCartConfirmation, setClearCartConfirmation] = useState<{
     closeCheckout: boolean;
   } | null>(null);
@@ -246,6 +249,37 @@ export function POSHomePage({
     setCartNewItemPosition(bootstrap.data?.new_item_position);
   }, [bootstrap.data?.new_item_position, setCartNewItemPosition]);
   const cartActions = useCartActions();
+
+  const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 1 || isPullRefreshing) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input,button,select,textarea")) return;
+    let element: HTMLElement | null = target;
+    while (element && element !== event.currentTarget) {
+      if (element.scrollHeight > element.clientHeight && element.scrollTop > 0) return;
+      element = element.parentElement;
+    }
+    pullStartY.current = event.touches[0].clientY;
+  }, [isPullRefreshing]);
+
+  const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (pullStartY.current === null || event.touches.length !== 1) return;
+    const distance = event.touches[0].clientY - pullStartY.current;
+    setPullDistance(distance > 0 ? Math.min(distance, 88) : 0);
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    const shouldRefresh = pullDistance >= 56 && !isPullRefreshing;
+    pullStartY.current = null;
+    setPullDistance(0);
+    if (!shouldRefresh) return;
+    setIsPullRefreshing(true);
+    window.setTimeout(() => window.location.reload(), 120);
+  }, [isPullRefreshing, pullDistance]);
+
+  useEffect(() => () => {
+    pullStartY.current = null;
+  }, []);
   const templateVariantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
   const productBundleCall = useFrappePostCall(vunaMethods.getProductBundle);
   const itemDetailsCall = useFrappePostCall(vunaMethods.getItemDetails);
@@ -975,7 +1009,29 @@ export function POSHomePage({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+    <div
+      className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      {pullDistance > 0 || isPullRefreshing ? (
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-0 z-40 flex justify-center text-xs font-medium text-on-surface-variant"
+          style={{ transform: `translateY(${isPullRefreshing ? 12 : pullDistance / 2}px)` }}
+          aria-label={isPullRefreshing ? "Refreshing" : "Pull to refresh"}
+          aria-live="polite"
+        >
+          <span className="inline-flex size-10 items-center justify-center rounded-full bg-surface shadow-md">
+            {isPullRefreshing ? (
+              <Loader2 className="size-6 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-6" aria-hidden="true" />
+            )}
+          </span>
+        </div>
+      ) : null}
       {error ? (
         <div className="mx-4 mb-3 mt-4 shrink-0 rounded-md border border-error bg-error-container px-4 py-3 text-sm text-on-error-container">
           {error}
@@ -1086,7 +1142,7 @@ export function POSHomePage({
               view={catalogueView}
               onViewChange={setCatalogueView}
             />
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
+            <div data-pos-scroll className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
               <ItemGrid
                 currency={bootstrap.data?.currency}
                 hideImages={bootstrap.data?.hide_images}

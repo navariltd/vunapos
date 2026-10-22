@@ -1360,10 +1360,10 @@ function CheckoutDialogContent({
             />
           </div>
         </div>
-        <div className="grid shrink-0 grid-cols-4 items-center gap-2 border-t border-outline-variant px-3 py-3 sm:flex sm:px-6">
+        <div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-outline-variant px-3 py-3 xl:flex xl:px-6">
           <Button
             variant="ghost"
-            className="min-w-0 px-2 text-xs sm:px-3 sm:text-sm"
+            className="!hidden min-w-0 px-2 text-xs xl:!inline-flex xl:px-3 xl:text-sm"
             onClick={onClose}
             disabled={isSubmitting}
           >
@@ -1371,7 +1371,7 @@ function CheckoutDialogContent({
           </Button>
           <Button
             variant="danger"
-            className="min-w-0 gap-1 px-2 text-xs sm:gap-2 sm:px-3 sm:text-sm"
+            className="!hidden min-w-0 gap-1 px-2 text-xs xl:!inline-flex xl:gap-2 xl:px-3 xl:text-sm"
             onClick={onClear}
             disabled={isSubmitting}
           >
@@ -1379,7 +1379,7 @@ function CheckoutDialogContent({
           </Button>
           <Button
             variant="ghost"
-            className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container sm:ml-auto sm:min-w-28 sm:gap-2 sm:px-3 sm:text-sm"
+            className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container xl:ml-auto xl:min-w-28 xl:gap-2 xl:px-3 xl:text-sm"
             onClick={onHold}
             disabled={isSubmitting}
           >
