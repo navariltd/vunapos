@@ -78,6 +78,45 @@ now so early work does not block them, and are implemented in later phases.
   it filled in will see fewer items once it is enforced. Release notes should call this
   out, and it should be checked on live profiles before rollout.
 
+### 10. Deferred floor plan and Restaurant mode items (later phase)
+
+Left out of the first floor plan UI and planned for later phases:
+
+- **Pinch zoom and pan** on the floor canvas. For now a whole floor is always shown,
+  scaled to fit the screen. Labels and seat counts have a minimum on-screen text size
+  so they stay readable on phones.
+- **Background image upload** in the floor editor. An existing `background_image` is
+  drawn and kept on save, but can only be set in Desk for now.
+- **Undo and redo** in the floor editor.
+- **Close Shift and Sales History** in Restaurant mode. The restaurant navigation has
+  only the Floor and Profile pages until orders and payment are built.
+
+### 11. Choosing among several POS Profiles (known gap, later phase)
+
+Users assigned to several POS Profiles cannot reliably choose which one they work in.
+This matters more once Retail and Restaurant profiles run side by side (decision 1).
+
+Current behaviour:
+
+- `resolve_pos_profile` picks the profile with the user's open POS Opening Entry,
+  otherwise the first enabled assigned profile in alphabetical order. It ignores the
+  **Default** flag on POS Profile User.
+- The only profile picker is in the retail POS Opening Entry dialog. It appears when the
+  user has more than one enabled assigned profile and no open shift on the resolved
+  one. The choice is kept only in the browser and is lost on reload, unless a shift is
+  opened on that profile.
+- The picker also lists Restaurant profiles. Choosing one switches the app to
+  Restaurant mode, but only until the next reload.
+- Restaurant mode has no picker at all.
+
+Proposed direction:
+
+- Persist the user's choice in `resolve_pos_profile`, either by respecting the Default
+  flag or by remembering the last chosen profile.
+- Offer a profile switcher in both modes.
+
+**Needs lead approval:** this changes how retail resolves profiles today.
+
 ## Data model (current phase)
 
 All doctypes are in module VunaPOS.
