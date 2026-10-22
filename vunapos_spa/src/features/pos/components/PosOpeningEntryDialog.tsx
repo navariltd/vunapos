@@ -39,6 +39,7 @@ function paymentIcon(type: PaymentMethod["type"]) {
 
 type PosOpeningEntryDialogProps = {
   posProfile: string;
+  profileReady?: boolean;
   profiles: POSProfileOptionDTO[];
   onPosProfileChange: (profile: string) => Promise<void>;
   profileSwitching?: boolean;
@@ -57,6 +58,7 @@ type PosOpeningEntryDialogProps = {
 // BootstrapGate's hard block has no bypass either.
 export function PosOpeningEntryDialog({
   posProfile,
+  profileReady = true,
   profiles,
   onPosProfileChange,
   profileSwitching = false,
@@ -96,6 +98,10 @@ export function PosOpeningEntryDialog({
   }
 
   async function handleCreate() {
+    if (!profileReady) {
+      setError("The selected POS Profile could not be loaded. Select it again or choose another profile.");
+      return;
+    }
     if (!paymentMethods.length) {
       setError("No payment modes are configured for this POS Profile.");
       return;
@@ -125,7 +131,7 @@ export function PosOpeningEntryDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-xl rounded-xl border border-outline-variant bg-surface shadow-xl">
+      <div className="relative flex w-full max-w-2xl min-h-[36rem] max-h-[calc(100vh-2rem)] flex-col overflow-hidden rounded-xl border border-outline-variant bg-surface shadow-xl">
         <div className="border-b border-outline-variant px-6 py-4">
           <h2 className="text-lg font-semibold text-on-surface">
             POS Opening Entry
@@ -136,9 +142,9 @@ export function PosOpeningEntryDialog({
           </p>
         </div>
 
-        <div className="p-6">
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6 pb-28">
           {step === "form" ? (
-            <div className="space-y-6">
+            <div className="flex min-h-full flex-col gap-6">
               {profiles.length > 1 ? (
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-on-surface">
@@ -155,7 +161,6 @@ export function PosOpeningEntryDialog({
                     {profiles.map((profile) => (
                       <option key={profile.name} value={profile.name}>
                         {profile.name}
-                        {profile.warehouse ? ` — ${profile.warehouse}` : ""}
                       </option>
                     ))}
                   </select>
@@ -166,7 +171,7 @@ export function PosOpeningEntryDialog({
                   ) : null}
                 </label>
               ) : null}
-              <div className="space-y-3">
+              <div className="min-h-40 max-h-80 space-y-3 overflow-y-auto pr-1">
                 {paymentMethods.length ? (
                   paymentMethods.map((method) => (
                     <div
@@ -211,17 +216,20 @@ export function PosOpeningEntryDialog({
                 </div>
               ) : null}
 
-              <Button
-                className="w-full"
-                disabled={
-                  !paymentMethods.length ||
-                  createCall.loading ||
-                  profileSwitching
-                }
-                onClick={handleCreate}
-              >
-                {createCall.loading ? "Starting..." : "Start POS Session"}
-              </Button>
+              <div className="absolute bottom-6 left-6 right-6 border-t border-outline-variant bg-surface pt-4">
+                <Button
+                  className="w-full"
+                  disabled={
+                    !paymentMethods.length ||
+                    !profileReady ||
+                    createCall.loading ||
+                    profileSwitching
+                  }
+                  onClick={handleCreate}
+                >
+                  {createCall.loading ? "Starting..." : "Start POS Session"}
+                </Button>
+              </div>
             </div>
           ) : null}
 
