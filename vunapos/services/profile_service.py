@@ -63,20 +63,24 @@ def resolve_pos_profile(pos_profile=None):
 
 		# A returning cashier must resume their existing shift rather than being
 		# prompted to open whichever assigned profile sorts first.
-		profile_name = (
-			frappe.db.get_value(
-				"POS Opening Entry",
-				{
-					"user": frappe.session.user,
-					"pos_profile": ["in", enabled_profiles],
-					"status": "Open",
-					"docstatus": 1,
-				},
-				"pos_profile",
-				order_by="period_start_date desc",
+		default_profiles = set(
+			frappe.get_all(
+				"POS Profile User",
+				filters={"parent": ["in", enabled_profiles], "user": frappe.session.user, "default": 1},
+				pluck="parent",
 			)
-			or enabled_profiles[0]
 		)
+		profile_name = frappe.db.get_value(
+			"POS Opening Entry",
+			{
+				"user": frappe.session.user,
+				"pos_profile": ["in", enabled_profiles],
+				"status": "Open",
+				"docstatus": 1,
+			},
+			"pos_profile",
+			order_by="period_start_date desc",
+		) or next((name for name in enabled_profiles if name in default_profiles), enabled_profiles[0])
 
 		_require_profile_read(profile_name)
 
@@ -200,13 +204,28 @@ def get_user_pos_profiles():
 	if not enabled_profiles:
 		frappe.throw(_("No enabled POS Profile assigned to user"))
 
+	default_profiles = set(
+		frappe.get_all(
+			"POS Profile User",
+			filters={
+				"parent": ["in", [row.name for row in enabled_profiles]],
+				"user": frappe.session.user,
+				"default": 1,
+			},
+			pluck="parent",
+		)
+	)
+
 	# Attach payment modes
 	for profile in enabled_profiles:
+		profile["is_default"] = profile.name in default_profiles
 		profile["modes_of_payment"] = frappe.get_all(
 			"POS Payment Method",
 			filters={"parent": profile.name},
 			fields=["mode_of_payment", "default", "payment_gateway"],
 			order_by="idx",
 		)
+
+	enabled_profiles.sort(key=lambda profile: (not profile.is_default, profile.name.casefold()))
 
 	return enabled_profiles
