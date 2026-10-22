@@ -45,6 +45,14 @@ def ensure_vunapos_custom_fields():
 				"description": "Choose the VunaPOS interface for this profile. Restaurant enables floor plans and table service.",
 			},
 			{
+				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
+				# stays first in the VunaPOS tab after a customisation sync.
+				"fieldname": "vunapos_sales_section",
+				"label": "Sales Settings",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_pos_mode",
+			},
+			{
 				"fieldname": "vunapos_home_screen_section",
 				"label": "Mobile Settings",
 				"fieldtype": "Section Break",
