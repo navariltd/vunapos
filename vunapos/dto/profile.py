@@ -108,7 +108,16 @@ def profile_to_dict(profile, invoice_mode):
 		"pin_users": pin_users,
 		"default_customer": default_customer(),
 		"taxes_and_charges": profile.get("taxes_and_charges"),
-		"modes_of_payment": [payment_mode(row) for row in profile.get("payments", [])],
+		"modes_of_payment": [
+			payment_mode(row)
+			for row in sorted(
+				profile.get("payments", []),
+				key=lambda row: (
+					not bool(cint(row.get("default"))),
+					str(row.get("mode_of_payment") or "").casefold(),
+				),
+			)
+		],
 		"print_format": profile.get("print_format"),
 		"invoice_mode": invoice_mode,
 		"background_submission": queue,
