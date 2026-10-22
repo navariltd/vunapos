@@ -6,8 +6,8 @@ export type OrderType = "Sales Invoice" | "Sales Order";
 
 type HeaderProps = {
   allowOrderTypeChange?: boolean;
-  orderType: OrderType;
-  onOrderTypeChange: (orderType: OrderType) => void;
+  orderType?: OrderType;
+  onOrderTypeChange?: (orderType: OrderType) => void;
   salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonPinEnabled?: boolean;
   salespersonLocked?: boolean;
@@ -26,7 +26,9 @@ export function Header({
   useThemeSync();
   const orderTypes: OrderType[] = allowOrderTypeChange
     ? ["Sales Invoice", "Sales Order"]
-    : [orderType];
+    : orderType
+      ? [orderType]
+      : [];
 
   return (
     <header className="sticky top-0 z-40 h-12 shrink-0 border-b border-outline-variant bg-surface px-3 sm:px-5">
@@ -48,6 +50,7 @@ export function Header({
               ) : null}
             </div>
           ) : null}
+          {orderType && onOrderTypeChange ? (
           <label className="flex items-center gap-2 text-xs text-on-surface-variant">
             <span className="hidden sm:inline">Order Type</span>
             <span className="relative">
@@ -68,6 +71,7 @@ export function Header({
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-4 -translate-y-1/2 text-on-surface-variant" />
             </span>
           </label>
+          ) : null}
         </div>
       </div>
     </header>

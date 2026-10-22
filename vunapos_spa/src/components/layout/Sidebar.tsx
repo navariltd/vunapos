@@ -8,6 +8,7 @@ import {
   ReceiptText,
   UserRound,
   Users,
+  UtensilsCrossed,
 } from "lucide-react";
 
 import { cn } from "../../lib/cn";
@@ -18,21 +19,47 @@ import {
   type POSPage,
 } from "../../lib/stores/navigationStore";
 
-const items: { label: POSPage; title: string; icon: typeof Home }[] = [
-  { label: "Home", title: "Home", icon: Home },
-  { label: "Invoices", title: "Sales History", icon: ReceiptText },
-  { label: "Payments", title: "Payments", icon: CreditCard },
-  { label: "Customers", title: "Customers", icon: Users },
-  { label: "Close Shift", title: "Close Shift", icon: LogOut },
+export type PosMode = "Retail" | "Restaurant";
+
+type NavItem = {
+  label: POSPage;
+  title: string;
+  icon: typeof Home;
+  modes: PosMode[];
+  // Pages that keep this item highlighted, e.g. the floor editor under Floor.
+  activeFor?: POSPage[];
+};
+
+const items: NavItem[] = [
+  { label: "Home", title: "Home", icon: Home, modes: ["Retail"] },
+  { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
+  { label: "Invoices", title: "Sales History", icon: ReceiptText, modes: ["Retail"] },
+  { label: "Payments", title: "Payments", icon: CreditCard, modes: ["Retail"] },
+  { label: "Customers", title: "Customers", icon: Users, modes: ["Retail"] },
+  { label: "Close Shift", title: "Close Shift", icon: LogOut, modes: ["Retail"] },
 ];
+
+// The retail bottom nav has no Profile entry. Restaurant mode has only one page,
+// so Profile is added there to keep it reachable on small screens.
+const restaurantProfileItem: NavItem = {
+  label: "Profile",
+  title: "Profile",
+  icon: UserRound,
+  modes: ["Restaurant"],
+};
 
 export type NavFeatureFlags = {
   allowCustomerManagement?: boolean;
   allowCustomerPayments?: boolean;
 };
 
-function visibleItems(features?: NavFeatureFlags) {
+function isItemActive(item: NavItem, activePage: POSPage) {
+  return item.label === activePage || Boolean(item.activeFor?.includes(activePage));
+}
+
+function visibleItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
   return items.filter((item) => {
+    if (!item.modes.includes(mode)) return false;
     if (item.label === "Payments")
       return features?.allowCustomerPayments !== false;
     if (item.label === "Customers")
@@ -49,6 +76,7 @@ const inactiveLinkClass =
 type SidebarProps = {
   cashier?: string;
   features?: NavFeatureFlags;
+  mode?: PosMode;
   posProfile?: string;
   warehouse?: string;
 };
@@ -56,11 +84,12 @@ type SidebarProps = {
 export function Sidebar({
   cashier,
   features,
+  mode = "Retail",
   posProfile,
   warehouse,
 }: SidebarProps) {
   const activePage = useNavigationStore((s) => s.activePage);
-  const navItems = visibleItems(features);
+  const navItems = visibleItems(features, mode);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return window.localStorage.getItem("vunapos_sidebar_collapsed") === "true";
   });
@@ -82,7 +111,7 @@ export function Sidebar({
       <nav className="space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = item.label === activePage;
+          const isActive = isItemActive(item, activePage);
           return (
             <a
               key={item.label}
@@ -173,9 +202,18 @@ export function Sidebar({
   );
 }
 
-export function BottomNav({ features }: { features?: NavFeatureFlags }) {
+export function BottomNav({
+  features,
+  mode = "Retail",
+}: {
+  features?: NavFeatureFlags;
+  mode?: PosMode;
+}) {
   const activePage = useNavigationStore((s) => s.activePage);
-  const navItems = visibleItems(features);
+  const navItems =
+    mode === "Restaurant"
+      ? [...visibleItems(features, mode), restaurantProfileItem]
+      : visibleItems(features, mode);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface px-2 pb-2 pt-1 lg:hidden">
@@ -187,7 +225,7 @@ export function BottomNav({ features }: { features?: NavFeatureFlags }) {
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = item.label === activePage;
+          const isActive = isItemActive(item, activePage);
           return (
             <a
               key={item.label}

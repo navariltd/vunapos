@@ -10,7 +10,9 @@ import { AppProviders } from "./AppProviders";
 import { AuthGate } from "./AuthGate";
 import { BootstrapGate } from "./BootstrapGate";
 import { ConnectivityMonitor } from "./ConnectivityMonitor";
+import { PosModeSwitch } from "./PosModeSwitch";
 import { PosOpeningGate } from "./PosOpeningGate";
+import { RestaurantApp } from "../features/restaurant/RestaurantApp";
 import { VunaApiError, refreshSalespersonPin, vunaMethods } from "../services/vunaApi";
 import { useUiFeedbackStore } from "../features/pos/stores/uiFeedbackStore";
 
@@ -19,9 +21,14 @@ export function App() {
     <AppProviders>
       <AuthGate>
         <BootstrapGate>
-          <PosOpeningGate>
-            <AuthenticatedApp />
-          </PosOpeningGate>
+          <PosModeSwitch
+            retail={
+              <PosOpeningGate>
+                <AuthenticatedApp />
+              </PosOpeningGate>
+            }
+            restaurant={<RestaurantApp />}
+          />
         </BootstrapGate>
       </AuthGate>
     </AppProviders>
