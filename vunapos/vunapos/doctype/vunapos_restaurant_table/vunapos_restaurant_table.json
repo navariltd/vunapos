@@ -52,6 +52,7 @@
    "label": "Seats"
   },
   {
+   "default": "Square",
    "fieldname": "shape",
    "fieldtype": "Select",
    "label": "Shape",
@@ -102,7 +103,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-22 07:26:53.582732",
+ "modified": "2026-10-22 09:47:20.937013",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "VunaPOS Restaurant Table",
