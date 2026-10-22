@@ -81,7 +81,13 @@ def _mode_of_payment_account(company):
 	if mode_of_payment and not frappe.db.exists(
 		"Mode of Payment Account", {"parent": mode_of_payment, "company": company}
 	):
-		account = _account(company, account_type="Cash") or _account(company, root_type="Asset")
+		account = (
+			_account(company, account_type="Cash")
+			or _account(company, account_type="Bank")
+			or _account(company, account_type="Receivable")
+		)
+		if not account:
+			return mode_of_payment
 		doc = frappe.get_doc("Mode of Payment", mode_of_payment)
 		doc.append("accounts", {"company": company, "default_account": account})
 		doc.save(ignore_permissions=True)
@@ -96,9 +102,20 @@ def ensure_test_payment_mode(mode_of_payment="_Test Vuna M-Pesa", payment_type="
 		doc = frappe.get_doc(
 			{"doctype": "Mode of Payment", "mode_of_payment": mode_of_payment, "type": payment_type}
 		)
-	account = _account(company, account_type="Bank") or _account(company, root_type="Asset")
-	if not any(row.company == company for row in doc.get("accounts", [])):
+	account = (
+		_account(company, account_type="Bank")
+		or _account(company, account_type="Cash")
+		or _account(company, account_type="Receivable")
+	)
+	if not account:
+		frappe.throw(f"No Cash, Bank, or Receivable ledger account is available for {company}")
+	company_rows = [row for row in doc.get("accounts", []) if row.company == company]
+	if not company_rows:
 		doc.append("accounts", {"company": company, "default_account": account})
+	else:
+		for row in company_rows:
+			if row.default_account != account:
+				row.default_account = account
 	if doc.is_new():
 		doc.insert(ignore_permissions=True)
 	else:
