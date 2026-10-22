@@ -146,8 +146,10 @@ export function rotationFromPointer(box: Box, pointer: Point, snap = false): num
 
 // ---- table text layout ----
 
-// Rough advance width of Inter at 600 weight, as a fraction of the font size.
+// Rough advance widths of Inter as a fraction of the font size: the label is
+// drawn at 600 weight, the seat count at regular weight, which is narrower.
 const CHAR_WIDTH_EM = 0.62;
+const SEATS_CHAR_WIDTH_EM = 0.55;
 // Preferred minimum on-screen sizes, and the hard floor before truncating.
 export const MIN_TABLE_LABEL_PX = 12;
 export const MIN_TABLE_SEATS_PX = 10;
@@ -161,10 +163,6 @@ export type TableTextLayout = {
 	labelDy: number;
 	seatsDy: number;
 };
-
-function textWidth(text: string, fontSize: number): number {
-	return text.length * CHAR_WIDTH_EM * fontSize;
-}
 
 // Fits the label (and, when there is room, the seat count) inside the table.
 // Sizes are in canvas units. The label prefers MIN_TABLE_LABEL_PX on screen but
@@ -191,13 +189,16 @@ export function tableTextLayout(
 		if (label.length > maxChars) shownLabel = `${label.slice(0, Math.max(1, maxChars - 1))}…`;
 	}
 
-	const seatsSize = legibleFontSize(Math.min(14, table.height * 0.18), MIN_TABLE_SEATS_PX, scale);
+	// The seat count may shrink to fit the width, but never below its on-screen
+	// minimum: below that it is hidden instead (small screens, small tables).
+	const preferredSeats = legibleFontSize(Math.min(14, table.height * 0.18), MIN_TABLE_SEATS_PX, scale);
+	const seatsSize = Math.min(preferredSeats, innerWidth / (Math.max(seatsText.length, 1) * SEATS_CHAR_WIDTH_EM));
 	const gap = seatsSize * 0.25;
 	const labelAtPreferredSize = labelSize >= preferredLabel - 1e-9;
 	const showSeats =
 		labelAtPreferredSize &&
-		labelSize + gap + seatsSize <= innerHeight &&
-		textWidth(seatsText, seatsSize) <= innerWidth;
+		seatsSize * scale >= MIN_TABLE_SEATS_PX - 1e-9 &&
+		labelSize + gap + seatsSize <= innerHeight;
 
 	if (!showSeats) {
 		return { label: shownLabel, labelSize, seatsSize: null, labelDy: 0, seatsDy: 0 };

@@ -196,6 +196,32 @@ describe("tableTextLayout", () => {
 		expect(layout.seatsSize).toBeNull();
 	});
 
+	// A 768px tablet in portrait leaves a canvas about 710px wide.
+	const TABLET_SCALE = 710 / 1000;
+
+	it("shows the seat count on a default round table on desktop and tablet", () => {
+		for (const scale of [1, TABLET_SCALE]) {
+			const t = table({ shape: "Round" });
+			const layout = tableTextLayout(t, "4 seats", scale);
+			expect(layout.seatsSize, `scale ${scale}`).not.toBeNull();
+			// Readable on screen, and within the circle's inscribed width.
+			expect(layout.seatsSize! * scale).toBeGreaterThanOrEqual(10 - 1e-9);
+			expect("4 seats".length * 0.55 * layout.seatsSize!).toBeLessThanOrEqual(t.width * 0.7 + 1e-9);
+			expect(layout.labelSize + layout.seatsSize!).toBeLessThanOrEqual(t.height * 0.7);
+		}
+	});
+
+	it("shows the seat count on a default square table on tablet", () => {
+		expect(tableTextLayout(table(), "4 seats", TABLET_SCALE).seatsSize).not.toBeNull();
+	});
+
+	it("still hides the seat count of a default round table on a 320px screen", () => {
+		const t = table({ shape: "Round" });
+		const layout = tableTextLayout(t, "4 seats", PHONE_SCALE);
+		expect(layout.seatsSize).toBeNull();
+		expect(layout.label.length * 0.62 * layout.labelSize).toBeLessThanOrEqual(t.width * 0.7 + 1e-9);
+	});
+
 	it("uses the smaller inscribed area of round tables", () => {
 		const square = tableTextLayout(table({ table_label: "Terrace 4" }), "4 seats", 1);
 		const round = tableTextLayout(table({ table_label: "Terrace 4", shape: "Round" }), "4 seats", 1);
