@@ -48,6 +48,7 @@ export function useBootstrapData() {
 			ignore_pricing_rule: profile.ignore_pricing_rule,
 			item_prices_include_tax: profile.item_prices_include_tax,
 			default_order_type: profile.default_order_type,
+			pos_mode: profile.pos_mode,
 			allow_service_items: profile.allow_service_items,
 			allow_delivery_charges: profile.allow_delivery_charges,
 			allow_delivery_charge_change: profile.allow_delivery_charge_change,

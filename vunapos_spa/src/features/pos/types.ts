@@ -217,6 +217,7 @@ export type BootstrapData = {
 	ignore_pricing_rule?: boolean;
 	item_prices_include_tax?: boolean;
 	default_order_type?: "Sales Invoice" | "Sales Order";
+	pos_mode?: "Retail" | "Restaurant";
 	allow_service_items?: boolean;
 	allow_delivery_charges?: boolean;
 	allow_delivery_charge_change?: boolean;

@@ -17,6 +17,11 @@ import type {
 	POSClosingPreviewDTO,
 	PrintPayload,
 } from "../features/pos/types";
+import type {
+	FloorPlanDTO,
+	SaveFloorPlanPayload,
+	SaveFloorPlanResultDTO,
+} from "../features/restaurant/types";
 
 type VunaError = {
 	code?: string;
@@ -37,12 +42,15 @@ export type FrappeCall<T = unknown> = (params: Record<string, unknown>) => Promi
 export class VunaApiError extends Error {
 	code?: string;
 	field?: string;
+	// The envelope's meta, e.g. which floor or table label failed validation.
+	meta?: Record<string, unknown>;
 
-	constructor(message: string, code?: string, field?: string) {
+	constructor(message: string, code?: string, field?: string, meta?: Record<string, unknown>) {
 		super(message);
 		this.name = "VunaApiError";
 		this.code = code;
 		this.field = field;
+		this.meta = meta;
 	}
 }
 
@@ -106,6 +114,8 @@ export const vunaMethods = {
 	verifySalespersonPin: "vunapos.api.pin.verify_salesperson",
 	refreshSalespersonPin: "vunapos.api.pin.refresh_salesperson",
 	verifyManagerPin: "vunapos.api.pin.verify_manager",
+	getFloorPlan: "vunapos.api.restaurant.get_floor_plan",
+	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
@@ -130,6 +140,7 @@ export function unwrapVunaResponse<T>(response: unknown): T {
 			error?.message || error?.code || "VunaPOS request failed",
 			error?.code,
 			error?.field,
+			envelope.meta,
 		);
 	}
 
@@ -593,4 +604,18 @@ export function renderInvoice(
 	params: { invoice_doctype: string; invoice_name: string; print_format?: string },
 ) {
 	return callAndUnwrap<PrintPayload>(call, params);
+}
+
+export function getFloorPlan(call: FrappeCall, posProfile: string) {
+	return callAndUnwrap<FloorPlanDTO>(call, { pos_profile: posProfile });
+}
+
+export function saveFloorPlan(
+	call: FrappeCall,
+	params: { pos_profile: string; payload: SaveFloorPlanPayload },
+) {
+	return callAndUnwrap<SaveFloorPlanResultDTO>(call, {
+		...params,
+		payload: JSON.stringify(params.payload),
+	});
 }

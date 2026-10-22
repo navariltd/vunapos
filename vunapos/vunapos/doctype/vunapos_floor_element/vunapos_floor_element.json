@@ -1,0 +1,85 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-10-22 06:42:43.405404",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "element_type",
+  "label",
+  "x",
+  "y",
+  "width",
+  "height",
+  "rotation",
+  "color"
+ ],
+ "fields": [
+  {
+   "fieldname": "element_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Element Type",
+   "options": "Wall\nDoor\nWindow\nBar Counter\nPlant\nLabel",
+   "reqd": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "default": "0",
+   "fieldname": "x",
+   "fieldtype": "Float",
+   "label": "X"
+  },
+  {
+   "default": "0",
+   "fieldname": "y",
+   "fieldtype": "Float",
+   "label": "Y"
+  },
+  {
+   "default": "100",
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width"
+  },
+  {
+   "default": "20",
+   "fieldname": "height",
+   "fieldtype": "Float",
+   "label": "Height"
+  },
+  {
+   "default": "0",
+   "fieldname": "rotation",
+   "fieldtype": "Float",
+   "label": "Rotation"
+  },
+  {
+   "fieldname": "color",
+   "fieldtype": "Color",
+   "label": "Color"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-22 06:54:34.338180",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Floor Element",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
