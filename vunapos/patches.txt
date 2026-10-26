@@ -8,3 +8,4 @@ vunapos.patches.v1_0.remove_offline_session_ttl_field #1
 vunapos.patches.v1_0.enable_pos_profile_operation_controls
 vunapos.patches.v1_0.remove_vunapos_workspace
 vunapos.patches.v1_0.redirect_vunapos_desktop_icon
+vunapos.patches.v1_0.set_default_pos_mode

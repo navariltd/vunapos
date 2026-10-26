@@ -2,15 +2,17 @@ import type { ReactNode } from "react";
 
 import { Header, type OrderType } from "./Header";
 import { BottomNav, Sidebar } from "./Sidebar";
-import type { NavFeatureFlags } from "./Sidebar";
+import type { NavFeatureFlags, PosMode } from "./Sidebar";
 
 type AppShellProps = {
   allowOrderTypeChange?: boolean;
   children: ReactNode;
   cashier?: string;
   features?: NavFeatureFlags;
-  onOrderTypeChange: (orderType: OrderType) => void;
-  orderType: OrderType;
+  mode?: PosMode;
+  // Omit both to hide the Invoice/Order selector (Restaurant mode).
+  onOrderTypeChange?: (orderType: OrderType) => void;
+  orderType?: OrderType;
   posProfile?: string;
   warehouse?: string;
   salesperson?: { name: string; displayName: string; token: string } | null;
@@ -24,6 +26,7 @@ export function AppShell({
   cashier,
   children,
   features,
+  mode = "Retail",
   onOrderTypeChange,
   orderType,
   posProfile,
@@ -48,6 +51,7 @@ export function AppShell({
         <Sidebar
           cashier={cashier}
           features={features}
+          mode={mode}
           posProfile={posProfile}
           warehouse={warehouse}
         />
@@ -55,7 +59,7 @@ export function AppShell({
           {children}
         </main>
       </div>
-      <BottomNav features={features} />
+      <BottomNav features={features} mode={mode} />
     </div>
   );
 }

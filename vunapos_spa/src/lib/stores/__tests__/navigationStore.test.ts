@@ -1,12 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getPosPageFromPath, getPosPagePath, replacePosPage, useNavigationStore } from "../navigationStore";
+import {
+	getPosPageFromPath,
+	getPosPagePath,
+	navigateToPosPage,
+	replacePosPage,
+	setNavigationGuard,
+	useNavigationStore,
+} from "../navigationStore";
 
 beforeEach(() => {
 	useNavigationStore.setState({ activePage: "Home" });
 });
 
 afterEach(() => {
+	setNavigationGuard(null);
 	vi.unstubAllGlobals();
 });
 
@@ -59,5 +67,35 @@ describe("navigationStore", () => {
 		expect(getPosPageFromPath("/vunapos/profile")).toBe("Profile");
 		expect(getPosPageFromPath("/vunapos/invoices/")).toBe("Invoices");
 		expect(getPosPageFromPath("/vunapos/not-built-yet")).toBe("Home");
+	});
+
+	it("maps the restaurant floor pages", () => {
+		expect(getPosPagePath("Floor")).toBe("/vunapos/floor");
+		expect(getPosPagePath("Floor Editor")).toBe("/vunapos/floor/edit");
+		expect(getPosPageFromPath("/vunapos/floor")).toBe("Floor");
+		expect(getPosPageFromPath("/vunapos/floor/edit/")).toBe("Floor Editor");
+	});
+
+	it("lets a navigation guard block and then allow page changes", () => {
+		const pushState = vi.fn();
+		vi.stubGlobal("window", {
+			history: { pushState },
+			location: { pathname: "/vunapos/floor/edit", hash: "" },
+		});
+		useNavigationStore.setState({ activePage: "Floor Editor" });
+		const guard = vi.fn(() => false);
+		setNavigationGuard(guard);
+
+		navigateToPosPage("Profile");
+
+		expect(guard).toHaveBeenCalledWith("Profile");
+		expect(pushState).not.toHaveBeenCalled();
+		expect(useNavigationStore.getState().activePage).toBe("Floor Editor");
+
+		setNavigationGuard(null);
+		navigateToPosPage("Profile");
+
+		expect(pushState).toHaveBeenCalledWith({ vunaposPage: "Profile" }, "", "/vunapos/profile");
+		expect(useNavigationStore.getState().activePage).toBe("Profile");
 	});
 });

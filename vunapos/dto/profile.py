@@ -55,6 +55,9 @@ def profile_to_dict(profile, invoice_mode):
 	default_order_type = profile.get("vunapos_default_order_type") or "Sales Invoice"
 	if default_order_type not in ("Sales Invoice", "Sales Order"):
 		default_order_type = "Sales Invoice"
+	pos_mode = profile.get("vunapos_pos_mode") or "Retail"
+	if pos_mode not in ("Retail", "Restaurant"):
+		pos_mode = "Retail"
 
 	return {
 		"name": profile.name,
@@ -83,6 +86,7 @@ def profile_to_dict(profile, invoice_mode):
 		"ignore_pricing_rule": bool(profile.get("ignore_pricing_rule")),
 		"item_prices_include_tax": bool(profile.get("vunapos_item_prices_include_tax")),
 		"default_order_type": default_order_type,
+		"pos_mode": pos_mode,
 		"allow_service_items": bool(profile.get("vunapos_allow_service_items")),
 		"allow_delivery_charges": bool(profile.get("vunapos_allow_delivery_charges")),
 		"allow_delivery_charge_change": bool(profile.get("vunapos_allow_delivery_charge_change")),
