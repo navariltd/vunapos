@@ -263,3 +263,14 @@ export function tableTextLines(
 	});
 	return { label: base.label, labelSize: base.labelSize, labelDy, lines };
 }
+
+// Where a table's status badge sits: on the top-right corner of a rectangle, or
+// on the rim at 45° for round tables, so it stays clear of the centred text.
+export function statusBadgeCenter(
+	table: { shape?: string; width: number; height: number },
+	center: Point,
+): Point {
+	const round = table.shape === "Round" || table.shape === "Oval";
+	const factor = round ? Math.SQRT1_2 : 1;
+	return { x: center.x + (table.width / 2) * factor, y: center.y - (table.height / 2) * factor };
+}

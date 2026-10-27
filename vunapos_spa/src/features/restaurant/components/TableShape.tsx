@@ -1,16 +1,24 @@
 import type { KeyboardEvent } from "react";
 
-import { boxCenter, screenPxToCanvas, tableTextLayout, tableTextLines } from "../floorPlanGeometry";
-import { tableAccessibleName, tableStatusLines, type TableStatusKind, type TableStatusView } from "../tableStatus";
+import { boxCenter, screenPxToCanvas, statusBadgeCenter, tableTextLayout, tableTextLines } from "../floorPlanGeometry";
+import {
+  tableAccessibleName,
+  tableStatusBadge,
+  tableStatusLines,
+  type TableStatusKind,
+  type TableStatusView,
+} from "../tableStatus";
 import type { RestaurantTableDTO } from "../types";
+import { STATUS_ICON } from "./statusIcons";
 
 // Table colour is reserved for order status (design decision 13). Without a
 // status (the floor editor), every table uses one neutral style.
 const NEUTRAL_FILL = "var(--color-surface)";
 const NEUTRAL_STROKE = "var(--color-on-surface-variant)";
 
-// Status colours never stand alone: the status word is drawn on the table, the
-// outline differs (dashed free, solid occupied) and the legend names them.
+// Status colours never stand alone: the status word is drawn on the table (or a
+// status icon badge when the text does not fit), the outline differs (dashed
+// free, solid occupied) and the legend names them.
 const STATUS_STYLE: Record<TableStatusKind, { fill: string; stroke: string; dash: boolean }> = {
   free: { fill: "var(--color-status-free-container)", stroke: "var(--color-status-free)", dash: true },
   occupied: { fill: "var(--color-status-occupied-container)", stroke: "var(--color-status-occupied)", dash: false },
@@ -36,9 +44,11 @@ export function TableShape({ table, scale, status, now, selected, muted, onActiv
   const textBox = turned ? { ...table, width: table.height, height: table.width } : table;
   const clock = now ?? new Date();
   // Keeps the text inside the shape; secondary lines drop out when they would not fit.
+  const statusLines = status ? tableStatusLines(status, table.seats, clock) : [];
   const text = status
-    ? tableTextLines(textBox, tableStatusLines(status, table.seats, clock), scale)
+    ? tableTextLines(textBox, statusLines, scale)
     : toLines(tableTextLayout(textBox, seatsText, scale), seatsText);
+  const badge = status ? tableStatusBadge(status, statusLines, text.lines.length) : null;
   const isRound = table.shape === "Round" || table.shape === "Oval";
   const style = status ? STATUS_STYLE[status.kind] : null;
   const fill = style?.fill ?? NEUTRAL_FILL;
@@ -122,6 +132,45 @@ export function TableShape({ table, scale, status, now, selected, muted, onActiv
           {line.text}
         </text>
       ))}
+      {badge ? <StatusBadge kind={badge} table={textBox} center={center} scale={scale} /> : null}
+    </g>
+  );
+}
+
+// A fixed-size circle with the status icon on the table's corner.
+function StatusBadge({
+  kind,
+  table,
+  center,
+  scale,
+}: {
+  kind: TableStatusKind;
+  table: { shape?: string; width: number; height: number };
+  center: { x: number; y: number };
+  scale: number;
+}) {
+  const Icon = STATUS_ICON[kind];
+  const at = statusBadgeCenter(table, center);
+  const radius = screenPxToCanvas(10, scale);
+  const iconSize = radius * 1.2;
+  return (
+    <g className="pointer-events-none" aria-hidden="true">
+      <circle
+        cx={at.x}
+        cy={at.y}
+        r={radius}
+        fill={STATUS_STYLE[kind].stroke}
+        stroke="var(--color-surface)"
+        strokeWidth={screenPxToCanvas(1.5, scale)}
+      />
+      <Icon
+        x={at.x - iconSize / 2}
+        y={at.y - iconSize / 2}
+        width={iconSize}
+        height={iconSize}
+        color="var(--color-surface)"
+        strokeWidth={3}
+      />
     </g>
   );
 }

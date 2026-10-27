@@ -129,6 +129,12 @@ export function tableStatusLines(view: TableStatusView, seats: number, now: Date
 	return [[TABLE_STATUS_LABEL.occupied, elapsed].filter(Boolean).join(" · "), second].filter(Boolean);
 }
 
+// A small table drops status text that does not fit. Whenever any is dropped, the
+// table gets a status badge (an icon per status), so status never rests on colour.
+export function tableStatusBadge(view: TableStatusView, lines: string[], shown: number): TableStatusKind | null {
+	return shown < lines.length ? view.kind : null;
+}
+
 // Screen readers get everything, including the full waiter names.
 export function tableAccessibleName(label: string, seats: number, view: TableStatusView, now: Date): string {
 	const parts = [`Table ${label}`, `${seats} ${seats === 1 ? "seat" : "seats"}`, TABLE_STATUS_LABEL[view.kind].toLowerCase()];

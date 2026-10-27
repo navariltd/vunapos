@@ -38,7 +38,7 @@ export function OrderLineRow({
   const showNote = editingNote || Boolean(note);
 
   return (
-    <li className={cn("rounded-md border px-3 py-2", changed ? "border-primary bg-primary/5" : "border-outline-variant")}>
+    <li className={cn("min-w-0 rounded-md border px-3 py-2", changed ? "border-primary bg-primary/5" : "border-outline-variant")}>
       <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-on-surface">{itemName}</p>

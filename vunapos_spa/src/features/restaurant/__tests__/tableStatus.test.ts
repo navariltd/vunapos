@@ -9,6 +9,7 @@ import {
 	statusFor,
 	tableAccessibleName,
 	tableServiceType,
+	tableStatusBadge,
 	tableStatusLines,
 	tableTapAction,
 	waitersLabel,
@@ -142,6 +143,16 @@ describe("table text", () => {
 			"Table T2, 6 seats, occupied, 6 guests, waiter Jane Wanjiku, Brian Otieno, open 45 min",
 		);
 		expect(tableAccessibleName("T1", 1, statusFor(statuses, "t1"), now)).toBe("Table T1, 1 seat, free");
+	});
+
+	it("adds a status badge whenever status text is dropped", () => {
+		const t2 = statusFor(statuses, "t2");
+		const lines = tableStatusLines(t2, 6, now);
+		expect(tableStatusBadge(t2, lines, lines.length)).toBeNull();
+		expect(tableStatusBadge(t2, lines, 1)).toBe("occupied");
+		expect(tableStatusBadge(t2, lines, 0)).toBe("occupied");
+		const t1 = statusFor(statuses, "t1");
+		expect(tableStatusBadge(t1, tableStatusLines(t1, 4, now), 0)).toBe("free");
 	});
 
 	it("shortens waiter names", () => {

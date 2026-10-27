@@ -38,7 +38,7 @@ export function TableOrdersSheet({ tableLabel, orders, now, onOpenOrder, onNewOr
               onClick={() => onOpenOrder(order.name)}
             >
               <span className="min-w-0">
-                <span className="block font-medium text-on-surface">{order.name}</span>
+                <span className="block truncate font-medium text-on-surface">{order.name}</span>
                 <span className="block truncate text-xs text-on-surface-variant">
                   {[order.pax ? `${order.pax} guests` : null, order.waiter_name || order.waiter].filter(Boolean).join(" · ")}
                 </span>

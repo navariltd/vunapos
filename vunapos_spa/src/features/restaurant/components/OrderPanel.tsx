@@ -34,7 +34,7 @@ export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChang
   const canChangeContext = !draft.order && Boolean(onChangeContext);
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="rounded-full bg-surface-container px-3 py-1 font-medium text-on-surface">{draft.service_type}</span>
         {draft.table_label ? (
@@ -48,7 +48,7 @@ export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChang
         ) : null}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
         <div>
           <span className="mb-1 block text-xs font-medium text-on-surface-variant">Guests</span>
           <div className="flex items-center gap-1">
@@ -75,7 +75,7 @@ export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChang
             </button>
           </div>
         </div>
-        <div className={readOnly ? "pointer-events-none opacity-60" : undefined}>
+        <div className={readOnly ? "min-w-0 pointer-events-none opacity-60" : "min-w-0"}>
           <span className="mb-1 block text-xs font-medium text-on-surface-variant">Customer</span>
           <CustomerSelector
             allowCreate={false}

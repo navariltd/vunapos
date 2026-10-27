@@ -21,7 +21,15 @@ import { useOrderActions } from "../hooks/useOrderActions";
 import { useStartOrder } from "../hooks/useStartOrder";
 import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
 import { newId } from "../ids";
-import { addMenuItem, draftSubtotal, hasPendingChanges, setContext, unsentCount, type OrderDraft } from "../orderDraft";
+import {
+  addMenuItem,
+  draftSubtotal,
+  hasPendingChanges,
+  itemQuantities,
+  setContext,
+  unsentCount,
+  type OrderDraft,
+} from "../orderDraft";
 import { describeOrderError, type OrderErrorView } from "../orderErrors";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import type { OrderPreviewDTO } from "../types";
@@ -87,6 +95,7 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
   );
   const subtotal = activeDraft ? draftSubtotal(activeDraft, rates) : { amount: 0, unpriced: 0 };
   const waiting = unsentCount(activeDraft);
+  const quantities = useMemo(() => itemQuantities(activeDraft), [activeDraft]);
 
   const addItem = useCallback(
     (item: ItemDTO) => {
@@ -141,7 +150,7 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
   const canViewBill = Boolean(activeDraft.order) && !dirty && !previewing && Boolean(activeDraft.order?.items.length);
 
   return (
-    <section className="flex h-full min-h-0 flex-col">
+    <section className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex items-center gap-2 border-b border-outline-variant px-3 py-2 sm:px-4">
         <Button variant="ghost" className="size-10 shrink-0 p-0" aria-label="Back" onClick={back}>
           <ArrowLeft className="size-5" />
@@ -182,21 +191,23 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
         ))}
       </div>
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_clamp(24rem,30vw,30rem)]">
-        <div className={cn("min-h-0 flex-col p-3 sm:p-4", tab === "menu" ? "flex" : "hidden lg:flex")}>
+      {/* Explicit columns: an implicit (auto) column would grow to fit unwrapped text. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_clamp(24rem,30vw,30rem)]">
+        <div className={cn("min-h-0 min-w-0 flex-col p-3 sm:p-4", tab === "menu" ? "flex" : "hidden lg:flex")}>
           <MenuPanel
             menu={menu.menu}
             isLoading={menu.isLoading}
             error={menu.error}
             currency={currency}
             disabled={readOnly || saving}
+            quantities={quantities}
             onRetry={menu.reload}
             onAddItem={addItem}
           />
         </div>
         <aside
           className={cn(
-            "min-h-0 flex-col border-outline-variant lg:border-l",
+            "min-h-0 min-w-0 flex-col border-outline-variant lg:border-l",
             tab === "order" ? "flex" : "hidden lg:flex",
           )}
         >
@@ -216,8 +227,8 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
       {/* Totals and actions stay in reach on every screen size. */}
       <div className="flex items-center gap-2 border-t border-outline-variant bg-surface px-3 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] mb-[58px] lg:mb-0 sm:px-4">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-on-surface-variant">Subtotal (before charges)</p>
-          <p className="text-base font-semibold tabular-nums text-on-surface">
+          <p className="truncate text-xs text-on-surface-variant">Subtotal (before charges)</p>
+          <p className="truncate text-base font-semibold tabular-nums text-on-surface">
             {formatCurrency(subtotal.amount, currency)}
             {subtotal.unpriced ? <span className="ml-1 text-xs font-normal text-on-surface-variant">+ {subtotal.unpriced} not priced</span> : null}
           </p>

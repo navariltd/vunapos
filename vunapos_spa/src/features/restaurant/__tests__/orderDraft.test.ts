@@ -5,6 +5,7 @@ import {
 	draftSubtotal,
 	effectiveHeader,
 	hasPendingChanges,
+	itemQuantities,
 	newOrderDraft,
 	planSave,
 	removeUnsent,
@@ -220,5 +221,19 @@ describe("draftSubtotal", () => {
 			["GE-TEA", 150],
 		]);
 		expect(draftSubtotal(draft, rates)).toEqual({ amount: 3 * 950 + 150, unpriced: 1 });
+	});
+});
+
+describe("itemQuantities", () => {
+	it("counts each item across sent lines (with raised quantities) and waiting lines", () => {
+		let draft = setSentQty(withServerOrder(null, serverOrder()), "s1", 3);
+		draft = addMenuItem(draft, biryani, nextId);
+		draft = addMenuItem(draft, tea, nextId);
+		draft = addMenuItem(draft, tea, nextId);
+		expect(Object.fromEntries(itemQuantities(draft))).toEqual({ "GE-BIRYANI": 4, "GE-TEA": 2 });
+	});
+
+	it("is empty without a draft", () => {
+		expect(itemQuantities(null).size).toBe(0);
 	});
 });

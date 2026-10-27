@@ -35,7 +35,7 @@ export function Sheet({ isOpen, title, description, children, footer, onClose }:
         role="dialog"
         aria-modal="true"
         aria-labelledby="restaurant-sheet-title"
-        className="flex max-h-[85dvh] w-full flex-col rounded-t-xl border border-outline-variant bg-surface shadow-xl sm:max-w-lg sm:rounded-xl"
+        className="flex max-h-[85dvh] w-full min-w-0 flex-col rounded-t-xl border border-outline-variant bg-surface shadow-xl sm:max-w-lg sm:rounded-xl"
       >
         <div className="flex items-start gap-3 border-b border-outline-variant px-4 py-3">
           <div className="min-w-0 flex-1">

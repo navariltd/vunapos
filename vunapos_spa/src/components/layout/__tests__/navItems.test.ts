@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { bottomNavItems, sidebarItems } from "../navItems";
+import { bottomNavItems, sidebarFooterItems, sidebarItems } from "../navItems";
 
 const labels = (items: Array<{ label: string }>) => items.map((item) => item.label);
 
@@ -10,6 +10,7 @@ describe("retail navigation", () => {
 		expect(labels(sidebarItems({}, "Retail"))).toEqual(expected);
 		expect(labels(sidebarItems({ canTakePayment: false }, "Retail"))).toEqual(expected);
 		expect(labels(bottomNavItems({ canTakePayment: false }, "Retail"))).toEqual(expected);
+		expect(sidebarFooterItems({ canTakePayment: true }, "Retail")).toEqual([]);
 	});
 
 	it("still hides Payments and Customers when they are disabled", () => {
@@ -20,16 +21,21 @@ describe("retail navigation", () => {
 });
 
 describe("restaurant navigation", () => {
-	it("shows Floor and Orders, plus Close Shift only for users who can take payment", () => {
-		expect(labels(sidebarItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor", "Orders", "Close Shift"]);
+	it("shows Floor and Orders in the main navigation for everyone", () => {
+		expect(labels(sidebarItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor", "Orders"]);
 		expect(labels(sidebarItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Floor", "Orders"]);
 		expect(labels(sidebarItems(undefined, "Restaurant"))).toEqual(["Floor", "Orders"]);
 	});
 
-	it("keeps the bottom nav to Floor, Orders and Profile, even for cashiers", () => {
-		const expected = ["Floor", "Orders", "Profile"];
-		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(expected);
-		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(expected);
+	it("puts Close Shift at the bottom of the sidebar, for cashiers only", () => {
+		expect(labels(sidebarFooterItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Close Shift"]);
+		expect(sidebarFooterItems({ canTakePayment: false }, "Restaurant")).toEqual([]);
+		expect(sidebarFooterItems(undefined, "Restaurant")).toEqual([]);
+	});
+
+	it("gives cashiers a fourth bottom nav item for Close Shift; waiters keep three", () => {
+		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor", "Orders", "Close Shift", "Profile"]);
+		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Floor", "Orders", "Profile"]);
 	});
 
 	it("keeps Orders highlighted on the order screen, which is not a nav item itself", () => {

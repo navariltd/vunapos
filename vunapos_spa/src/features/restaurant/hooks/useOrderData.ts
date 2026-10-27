@@ -21,19 +21,15 @@ export function useTableStatus(posProfile?: string) {
 	return { ...result, statuses };
 }
 
-// Open orders for the Orders page, polled while it is on screen.
-export function useOpenOrders(posProfile?: string, serviceType?: string | null) {
+// All open orders for the Orders page, polled while it is on screen. The page
+// filters them on this device (ordersFilter.ts).
+export function useOpenOrders(posProfile?: string) {
 	const call = useFrappePostCall(vunaMethods.listRestaurantOrders);
 	const fetcher = useCallback(
-		() =>
-			listRestaurantOrders(call.call, {
-				pos_profile: posProfile || "",
-				status: "Open",
-				service_type: serviceType || undefined,
-			}),
-		[call.call, posProfile, serviceType],
+		() => listRestaurantOrders(call.call, { pos_profile: posProfile || "", status: "Open" }),
+		[call.call, posProfile],
 	);
-	return usePolledData(posProfile ? `orders:${posProfile}:${serviceType || ""}` : null, fetcher);
+	return usePolledData(posProfile ? `orders:${posProfile}` : null, fetcher);
 }
 
 // The menu for an order's service type and table (floor). Reloads when either

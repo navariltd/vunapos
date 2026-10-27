@@ -15,6 +15,7 @@ import {
 	screenToCanvas,
 	snapAngle,
 	snapValue,
+	statusBadgeCenter,
 	tableTextLayout,
 	tableTextLines,
 	type Box,
@@ -253,5 +254,17 @@ describe("tableTextLines", () => {
 		const layout = tableTextLines({ ...big, width: 60, height: 60 }, ["Free"], 0.4);
 		expect(layout.lines).toEqual([]);
 		expect(layout.labelDy).toBeCloseTo(0, 6);
+	});
+});
+
+describe("statusBadgeCenter", () => {
+	it("sits on the top-right corner of a rectangle", () => {
+		expect(statusBadgeCenter({ shape: "Square", width: 80, height: 60 }, { x: 140, y: 130 })).toEqual({ x: 180, y: 100 });
+	});
+
+	it("sits on the rim at 45° for round tables", () => {
+		const point = statusBadgeCenter({ shape: "Round", width: 80, height: 80 }, { x: 140, y: 140 });
+		expect(Math.hypot(point.x - 140, point.y - 140)).toBeCloseTo(40, 6);
+		expect(point.x - 140).toBeCloseTo(140 - point.y, 6);
 	});
 });

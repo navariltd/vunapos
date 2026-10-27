@@ -19,7 +19,7 @@ export function ServiceTypePicker({ isOpen, serviceTypes, onSelect, onClose }: S
   return (
     <Sheet isOpen={isOpen} title="New order" description="Choose the service type." onClose={onClose}>
       {types.length ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {types.map((type) => {
             const Icon = type.requires_table ? Armchair : ShoppingBag;
             return (

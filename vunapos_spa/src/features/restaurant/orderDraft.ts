@@ -306,6 +306,16 @@ export function unsentCount(draft: OrderDraft | null): number {
 	return draft?.unsent.reduce((sum, line) => sum + line.qty, 0) ?? 0;
 }
 
+// How many of each item are on the order, sent and waiting, for the menu's "+" buttons.
+export function itemQuantities(draft: OrderDraft | null): Map<string, number> {
+	const result = new Map<string, number>();
+	if (!draft) return result;
+	const bump = (itemCode: string, qty: number) => result.set(itemCode, (result.get(itemCode) ?? 0) + qty);
+	for (const line of draft.order?.items ?? []) bump(line.item_code, sentQty(draft, line.line_id));
+	for (const line of draft.unsent) bump(line.item_code, line.qty);
+	return result;
+}
+
 // Running subtotal from menu rates (before service charge and taxes). Lines whose
 // item is not on the current menu are left out and reported.
 export function draftSubtotal(draft: OrderDraft, rates: Map<string, number>): { amount: number; unpriced: number } {
