@@ -15,6 +15,10 @@ type ConfirmDialogProps = {
   hideCancel?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
+  // An alternative action shown before the confirm button. Unlike cancel, Escape,
+  // the backdrop and the close button never trigger it.
+  secondaryLabel?: string;
+  onSecondary?: () => void;
   size?: "md" | "lg";
   title: string;
 };
@@ -31,6 +35,8 @@ export function ConfirmDialog({
   loading = false,
   onCancel,
   onConfirm,
+  secondaryLabel,
+  onSecondary,
   size = "md",
   title,
 }: ConfirmDialogProps) {
@@ -96,6 +102,11 @@ export function ConfirmDialog({
               {cancelLabel}
             </Button>
           )}
+          {secondaryLabel && onSecondary ? (
+            <Button variant="secondary" disabled={loading} onClick={onSecondary}>
+              {secondaryLabel}
+            </Button>
+          ) : null}
           <Button
             variant={danger ? "danger" : "primary"}
             disabled={loading || confirmDisabled}
