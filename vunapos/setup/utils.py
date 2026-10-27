@@ -1,23 +1,93 @@
 import frappe
 from erpnext.setup.utils import enable_all_roles_and_domains
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+from frappe.permissions import setup_custom_perms
 from frappe.utils import now_datetime
 
 POS_MODES = ("Retail", "Restaurant")
 DEFAULT_POS_MODE = "Retail"
 RESTAURANT_MANAGER_ROLE = "VunaPOS Restaurant Manager"
+CASHIER_ROLE = "VunaPOS Cashier"
+WAITER_ROLE = "VunaPOS Waiter"
+# Display order: the Profile page lists a user's roles in this order.
+RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, RESTAURANT_MANAGER_ROLE)
+
+_READ = {"read": 1}
+# Catalogue pricing (ERPNext's apply_pricing_rule) needs doctype-level read on
+# the invoice doctype. "Only if creator" passes that check without exposing
+# invoices to users who never create any.
+_OWN_INVOICE_READ = {"read": 1, "if_owner": 1}
+_BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
+_SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
+_MENU_READS = {
+	"POS Profile": _READ,
+	"Item": _READ,
+	"Customer": _READ,
+	# Pricing an order (preview and checkout) resolves the customer's receivable
+	# account; ERPNext only needs "select" for that, not read.
+	"Account": {"select": 1},
+}
+
+# Grants on Frappe/ERPNext doctypes, so each role works without Sales User or
+# Accounts User. Permissions on VunaPOS doctypes live in their DocType JSON.
+ROLE_PERMISSIONS = {
+	WAITER_ROLE: {**_MENU_READS, "Sales Invoice": _OWN_INVOICE_READ, "POS Invoice": _OWN_INVOICE_READ},
+	RESTAURANT_MANAGER_ROLE: {
+		**_MENU_READS,
+		"Sales Invoice": _OWN_INVOICE_READ,
+		"POS Invoice": _OWN_INVOICE_READ,
+	},
+	CASHIER_ROLE: {
+		**_MENU_READS,
+		"Sales Invoice": _BILLING,
+		"POS Invoice": _BILLING,
+		"POS Opening Entry": _SHIFT,
+		"POS Closing Entry": _SHIFT,
+		# Closing a shift lists the cashier's own customer receipts.
+		"Payment Entry": {"read": 1, "if_owner": 1},
+	},
+}
 
 
 def ensure_vunapos_roles():
-	if frappe.db.exists("Role", RESTAURANT_MANAGER_ROLE):
+	for role in RESTAURANT_ROLES:
+		if not frappe.db.exists("Role", role):
+			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(
+				ignore_permissions=True
+			)
+	for role, grants in ROLE_PERMISSIONS.items():
+		for doctype, flags in grants.items():
+			_ensure_role_permission(doctype, role, flags)
+
+
+def _ensure_role_permission(doctype, role, flags):
+	"""Add a level 0 rule for the role, unless the site already has one.
+
+	An existing rule is left alone, so changes made in Role Permissions Manager
+	survive migrate.
+	"""
+	if not frappe.db.exists("DocType", doctype):
 		return
+	if frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": role, "permlevel": 0}):
+		return
+	# The first Custom DocPerm replaces a doctype's standard rules, so copy those
+	# first; existing roles keep exactly the access they had.
+	setup_custom_perms(doctype)
 	frappe.get_doc(
 		{
-			"doctype": "Role",
-			"role_name": RESTAURANT_MANAGER_ROLE,
-			"desk_access": 1,
+			"doctype": "Custom DocPerm",
+			"parent": doctype,
+			"parenttype": "DocType",
+			"parentfield": "permissions",
+			"role": role,
+			"permlevel": 0,
+			# Custom DocPerm defaults read and export to 1; grant only the listed rights.
+			"read": 0,
+			"export": 0,
+			**flags,
 		}
 	).insert(ignore_permissions=True)
+	frappe.clear_cache(doctype=doctype)
 
 
 def ensure_vunapos_custom_fields():

@@ -2,7 +2,8 @@
 
 Status: agreed design decisions for the VunaPOS Restaurant POS feature. Decisions 1-4
 apply to the current phase (floor plan backend and editor). Decisions 5-8 are recorded
-now so early work does not block them, and are implemented in later phases.
+now so early work does not block them, and are implemented in later phases. Decisions 6
+and 12 (shift on entry for cashiers, and the restaurant roles) are built.
 
 ## Decisions
 
@@ -49,13 +50,23 @@ now so early work does not block them, and are implemented in later phases.
   cart and goes through the existing `create_and_submit_invoice` checkout.
 - Existing checkout code stays untouched.
 
-### 6. Opening Entry only for payment (later phase)
+### 6. Shift on entry for users who take payment
 
-- Waiters and kitchen staff do not need a POS Opening Entry to use Restaurant mode.
-- `PosOpeningGate` is **not removed** in Restaurant mode; it **moves**. Instead of
-  guarding the whole app, it guards payment: any user taking payment must have an open
-  POS Opening Entry before checkout.
-- Retail mode keeps the current behaviour, where the gate guards the whole app.
+- In Restaurant mode, whether a user needs a shift depends on one role: **VunaPOS
+  Cashier**. Bootstrap returns it as `can_take_payment`. No other role counts, including
+  VunaPOS Restaurant Manager and System Manager.
+- Users with `can_take_payment` must open a POS Opening Entry on entry. `RestaurantApp`
+  wraps the restaurant shell in the same `PosOpeningGate` and `PosOpeningEntryDialog`
+  that Retail uses.
+- Everyone else (waiters, managers without the Cashier role, and later kitchen staff)
+  goes straight to the floor with no shift. They cannot bill: they have no permission to
+  create invoices, so `checkout_order` refuses them even if they have a shift.
+- `checkout_order` adds no role check of its own. The open shift is the accountability:
+  checkout still requires the billing user's open POS Opening Entry.
+- Close Shift is shown only to `can_take_payment` users: in the restaurant sidebar, and
+  on phones from the Profile page (the bottom nav stays Floor and Profile). Closing the
+  shift reloads the app, so the opening dialog is shown again.
+- Retail mode is unchanged: the gate guards the whole app for every user.
 
 ### 7. Closing a shift with open tables (later phase)
 
@@ -88,8 +99,8 @@ Left out of the first floor plan UI and planned for later phases:
 - **Background image upload** in the floor editor. An existing `background_image` is
   drawn and kept on save, but can only be set in Desk for now.
 - **Undo and redo** in the floor editor.
-- **Close Shift and Sales History** in Restaurant mode. The restaurant navigation has
-  only the Floor and Profile pages until orders and payment are built.
+- **Sales History** in Restaurant mode. Close Shift is available to cashiers
+  (decision 6).
 
 ### 11. Choosing among several POS Profiles (known gap, later phase)
 
@@ -126,11 +137,12 @@ Agreed proposal (documentation only, nothing built yet):
 
 **Needs lead approval:** this changes how retail resolves profiles today.
 
-### 12. Waiter and kitchen roles (later phase)
+### 12. Restaurant roles
 
-- The future **VunaPOS Waiter** and **VunaPOS Kitchen** roles must ship with read
-  permission on POS Profile. They are created in code, like the VunaPOS Restaurant
-  Manager role (`ensure_vunapos_roles()`), so no manual setup is needed per site.
+- **VunaPOS Waiter**, **VunaPOS Cashier** and **VunaPOS Restaurant Manager** are created
+  in code with the permissions they need, so no manual setup is needed per site. See
+  [Roles](#roles). **VunaPOS Kitchen** comes later and must follow the same pattern.
+- Every role gets read permission on POS Profile.
 - Reason: VunaPOS reads the resolved POS Profile during bootstrap. Standard ERPNext
   gives POS Profile read only to Accounts Manager, Accounts User and Sales Manager. A
   user with only Sales User is stopped with "POS Profile access required" until an
@@ -251,8 +263,9 @@ tables that have linked orders. Its callers do not change.
 
 ## Permissions
 
-- New role: **VunaPOS Restaurant Manager**, created by `ensure_vunapos_roles()` during
-  install, migrate and test setup.
+- Roles: **VunaPOS Restaurant Manager**, **VunaPOS Cashier** and **VunaPOS Waiter**,
+  created by `ensure_vunapos_roles()` during install, migrate and test setup. See
+  [Roles](#roles).
 - Saving a floor plan requires VunaPOS Restaurant Manager or System Manager.
 - Saving does not require the manager to be assigned to the POS Profile, so a manager
   can set up floors for any profile.
@@ -261,15 +274,60 @@ tables that have linked orders. Its callers do not change.
   load the floor. Opening VunaPOS at all still needs read permission on POS Profile,
   which bootstrap checks (see decision 12).
 - DocType permissions: VunaPOS Restaurant Manager and System Manager have full access to
-  Floor and Table; Sales User has read only.
+  Floor and Table; Sales User, VunaPOS Waiter and VunaPOS Cashier have read only.
+
+## Roles
+
+Each role works on its own: a user does not also need Sales User or Accounts User. The
+existing Sales User rules on the VunaPOS doctypes are kept, so current setups keep
+working.
+
+| Doctype | VunaPOS Waiter | VunaPOS Cashier | VunaPOS Restaurant Manager |
+| --- | --- | --- | --- |
+| POS Profile | Read | Read | Read |
+| VunaPOS Restaurant Order | Read, write, create, print | Read, write, create, print | Full |
+| VunaPOS Service Type, Floor, Table | Read | Read | Full |
+| Item, Customer | Read | Read | Read |
+| Account | Select | Select | Select |
+| Sales Invoice, POS Invoice | Read, only if creator | Read, write, create, submit, print | Read, only if creator |
+| POS Opening Entry, POS Closing Entry | None | Read, write, create, submit | None |
+| Payment Entry | None | Read, only if creator | None |
+
+Why each grant is needed:
+
+- **POS Profile read:** bootstrap reads the resolved profile (decision 12).
+- **Item read and invoice read:** loading the menu prices items through ERPNext.
+  `get_item_details` checks Item read, and `apply_pricing_rule` checks read on the
+  invoice doctype. "Only if creator" passes that check without showing anyone else's
+  invoices to waiters and managers, who never create invoices.
+- **Account select:** pricing an order (`preview_order` and checkout) looks up the
+  customer's receivable account. ERPNext only needs select for that, not read.
+- **Cashier invoice rights:** checkout creates, saves and submits the invoice. The
+  invoice doctype follows POS Settings, so both are granted. Cancel, amend and delete
+  are not.
+- **Cashier shift rights:** opening and closing a shift create and submit the POS
+  Opening and Closing Entry. Standard ERPNext gives these only to Sales Manager.
+- **Cashier Payment Entry read:** closing a shift lists the cashier's own customer
+  receipts.
+
+How the rules are applied:
+
+- Rules on VunaPOS doctypes are in their DocType JSON.
+- Rules on Frappe and ERPNext doctypes are Custom DocPerm rows added by
+  `ensure_vunapos_roles()`. A rule is added only when the role has no level 0 rule on
+  that doctype yet, so changes made in Role Permissions Manager survive migrate. To
+  change a shipped rule on existing sites, add a patch.
+- Adding the first Custom DocPerm to a doctype copies its standard rules into Custom
+  DocPerm first, so every other role keeps exactly the access it had. From then on, that
+  site no longer picks up later changes to the doctype's standard rules from ERPNext.
 
 ## SPA integration (later step)
 
 - The mode switch sits directly below `BootstrapGate`, the first point where the
   resolved profile is known. Retail keeps the current chain
   (`PosOpeningGate -> AuthenticatedApp -> POSHomePage`) unchanged. Restaurant renders its
-  own app inside the shared `AppShell`, with `PosOpeningGate` moved to guard payment
-  (decision 6).
+  own app inside the shared `AppShell`. `PosOpeningGate` wraps it only for users with
+  `can_take_payment` (decision 6).
 - `navigationStore` gains restaurant pages (`/vunapos/floor`, `/vunapos/floor/edit`).
   In Restaurant mode, `/vunapos` resolves to the floor view.
 - `POSHomePage` stays retail-only.

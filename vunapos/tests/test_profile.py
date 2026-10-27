@@ -129,7 +129,7 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		self.assertEqual(fields["vunapos_tab"].label, "VunaPOS")
 		self.assertEqual(fields["vunapos_pos_mode_section"].insert_after, "vunapos_tab")
 		self.assertEqual(fields["vunapos_pos_mode"].insert_after, "vunapos_pos_mode_section")
-		self.assertEqual(fields["vunapos_sales_section"].insert_after, "vunapos_pos_mode")
+		self.assertEqual(fields["vunapos_sales_section"].insert_after, "vunapos_restaurant_menu")
 		self.assertEqual(fields["vunapos_home_screen_section"].fieldtype, "Section Break")
 		self.assertEqual(fields["vunapos_home_screen_section"].label, "Mobile Settings")
 		self.assertEqual(fields["vunapos_home_screen_section"].insert_after, "vunapos_operations_section")

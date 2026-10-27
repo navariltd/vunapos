@@ -83,3 +83,10 @@ export type SaveFloorPlanResultDTO = {
 		tables: Record<string, string>;
 	};
 };
+
+// bootstrap.restaurant (null on Retail profiles). The shapes live with the cached
+// profile in lib/types; these names match the frontend guide.
+export type {
+	CachedServiceType as ServiceTypeDTO,
+	CachedRestaurantSettings as RestaurantSettingsDTO,
+} from "../../lib/types";
