@@ -1,6 +1,8 @@
 // Mirrors vunapos/dto/restaurant.py and vunapos/services/floor_plan_service.py.
 // Positions and sizes are in virtual canvas units (1000 x 700), not pixels.
 
+import type { InvoiceDTO, ItemDTO } from "../pos/types";
+
 export type FloorElementType = "Wall" | "Door" | "Window" | "Bar Counter" | "Plant" | "Label";
 
 export type RestaurantTableShape = "Square" | "Round" | "Rectangle" | "Oval";
@@ -89,3 +91,89 @@ export type {
 	CachedServiceType as ServiceTypeDTO,
 	CachedRestaurantSettings as RestaurantSettingsDTO,
 } from "../../lib/types";
+
+// ---- orders (vunapos/dto/restaurant.py, vunapos/services/restaurant_order_service.py) ----
+
+export type MenuDTO = {
+	pos_profile: string;
+	service_type: string | null;
+	table: string | null;
+	floor: string | null;
+	price_list: string;
+	restricted: boolean;
+	source: "Menu" | "POS Profile Item Groups" | "All Items";
+	categories: Array<{ item_group: string; label: string }>;
+	items: Array<ItemDTO & { menu_category: string | null }>;
+};
+
+export type TableOrderRefDTO = {
+	name: string;
+	service_type: string;
+	pax: number;
+	waiter: string;
+	waiter_name: string | null;
+	opened_at: string;
+};
+
+export type TableStatusDTO = {
+	table: string;
+	table_label: string;
+	floor: string;
+	seats: number;
+	status: "Free" | "Occupied";
+	orders: TableOrderRefDTO[];
+};
+
+export type RestaurantOrderLineDTO = {
+	line_id: string;
+	item_code: string;
+	item_name: string;
+	qty: number;
+	uom: string;
+	note: string | null;
+	added_by: string;
+	added_at: string;
+};
+
+export type RestaurantOrderStatus = "Open" | "Billed" | "Cancelled";
+
+export type RestaurantOrderDTO = {
+	name: string;
+	status: RestaurantOrderStatus;
+	pos_profile: string;
+	service_type: string;
+	table: string | null;
+	table_label: string | null;
+	customer: string | null;
+	customer_name: string | null;
+	pax: number;
+	waiter: string;
+	waiter_name: string | null;
+	opened_at: string;
+	order_note: string | null;
+	items: RestaurantOrderLineDTO[];
+	invoice_doctype: string | null;
+	invoice: string | null;
+	modified: string;
+};
+
+export type RestaurantOrderSummaryDTO = Pick<
+	RestaurantOrderDTO,
+	| "name"
+	| "status"
+	| "service_type"
+	| "table"
+	| "table_label"
+	| "customer"
+	| "pax"
+	| "waiter"
+	| "waiter_name"
+	| "opened_at"
+	| "invoice_doctype"
+	| "invoice"
+	| "modified"
+>;
+
+export type OrderLineInput = { item_code: string; qty: number; uom?: string; note?: string; line_id: string };
+
+export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };

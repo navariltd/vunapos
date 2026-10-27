@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   CreditCard,
   Home,
   LogOut,
@@ -31,14 +32,16 @@ export type NavFeatureFlags = {
 const items: NavItem[] = [
   { label: "Home", title: "Home", icon: Home, modes: ["Retail"] },
   { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
+  // The order screen is not a nav item; Orders stays highlighted while it is open.
+  { label: "Orders", title: "Orders", icon: ClipboardList, modes: ["Restaurant"], activeFor: ["Order"] },
   { label: "Invoices", title: "Sales History", icon: ReceiptText, modes: ["Retail"] },
   { label: "Payments", title: "Payments", icon: CreditCard, modes: ["Retail"] },
   { label: "Customers", title: "Customers", icon: Users, modes: ["Retail"] },
   { label: "Close Shift", title: "Close Shift", icon: LogOut, modes: ["Retail", "Restaurant"] },
 ];
 
-// The retail bottom nav has no Profile entry. Restaurant mode has only one page,
-// so Profile is added there to keep it reachable on small screens.
+// The retail bottom nav has no Profile entry. Restaurant mode adds one to keep
+// Profile reachable on small screens.
 const restaurantProfileItem: NavItem = {
   label: "Profile",
   title: "Profile",
@@ -57,17 +60,21 @@ export function sidebarItems(features?: NavFeatureFlags, mode: PosMode = "Retail
       return features?.allowCustomerPayments !== false;
     if (item.label === "Customers")
       return features?.allowCustomerManagement !== false;
-    if (item.label === "Close Shift" && mode === "Restaurant")
-      return Boolean(features?.canTakePayment);
+    // Restaurant mode shows Close Shift apart from the main navigation (sidebarFooterItems).
+    if (item.label === "Close Shift" && mode === "Restaurant") return false;
     return true;
   });
 }
 
+// Items at the bottom of the sidebar, just above the user card. Restaurant mode
+// puts Close Shift there, for users with the VunaPOS Cashier role only.
+export function sidebarFooterItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
+  if (mode !== "Restaurant" || !features?.canTakePayment) return [];
+  return items.filter((item) => item.label === "Close Shift");
+}
+
 export function bottomNavItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
   if (mode !== "Restaurant") return sidebarItems(features, mode);
-  // Phones keep Floor and Profile; cashiers reach Close Shift from Profile.
-  return [
-    ...sidebarItems(features, mode).filter((item) => item.label !== "Close Shift"),
-    restaurantProfileItem,
-  ];
+  // Phones: Floor, Orders, Close Shift (cashiers only), Profile.
+  return [...sidebarItems(features, mode), ...sidebarFooterItems(features, mode), restaurantProfileItem];
 }

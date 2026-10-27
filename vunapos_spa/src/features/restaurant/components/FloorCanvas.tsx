@@ -2,6 +2,7 @@ import { useRef } from "react";
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, screenPxToCanvas } from "../floorPlanGeometry";
 import { useCanvasScale } from "../hooks/useCanvasScale";
+import { statusFor, type TableStatusView } from "../tableStatus";
 import type { RestaurantFloorDTO, RestaurantTableDTO } from "../types";
 import { ElementShape } from "./ElementShape";
 import { TableShape } from "./TableShape";
@@ -9,11 +10,14 @@ import { TableShape } from "./TableShape";
 type FloorCanvasProps = {
   floor: Pick<RestaurantFloorDTO, "floor_name" | "background_color" | "background_image" | "elements" | "tables">;
   onTableActivate?: (table: RestaurantTableDTO) => void;
+  // In service: each table's status (tables missing from it are free) and the clock.
+  statuses?: Map<string, TableStatusView>;
+  now?: Date;
 };
 
 // Read-only floor drawing on the fixed 1000 x 700 virtual canvas. The SVG
 // viewBox scales it to the container while keeping the aspect ratio.
-export function FloorCanvas({ floor, onTableActivate }: FloorCanvasProps) {
+export function FloorCanvas({ floor, onTableActivate, statuses, now }: FloorCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { scale } = useCanvasScale(containerRef);
 
@@ -51,6 +55,8 @@ export function FloorCanvas({ floor, onTableActivate }: FloorCanvasProps) {
             key={table.name}
             table={table}
             scale={scale}
+            status={statuses ? statusFor(statuses, table.name) : undefined}
+            now={now}
             onActivate={onTableActivate ? () => onTableActivate(table) : undefined}
           />
         ))}

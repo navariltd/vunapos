@@ -102,6 +102,18 @@ Left out of the first floor plan UI and planned for later phases:
 - **Undo and redo** in the floor editor.
 - **Sales History** in Restaurant mode. Close Shift is available to cashiers
   (decision 6).
+- **Items with variants on the menu.** `get_menu` lists variant templates but not their
+  variants, and the retail variant lookup prices from the profile's price list rather
+  than the service type's. The order screen shows templates disabled, marked
+  "Variants not supported yet", until the menu can return variants with service type
+  prices.
+- **Order taking, later stages.** Stage 1 (taking orders: floor status, orders list,
+  order screen, bill preview) is built. Still to come: checkout and billing, cancelling
+  orders, removing sent lines or lowering a sent quantity (both follow the item removal
+  rule, with a manager PIN when the profile requires it), moving tables, switching the
+  service type of a saved order, request bill, and kitchen tickets.
+- **Creating customers in Restaurant mode.** The order screen's customer selector only
+  searches for now; new orders start with the POS Profile's default customer.
 
 ### 11. Choosing among several POS Profiles (known gap, later phase)
 

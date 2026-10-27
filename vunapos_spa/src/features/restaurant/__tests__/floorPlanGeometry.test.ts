@@ -15,7 +15,9 @@ import {
 	screenToCanvas,
 	snapAngle,
 	snapValue,
+	statusBadgeCenter,
 	tableTextLayout,
+	tableTextLines,
 	type Box,
 } from "../floorPlanGeometry";
 
@@ -226,5 +228,43 @@ describe("tableTextLayout", () => {
 		const square = tableTextLayout(table({ table_label: "Terrace 4" }), "4 seats", 1);
 		const round = tableTextLayout(table({ table_label: "Terrace 4", shape: "Round" }), "4 seats", 1);
 		expect(round.labelSize).toBeLessThan(square.labelSize);
+	});
+});
+
+describe("tableTextLines", () => {
+	const big = { table_label: "T1", seats: 4, shape: "Square", width: 160, height: 160 };
+
+	it("fits the label and the secondary lines in order, centred as a block", () => {
+		const layout = tableTextLines(big, ["Occupied · 12 min", "3 guests · Jane"], 1);
+		expect(layout.lines.map((line) => line.text)).toEqual(["Occupied · 12 min", "3 guests · Jane"]);
+		const top = layout.labelDy - layout.labelSize / 2;
+		const last = layout.lines[layout.lines.length - 1];
+		const bottom = last.dy + last.size / 2;
+		expect(top + bottom).toBeCloseTo(0, 6);
+	});
+
+	it("drops lines that no longer fit, keeping the first ones", () => {
+		const small = { ...big, width: 80, height: 80 };
+		const layout = tableTextLines(small, ["Free", "4 seats", "extra line"], 1);
+		expect(layout.lines.length).toBeLessThan(3);
+		expect(layout.lines.map((line) => line.text)).toEqual(["Free", "4 seats"].slice(0, layout.lines.length));
+	});
+
+	it("shows only the label when the table is too small on screen", () => {
+		const layout = tableTextLines({ ...big, width: 60, height: 60 }, ["Free"], 0.4);
+		expect(layout.lines).toEqual([]);
+		expect(layout.labelDy).toBeCloseTo(0, 6);
+	});
+});
+
+describe("statusBadgeCenter", () => {
+	it("sits on the top-right corner of a rectangle", () => {
+		expect(statusBadgeCenter({ shape: "Square", width: 80, height: 60 }, { x: 140, y: 130 })).toEqual({ x: 180, y: 100 });
+	});
+
+	it("sits on the rim at 45° for round tables", () => {
+		const point = statusBadgeCenter({ shape: "Round", width: 80, height: 80 }, { x: 140, y: 140 });
+		expect(Math.hypot(point.x - 140, point.y - 140)).toBeCloseTo(40, 6);
+		expect(point.x - 140).toBeCloseTo(140 - point.y, 6);
 	});
 });

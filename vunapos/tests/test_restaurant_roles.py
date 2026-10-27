@@ -274,6 +274,19 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 
 	# ---- end to end, each user holding only their VunaPOS role ----
 
+	def test_order_responses_name_the_waiter(self):
+		frappe.set_user(WAITER)
+		order = self._create_order()
+		expected = frappe.db.get_value("User", WAITER, "full_name")
+		self.assertTrue(expected)
+
+		self.assertEqual(order["waiter_name"], expected)
+		[summary] = self._ok(restaurant.list_orders(self.profile, table=self.table))
+		self.assertEqual((summary["waiter"], summary["waiter_name"]), (WAITER, expected))
+		status = {row["table"]: row for row in self._ok(restaurant.get_table_status(self.profile))}
+		[open_order] = status[self.table]["orders"]
+		self.assertEqual((open_order["waiter"], open_order["waiter_name"]), (WAITER, expected))
+
 	def test_waiter_takes_orders_without_a_shift_but_cannot_bill(self):
 		frappe.set_user(WAITER)
 		self.assertTrue(get_bootstrap_data(self.profile)["pos_profile"])

@@ -10,6 +10,7 @@ import {
 import {
   bottomNavItems,
   isItemActive,
+  sidebarFooterItems,
   sidebarItems,
   type NavFeatureFlags,
   type PosMode,
@@ -39,6 +40,7 @@ export function Sidebar({
 }: SidebarProps) {
   const activePage = useNavigationStore((s) => s.activePage);
   const navItems = sidebarItems(features, mode);
+  const footerItems = sidebarFooterItems(features, mode);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return window.localStorage.getItem("vunapos_sidebar_collapsed") === "true";
   });
@@ -99,6 +101,28 @@ export function Sidebar({
           )}
           {isCollapsed ? null : <span>Collapse</span>}
         </button>
+        {footerItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <a
+              key={item.label}
+              href={getPosPagePath(item.label)}
+              title={isCollapsed ? item.title : undefined}
+              className={cn(
+                "flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
+                isItemActive(item, activePage) ? activeLinkClass : inactiveLinkClass,
+                isCollapsed && "justify-center px-0",
+              )}
+              onClick={(event) => {
+                event.preventDefault();
+                navigateToPosPage(item.label);
+              }}
+            >
+              <Icon className="size-4" aria-hidden="true" />
+              {isCollapsed ? null : <span>{item.title}</span>}
+            </a>
+          );
+        })}
         <a
           href={getPosPagePath("Profile")}
           title={isCollapsed ? cashier || "User Profile" : undefined}

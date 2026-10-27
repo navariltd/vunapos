@@ -212,3 +212,65 @@ export function tableTextLayout(
 		seatsDy: blockHeight / 2 - seatsSize / 2,
 	};
 }
+
+export type TableTextLines = {
+	label: string;
+	labelSize: number;
+	labelDy: number;
+	// The secondary lines that fit, in the order given, with their size and offset.
+	lines: Array<{ text: string; size: number; dy: number }>;
+};
+
+// Like tableTextLayout, for the floor in service: the label plus up to a few short
+// secondary lines (status, guests, time). Lines are added in order while each one
+// fits at its minimum on-screen size; the rest drop out, so the first line should
+// be the most important one.
+export function tableTextLines(
+	table: { table_label: string; seats: number; shape?: string; width: number; height: number },
+	secondary: string[],
+	scale: number,
+): TableTextLines {
+	const base = tableTextLayout(table, secondary[0] ?? "", scale);
+	const round = table.shape === "Round" || table.shape === "Oval";
+	const innerWidth = table.width * (round ? 0.7 : 0.86);
+	const innerHeight = table.height * (round ? 0.7 : 0.82);
+	const labelAtPreferredSize =
+		base.labelSize >= legibleFontSize(Math.min(22, table.height * 0.3), MIN_TABLE_LABEL_PX, scale) - 1e-9;
+
+	const sizes: Array<{ text: string; size: number }> = [];
+	let used = base.labelSize;
+	if (labelAtPreferredSize) {
+		for (const text of secondary) {
+			if (!text) continue;
+			const preferred = legibleFontSize(Math.min(13, table.height * 0.16), MIN_TABLE_SEATS_PX, scale);
+			const size = Math.min(preferred, innerWidth / (Math.max(text.length, 1) * SEATS_CHAR_WIDTH_EM));
+			const gap = size * 0.25;
+			if (size * scale < MIN_TABLE_SEATS_PX - 1e-9 || used + gap + size > innerHeight) break;
+			sizes.push({ text, size });
+			used += gap + size;
+		}
+	}
+
+	// Centre the whole block vertically.
+	let cursor = -used / 2;
+	const labelDy = cursor + base.labelSize / 2;
+	cursor += base.labelSize;
+	const lines = sizes.map(({ text, size }) => {
+		cursor += size * 0.25;
+		const dy = cursor + size / 2;
+		cursor += size;
+		return { text, size, dy };
+	});
+	return { label: base.label, labelSize: base.labelSize, labelDy, lines };
+}
+
+// Where a table's status badge sits: on the top-right corner of a rectangle, or
+// on the rim at 45° for round tables, so it stays clear of the centred text.
+export function statusBadgeCenter(
+	table: { shape?: string; width: number; height: number },
+	center: Point,
+): Point {
+	const round = table.shape === "Round" || table.shape === "Oval";
+	const factor = round ? Math.SQRT1_2 : 1;
+	return { x: center.x + (table.width / 2) * factor, y: center.y - (table.height / 2) * factor };
+}

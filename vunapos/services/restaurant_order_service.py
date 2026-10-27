@@ -14,7 +14,7 @@ from frappe import _
 from frappe.utils import cint, cstr, flt, now_datetime
 
 from vunapos.dto.invoice import invoice_to_dict
-from vunapos.dto.restaurant import order_summary_to_dict, order_to_dict
+from vunapos.dto.restaurant import order_summary_to_dict, order_to_dict, waiter_name
 from vunapos.services.floor_plan_service import (
 	TABLE_DOCTYPE,
 	is_floor_plan_manager,
@@ -618,6 +618,7 @@ def get_table_status(pos_profile=None):
 				"service_type": row.service_type,
 				"pax": cint(row.pax),
 				"waiter": row.waiter,
+				"waiter_name": waiter_name(row.waiter),
 				"opened_at": row.opened_at,
 			}
 		)

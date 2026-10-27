@@ -8,9 +8,11 @@ export type POSPage =
 	| "Close Shift"
 	| "Profile"
 	| "Floor"
-	| "Floor Editor";
+	| "Floor Editor"
+	| "Orders"
+	| "Order";
 
-export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor"];
+export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor", "Orders", "Order"];
 
 const PAGE_PATHS: Record<POSPage, string> = {
 	Home: "/vunapos",
@@ -21,6 +23,9 @@ const PAGE_PATHS: Record<POSPage, string> = {
 	Profile: "/vunapos/profile",
 	Floor: "/vunapos/floor",
 	"Floor Editor": "/vunapos/floor/edit",
+	Orders: "/vunapos/orders",
+	// A new, unsaved order. A saved one is /vunapos/order/<name> (navigateToOrder).
+	Order: "/vunapos/order",
 };
 
 const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page as POSPage]));
@@ -39,6 +44,7 @@ export function getPosPageFromPath(pathname: string): POSPage {
 	const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname;
 	if (normalized.startsWith("/vunapos/customers/")) return "Customers";
 	if (normalized.startsWith("/vunapos/invoices/")) return "Invoices";
+	if (normalized.startsWith("/vunapos/order/")) return "Order";
 	return PATH_PAGES.get(normalized) || "Home";
 }
 
@@ -103,6 +109,22 @@ export function getInvoiceFromPath(pathname = window.location.pathname): string 
 
 export function getInvoiceDoctypeFromPath(pathname = window.location.pathname): string {
 	return /^\/vunapos\/invoices\/order\//.test(pathname) ? "Sales Order" : "";
+}
+
+// Restaurant order screen: a saved order by name, or a new order (no name).
+// Goes through the navigation guard like any page change; `replace` only renames
+// the current screen's URL (a new order that was just saved), so it skips it.
+export function navigateToOrder(order?: string | null, { replace = false } = {}) {
+	if (!replace && navigationGuard && !navigationGuard("Order")) return;
+	const path = order ? `/vunapos/order/${encodeURIComponent(order)}` : getPosPagePath("Order");
+	if (replace) window.history.replaceState({ vunaposPage: "Order", order }, "", path);
+	else if (window.location.pathname !== path) window.history.pushState({ vunaposPage: "Order", order }, "", path);
+	useNavigationStore.getState().setActivePage("Order");
+}
+
+export function getOrderFromPath(pathname = window.location.pathname): string | null {
+	const match = pathname.match(/^\/vunapos\/order\/([^/]+)\/?$/);
+	return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function getCustomerFromPath(pathname = window.location.pathname): string | null {

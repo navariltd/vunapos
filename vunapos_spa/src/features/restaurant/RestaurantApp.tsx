@@ -14,6 +14,8 @@ import { CloseShiftPage } from "../pos/components/CloseShiftPage";
 import { UserProfilePage } from "../pos/components/UserProfilePage";
 import { FloorEditor } from "./components/FloorEditor";
 import { FloorView } from "./components/FloorView";
+import { OrderScreen } from "./components/OrderScreen";
+import { OrdersPage } from "./components/OrdersPage";
 import { RestaurantToast } from "./components/RestaurantToast";
 import { isRestaurantPageAllowed, restaurantRoleLabel } from "./restaurantRoles";
 
@@ -70,6 +72,10 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
           />
         ) : activePage === "Floor Editor" ? (
           <FloorEditor posProfile={posProfile} />
+        ) : activePage === "Orders" ? (
+          <OrdersPage posProfile={posProfile} />
+        ) : activePage === "Order" ? (
+          <OrderScreen posProfile={posProfile} />
         ) : (
           <FloorView posProfile={posProfile} />
         )}
