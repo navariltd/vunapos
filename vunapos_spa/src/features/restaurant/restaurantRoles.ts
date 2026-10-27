@@ -16,5 +16,5 @@ export function restaurantRoleLabel(roles?: string[] | null) {
 // other page (including retail URLs) falls back to the floor.
 export function isRestaurantPageAllowed(page: POSPage, canTakePayment: boolean) {
   if (page === "Close Shift") return canTakePayment;
-  return page === "Floor" || page === "Floor Editor" || page === "Profile";
+  return ["Floor", "Floor Editor", "Orders", "Order", "Profile"].includes(page);
 }

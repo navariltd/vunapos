@@ -1,4 +1,5 @@
 import {
+  ClipboardList,
   CreditCard,
   Home,
   LogOut,
@@ -31,6 +32,8 @@ export type NavFeatureFlags = {
 const items: NavItem[] = [
   { label: "Home", title: "Home", icon: Home, modes: ["Retail"] },
   { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
+  // The order screen is not a nav item; Orders stays highlighted while it is open.
+  { label: "Orders", title: "Orders", icon: ClipboardList, modes: ["Restaurant"], activeFor: ["Order"] },
   { label: "Invoices", title: "Sales History", icon: ReceiptText, modes: ["Retail"] },
   { label: "Payments", title: "Payments", icon: CreditCard, modes: ["Retail"] },
   { label: "Customers", title: "Customers", icon: Users, modes: ["Retail"] },

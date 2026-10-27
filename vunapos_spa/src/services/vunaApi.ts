@@ -19,8 +19,14 @@ import type {
 } from "../features/pos/types";
 import type {
 	FloorPlanDTO,
+	MenuDTO,
+	OrderLineInput,
+	OrderPreviewDTO,
+	RestaurantOrderDTO,
+	RestaurantOrderSummaryDTO,
 	SaveFloorPlanPayload,
 	SaveFloorPlanResultDTO,
+	TableStatusDTO,
 } from "../features/restaurant/types";
 
 type VunaError = {
@@ -116,6 +122,15 @@ export const vunaMethods = {
 	verifyManagerPin: "vunapos.api.pin.verify_manager",
 	getFloorPlan: "vunapos.api.restaurant.get_floor_plan",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
+	getMenu: "vunapos.api.restaurant.get_menu",
+	getTableStatus: "vunapos.api.restaurant.get_table_status",
+	listRestaurantOrders: "vunapos.api.restaurant.list_orders",
+	getRestaurantOrder: "vunapos.api.restaurant.get_order",
+	previewRestaurantOrder: "vunapos.api.restaurant.preview_order",
+	createRestaurantOrder: "vunapos.api.restaurant.create_order",
+	updateRestaurantOrder: "vunapos.api.restaurant.update_order",
+	addRestaurantOrderItems: "vunapos.api.restaurant.add_order_items",
+	updateRestaurantOrderItem: "vunapos.api.restaurant.update_order_item",
 } as const;
 
 export function unwrapVunaResponse<T>(response: unknown): T {
@@ -618,4 +633,73 @@ export function saveFloorPlan(
 		...params,
 		payload: JSON.stringify(params.payload),
 	});
+}
+
+// ---- restaurant orders (vunapos.api.restaurant). Lists are JSON-encoded. ----
+
+export function getMenu(
+	call: FrappeCall,
+	params: { pos_profile: string; service_type: string; table?: string | null },
+) {
+	return callAndUnwrap<MenuDTO>(call, { ...params, table: params.table || undefined });
+}
+
+export function getTableStatus(call: FrappeCall, posProfile: string) {
+	return callAndUnwrap<TableStatusDTO[]>(call, { pos_profile: posProfile });
+}
+
+export function listRestaurantOrders(
+	call: FrappeCall,
+	params: { pos_profile: string; status?: string; service_type?: string; table?: string },
+) {
+	return callAndUnwrap<RestaurantOrderSummaryDTO[]>(call, params);
+}
+
+export function getRestaurantOrder(call: FrappeCall, order: string) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, { order });
+}
+
+export function previewRestaurantOrder(call: FrappeCall, order: string) {
+	return callAndUnwrap<OrderPreviewDTO>(call, { order });
+}
+
+export function createRestaurantOrder(
+	call: FrappeCall,
+	params: {
+		pos_profile: string;
+		service_type: string;
+		table?: string | null;
+		customer?: string | null;
+		pax?: number;
+		order_note?: string | null;
+		items: OrderLineInput[];
+		idempotency_key: string;
+	},
+) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, {
+		...params,
+		table: params.table || undefined,
+		customer: params.customer || undefined,
+		order_note: params.order_note || undefined,
+		items: JSON.stringify(params.items),
+	});
+}
+
+// Omit a field to leave it unchanged; send "" to clear it.
+export function updateRestaurantOrder(
+	call: FrappeCall,
+	params: { order: string; customer?: string; pax?: number; order_note?: string },
+) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, params);
+}
+
+export function addRestaurantOrderItems(call: FrappeCall, params: { order: string; items: OrderLineInput[] }) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items) });
+}
+
+export function updateRestaurantOrderItem(
+	call: FrappeCall,
+	params: { order: string; line_id: string; qty?: number; note?: string },
+) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, params);
 }

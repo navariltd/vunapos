@@ -7,6 +7,12 @@
 	--color-background: #f8f8f8;
 	--color-on-background: #171717;
 
+	/* Restaurant table status (design decision 13). Never used without an icon or label. */
+	--color-status-free: #16a34a;
+	--color-status-occupied: #2563eb;
+	--color-status-free-container: color-mix(in srgb, var(--color-status-free) 14%, var(--color-surface));
+	--color-status-occupied-container: color-mix(in srgb, var(--color-status-occupied) 14%, var(--color-surface));
+
 	--color-surface: #ffffff;
 	--color-surface-container: #f3f3f3;
 	--color-surface-container-low: #f8f8f8;
@@ -126,6 +132,9 @@
 :root[data-theme="dark"] {
 	--color-background: #171717;
 	--color-on-background: #f8f8f8;
+
+	--color-status-free: #4ade80;
+	--color-status-occupied: #60a5fa;
 
 	--color-surface: #1c1c1c;
 	--color-surface-container: #232323;

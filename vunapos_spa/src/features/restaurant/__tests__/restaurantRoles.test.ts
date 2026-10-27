@@ -21,8 +21,8 @@ describe("restaurantRoleLabel", () => {
 });
 
 describe("isRestaurantPageAllowed", () => {
-	it("allows the floor pages and Profile to everyone", () => {
-		for (const page of ["Floor", "Floor Editor", "Profile"] as const) {
+	it("allows the floor, order pages and Profile to everyone", () => {
+		for (const page of ["Floor", "Floor Editor", "Orders", "Order", "Profile"] as const) {
 			expect(isRestaurantPageAllowed(page, false)).toBe(true);
 		}
 	});

@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+	getOrderFromPath,
 	getPosPageFromPath,
 	getPosPagePath,
+	navigateToOrder,
 	navigateToPosPage,
 	replacePosPage,
 	setNavigationGuard,
@@ -97,5 +99,38 @@ describe("navigationStore", () => {
 
 		expect(pushState).toHaveBeenCalledWith({ vunaposPage: "Profile" }, "", "/vunapos/profile");
 		expect(useNavigationStore.getState().activePage).toBe("Profile");
+	});
+
+	it("maps the restaurant order pages and deep links", () => {
+		expect(getPosPagePath("Orders")).toBe("/vunapos/orders");
+		expect(getPosPagePath("Order")).toBe("/vunapos/order");
+		expect(getPosPageFromPath("/vunapos/orders")).toBe("Orders");
+		expect(getPosPageFromPath("/vunapos/order")).toBe("Order");
+		expect(getPosPageFromPath("/vunapos/order/VRO-2026-00001")).toBe("Order");
+		expect(getOrderFromPath("/vunapos/order/VRO-2026-00001/")).toBe("VRO-2026-00001");
+		expect(getOrderFromPath("/vunapos/order")).toBeNull();
+		expect(getOrderFromPath("/vunapos/orders")).toBeNull();
+	});
+
+	it("opens an order by name, and renames a just-saved order's URL past the guard", () => {
+		const pushState = vi.fn();
+		const replaceState = vi.fn();
+		vi.stubGlobal("window", {
+			history: { pushState, replaceState },
+			location: { pathname: "/vunapos/order", hash: "" },
+		});
+		const guard = vi.fn(() => false);
+		setNavigationGuard(guard);
+
+		navigateToOrder("VRO-1");
+		expect(pushState).not.toHaveBeenCalled();
+
+		navigateToOrder("VRO-1", { replace: true });
+		expect(replaceState).toHaveBeenCalledWith({ vunaposPage: "Order", order: "VRO-1" }, "", "/vunapos/order/VRO-1");
+		expect(useNavigationStore.getState().activePage).toBe("Order");
+
+		setNavigationGuard(null);
+		navigateToOrder("VRO 2");
+		expect(pushState).toHaveBeenCalledWith({ vunaposPage: "Order", order: "VRO 2" }, "", "/vunapos/order/VRO%202");
 	});
 });
