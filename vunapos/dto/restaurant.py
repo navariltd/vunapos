@@ -62,6 +62,11 @@ def _table_label(table):
 	return frappe.db.get_value("VunaPOS Restaurant Table", table, "table_label") if table else None
 
 
+def waiter_name(user):
+	# The user's full name, falling back to the user id (get_fullname is cached).
+	return frappe.utils.get_fullname(user) if user else None
+
+
 def order_summary_to_dict(row):
 	return {
 		"name": row.name,
@@ -72,6 +77,7 @@ def order_summary_to_dict(row):
 		"customer": row.customer,
 		"pax": cint(row.pax),
 		"waiter": row.waiter,
+		"waiter_name": waiter_name(row.waiter),
 		"opened_at": row.opened_at,
 		"invoice_doctype": row.invoice_doctype,
 		"invoice": row.invoice,
@@ -93,6 +99,7 @@ def order_to_dict(doc):
 		else None,
 		"pax": cint(doc.pax),
 		"waiter": doc.waiter,
+		"waiter_name": waiter_name(doc.waiter),
 		"opened_at": doc.opened_at,
 		"order_note": doc.order_note,
 		"items": [
