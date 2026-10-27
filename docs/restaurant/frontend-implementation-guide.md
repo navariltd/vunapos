@@ -58,6 +58,19 @@ Re-create the demo with
 
 ## 3. Screens to build (in priority order)
 
+> **Stage 1 is built (§3.1 to §3.4):** the service type picker, the floor with table status,
+> the Orders page and the order screen with bill preview, in `src/features/restaurant/`.
+> Pure logic lives in `orderDraft.ts` (lines and the save plan), `tableStatus.ts`,
+> `poller.ts` and `orderErrors.ts`, each with vitest tests. Stage 1 differs from this guide in
+> three ways:
+> - Edits to lines already sent are queued and sent with Save / Send. A sent quantity can go
+>   up but not down, because lowering it removes items, which is stage 2 (manager PIN).
+> - The customer selector only searches; new orders start with the profile's default customer.
+> - Items with variants are shown disabled, marked "Variants not supported yet".
+>
+> `get_table_status`, `list_orders` and the order itself also return `waiter_name`.
+> §3.5 to §3.7 (billing, cancel and remove, table transfer) are stage 2.
+
 ### 3.1 New order: pick a service type
 - Source: `bootstrap.restaurant.service_types` (already in the bootstrap profile payload), or
   `get_service_types(pos_profile)`.
