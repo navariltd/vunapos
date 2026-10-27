@@ -29,7 +29,10 @@ frappe.ui.form.on("VunaPOS Restaurant Order Item", {
 	async item_code(frm, cdt, cdn) {
 		const row = locals[cdt][cdn];
 		if (!row.item_code) return;
-		const { message } = await frappe.db.get_value("Item", row.item_code, ["sales_uom", "stock_uom"]);
+		const { message } = await frappe.db.get_value("Item", row.item_code, [
+			"sales_uom",
+			"stock_uom",
+		]);
 		if (message) {
 			frappe.model.set_value(cdt, cdn, "uom", message.sales_uom || message.stock_uom);
 		}
