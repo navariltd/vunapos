@@ -45,12 +45,67 @@ def ensure_vunapos_custom_fields():
 				"description": "Choose the VunaPOS interface for this profile. Restaurant enables floor plans and table service.",
 			},
 			{
+				"fieldname": "vunapos_restaurant_section",
+				"label": "Restaurant",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_pos_mode",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_service_types",
+				"label": "Service Types",
+				"fieldtype": "Table",
+				"options": "VunaPOS Profile Service Type",
+				"insert_after": "vunapos_restaurant_section",
+				"description": "Service types offered by this outlet. Leave empty to offer every enabled service type. Tick Default on one row.",
+			},
+			{
+				"fieldname": "vunapos_restaurant_column_break",
+				"fieldtype": "Column Break",
+				"insert_after": "vunapos_service_types",
+			},
+			{
+				"fieldname": "vunapos_allow_multiple_orders_per_table",
+				"label": "Allow Multiple Open Orders per Table",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_restaurant_column_break",
+				"default": "0",
+				"description": "By default a table holds one open order until it is billed or cancelled.",
+			},
+			{
+				"fieldname": "vunapos_require_manager_pin_order_cancel",
+				"label": "Require Manager PIN to Cancel Orders",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_allow_multiple_orders_per_table",
+				"default": "0",
+				"description": "Only a VunaPOS Restaurant Manager, or a cashier with a manager PIN, can cancel an order.",
+			},
+			{
+				"fieldname": "vunapos_menu_section",
+				"label": "Menu",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_require_manager_pin_order_cancel",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_restaurant_menu",
+				"label": "Menu",
+				"fieldtype": "Table",
+				"options": "VunaPOS Menu Item Group",
+				"insert_after": "vunapos_menu_section",
+				"description": (
+					"Item groups on the menu, shown as categories in this order. Set a Floor or Service Type "
+					"to limit a row to it. If this table is empty, the Item Groups table on this profile is "
+					"used, and if that is empty too, every sales item is on the menu."
+				),
+			},
+			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
 				# stays first in the VunaPOS tab after a customisation sync.
 				"fieldname": "vunapos_sales_section",
 				"label": "Sales Settings",
 				"fieldtype": "Section Break",
-				"insert_after": "vunapos_pos_mode",
+				"insert_after": "vunapos_restaurant_menu",
 			},
 			{
 				"fieldname": "vunapos_home_screen_section",
@@ -697,8 +752,71 @@ def ensure_vunapos_custom_fields():
 			},
 		],
 	}
+	for invoice_doctype in ("Sales Invoice", "POS Invoice"):
+		custom_fields[invoice_doctype].extend(_restaurant_invoice_fields())
 	create_custom_fields(custom_fields, ignore_validate=True)
 	ensure_sales_invoice_stock_reservation_option()
+	ensure_default_service_types()
+
+
+def _restaurant_invoice_fields():
+	"""Restaurant context stamped on the invoice that bills a Restaurant Order."""
+	return [
+		{
+			"fieldname": "vunapos_restaurant_section",
+			"label": "Restaurant",
+			"fieldtype": "Section Break",
+			"insert_after": "vunapos_reservation_fingerprint",
+			"collapsible": 1,
+		},
+		{
+			"fieldname": "vunapos_restaurant_order",
+			"label": "VunaPOS Restaurant Order",
+			"fieldtype": "Link",
+			"options": "VunaPOS Restaurant Order",
+			"insert_after": "vunapos_restaurant_section",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+			"search_index": 1,
+		},
+		{
+			"fieldname": "vunapos_service_type",
+			"label": "VunaPOS Service Type",
+			"fieldtype": "Link",
+			"options": "VunaPOS Service Type",
+			"insert_after": "vunapos_restaurant_order",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": "vunapos_restaurant_table",
+			"label": "VunaPOS Restaurant Table",
+			"fieldtype": "Link",
+			"options": "VunaPOS Restaurant Table",
+			"insert_after": "vunapos_service_type",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+		},
+	]
+
+
+DEFAULT_SERVICE_TYPES = (
+	{"service_type_name": "Dine In", "requires_table": 1, "display_order": 1},
+	{"service_type_name": "Takeaway", "requires_table": 0, "display_order": 2},
+	{"service_type_name": "Delivery", "requires_table": 0, "display_order": 3},
+)
+
+
+def ensure_default_service_types():
+	if not frappe.db.table_exists("VunaPOS Service Type") or frappe.db.count("VunaPOS Service Type"):
+		return
+	for values in DEFAULT_SERVICE_TYPES:
+		frappe.get_doc({"doctype": "VunaPOS Service Type", "enabled": 1, **values}).insert(
+			ignore_permissions=True
+		)
 
 
 def ensure_sales_invoice_stock_reservation_option():

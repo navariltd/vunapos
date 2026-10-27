@@ -177,7 +177,11 @@ doc_events["POS Settings"] = {
 	"on_trash": "vunapos.realtime.publish_configuration_change",
 }
 doc_events["POS Profile"] = {
-	"validate": "vunapos.services.checkout_field_service.validate_global_checkout_fields",
+	"validate": [
+		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
+		"vunapos.services.service_type_service.validate_profile_service_types",
+		"vunapos.services.menu_service.validate_profile_menu",
+	],
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
 	"on_trash": "vunapos.realtime.publish_configuration_change",
@@ -230,8 +234,14 @@ before_tests = "vunapos.setup.utils.before_tests"
 extend_doctype_class = {
 	"POS Closing Entry": "vunapos.overrides.pos_closing_entry.VunaPOSClosingEntryMixin",
 	"POS Opening Entry": "vunapos.overrides.pos_opening_entry.VunaPOSOpeningEntryMixin",
-	"Sales Invoice": "vunapos.overrides.sales_invoice.VunaPOSSalesInvoiceReservationMixin",
-	"POS Invoice": "vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
+	"Sales Invoice": [
+		"vunapos.overrides.sales_invoice.VunaPOSSalesInvoiceReservationMixin",
+		"vunapos.overrides.service_type_pricing.VunaPOSServiceTypePricingMixin",
+	],
+	"POS Invoice": [
+		"vunapos.overrides.credit_sale.VunaPOSCreditSaleMixin",
+		"vunapos.overrides.service_type_pricing.VunaPOSServiceTypePricingMixin",
+	],
 	"Stock Reservation Entry": "vunapos.overrides.stock_reservation_entry.VunaPOSStockReservationEntryMixin",
 }
 

@@ -1,0 +1,298 @@
+{
+ "actions": [],
+ "autoname": "VRO-.YYYY.-.#####",
+ "creation": "2026-10-27 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "pos_profile",
+  "company",
+  "service_type",
+  "requires_table",
+  "restaurant_table",
+  "column_break_context",
+  "customer",
+  "pax",
+  "waiter",
+  "opened_at",
+  "order_note",
+  "items_section",
+  "items",
+  "billing_section",
+  "invoice_doctype",
+  "invoice",
+  "column_break_billing",
+  "billed_by",
+  "billed_at",
+  "cancellation_section",
+  "cancel_reason",
+  "cancel_approved_by",
+  "column_break_cancellation",
+  "cancelled_by",
+  "cancelled_at",
+  "idempotency_key"
+ ],
+ "fields": [
+  {
+   "default": "Open",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "no_copy": 1,
+   "options": "Open\nBilled\nCancelled",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "POS Profile",
+   "options": "POS Profile",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "pos_profile.company",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "service_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Service Type",
+   "options": "VunaPOS Service Type",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "fetch_from": "service_type.requires_table",
+   "fieldname": "requires_table",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Requires Table",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restaurant_table",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Table",
+   "options": "VunaPOS Restaurant Table",
+   "search_index": 1,
+   "depends_on": "eval:doc.requires_table",
+   "mandatory_depends_on": "eval:doc.requires_table",
+   "description": "Shown when the service type needs a table, for example Dine In."
+  },
+  {
+   "fieldname": "column_break_context",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer"
+  },
+  {
+   "default": "0",
+   "fieldname": "pax",
+   "fieldtype": "Int",
+   "label": "Guests"
+  },
+  {
+   "description": "The user who opened the order.",
+   "fieldname": "waiter",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Waiter",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opened_at",
+   "fieldtype": "Datetime",
+   "label": "Opened At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "order_note",
+   "fieldtype": "Small Text",
+   "label": "Order Note"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "VunaPOS Restaurant Order Item"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "billing_section",
+   "fieldtype": "Section Break",
+   "label": "Billing"
+  },
+  {
+   "fieldname": "invoice_doctype",
+   "fieldtype": "Link",
+   "label": "Invoice Type",
+   "no_copy": 1,
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice",
+   "fieldtype": "Dynamic Link",
+   "label": "Invoice",
+   "no_copy": 1,
+   "options": "invoice_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "billed_by",
+   "fieldtype": "Link",
+   "label": "Billed By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billed_at",
+   "fieldtype": "Datetime",
+   "label": "Billed At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "cancellation_section",
+   "fieldtype": "Section Break",
+   "label": "Cancellation"
+  },
+  {
+   "fieldname": "cancel_reason",
+   "fieldtype": "Small Text",
+   "label": "Cancel Reason",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "description": "Sales person whose manager PIN approved the cancellation.",
+   "fieldname": "cancel_approved_by",
+   "fieldtype": "Data",
+   "label": "Approved By",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_cancellation",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cancelled_by",
+   "fieldtype": "Link",
+   "label": "Cancelled By",
+   "no_copy": 1,
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cancelled_at",
+   "fieldtype": "Datetime",
+   "label": "Cancelled At",
+   "no_copy": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Idempotency Key",
+   "no_copy": 1,
+   "read_only": 1,
+   "search_index": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-27 15:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Restaurant Order",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [
+  {
+   "color": "Blue",
+   "title": "Open"
+  },
+  {
+   "color": "Green",
+   "title": "Billed"
+  },
+  {
+   "color": "Red",
+   "title": "Cancelled"
+  }
+ ]
+}

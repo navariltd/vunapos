@@ -168,6 +168,8 @@ def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal")
 	require_pos_profile_assignment(profile.name)
 	if action == "item_removal" and not profile.get("vunapos_require_manager_pin_item_removal"):
 		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for item removal."))
+	if action == "order_cancel" and not profile.get("vunapos_require_manager_pin_order_cancel"):
+		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for order cancellation."))
 	if not isinstance(pin, str) or not PIN_PATTERN.fullmatch(pin):
 		_failure("INVALID_PIN_FORMAT", _("PIN must contain 4 to 6 digits."))
 	state = _check_lockout(profile, "manager")

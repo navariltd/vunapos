@@ -1,0 +1,68 @@
+{
+ "actions": [],
+ "creation": "2026-10-27 09:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group",
+  "label",
+  "floor",
+  "service_type",
+  "display_order"
+ ],
+ "fields": [
+  {
+   "description": "Items in this group and all of its child groups are on the menu.",
+   "fieldname": "item_group",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Item Group",
+   "options": "Item Group",
+   "reqd": 1
+  },
+  {
+   "description": "Category name shown in the POS. Defaults to the item group name.",
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Menu Label"
+  },
+  {
+   "description": "Only on this floor. Leave empty for every floor.",
+   "fieldname": "floor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Floor",
+   "options": "VunaPOS Restaurant Floor"
+  },
+  {
+   "description": "Only for this service type. Leave empty for every service type.",
+   "fieldname": "service_type",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Service Type",
+   "options": "VunaPOS Service Type"
+  },
+  {
+   "default": "0",
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Display Order"
+  }
+ ],
+ "grid_page_length": 50,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-27 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Menu Item Group",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
