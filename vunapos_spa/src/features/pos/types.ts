@@ -1,3 +1,5 @@
+import type { CachedRestaurantSettings } from "../../lib/types";
+
 export type ModeOfPaymentDTO = {
 	mode_of_payment: string;
 	default?: number | boolean;
@@ -255,6 +257,8 @@ export type BootstrapData = {
 	// Restaurant mode: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
 	restaurant_roles?: string[];
+	// Null on Retail profiles.
+	restaurant?: CachedRestaurantSettings | null;
 };
 
 export type ItemDTO = {

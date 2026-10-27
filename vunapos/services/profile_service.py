@@ -218,20 +218,27 @@ def get_profile_defaults(pos_profile=None):
 	return profile_to_dict(profile, get_invoice_mode())
 
 
+def get_restaurant_user_context():
+	"""The current user's restaurant rights, sent with every bootstrap payload."""
+	roles = set(frappe.get_roles())
+	return {
+		# Restaurant mode only: taking payment (and so a shift on entry) is the
+		# VunaPOS Cashier role alone; other roles, managers included, don't count.
+		"can_take_payment": CASHIER_ROLE in roles,
+		"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
+	}
+
+
 def get_bootstrap_data(pos_profile=None):
 	profile = resolve_pos_profile(pos_profile)
 	invoice_mode = get_invoice_mode()
 	data = profile_to_dict(profile, invoice_mode)
-	roles = set(frappe.get_roles())
 	data.update(
 		{
 			"current_user": frappe.session.user,
 			"pos_profile": profile.name,
 			"session": get_pos_session(frappe.session.user, profile.name, frappe.utils.now_datetime()),
-			# Restaurant mode only: taking payment (and so a shift on entry) is the
-			# VunaPOS Cashier role alone; other roles, managers included, don't count.
-			"can_take_payment": CASHIER_ROLE in roles,
-			"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
+			**get_restaurant_user_context(),
 		}
 	)
 	return data

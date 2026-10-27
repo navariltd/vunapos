@@ -7,6 +7,7 @@ from vunapos.services.item_service import search_items
 from vunapos.services.profile_service import (
 	get_invoice_mode,
 	get_pos_session,
+	get_restaurant_user_context,
 	resolve_pos_profile,
 )
 
@@ -116,7 +117,8 @@ def _get_bootstrap_config(profile, invoice_mode, server_time):
 	return {
 		"site_name": frappe.local.site,
 		"server_time": server_time,
-		"pos_profile": profile_to_dict(profile, invoice_mode),
+		# The SPA caches this as its profile, so user-level rights travel with it.
+		"pos_profile": {**profile_to_dict(profile, invoice_mode), **get_restaurant_user_context()},
 		"pos_session": get_pos_session(frappe.session.user, profile.name, server_time),
 		"tax_settings": _get_tax_settings(),
 		"payment_modes": _sync_payment_modes(profile),

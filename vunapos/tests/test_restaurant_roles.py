@@ -2,6 +2,7 @@ import json
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import now_datetime
 
 from vunapos.api import restaurant
 from vunapos.services.floor_plan_service import (
@@ -14,6 +15,7 @@ from vunapos.services.pos_closing import close_pos_session, get_closing_preview
 from vunapos.services.pos_entry import create_pos_opening_entry
 from vunapos.services.profile_service import get_bootstrap_data
 from vunapos.services.restaurant_order_service import ORDER_DOCTYPE
+from vunapos.services.sync_service import get_pos_bootstrap, get_pos_bootstrap_config
 from vunapos.setup.utils import (
 	CASHIER_ROLE,
 	RESTAURANT_MANAGER_ROLE,
@@ -247,6 +249,28 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 			data = get_bootstrap_data(self.profile)
 			self.assertIs(data["can_take_payment"], can_take_payment, user)
 			self.assertEqual(data["restaurant_roles"], roles, user)
+
+	def test_spa_bootstrap_payloads_carry_the_restaurant_rights(self):
+		# The SPA caches pos_profile from these endpoints, not get_bootstrap_data,
+		# so the rights must travel there (full and delta sync alike).
+		expected = {
+			WAITER: (False, [WAITER_ROLE]),
+			CASHIER: (True, [CASHIER_ROLE]),
+			MANAGER: (False, [RESTAURANT_MANAGER_ROLE]),
+			MANAGER_CASHIER: (True, [CASHIER_ROLE, RESTAURANT_MANAGER_ROLE]),
+		}
+		for user, (can_take_payment, roles) in expected.items():
+			frappe.set_user(user)
+			payloads = {
+				"config": get_pos_bootstrap_config(self.profile),
+				"full": get_pos_bootstrap(self.profile),
+				"delta": get_pos_bootstrap(self.profile, since=str(now_datetime())),
+			}
+			for kind, payload in payloads.items():
+				profile = payload["pos_profile"]
+				self.assertIs(profile["can_take_payment"], can_take_payment, (user, kind))
+				self.assertEqual(profile["restaurant_roles"], roles, (user, kind))
+				self.assertIn(SERVICE_TYPE, [row["name"] for row in profile["restaurant"]["service_types"]])
 
 	# ---- end to end, each user holding only their VunaPOS role ----
 

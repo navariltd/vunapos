@@ -108,6 +108,24 @@ export type CachedPaymentMode = {
 	payment_gateway?: string | null;
 };
 
+// Restaurant settings from vunapos/dto/profile.py (_restaurant_settings).
+export type CachedServiceType = {
+	name: string;
+	service_type_name: string;
+	requires_table: boolean;
+	display_order: number;
+	description?: string | null;
+	price_list?: string | null;
+	taxes_and_charges?: string | null;
+	is_default: boolean;
+};
+
+export type CachedRestaurantSettings = {
+	service_types: CachedServiceType[];
+	allow_multiple_orders_per_table: boolean;
+	require_manager_pin_order_cancel: boolean;
+};
+
 export type CachedProfile = {
 	name: string;
 	company?: string;
@@ -177,6 +195,11 @@ export type CachedProfile = {
 	salesperson_pin_session_minutes?: number;
 	pin_users?: Array<{ sales_person: string; display_name?: string; role: "Salesperson" | "Manager" }>;
 	taxes_and_charges?: string | null;
+	// Null on Retail profiles.
+	restaurant?: CachedRestaurantSettings | null;
+	// User-level, sent with the profile: true only with the VunaPOS Cashier role.
+	can_take_payment?: boolean;
+	restaurant_roles?: string[];
 };
 
 export type CachedPosSession = {
