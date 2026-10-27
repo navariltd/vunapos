@@ -1,72 +1,21 @@
 import { useEffect, useState } from "react";
-import {
-  CreditCard,
-  Home,
-  LogOut,
-  PanelLeftClose,
-  PanelLeftOpen,
-  ReceiptText,
-  UserRound,
-  Users,
-  UtensilsCrossed,
-} from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen, UserRound } from "lucide-react";
 
 import { cn } from "../../lib/cn";
 import {
   getPosPagePath,
   navigateToPosPage,
   useNavigationStore,
-  type POSPage,
 } from "../../lib/stores/navigationStore";
+import {
+  bottomNavItems,
+  isItemActive,
+  sidebarItems,
+  type NavFeatureFlags,
+  type PosMode,
+} from "./navItems";
 
-export type PosMode = "Retail" | "Restaurant";
-
-type NavItem = {
-  label: POSPage;
-  title: string;
-  icon: typeof Home;
-  modes: PosMode[];
-  // Pages that keep this item highlighted, e.g. the floor editor under Floor.
-  activeFor?: POSPage[];
-};
-
-const items: NavItem[] = [
-  { label: "Home", title: "Home", icon: Home, modes: ["Retail"] },
-  { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
-  { label: "Invoices", title: "Sales History", icon: ReceiptText, modes: ["Retail"] },
-  { label: "Payments", title: "Payments", icon: CreditCard, modes: ["Retail"] },
-  { label: "Customers", title: "Customers", icon: Users, modes: ["Retail"] },
-  { label: "Close Shift", title: "Close Shift", icon: LogOut, modes: ["Retail"] },
-];
-
-// The retail bottom nav has no Profile entry. Restaurant mode has only one page,
-// so Profile is added there to keep it reachable on small screens.
-const restaurantProfileItem: NavItem = {
-  label: "Profile",
-  title: "Profile",
-  icon: UserRound,
-  modes: ["Restaurant"],
-};
-
-export type NavFeatureFlags = {
-  allowCustomerManagement?: boolean;
-  allowCustomerPayments?: boolean;
-};
-
-function isItemActive(item: NavItem, activePage: POSPage) {
-  return item.label === activePage || Boolean(item.activeFor?.includes(activePage));
-}
-
-function visibleItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
-  return items.filter((item) => {
-    if (!item.modes.includes(mode)) return false;
-    if (item.label === "Payments")
-      return features?.allowCustomerPayments !== false;
-    if (item.label === "Customers")
-      return features?.allowCustomerManagement !== false;
-    return true;
-  });
-}
+export type { NavFeatureFlags, PosMode } from "./navItems";
 
 const activeLinkClass =
   "border border-primary bg-primary text-on-primary shadow-sm dark:bg-primary dark:text-on-primary";
@@ -89,7 +38,7 @@ export function Sidebar({
   warehouse,
 }: SidebarProps) {
   const activePage = useNavigationStore((s) => s.activePage);
-  const navItems = visibleItems(features, mode);
+  const navItems = sidebarItems(features, mode);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     return window.localStorage.getItem("vunapos_sidebar_collapsed") === "true";
   });
@@ -210,10 +159,7 @@ export function BottomNav({
   mode?: PosMode;
 }) {
   const activePage = useNavigationStore((s) => s.activePage);
-  const navItems =
-    mode === "Restaurant"
-      ? [...visibleItems(features, mode), restaurantProfileItem]
-      : visibleItems(features, mode);
+  const navItems = bottomNavItems(features, mode);
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-outline-variant bg-surface px-2 pb-2 pt-1 lg:hidden">

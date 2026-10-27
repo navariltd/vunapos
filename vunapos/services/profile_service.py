@@ -2,6 +2,7 @@ import frappe
 from frappe import _
 
 from vunapos.dto.profile import profile_to_dict
+from vunapos.setup.utils import CASHIER_ROLE, RESTAURANT_ROLES
 
 SUPPORTED_INVOICE_MODES = ("Sales Invoice", "POS Invoice")
 
@@ -221,11 +222,16 @@ def get_bootstrap_data(pos_profile=None):
 	profile = resolve_pos_profile(pos_profile)
 	invoice_mode = get_invoice_mode()
 	data = profile_to_dict(profile, invoice_mode)
+	roles = set(frappe.get_roles())
 	data.update(
 		{
 			"current_user": frappe.session.user,
 			"pos_profile": profile.name,
 			"session": get_pos_session(frappe.session.user, profile.name, frappe.utils.now_datetime()),
+			# Restaurant mode only: taking payment (and so a shift on entry) is the
+			# VunaPOS Cashier role alone; other roles, managers included, don't count.
+			"can_take_payment": CASHIER_ROLE in roles,
+			"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
 		}
 	)
 	return data

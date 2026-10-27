@@ -85,7 +85,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-27 17:00:00.000000",
+ "modified": "2026-10-27 17:30:00.000000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "VunaPOS Service Type",
@@ -124,6 +124,14 @@
    "report": 1,
    "role": "Sales User",
    "share": 1
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
   }
  ],
  "row_format": "Dynamic",

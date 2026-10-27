@@ -1,4 +1,4 @@
-import { Laptop, LogOut, Moon, Sun, UserRound } from "lucide-react";
+import { DoorClosed, Laptop, LogOut, Moon, Sun, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../../../lib/cn";
@@ -8,9 +8,12 @@ import type { BootstrapData, CustomerDTO } from "../types";
 
 type UserProfilePageProps = {
   bootstrap?: BootstrapData | null;
+  // Restaurant mode only. Omitted in Retail, which keeps its fixed subtitle.
+  roleLabel?: string;
+  onCloseShift?: () => void;
 };
 
-export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
+export function UserProfilePage({ bootstrap, roleLabel, onCloseShift }: UserProfilePageProps) {
   const defaultCustomer = formatDefaultCustomer(bootstrap?.default_customer);
   const themeMode = useThemeStore((s) => s.mode);
   const { setTheme } = useThemeSync();
@@ -27,9 +30,19 @@ export function UserProfilePage({ bootstrap }: UserProfilePageProps) {
               {bootstrap?.current_user || "Cashier"}
             </h2>
             <p className="mt-1 text-sm text-on-surface-variant">
-              VunaPOS cashier profile
+              {roleLabel ?? "VunaPOS cashier profile"}
             </p>
           </div>
+          {onCloseShift ? (
+            <button
+              type="button"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-outline-variant px-3 text-sm font-medium text-on-surface hover:bg-surface-container-high"
+              onClick={onCloseShift}
+            >
+              <DoorClosed className="size-4" />
+              Close shift
+            </button>
+          ) : null}
           <a
             className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-error px-3 text-sm font-medium text-on-error hover:bg-error-container hover:text-on-error-container"
             href="/?cmd=web_logout"

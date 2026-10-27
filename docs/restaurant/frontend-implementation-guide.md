@@ -18,7 +18,7 @@ Read with:
 | Piece | Where | Notes |
 |---|---|---|
 | Mode routing | `src/app/PosModeSwitch.tsx` | A profile with `pos_mode === "Restaurant"` renders `RestaurantApp`. Retail is unchanged. |
-| Restaurant shell | `src/features/restaurant/RestaurantApp.tsx` | Pages: `Floor`, `Floor Editor`, `Profile`. **No `PosOpeningGate`** (see §5.6). |
+| Restaurant shell | `src/features/restaurant/RestaurantApp.tsx` | Pages: `Floor`, `Floor Editor`, `Profile`, and `Close Shift` for cashiers. `PosOpeningGate` only for `can_take_payment` users (see §5.2). |
 | Floor view | `components/FloorView.tsx`, `FloorCanvas.tsx` | `FloorCanvas` takes `onTableActivate(table)`. Today it shows a "coming soon" toast. **This is where table selection plugs in.** |
 | Floor data | `hooks/useFloorPlan.ts` | Loads `get_floor_plan`. Use the same pattern for the new calls. |
 | Navigation | `src/lib/stores/navigationStore.ts` | Add pages to `POSPage`, `PAGE_PATHS` and `RESTAURANT_PAGES`. |
@@ -35,7 +35,7 @@ no `lib/db` or `lib/apiClient` imports from UI code.
 | User | Role in the flow | Notes |
 |---|---|---|
 | `waiter.jane@goldenecho.test`, `waiter.brian@goldenecho.test` | Waiter | Sales User + VunaPOS Waiter. **No shift.** |
-| `cashier.grace@goldenecho.test` | Cashier | Has an open shift. Bills orders. |
+| `cashier.grace@goldenecho.test` | Cashier | VunaPOS Cashier. Opens a shift on entry (or resumes it). Bills orders. |
 | `manager.mary@goldenecho.test` | Supervisor | Restaurant Manager. Manager PIN **1234**. Can edit the floor plan. |
 
 Floors: Main Hall T1–T8, Terrace R1–R5, VIP V1–V2.
@@ -124,7 +124,7 @@ Re-create the demo with
   orders have no table).
 
 ### 3.5 Bill (cashier)
-1. Guard with the **opening-entry gate** (§5.6). Only the billing user needs an open shift.
+1. Only users with `can_take_payment` see Bill. They already have an open shift (§5.2).
 2. `preview_order(order)` gives the totals to charge.
 3. Open `CheckoutDialog` with `invoice.totals.grand_total`. On confirm, call
    `checkout_order({order, payments, idempotency_key, customer?, is_credit_sale?, due_date?,
@@ -281,9 +281,22 @@ JSON-encode list arguments (`items`, `payments`), as `saveFloorPlan` does with `
    fails with a "transaction reference is required" error.
 
 ### 5.2 Opening-entry gate (team decision 6)
-`RestaurantApp` intentionally has no `PosOpeningGate`. Waiters work without a shift. Put the
-gate **in front of billing only**. When a user without an open shift taps "Bill", show the
-opening-entry dialog (`PosOpeningEntryDialog`), then continue. Checkout itself also enforces this.
+The gate is **on entry, for users who can take payment**. This is already built:
+- `bootstrap.can_take_payment` is true only with the **VunaPOS Cashier** role. Restaurant
+  Manager and other roles don't count.
+- For those users, `RestaurantApp` wraps the shell in `PosOpeningGate`, so they open a shift
+  (`PosOpeningEntryDialog`) before they reach the floor. Close Shift is in their sidebar, and on
+  phones on the Profile page.
+- Everyone else (waiters, managers without the Cashier role) goes straight to the floor with no
+  shift.
+
+For the order screens this means:
+- **Show Bill and checkout only when `can_take_payment` is true.** Waiters can't bill: they have
+  no permission to create invoices, so `checkout_order` refuses them even with a shift.
+- Waiters can still show the customer the bill with `preview_order`, which needs no shift.
+- A cashier always has an open shift inside the app, so the order screens need no shift prompt
+  of their own. If the shift is closed elsewhere, `PosOpeningGate` blocks the app as in retail,
+  and checkout still enforces it on the server.
 
 ## 6. Error codes → what the UI should do
 
@@ -333,7 +346,7 @@ opening-entry dialog (`PosOpeningEntryDialog`), then continue. Checkout itself a
 | 6 | Preview T1 (VRO-2026-00001) | Service Charge 10% = 554, total **6,094** |
 | 7 | Preview the takeaway order (VRO-2026-00004) | Total **3,205**, no service charge |
 | 8 | Brian: cancel T5 without PIN | `PIN_TOKEN_REQUIRED` → Mary enters 1234 → Cancelled, approver recorded |
-| 9 | Jane (no shift): Bill | Opening-entry prompt (no checkout without a shift) |
+| 9 | Jane (Waiter): open an order | No Bill button; Print bill (`preview_order`) works. Grace (Cashier) gets the shift dialog on entry and can bill |
 | 10 | Grace: bill T1 with Cash 6,500 | Invoice submitted, change 406, T1 Free |
 | 11 | Grace: bill a takeaway order with M-Pesa | Needs a transaction code + date (§5.1) |
 | 12 | Move the T5 order to T6, then to T1 while T1 is busy | Move works, then `TABLE_OCCUPIED` |

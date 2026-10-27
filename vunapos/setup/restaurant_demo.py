@@ -14,16 +14,16 @@ only created when the profile has none.
 Never run this on a production site.
 """
 
+import math
+
 import frappe
-from frappe.permissions import add_permission, update_permission_property
 from frappe.utils import flt, nowdate
 from frappe.utils.nestedset import get_root_of
 
 from vunapos.services.floor_plan_service import FLOOR_DOCTYPE, get_floor_plan_version, save_floor_plan
-from vunapos.setup.utils import RESTAURANT_MANAGER_ROLE
+from vunapos.setup.utils import CASHIER_ROLE, RESTAURANT_MANAGER_ROLE, WAITER_ROLE, ensure_vunapos_roles
 
 DEMO_PASSWORD = "Demo@2026"
-WAITER_ROLE = "VunaPOS Waiter"
 MANAGER_PIN = "1234"
 TAKEAWAY_PRICES = "Takeaway Prices"
 SERVICE_CHARGE_TEMPLATE = "Dine In Service Charge"
@@ -115,7 +115,7 @@ STAFF = (
 	(
 		"cashier.grace@goldenecho.test",
 		"Grace Achieng",
-		("Sales User", "Accounts User"),
+		("Sales User", "Accounts User", CASHIER_ROLE),
 		"Grace Achieng",
 		"Salesperson",
 		"3333",
@@ -473,10 +473,13 @@ def _ensure_mpesa(company):
 			.insert(ignore_permissions=True)
 			.name
 		)
+	# Name lookups ignore case, so a site may already have this mode as "M-PESA".
+	# Return its real name for every later use.
 	mode = _ensure("Mode of Payment", MPESA, {"mode_of_payment": MPESA, "type": "Bank"})
 	if not any(row.company == company for row in mode.get("accounts", [])):
 		mode.append("accounts", {"company": company, "default_account": account_name})
 		mode.save(ignore_permissions=True)
+	return mode.name
 
 
 def _ensure_sales_person(name):
@@ -485,7 +488,8 @@ def _ensure_sales_person(name):
 
 
 def _ensure_staff():
-	_ensure_waiter_role()
+	# The VunaPOS roles and their permissions come from code (decision 12).
+	ensure_vunapos_roles()
 	for email, first_name, roles, _sales_person, _pin_role, _pin in STAFF:
 		if not frappe.db.exists("User", email):
 			frappe.get_doc(
@@ -504,27 +508,10 @@ def _ensure_staff():
 			user.add_roles(*missing)
 
 
-def _ensure_waiter_role():
-	"""Demo stand-in for the planned VunaPOS Waiter role (design decision 12).
-
-	Waiters need read-only access to:
-	- POS Profile: bootstrap reads the resolved profile.
-	- Sales Invoice and POS Invoice: catalogue prices go through ERPNext's
-	  apply_pricing_rule, which checks the user may price that transaction type.
-	Standard ERPNext gives these only to Accounts roles, and waiters should not
-	get accounting access. A dedicated role keeps Sales User unchanged site-wide.
-	"""
-	_ensure("Role", WAITER_ROLE, {"role_name": WAITER_ROLE, "desk_access": 1})
-	for doctype in ("POS Profile", "Sales Invoice", "POS Invoice"):
-		if not frappe.db.exists("Custom DocPerm", {"parent": doctype, "role": WAITER_ROLE, "permlevel": 0}):
-			add_permission(doctype, WAITER_ROLE, 0)
-		update_permission_property(doctype, WAITER_ROLE, 0, "read", 1)
-
-
 # ---- POS Profile ----
 
 
-def _configure_profile(profile_name, price_list):
+def _configure_profile(profile_name, price_list, mpesa):
 	profile = frappe.get_doc("POS Profile", profile_name)
 	profile.update(
 		{
@@ -541,8 +528,8 @@ def _configure_profile(profile_name, price_list):
 			"vunapos_enable_salesperson_pin": 0,
 		}
 	)
-	if not any(row.mode_of_payment == MPESA for row in profile.payments):
-		profile.append("payments", {"mode_of_payment": MPESA, "default": 0})
+	if not any(row.mode_of_payment.lower() == mpesa.lower() for row in profile.payments):
+		profile.append("payments", {"mode_of_payment": mpesa, "default": 0})
 	assigned = {row.user for row in profile.applicable_for_users}
 	for email in [row[0] for row in STAFF]:
 		if email not in assigned:
@@ -660,7 +647,7 @@ def _tables(profile_name):
 	}
 
 
-def _create_sample_orders(profile_name):
+def _create_sample_orders(profile_name, mpesa):
 	from vunapos.services import restaurant_order_service as orders
 
 	if frappe.db.exists("VunaPOS Restaurant Order", {"pos_profile": profile_name}):
@@ -670,6 +657,11 @@ def _create_sample_orders(profile_name):
 
 	def item(code, qty=1, note=None):
 		return {"item_code": code, "qty": qty, "note": note}
+
+	def amount_due(order_name):
+		# Bill what checkout will charge: service charge, offers and rounding included.
+		totals = _as(CASHIER, orders.preview_order, order=order_name)["invoice"]["totals"]
+		return flt(totals.get("rounded_total") or totals.get("grand_total"))
 
 	# Open dine-in orders on the Main Hall and Terrace (tables show as Occupied).
 	t1 = _as(
@@ -732,7 +724,8 @@ def _create_sample_orders(profile_name):
 		CASHIER,
 		orders.checkout_order,
 		order=t2["name"],
-		payments=[{"mode_of_payment": "Cash", "amount": 2000}],
+		# Tender the next round 500 so the cashier gives change.
+		payments=[{"mode_of_payment": "Cash", "amount": math.ceil(amount_due(t2["name"]) / 500) * 500}],
 		idempotency_key=f"demo-{t2['name']}",
 	)
 	delivery = _as(
@@ -750,8 +743,8 @@ def _create_sample_orders(profile_name):
 		order=delivery["name"],
 		payments=[
 			{
-				"mode_of_payment": MPESA,
-				"amount": 2880,
+				"mode_of_payment": mpesa,
+				"amount": amount_due(delivery["name"]),
 				"reference_no": "SJK2X8Y7ZQ",
 				"reference_date": nowdate(),
 			}
@@ -797,19 +790,19 @@ def create_restaurant_demo(pos_profile="Nairobi"):
 	_ensure_items(price_list)
 	_ensure_opening_stock(company, profile.warehouse)
 	_ensure_customers()
-	_ensure_mpesa(company)
+	mpesa = _ensure_mpesa(company)
 	_ensure_staff()
 	_ensure_service_type_pricing(company, profile.currency)
 	_log("Service type pricing: Takeaway Prices, Family Pack Deal (15%), Dine In service charge (10%)")
 	_log(f"Masters ready: {len(ITEMS)} items, {len(CUSTOMERS)} customers, {len(STAFF)} staff users")
 
-	profile = _configure_profile(pos_profile, price_list)
+	profile = _configure_profile(pos_profile, price_list, mpesa)
 	_configure_floors(pos_profile)
 	_configure_menu(pos_profile)
 	_log("POS Profile configured: service types, menu, PIN staff, payment modes")
 
 	shift = _ensure_shift(profile, CASHIER)
 	_log(f"Cashier shift open: {shift}")
-	_create_sample_orders(pos_profile)
+	_create_sample_orders(pos_profile, mpesa)
 	frappe.db.commit()  # nosemgrep
 	_log("Done")
