@@ -1,10 +1,11 @@
-import { DoorClosed, Laptop, LogOut, Moon, Sun, UserRound } from "lucide-react";
+import { DoorClosed, Laptop, Moon, Sun, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../../../lib/cn";
 import { useThemeStore, type ThemeMode } from "../../../lib/stores/themeStore";
 import { useThemeSync } from "../hooks/useThemeSync";
 import type { BootstrapData, CustomerDTO } from "../types";
+import { LogoutButton } from "./LogoutButton";
 
 type UserProfilePageProps = {
   bootstrap?: BootstrapData | null;
@@ -43,13 +44,7 @@ export function UserProfilePage({ bootstrap, roleLabel, onCloseShift }: UserProf
               Close shift
             </button>
           ) : null}
-          <a
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-error px-3 text-sm font-medium text-on-error hover:bg-error-container hover:text-on-error-container"
-            href="/?cmd=web_logout"
-          >
-            <LogOut className="size-4" />
-            Logout
-          </a>
+          <LogoutButton />
         </div>
 
         <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4">
