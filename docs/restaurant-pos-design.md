@@ -3,7 +3,8 @@
 Status: agreed design decisions for the VunaPOS Restaurant POS feature. Decisions 1-4
 apply to the current phase (floor plan backend and editor). Decisions 5-8 are recorded
 now so early work does not block them, and are implemented in later phases. Decisions 6
-and 12 (shift on entry for cashiers, and the restaurant roles) are built.
+and 12 (shift on entry for cashiers, and the restaurant roles) are built. Decision 13 is
+built as far as removing the table colour; the status colours come with the order flow.
 
 ## Decisions
 
@@ -149,6 +150,31 @@ Agreed proposal (documentation only, nothing built yet):
   administrator grants Sales User read on POS Profile in Role Permissions Manager.
   This was found while testing the floor view with a Sales User.
 
+### 13. Table colour is reserved for status
+
+- Tables have no colour of their own. The `color` field was removed from VunaPOS
+  Restaurant Table, so a table's colour always means its status (decision 3).
+- Floor `background_color` and VunaPOS Floor Element `color` are unchanged: they are decor.
+- Until the order flow supplies a status, every table is drawn in one neutral style:
+  surface fill with an `on-surface-variant` outline, and the primary colour when selected.
+- Agreed status palette (light / dark theme):
+
+  | Status | Light | Dark | When |
+  | --- | --- | --- | --- |
+  | Free | `#16A34A` green | `#4ADE80` | With the order flow |
+  | Occupied | `#2563EB` blue | `#60A5FA` | With the order flow |
+  | Bill requested | `#7C3AED` purple | `#A78BFA` | With the order flow |
+  | In kitchen | `#D97706` amber | `#FBBF24` | Later |
+  | Served | `#0D9488` teal | `#2DD4BF` | Later |
+  | Reserved | `#64748B` slate | `#94A3B8` | Later |
+
+- **Never colour alone.** Every status also has an icon or text label on the table, the
+  floor view shows a legend, and the table's accessible name includes the status.
+- Existing sites: saved table colours stay in the database column, which Frappe does
+  not drop when a field is removed, but nothing reads or writes them. No patch is
+  needed. A client that still sends `color` for a table is accepted and the value is
+  ignored.
+
 ## Data model (current phase)
 
 All doctypes are in module VunaPOS.
@@ -157,7 +183,7 @@ All doctypes are in module VunaPOS.
 | --- | --- | --- |
 | VunaPOS Restaurant Floor | Standalone, hash naming, title `floor_name` | `floor_name`, `pos_profile`, `display_order`, `is_active`, `background_color`, `background_image` (public file), `elements` |
 | VunaPOS Floor Element | Child table of Floor | `element_type` (Wall, Door, Window, Bar Counter, Plant, Label), `label`, `x`, `y`, `width`, `height`, `rotation`, `color` |
-| VunaPOS Restaurant Table | Standalone, hash naming, title `table_label` | `floor`, `pos_profile`, `table_label`, `seats`, `shape`, `x`, `y`, `width`, `height`, `rotation`, `color`, `is_active` |
+| VunaPOS Restaurant Table | Standalone, hash naming, title `table_label` | `floor`, `pos_profile`, `table_label`, `seats`, `shape`, `x`, `y`, `width`, `height`, `rotation`, `is_active`. No colour (decision 13). |
 
 - Tables are standalone so future Restaurant Orders can link to them. Elements are a
   child table because nothing links to them.

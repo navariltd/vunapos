@@ -37,7 +37,6 @@ export type DraftTable = {
 	width: number;
 	height: number;
 	rotation: number;
-	color: string | null;
 	is_active: boolean;
 };
 
@@ -114,7 +113,6 @@ export function toDraft(plan: Pick<FloorPlanDTO, "floors">): FloorPlanDraft {
 				width: table.width,
 				height: table.height,
 				rotation: table.rotation,
-				color: table.color ?? null,
 				is_active: table.is_active,
 			})),
 		})),
@@ -225,7 +223,6 @@ export function addTable(draft: FloorPlanDraft, floorKey: string): { draft: Floo
 		height: TABLE_DEFAULT.height,
 		...newItemPosition(floor, TABLE_DEFAULT.width, TABLE_DEFAULT.height),
 		rotation: 0,
-		color: null,
 		is_active: true,
 	});
 	return {
@@ -351,7 +348,6 @@ export function toSavePayload(draft: FloorPlanDraft, version: string): SaveFloor
 						width: round(table.width),
 						height: round(table.height),
 						rotation: round(table.rotation),
-						color: table.color,
 						is_active: table.is_active,
 					};
 				}),

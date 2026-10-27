@@ -15,7 +15,6 @@
   "width",
   "height",
   "rotation",
-  "color",
   "is_active"
  ],
  "fields": [
@@ -83,11 +82,6 @@
    "label": "Rotation"
   },
   {
-   "fieldname": "color",
-   "fieldtype": "Color",
-   "label": "Color"
-  },
-  {
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
@@ -103,7 +97,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-27 17:30:00.000000",
+ "modified": "2026-10-27 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "VunaPOS Restaurant Table",

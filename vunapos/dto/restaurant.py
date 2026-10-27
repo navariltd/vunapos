@@ -28,7 +28,6 @@ def table_to_dict(table):
 		"width": flt(table.width),
 		"height": flt(table.height),
 		"rotation": flt(table.rotation),
-		"color": table.color,
 		"is_active": bool(cint(table.is_active)),
 	}
 
