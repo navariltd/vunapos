@@ -14,6 +14,7 @@ CANVAS_HEIGHT = 700
 FLOOR_DOCTYPE = "VunaPOS Restaurant Floor"
 TABLE_DOCTYPE = "VunaPOS Restaurant Table"
 ELEMENT_DOCTYPE = "VunaPOS Floor Element"
+ORDER_DOCTYPE = "VunaPOS Restaurant Order"
 MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
 ELEMENT_TYPES = ("Wall", "Door", "Window", "Bar Counter", "Plant", "Label")
 TABLE_SHAPES = ("Square", "Round", "Rectangle", "Oval")
@@ -443,9 +444,25 @@ def _validate_payload(payload, pos_profile, existing_floors, existing_tables):
 
 
 def _retire_table(table_name):
-	# Hard delete until Restaurant Orders link to tables. At that point this
-	# becomes "deactivate when linked orders exist, otherwise delete", and its
-	# callers stay unchanged.
+	orders = frappe.get_all(
+		ORDER_DOCTYPE,
+		filters={"restaurant_table": table_name},
+		fields=["name", "status"],
+		order_by="creation desc",
+		limit_page_length=20,
+	)
+	if orders:
+		table_label = frappe.db.get_value(TABLE_DOCTYPE, table_name, "table_label")
+		has_open_order = any(row.status == "Open" for row in orders)
+		_throw(
+			"TABLE_HAS_OPEN_ORDERS" if has_open_order else "TABLE_HAS_ORDERS",
+			_("Table {0} has open orders. Bill or cancel them before removing the table.").format(table_label)
+			if has_open_order
+			else _("Table {0} has past orders, so it cannot be deleted. Deactivate it instead.").format(
+				table_label
+			),
+			{"table": table_name, "orders": [row.name for row in orders]},
+		)
 	frappe.delete_doc(TABLE_DOCTYPE, table_name, ignore_permissions=True)
 
 

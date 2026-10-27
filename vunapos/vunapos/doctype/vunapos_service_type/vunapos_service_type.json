@@ -1,0 +1,133 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:service_type_name",
+ "creation": "2026-10-27 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "service_type_name",
+  "enabled",
+  "requires_table",
+  "column_break_flags",
+  "display_order",
+  "description",
+  "pricing_section",
+  "price_list",
+  "column_break_pricing",
+  "taxes_and_charges"
+ ],
+ "fields": [
+  {
+   "fieldname": "service_type_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Service Type Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "default": "0",
+   "description": "Orders of this type must be placed on a restaurant table, for example Dine In.",
+   "fieldname": "requires_table",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Requires Table"
+  },
+  {
+   "fieldname": "column_break_flags",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "Lower numbers are shown first in the POS.",
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "label": "Display Order"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "pricing_section",
+   "fieldtype": "Section Break",
+   "label": "Pricing",
+   "description": "Optional. Leave empty to use the POS Profile's price list and taxes."
+  },
+  {
+   "fieldname": "price_list",
+   "fieldtype": "Link",
+   "label": "Price List",
+   "options": "Price List",
+   "description": "Orders of this type are priced from this selling price list. Only items with a price in it are on the menu for this type. Pricing Rules and Promotional Schemes limited to this price list apply as offers."
+  },
+  {
+   "fieldname": "column_break_pricing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "taxes_and_charges",
+   "fieldtype": "Link",
+   "label": "Sales Taxes and Charges Template",
+   "options": "Sales Taxes and Charges Template",
+   "description": "Taxes and charges for this type, for example a service charge for Dine In only."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-27 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Service Type",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "display_order",
+ "sort_order": "ASC",
+ "states": []
+}

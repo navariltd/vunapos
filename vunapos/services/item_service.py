@@ -707,7 +707,7 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 
 
 def _search_items_uncached(
-	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None
+	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None, item_groups=None
 ):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
@@ -727,6 +727,10 @@ def _search_items_uncached(
 	# first and choose its concrete variant in the variant picker; barcode scans
 	# still resolve an exact variant through the separate fallback lookup below.
 	filters = {"disabled": 0, "is_sales_item": 1, "is_fixed_asset": 0}
+	if item_groups is not None:
+		# Restaurant menus pass the resolved item groups. An empty list means
+		# nothing is on the menu, so it must not fall through to "no filter".
+		filters["item_group"] = ["in", list(item_groups) or [""]]
 	query_filters = dict(filters)
 	query_filters["variant_of"] = ["is", "not set"]
 	or_filters = []
@@ -885,10 +889,12 @@ def _search_items_uncached(
 	]
 
 
-def search_items(query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None):
+def search_items(
+	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None, item_groups=None
+):
 	"""Search the POS catalogue, using a short-lived Redis snapshot for stable reads."""
 	if since or frappe.flags.in_test:
-		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since)
+		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since, item_groups)
 	profile = resolve_pos_profile(pos_profile)
 	resolved_customer = customer or profile.customer
 	resolved_price_list = resolve_price_list(
@@ -901,11 +907,14 @@ def search_items(query=None, pos_profile=None, customer=None, price_list=None, l
 		resolved_customer,
 		resolved_price_list,
 		cint(limit),
+		item_groups,
 	)
 	cached = get_catalogue_cache(key)
 	if cached is not None:
 		return cached
-	result = _search_items_uncached(query, profile.name, resolved_customer, resolved_price_list, limit, None)
+	result = _search_items_uncached(
+		query, profile.name, resolved_customer, resolved_price_list, limit, None, item_groups
+	)
 	set_catalogue_cache(key, result)
 	return result
 
