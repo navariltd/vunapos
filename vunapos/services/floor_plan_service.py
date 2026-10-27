@@ -41,7 +41,6 @@ TABLE_FIELDS = (
 	"width",
 	"height",
 	"rotation",
-	"color",
 	"is_active",
 	"modified",
 )
@@ -372,7 +371,6 @@ def _normalize_table(row):
 		"width": flt(row.get("width", 80)),
 		"height": flt(row.get("height", 80)),
 		"rotation": normalize_rotation(row.get("rotation")),
-		"color": row.get("color") or None,
 		"is_active": cint(row.get("is_active", 1)),
 	}
 	if not table["table_label"]:

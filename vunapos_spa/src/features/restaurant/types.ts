@@ -28,7 +28,6 @@ export type RestaurantTableDTO = {
 	width: number;
 	height: number;
 	rotation: number;
-	color?: string | null;
 	is_active: boolean;
 };
 

@@ -34,8 +34,8 @@ const plan: Pick<FloorPlanDTO, "floors"> = {
 				{ name: "el-1", element_type: "Wall", label: null, x: 0, y: 0, width: 1000, height: 20, rotation: 0, color: null },
 			],
 			tables: [
-				{ name: "tbl-1", floor: "floor-a", table_label: "T1", seats: 4, shape: "Square", x: 100, y: 100, width: 80, height: 80, rotation: 0, color: null, is_active: true },
-				{ name: "tbl-2", floor: "floor-a", table_label: "T2", seats: 2, shape: "Round", x: 300, y: 100, width: 80, height: 80, rotation: 0, color: null, is_active: true },
+				{ name: "tbl-1", floor: "floor-a", table_label: "T1", seats: 4, shape: "Square", x: 100, y: 100, width: 80, height: 80, rotation: 0, is_active: true },
+				{ name: "tbl-2", floor: "floor-a", table_label: "T2", seats: 2, shape: "Round", x: 300, y: 100, width: 80, height: 80, rotation: 0, is_active: true },
 			],
 		},
 		{
@@ -172,7 +172,7 @@ describe("after save", () => {
 					background_color: null,
 					background_image: null,
 					elements: [],
-					tables: [{ name: "tbl-3", floor: "floor-c", table_label: "T3", seats: 4, shape: "Square", x: 460, y: 310, width: 80, height: 80, rotation: 0, color: null, is_active: true }],
+					tables: [{ name: "tbl-3", floor: "floor-c", table_label: "T3", seats: 4, shape: "Square", x: 460, y: 310, width: 80, height: 80, rotation: 0, is_active: true }],
 				},
 			],
 		});
@@ -209,5 +209,24 @@ describe("findErrorTarget", () => {
 	it("returns null when the error does not point at a row", () => {
 		expect(findErrorTarget(draft(), { version: "x" })).toBeNull();
 		expect(findErrorTarget(draft(), undefined)).toBeNull();
+	});
+});
+
+describe("table colour", () => {
+	it("is never carried into the draft or the save payload", () => {
+		// A plan from an older server still has a table colour; tables are now coloured
+		// by order status only (design decision 13). Element colours are kept.
+		const legacy = {
+			floors: plan.floors.map((floor) => ({
+				...floor,
+				elements: floor.elements.map((element) => ({ ...element, color: "#16A34A" })),
+				tables: floor.tables.map((table) => ({ ...table, color: "#FF0000" })),
+			})),
+		};
+		const payload = toSavePayload(toDraft(legacy), "v1");
+		const tables = payload.floors.flatMap((floor) => floor.tables);
+		expect(tables.length).toBeGreaterThan(0);
+		for (const table of tables) expect(table).not.toHaveProperty("color");
+		expect(payload.floors[0].elements[0].color).toBe("#16A34A");
 	});
 });

@@ -109,6 +109,21 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "pos_profile"), self.profile)
 		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "shape"), "Round")
 
+	def test_tables_have_no_colour_of_their_own(self):
+		# Table colour is reserved for order status (design decision 13). A client
+		# that still sends a colour is accepted, and the colour is dropped.
+		element = {"element_type": "Plant", "x": 10, "y": 10, "width": 40, "height": 40, "color": "#16A34A"}
+		result = self._save_ok(
+			[_floor(background_color="#FAFAFA", elements=[element], tables=[_table(color="#FF0000")])]
+		)
+
+		[floor] = result["plan"]["floors"]
+		self.assertNotIn("color", floor["tables"][0])
+		self.assertFalse(frappe.get_meta(TABLE_DOCTYPE).has_field("color"))
+		# Floor background and element colours are unchanged.
+		self.assertEqual(floor["background_color"], "#FAFAFA")
+		self.assertEqual(floor["elements"][0]["color"], "#16A34A")
+
 	def test_save_accepts_a_json_string_payload(self):
 		version = self._load()["version"]
 		response = save_floor_plan(

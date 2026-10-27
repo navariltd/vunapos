@@ -3,30 +3,21 @@ import type { KeyboardEvent } from "react";
 import { boxCenter, screenPxToCanvas, tableTextLayout } from "../floorPlanGeometry";
 import type { RestaurantTableDTO } from "../types";
 
-export type TableStatus = "free" | "occupied" | "bill-requested";
-
-// Derived from open orders once they exist (design decision 3); every table is free for now.
-const STATUS_STYLE: Record<TableStatus, { stroke: string; label: string }> = {
-  free: { stroke: "var(--color-secondary)", label: "Free" },
-  occupied: { stroke: "var(--color-tertiary)", label: "Occupied" },
-  "bill-requested": { stroke: "var(--color-error)", label: "Bill requested" },
-};
+// Table colour is reserved for order status (design decision 13). Until the order
+// flow supplies a status, every table uses one neutral style.
+const NEUTRAL_FILL = "var(--color-surface)";
+const NEUTRAL_STROKE = "var(--color-on-surface-variant)";
 
 type TableShapeProps = {
-  table: Pick<
-    RestaurantTableDTO,
-    "table_label" | "seats" | "shape" | "x" | "y" | "width" | "height" | "rotation" | "color"
-  >;
+  table: Pick<RestaurantTableDTO, "table_label" | "seats" | "shape" | "x" | "y" | "width" | "height" | "rotation">;
   scale: number;
-  status?: TableStatus;
   selected?: boolean;
   muted?: boolean;
   onActivate?: () => void;
 };
 
-export function TableShape({ table, scale, status = "free", selected, muted, onActivate }: TableShapeProps) {
+export function TableShape({ table, scale, selected, muted, onActivate }: TableShapeProps) {
   const center = boxCenter(table);
-  const statusStyle = STATUS_STYLE[status];
   const strokeWidth = screenPxToCanvas(selected ? 3 : 2, scale);
   const seatsText = `${table.seats} ${table.seats === 1 ? "seat" : "seats"}`;
   // Text stays upright, so a table turned on its side offers its height as width.
@@ -38,14 +29,14 @@ export function TableShape({ table, scale, status = "free", selected, muted, onA
     scale,
   );
   const isRound = table.shape === "Round" || table.shape === "Oval";
-  const fill = table.color || "var(--color-surface)";
+  const stroke = selected ? "var(--color-primary)" : NEUTRAL_STROKE;
   const interactive = Boolean(onActivate);
 
   return (
     <g
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
-      aria-label={`Table ${table.table_label}, ${table.seats} seats, ${statusStyle.label.toLowerCase()}`}
+      aria-label={`Table ${table.table_label}, ${table.seats} seats`}
       className={interactive ? "cursor-pointer" : undefined}
       opacity={muted ? 0.45 : 1}
       onClick={onActivate}
@@ -63,8 +54,8 @@ export function TableShape({ table, scale, status = "free", selected, muted, onA
             cy={center.y}
             rx={table.width / 2}
             ry={table.height / 2}
-            fill={fill}
-            stroke={selected ? "var(--color-primary)" : statusStyle.stroke}
+            fill={NEUTRAL_FILL}
+            stroke={stroke}
             strokeWidth={strokeWidth}
           />
         ) : (
@@ -74,8 +65,8 @@ export function TableShape({ table, scale, status = "free", selected, muted, onA
             width={table.width}
             height={table.height}
             rx={Math.min(8, table.width / 4, table.height / 4)}
-            fill={fill}
-            stroke={selected ? "var(--color-primary)" : statusStyle.stroke}
+            fill={NEUTRAL_FILL}
+            stroke={stroke}
             strokeWidth={strokeWidth}
           />
         )}

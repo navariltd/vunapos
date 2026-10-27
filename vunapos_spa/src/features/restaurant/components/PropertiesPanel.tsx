@@ -146,7 +146,6 @@ export function PropertiesPanel({
           </Field>
         </div>
         <SizeFields item={table} onChange={onChangeItem} />
-        <ColorField value={table.color} onChange={(color) => onChangeItem({ color })} />
         <label className="flex items-center gap-2 text-sm text-on-surface">
           <input type="checkbox" checked={table.is_active} onChange={(event) => onChangeItem({ is_active: event.target.checked })} />
           Active (shown in service)
