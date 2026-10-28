@@ -1,10 +1,10 @@
 import { useMemo } from "react";
-import { ArrowDownUp, ChevronRight, Search } from "lucide-react";
+import { ArrowDownUp, ChevronRight, Plus, Search } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { cn } from "../../../lib/cn";
-import { navigateToOrder } from "../../../lib/stores/navigationStore";
+import { navigateToOrder, navigateToPosPage } from "../../../lib/stores/navigationStore";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useNow } from "../hooks/useNow";
@@ -12,7 +12,6 @@ import { useOpenOrders } from "../hooks/useOrderData";
 import { filterOrders, isFiltered } from "../ordersFilter";
 import { useOrdersFilterStore } from "../stores/ordersFilterStore";
 import { elapsedLabel, sortedServiceTypes } from "../tableStatus";
-import { NewOrderButton } from "./NewOrderButton";
 
 const chipClass = (active: boolean) =>
   cn(
@@ -63,7 +62,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
         action={<Button variant="ghost" onClick={clearFilters}>Clear filters</Button>}
       />
     ) : (
-      <EmptyState title="No open orders" description="Start one with New order or from the floor." />
+      <EmptyState title="No open orders" description="Start one with New order." />
     );
   } else {
     body = (
@@ -84,11 +83,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                   <span className="font-normal text-on-surface-variant"> · {order.name}</span>
                 </span>
                 <span className="block truncate text-xs text-on-surface-variant">
-                  {[
-                    order.table_label ? order.service_type : null,
-                    order.pax ? `${order.pax} ${order.pax === 1 ? "guest" : "guests"}` : null,
-                    order.waiter_name || order.waiter,
-                  ]
+                  {[order.table_label ? order.service_type : null, order.waiter_name || order.waiter]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
@@ -114,7 +109,10 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
             </span>
           ) : null}
         </h2>
-        {bootstrap.data?.restaurant ? <NewOrderButton /> : null}
+        <Button size="sm" className="shrink-0 gap-2" onClick={() => navigateToPosPage("Order")}>
+          <Plus className="size-4" aria-hidden="true" />
+          New order
+        </Button>
       </div>
 
       <div className="flex min-w-0 items-center gap-2">

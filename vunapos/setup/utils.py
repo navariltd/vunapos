@@ -11,6 +11,8 @@ CASHIER_ROLE = "VunaPOS Cashier"
 WAITER_ROLE = "VunaPOS Waiter"
 # Display order: the Profile page lists a user's roles in this order.
 RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, RESTAURANT_MANAGER_ROLE)
+# Roles that may edit the floor plan.
+FLOOR_PLAN_MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
 
 _READ = {"read": 1}
 # Catalogue pricing (ERPNext's apply_pricing_rule) needs doctype-level read on

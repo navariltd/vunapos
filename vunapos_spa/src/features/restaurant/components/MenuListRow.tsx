@@ -4,17 +4,21 @@ import { Plus } from "lucide-react";
 import { cn } from "../../../lib/cn";
 import { ItemTaxPrice } from "../../pos/components/ItemTaxPrice";
 import type { ItemDTO } from "../../pos/types";
+import { MenuTag } from "./MenuCardGrid";
 
 type MenuListRowProps = {
   item: ItemDTO;
   // How many are already on the order, sent and waiting.
   qty: number;
+  // Where the item may be served, e.g. "Terrace only".
+  tag?: string | null;
   currency?: string;
   onAdd: (item: ItemDTO) => void;
 };
 
-// The phone menu: one compact row per item, the whole row adds one.
-export const MenuListRow = memo(function MenuListRow({ item, qty, currency, onAdd }: MenuListRowProps) {
+// The compact menu (phones, and the list view on larger screens): one row per
+// item, the whole row adds one.
+export const MenuListRow = memo(function MenuListRow({ item, qty, tag, currency, onAdd }: MenuListRowProps) {
   return (
     <li>
       <button
@@ -26,7 +30,10 @@ export const MenuListRow = memo(function MenuListRow({ item, qty, currency, onAd
         {item.image ? (
           <img src={item.image} alt="" className="size-11 shrink-0 rounded-md bg-surface-container object-cover" />
         ) : null}
-        <span className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-on-surface">{item.item_name}</span>
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+          <span className="line-clamp-2 text-sm font-medium text-on-surface">{item.item_name}</span>
+          {tag ? <MenuTag text={tag} /> : null}
+        </span>
         <span className="shrink-0">
           <ItemTaxPrice currency={currency} item={item} align="right" />
         </span>

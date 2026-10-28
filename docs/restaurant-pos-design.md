@@ -5,6 +5,7 @@ apply to the current phase (floor plan backend and editor). Decisions 5-8 are re
 now so early work does not block them, and are implemented in later phases. Decisions 6
 and 12 (shift on entry for cashiers, and the restaurant roles) are built. Decision 13 is
 built as far as removing the table colour; the status colours come with the order flow.
+Decision 14 (menu-first ordering) is built.
 
 ## Decisions
 
@@ -60,13 +61,13 @@ built as far as removing the table colour; the status colours come with the orde
   wraps the restaurant shell in the same `PosOpeningGate` and `PosOpeningEntryDialog`
   that Retail uses.
 - Everyone else (waiters, managers without the Cashier role, and later kitchen staff)
-  goes straight to the floor with no shift. They cannot bill: they have no permission to
+  goes straight in with no shift, to a new order (decision 14). They cannot bill: they have no permission to
   create invoices, so `checkout_order` refuses them even if they have a shift.
 - `checkout_order` adds no role check of its own. The open shift is the accountability:
   checkout still requires the billing user's open POS Opening Entry.
-- Close Shift is shown only to `can_take_payment` users: in the restaurant sidebar, and
-  on phones from the Profile page (the bottom nav stays Floor and Profile). Closing the
-  shift reloads the app, so the opening dialog is shown again.
+- Close Shift is shown only to `can_take_payment` users: at the bottom of the restaurant
+  sidebar, and as the fourth bottom nav item on phones (New order, Orders, Close Shift,
+  Profile). Closing the shift reloads the app, so the opening dialog is shown again.
 - Retail mode is unchanged: the gate guards the whole app for every user.
 
 ### 7. Closing a shift with open tables (later phase)
@@ -111,7 +112,8 @@ Left out of the first floor plan UI and planned for later phases:
   order screen, bill preview) is built. Still to come: checkout and billing, cancelling
   orders, removing sent lines or lowering a sent quantity (both follow the item removal
   rule, with a manager PIN when the profile requires it), moving tables, switching the
-  service type of a saved order, request bill, and kitchen tickets.
+  service type of a saved order, request bill, and kitchen tickets. Menu-first ordering
+  (decision 14) replaced stage 1's floor-first start.
 - **Creating customers in Restaurant mode.** The order screen's customer selector only
   searches for now; new orders start with the POS Profile's default customer.
 
@@ -186,6 +188,49 @@ Agreed proposal (documentation only, nothing built yet):
   not drop when a field is removed, but nothing reads or writes them. No patch is
   needed. A client that still sends `color` for a table is accepted and the value is
   ignored.
+
+### 14. Menu-first ordering
+
+The team asked for orders to start from the menu rather than the floor.
+
+- **Landing and navigation.** Restaurant users land on the Order screen with a new,
+  empty order. The navigation is **New order** and **Orders**, with **Edit floor plan**
+  (managers, `can_edit_floor_plan` from bootstrap) and **Close Shift** (cashiers) at the
+  bottom of the sidebar. On phones the bottom nav is New order, Orders, Close Shift
+  (cashiers only) and Profile; managers find Edit floor plan on the Profile page. Floor is
+  no longer a nav item: the floor opens only to pick a table.
+- **Items first.** A new order starts with the profile's default service type (none when
+  the profile has no default), its default customer and no table. Service type chips sit
+  at the top of the order panel. Before the first save the service type can change
+  freely: switching to a type without tables clears the table, and the menu and prices
+  reload for the new type. Send without a service type asks for one; Send for a type that
+  needs a table opens the table picker and sends once a table is chosen. "Choose table"
+  in the panel only sets the table.
+- **Menu before a table.** Without a table, `get_menu` returns the menu of every floor
+  for a service type that uses tables, and of every service type when none is given
+  (priced from the profile's price list). Each item carries `allowed_floors` and, without
+  a service type, `allowed_service_types` (null means everywhere), and the response
+  lists the `floors` named. The screen tags limited items ("Terrace · VIP only").
+  With a table, or for a type without tables, the menu is unchanged. Saving still checks
+  every line against the order's own menu.
+- **Conflicts never block.** The picker marks floors (tab, note and a corner mark on each
+  table) that can't serve some lines, e.g. "Bar items not served here". Choosing such a
+  table, or switching to a service type that doesn't serve or price some lines, lists
+  them with **Remove these items** or the way back (**Choose another table**, or keep the
+  previous service type).
+- **Occupied tables in the picker** show the open order (number, waiter, item count from
+  `get_table_status`) with **Add to this order** and **Choose another table**, plus
+  **Start a separate order** when the profile allows several orders per table. Adding
+  moves the lines, with their line ids, onto that order and sends them as one new round.
+  The order's customer is kept; the new order's note is sent only when the order has
+  none, otherwise the order's note stays and the user is told.
+- **After Send**, a new order resets the screen to the next new order and shows
+  "Order VRO-… sent · T4" with a link to it. Existing orders open from the Orders page.
+- **Layout.** From 768px the menu and the order panel sit side by side; the panel holds
+  the service type, table, customer, order note and lines, and ends with the subtotal,
+  View bill and Send. Phones keep the Menu / Order tabs and the bottom bar.
+- **Guests** are no longer asked for anywhere in the UI. The order's `pax` field stays
+  on the server.
 
 ## Data model (current phase)
 

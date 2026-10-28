@@ -39,6 +39,7 @@ export function Sidebar({
   warehouse,
 }: SidebarProps) {
   const activePage = useNavigationStore((s) => s.activePage);
+  const currentPath = useNavigationStore((s) => s.currentPath);
   const navItems = sidebarItems(features, mode);
   const footerItems = sidebarFooterItems(features, mode);
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -62,7 +63,7 @@ export function Sidebar({
       <nav className="space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = isItemActive(item, activePage);
+          const isActive = isItemActive(item, activePage, currentPath);
           return (
             <a
               key={item.label}
@@ -110,7 +111,7 @@ export function Sidebar({
               title={isCollapsed ? item.title : undefined}
               className={cn(
                 "flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
-                isItemActive(item, activePage) ? activeLinkClass : inactiveLinkClass,
+                isItemActive(item, activePage, currentPath) ? activeLinkClass : inactiveLinkClass,
                 isCollapsed && "justify-center px-0",
               )}
               onClick={(event) => {
@@ -183,6 +184,7 @@ export function BottomNav({
   mode?: PosMode;
 }) {
   const activePage = useNavigationStore((s) => s.activePage);
+  const currentPath = useNavigationStore((s) => s.currentPath);
   const navItems = bottomNavItems(features, mode);
 
   return (
@@ -195,7 +197,7 @@ export function BottomNav({
       >
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = isItemActive(item, activePage);
+          const isActive = isItemActive(item, activePage, currentPath);
           return (
             <a
               key={item.label}
@@ -212,7 +214,7 @@ export function BottomNav({
               }}
             >
               <Icon className="size-4" aria-hidden="true" />
-              <span className="max-w-full truncate">{item.label}</span>
+              <span className="max-w-full truncate">{item.shortTitle ?? item.label}</span>
             </a>
           );
         })}

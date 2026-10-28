@@ -1,9 +1,13 @@
+import { TriangleAlert } from "lucide-react";
+
 import { cn } from "../../../lib/cn";
 
 export type FloorTab = {
   key: string;
   label: string;
   inactive?: boolean;
+  // Picking a table: this floor can't serve some of the order.
+  warning?: string | null;
 };
 
 type FloorTabsProps = {
@@ -33,6 +37,12 @@ export function FloorTabs({ tabs, activeKey, onChange }: FloorTabsProps) {
             onClick={() => onChange(tab.key)}
           >
             <span className="max-w-40 truncate">{tab.label}</span>
+            {tab.warning ? (
+              <>
+                <TriangleAlert className={cn("size-4 shrink-0", !isActive && "text-tertiary")} aria-hidden="true" />
+                <span className="sr-only">{tab.warning}</span>
+              </>
+            ) : null}
             {tab.inactive ? (
               <span className="rounded-full bg-surface-container-highest px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">
                 Inactive

@@ -250,6 +250,15 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 			self.assertIs(data["can_take_payment"], can_take_payment, user)
 			self.assertEqual(data["restaurant_roles"], roles, user)
 
+	def test_bootstrap_can_edit_floor_plan_for_managers_only(self):
+		expected = {WAITER: False, CASHIER: False, MANAGER: True, MANAGER_CASHIER: True}
+		for user, can_edit in expected.items():
+			frappe.set_user(user)
+			self.assertIs(get_bootstrap_data(self.profile)["can_edit_floor_plan"], can_edit, user)
+			self.assertIs(
+				get_pos_bootstrap_config(self.profile)["pos_profile"]["can_edit_floor_plan"], can_edit, user
+			)
+
 	def test_spa_bootstrap_payloads_carry_the_restaurant_rights(self):
 		# The SPA caches pos_profile from these endpoints, not get_bootstrap_data,
 		# so the rights must travel there (full and delta sync alike).
@@ -286,6 +295,14 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 		status = {row["table"]: row for row in self._ok(restaurant.get_table_status(self.profile))}
 		[open_order] = status[self.table]["orders"]
 		self.assertEqual((open_order["waiter"], open_order["waiter_name"]), (WAITER, expected))
+
+	def test_table_status_counts_the_items_on_each_order(self):
+		frappe.set_user(WAITER)
+		order = self._create_order()
+		self._ok(restaurant.add_order_items(order["name"], json.dumps([{"item_code": self.item, "qty": 3}])))
+		status = {row["table"]: row for row in self._ok(restaurant.get_table_status(self.profile))}
+		[open_order] = status[self.table]["orders"]
+		self.assertEqual(open_order["item_count"], 5)
 
 	def test_waiter_takes_orders_without_a_shift_but_cannot_bill(self):
 		frappe.set_user(WAITER)

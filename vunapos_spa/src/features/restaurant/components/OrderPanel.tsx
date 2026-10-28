@@ -1,5 +1,4 @@
-import { Minus, Plus } from "lucide-react";
-
+import type { CachedServiceType } from "../../../lib/types";
 import { CustomerSelector } from "../../pos/components/CustomerSelector";
 import {
   MAX_NOTE_LENGTH,
@@ -15,80 +14,71 @@ import {
   type OrderDraft,
 } from "../orderDraft";
 import { OrderLineRow } from "./OrderLineRow";
+import { ServiceTypeChips } from "./ServiceTypeChips";
+import { TableControl } from "./TableControl";
 
 type OrderPanelProps = {
   draft: OrderDraft;
   rates: Map<string, number>;
   currency?: string;
   readOnly: boolean;
+  serviceTypes: CachedServiceType[];
+  // The service type whose menu is being checked before switching to it.
+  checkingServiceType?: string | null;
+  serviceTypeMessage?: string | null;
   onChange: (update: (draft: OrderDraft) => OrderDraft) => void;
-  onChangeContext?: () => void;
+  onSelectServiceType: (serviceType: CachedServiceType) => void;
+  onPickTable: () => void;
 };
 
-// The order: where it is, who for, and its lines. Sent lines can only go up in
+// The order: its service type and table, who for, and its lines. Before the first
+// save the service type and table can change freely. Sent lines can only go up in
 // quantity (lowering removes items, stage 2); unsent lines are fully editable.
-export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChangeContext }: OrderPanelProps) {
+export function OrderPanel({
+  draft,
+  rates,
+  currency,
+  readOnly,
+  serviceTypes,
+  checkingServiceType,
+  serviceTypeMessage,
+  onChange,
+  onSelectServiceType,
+  onPickTable,
+}: OrderPanelProps) {
   const header = effectiveHeader(draft);
   const sent = draft.order?.items ?? [];
-  // Only before the first save; stage 1 has no switch on a saved order.
-  const canChangeContext = !draft.order && Boolean(onChangeContext);
+  const isNew = !draft.order;
+  const serviceType = serviceTypes.find((row) => row.name === draft.service_type);
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="rounded-full bg-surface-container px-3 py-1 font-medium text-on-surface">{draft.service_type}</span>
-        {draft.table_label ? (
-          <span className="rounded-full bg-surface-container px-3 py-1 font-medium text-on-surface">Table {draft.table_label}</span>
-        ) : null}
-        {draft.order ? <span className="text-xs text-on-surface-variant">{draft.order.name}</span> : null}
-        {canChangeContext ? (
-          <button type="button" className="text-xs font-medium text-primary underline" onClick={onChangeContext}>
-            Change
-          </button>
-        ) : null}
-      </div>
+      <ServiceTypeChips
+        serviceTypes={serviceTypes}
+        value={draft.service_type}
+        readOnly={!isNew || readOnly}
+        checking={checkingServiceType}
+        message={serviceTypeMessage}
+        onSelect={onSelectServiceType}
+      />
+      {serviceType?.requires_table || draft.table ? (
+        <TableControl tableLabel={draft.table_label} canChange={isNew && !readOnly} onPick={onPickTable} />
+      ) : null}
+      {draft.order ? <p className="-mt-2 text-xs text-on-surface-variant">{draft.order.name}</p> : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
-        <div>
-          <span className="mb-1 block text-xs font-medium text-on-surface-variant">Guests</span>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              className="flex size-10 items-center justify-center rounded-md border border-outline-variant disabled:opacity-40"
-              disabled={readOnly || header.pax <= 0}
-              aria-label="One guest fewer"
-              onClick={() => onChange((current) => setHeader(current, { pax: effectiveHeader(current).pax - 1 }))}
-            >
-              <Minus className="size-4" />
-            </button>
-            <span className="w-8 text-center text-sm font-semibold tabular-nums" aria-live="polite">
-              {header.pax}
-            </span>
-            <button
-              type="button"
-              className="flex size-10 items-center justify-center rounded-md border border-outline-variant disabled:opacity-40"
-              disabled={readOnly}
-              aria-label="One guest more"
-              onClick={() => onChange((current) => setHeader(current, { pax: effectiveHeader(current).pax + 1 }))}
-            >
-              <Plus className="size-4" />
-            </button>
-          </div>
-        </div>
-        <div className={readOnly ? "min-w-0 pointer-events-none opacity-60" : "min-w-0"}>
-          <span className="mb-1 block text-xs font-medium text-on-surface-variant">Customer</span>
-          <CustomerSelector
-            allowCreate={false}
-            posProfile={draft.pos_profile}
-            selectedCustomer={
-              header.customer ? { customer: header.customer, customer_name: header.customer_name || header.customer } : null
-            }
-            onSelect={(customer) =>
-              onChange((current) => setHeader(current, { customer: customer.customer, customer_name: customer.customer_name }))
-            }
-            onClear={() => onChange((current) => setHeader(current, { customer: null, customer_name: null }))}
-          />
-        </div>
+      <div className={readOnly ? "pointer-events-none min-w-0 opacity-60" : "min-w-0"}>
+        <span className="mb-1 block text-xs font-medium text-on-surface-variant">Customer</span>
+        <CustomerSelector
+          allowCreate={false}
+          posProfile={draft.pos_profile}
+          selectedCustomer={
+            header.customer ? { customer: header.customer, customer_name: header.customer_name || header.customer } : null
+          }
+          onSelect={(customer) =>
+            onChange((current) => setHeader(current, { customer: customer.customer, customer_name: customer.customer_name }))
+          }
+          onClear={() => onChange((current) => setHeader(current, { customer: null, customer_name: null }))}
+        />
       </div>
 
       <label className="block">

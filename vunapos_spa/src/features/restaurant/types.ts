@@ -103,7 +103,17 @@ export type MenuDTO = {
 	restricted: boolean;
 	source: "Menu" | "POS Profile Item Groups" | "All Items";
 	categories: Array<{ item_group: string; label: string }>;
-	items: Array<ItemDTO & { menu_category: string | null }>;
+	// Floors named in items' allowed_floors, for their tags.
+	floors: Array<{ floor: string; floor_name: string }>;
+	items: MenuItemDTO[];
+};
+
+// Without a table, a menu spans every floor (and without a service type, every
+// type); null means the item is served everywhere.
+export type MenuItemDTO = ItemDTO & {
+	menu_category: string | null;
+	allowed_floors: string[] | null;
+	allowed_service_types: string[] | null;
 };
 
 export type TableOrderRefDTO = {
@@ -113,6 +123,8 @@ export type TableOrderRefDTO = {
 	waiter: string;
 	waiter_name: string | null;
 	opened_at: string;
+	// Total quantity on the order's lines.
+	item_count: number;
 };
 
 export type TableStatusDTO = {

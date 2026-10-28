@@ -71,6 +71,20 @@ Re-create the demo with
 > `get_table_status`, `list_orders` and the order itself also return `waiter_name`.
 > §3.5 to §3.7 (billing, cancel and remove, table transfer) are stage 2.
 
+> **Menu-first ordering (design decision 14) replaces §3.1 and §3.2 as the way orders
+> start.** The app opens on a new order with the profile's default service type; service
+> type chips and a table control sit in the order panel, and the floor (`FloorView`) is
+> only the table picker. Guests are no longer asked for. API additions:
+> - `get_menu` without a table: for a service type that uses tables, every floor's menu;
+>   without a service type, every type's (profile prices). Items carry `allowed_floors`
+>   and `allowed_service_types` (null = everywhere); the response adds
+>   `floors: [{floor, floor_name}]`.
+> - `get_table_status` orders carry `item_count` (total quantity on the order).
+> - Bootstrap (`pos_profile` in the sync payloads) carries `can_edit_floor_plan`.
+>
+> Conflict checks (`menuConflicts.ts`) and the "Add to this order" merge
+> (`orderDraft.mergeIntoOrder`) are pure functions with vitest tests.
+
 ### 3.1 New order: pick a service type
 - Source: `bootstrap.restaurant.service_types` (already in the bootstrap profile payload), or
   `get_service_types(pos_profile)`.

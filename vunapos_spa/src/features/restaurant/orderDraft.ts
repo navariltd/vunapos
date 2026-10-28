@@ -1,3 +1,4 @@
+import type { CachedServiceType } from "../../lib/types";
 import type { OrderLineInput, RestaurantOrderDTO } from "./types";
 
 // An order being taken on this device. `order` is what the server last returned
@@ -17,17 +18,18 @@ export type UnsentLine = {
 // it removes items, which follows the removal rules (stage 2).
 export type SentLineEdit = { qty?: number; note?: string };
 
+// Guests (pax) are not asked for: the server keeps its default.
 export type OrderHeader = {
 	customer: string | null;
 	customer_name: string | null;
-	pax: number;
 	order_note: string;
 };
 
 export type OrderDraft = {
 	order: RestaurantOrderDTO | null;
 	pos_profile: string;
-	service_type: string;
+	// Null until chosen when the profile has no default service type.
+	service_type: string | null;
 	table: string | null;
 	table_label: string | null;
 	// Sent with create_order, so a retried first save returns the same order.
@@ -43,7 +45,7 @@ export type OrderDraft = {
 
 export function newOrderDraft(params: {
 	pos_profile: string;
-	service_type: string;
+	service_type?: string | null;
 	table?: string | null;
 	table_label?: string | null;
 	customer?: string | null;
@@ -53,14 +55,13 @@ export function newOrderDraft(params: {
 	return {
 		order: null,
 		pos_profile: params.pos_profile,
-		service_type: params.service_type,
+		service_type: params.service_type ?? null,
 		table: params.table ?? null,
 		table_label: params.table_label ?? null,
 		idempotency_key: params.idempotency_key,
 		header: {
 			customer: params.customer ?? null,
 			customer_name: params.customer_name ?? null,
-			pax: 0,
 			order_note: "",
 		},
 		headerEdits: {},
@@ -73,7 +74,6 @@ function headerFromOrder(order: RestaurantOrderDTO): OrderHeader {
 	return {
 		customer: order.customer,
 		customer_name: order.customer_name,
-		pax: order.pax || 0,
 		order_note: order.order_note || "",
 	};
 }
@@ -209,19 +209,71 @@ function withEdit(draft: OrderDraft, lineId: string, edit: SentLineEdit, serverQ
 
 export function setHeader(draft: OrderDraft, patch: Partial<OrderHeader>): OrderDraft {
 	const clean = { ...patch };
-	if (clean.pax !== undefined) clean.pax = Math.max(0, Math.floor(clean.pax) || 0);
 	if (clean.order_note !== undefined) clean.order_note = clean.order_note.slice(0, MAX_NOTE_LENGTH);
 	return { ...draft, headerEdits: trimHeaderEdits({ ...draft.headerEdits, ...clean }, draft.header) };
 }
 
-// Before the first save, the order context can still change (stage 1 has no
-// service type switch or table move on a saved order).
+// Before the first save, the order context can still change (a saved order's
+// service type and table are fixed until table transfer, stage 2).
 export function setContext(
 	draft: OrderDraft,
-	context: { service_type: string; table: string | null; table_label: string | null },
+	context: { service_type: string | null; table: string | null; table_label: string | null },
 ): OrderDraft {
 	if (draft.order) return draft;
 	return { ...draft, ...context };
+}
+
+// Switching to a type without tables clears the table.
+export function chooseServiceType(draft: OrderDraft, serviceType: CachedServiceType): OrderDraft {
+	return setContext(draft, {
+		service_type: serviceType.name,
+		table: serviceType.requires_table ? draft.table : null,
+		table_label: serviceType.requires_table ? draft.table_label : null,
+	});
+}
+
+export function chooseTable(draft: OrderDraft, table: { name: string; table_label: string }): OrderDraft {
+	return setContext(draft, { service_type: draft.service_type, table: table.name, table_label: table.table_label });
+}
+
+export function removeUnsentLines(draft: OrderDraft, lineIds: Iterable<string>): OrderDraft {
+	const drop = new Set(lineIds);
+	return { ...draft, unsent: draft.unsent.filter((line) => !drop.has(line.line_id)) };
+}
+
+// The profile's default service type, if it has one.
+export function defaultServiceType(serviceTypes: CachedServiceType[]): CachedServiceType | null {
+	return serviceTypes.find((row) => row.is_default) ?? null;
+}
+
+export type SendBlocker = "needs-service-type" | "needs-table" | null;
+
+// What must be chosen before a new order can be sent. A saved order has both.
+export function sendBlocker(draft: OrderDraft, serviceTypes: CachedServiceType[]): SendBlocker {
+	if (draft.order) return null;
+	const serviceType = serviceTypes.find((row) => row.name === draft.service_type);
+	if (!serviceType) return "needs-service-type";
+	if (serviceType.requires_table && !draft.table) return "needs-table";
+	return null;
+}
+
+export type MergeResult = {
+	draft: OrderDraft;
+	// Set when both orders have a note: the target's is kept and the draft's dropped.
+	droppedNote: string | null;
+};
+
+// "Add to this order": the lines being built move onto an open order, keeping
+// their line ids (so a retried send can't add them twice). The target's customer
+// is kept; the draft's note is sent only when the target has none.
+export function mergeIntoOrder(draft: OrderDraft, target: RestaurantOrderDTO): MergeResult {
+	const base = withServerOrder(null, target);
+	const note = effectiveHeader(draft).order_note.trim();
+	const targetNote = (target.order_note || "").trim();
+	const merged: OrderDraft = { ...base, idempotency_key: draft.idempotency_key, unsent: draft.unsent };
+	if (!note || note === targetNote) return { draft: merged, droppedNote: null };
+	if (!targetNote) return { draft: setHeader(merged, { order_note: note }), droppedNote: null };
+	return { draft: merged, droppedNote: note };
 }
 
 // ---- saving ----
@@ -234,13 +286,12 @@ export type SaveStep =
 				service_type: string;
 				table: string | null;
 				customer: string | null;
-				pax: number;
 				order_note: string | null;
 				items: OrderLineInput[];
 				idempotency_key: string;
 			};
 	  }
-	| { kind: "update_order"; params: { order: string; customer?: string; pax?: number; order_note?: string } }
+	| { kind: "update_order"; params: { order: string; customer?: string; order_note?: string } }
 	| { kind: "add_items"; params: { order: string; items: OrderLineInput[] } }
 	| { kind: "update_item"; params: { order: string; line_id: string; qty?: number; note?: string } };
 
@@ -254,19 +305,19 @@ function lineInput(line: UnsentLine): OrderLineInput {
 export function headerChanges(draft: OrderDraft) {
 	if (!draft.order) return {};
 	const edits = trimHeaderEdits(draft.headerEdits, draft.header);
-	const changes: { customer?: string; pax?: number; order_note?: string } = {};
+	const changes: { customer?: string; order_note?: string } = {};
 	// "" clears a field on the server.
 	if (edits.customer !== undefined) changes.customer = edits.customer || "";
-	if (edits.pax !== undefined) changes.pax = edits.pax;
 	if (edits.order_note !== undefined) changes.order_note = edits.order_note.trim();
 	return changes;
 }
 
 // The calls Save makes, in order. Every one is safe to repeat: the idempotency
 // key and line ids make the server ignore what it already has, and updates set values.
+// A new order without a service type can't be planned yet (see sendBlocker).
 export function planSave(draft: OrderDraft): SaveStep[] {
 	if (!draft.order) {
-		if (!draft.unsent.length) return [];
+		if (!draft.unsent.length || !draft.service_type) return [];
 		const header = effectiveHeader(draft);
 		return [
 			{
@@ -276,7 +327,6 @@ export function planSave(draft: OrderDraft): SaveStep[] {
 					service_type: draft.service_type,
 					table: draft.table,
 					customer: header.customer,
-					pax: header.pax,
 					order_note: header.order_note.trim() || null,
 					items: draft.unsent.map(lineInput),
 					idempotency_key: draft.idempotency_key,
@@ -298,8 +348,12 @@ export function planSave(draft: OrderDraft): SaveStep[] {
 	return steps;
 }
 
+// Anything waiting to be sent. A new order's lines count even before its service
+// type is chosen.
 export function hasPendingChanges(draft: OrderDraft | null): boolean {
-	return Boolean(draft) && planSave(draft as OrderDraft).length > 0;
+	if (!draft) return false;
+	if (!draft.order) return draft.unsent.length > 0;
+	return planSave(draft).length > 0;
 }
 
 export function unsentCount(draft: OrderDraft | null): number {

@@ -2,13 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
 	addMenuItem,
+	chooseServiceType,
+	chooseTable,
+	defaultServiceType,
 	draftSubtotal,
 	effectiveHeader,
 	hasPendingChanges,
 	itemQuantities,
+	mergeIntoOrder,
 	newOrderDraft,
 	planSave,
 	removeUnsent,
+	removeUnsentLines,
+	sendBlocker,
 	sentNote,
 	sentQty,
 	setContext,
@@ -21,6 +27,7 @@ import {
 	withServerOrder,
 	type OrderDraft,
 } from "../orderDraft";
+import type { CachedServiceType } from "../../../lib/types";
 import type { RestaurantOrderDTO } from "../types";
 
 let counter = 0;
@@ -96,7 +103,7 @@ describe("first save", () => {
 	it("is one create_order with every line, its line ids and the idempotency key", () => {
 		let draft = addMenuItem(fresh(), biryani, nextId);
 		draft = addMenuItem(draft, tea, nextId);
-		draft = setHeader(draft, { pax: 3, order_note: "  window seat  " });
+		draft = setHeader(draft, { order_note: "  window seat  " });
 		const steps = planSave(draft);
 		expect(steps).toEqual([
 			{
@@ -106,7 +113,6 @@ describe("first save", () => {
 					service_type: "Dine In",
 					table: "tbl-1",
 					customer: "Walk-in Customer",
-					pax: 3,
 					order_note: "window seat",
 					items: [
 						{ line_id: "line-1", item_code: "GE-BIRYANI", qty: 1 },
@@ -119,8 +125,14 @@ describe("first save", () => {
 	});
 
 	it("needs at least one line", () => {
-		expect(planSave(setHeader(fresh(), { pax: 2 }))).toEqual([]);
-		expect(hasPendingChanges(fresh())).toBe(false);
+		expect(planSave(setHeader(fresh(), { order_note: "hello" }))).toEqual([]);
+		expect(hasPendingChanges(setHeader(fresh(), { order_note: "hello" }))).toBe(false);
+	});
+
+	it("waits for a service type, but its lines still count as pending", () => {
+		const draft = addMenuItem({ ...fresh(), service_type: null }, biryani, nextId);
+		expect(planSave(draft)).toEqual([]);
+		expect(hasPendingChanges(draft)).toBe(true);
 	});
 
 	it("lets the service type and table change until the order is saved", () => {
@@ -149,12 +161,12 @@ describe("later rounds", () => {
 	};
 
 	it("send header changes, new lines and sent-line edits in that order", () => {
-		let draft = setHeader(saved(), { pax: 4, customer: null, customer_name: null });
+		let draft = setHeader(saved(), { customer: null, customer_name: null });
 		draft = addMenuItem(draft, tea, nextId);
 		draft = setSentQty(draft, "s1", 3);
 		draft = setSentNote(draft, "s1", "extra mild");
 		expect(planSave(draft)).toEqual([
-			{ kind: "update_order", params: { order: "VRO-1", customer: "", pax: 4 } },
+			{ kind: "update_order", params: { order: "VRO-1", customer: "" } },
 			{ kind: "add_items", params: { order: "VRO-1", items: [{ line_id: "line-1", item_code: "GE-TEA", qty: 1, uom: "Nos" }] } },
 			{ kind: "update_item", params: { order: "VRO-1", line_id: "s1", qty: 3, note: "extra mild" } },
 		]);
@@ -174,20 +186,20 @@ describe("later rounds", () => {
 		let draft = setSentNote(saved(), "s1", "hot");
 		expect(sentNote(draft, "s1")).toBe("hot");
 		draft = setSentNote(draft, "s1", "mild");
-		draft = setHeader(draft, { pax: 5 });
-		draft = setHeader(draft, { pax: 2 });
+		draft = setHeader(draft, { order_note: "anniversary" });
+		draft = setHeader(draft, { order_note: "" });
 		expect(hasPendingChanges(draft)).toBe(false);
 	});
 
 	it("after a partial failure, only what is still pending is sent again", () => {
-		let draft = setHeader(saved(), { pax: 4 });
+		let draft = setHeader(saved(), { order_note: "birthday" });
 		draft = addMenuItem(draft, tea, nextId);
 		draft = setSentQty(draft, "s1", 3);
 		// update_order and add_items succeeded; update_item failed.
 		const afterTwo = withServerOrder(
 			draft,
 			serverOrder({
-				pax: 4,
+				order_note: "birthday",
 				items: [
 					...serverOrder().items,
 					{ line_id: "line-1", item_code: "GE-TEA", item_name: "Kenyan Tea", qty: 1, uom: "Nos", note: null, added_by: "", added_at: "" },
@@ -199,9 +211,9 @@ describe("later rounds", () => {
 
 	it("a reload never overwrites someone else's header change with a stale copy", () => {
 		const mine = setHeader(saved(), { order_note: "birthday" });
-		// Another device changed the guests meanwhile.
-		const reloaded = withServerOrder(mine, serverOrder({ pax: 6 }));
-		expect(effectiveHeader(reloaded)).toMatchObject({ pax: 6, order_note: "birthday" });
+		// Another device changed the customer meanwhile.
+		const reloaded = withServerOrder(mine, serverOrder({ customer: "Amina", customer_name: "Amina" }));
+		expect(effectiveHeader(reloaded)).toMatchObject({ customer: "Amina", order_note: "birthday" });
 		expect(planSave(reloaded)).toEqual([{ kind: "update_order", params: { order: "VRO-1", order_note: "birthday" } }]);
 	});
 
@@ -235,5 +247,100 @@ describe("itemQuantities", () => {
 
 	it("is empty without a draft", () => {
 		expect(itemQuantities(null).size).toBe(0);
+	});
+});
+
+const serviceType = (name: string, requiresTable: boolean, isDefault = false): CachedServiceType => ({
+	name,
+	service_type_name: name,
+	requires_table: requiresTable,
+	display_order: 1,
+	is_default: isDefault,
+});
+const dineIn = serviceType("Dine In", true, true);
+const takeaway = serviceType("Takeaway", false);
+
+describe("service type and table before the first save", () => {
+	it("uses the profile's default service type, if any", () => {
+		expect(defaultServiceType([takeaway, dineIn])?.name).toBe("Dine In");
+		expect(defaultServiceType([takeaway])).toBeNull();
+	});
+
+	it("clears the table when switching to a type without tables, and keeps the lines", () => {
+		const draft = addMenuItem(fresh(), biryani, nextId);
+		const switched = chooseServiceType(draft, takeaway);
+		expect([switched.service_type, switched.table, switched.table_label]).toEqual(["Takeaway", null, null]);
+		expect(switched.unsent).toHaveLength(1);
+		expect(chooseServiceType(switched, dineIn).table).toBeNull();
+	});
+
+	it("sets a table, but never on a saved order", () => {
+		const draft = chooseTable({ ...fresh(), table: null, table_label: null }, { name: "tbl-4", table_label: "T4" });
+		expect([draft.table, draft.table_label]).toEqual(["tbl-4", "T4"]);
+		const saved = withServerOrder(null, serverOrder());
+		expect(chooseTable(saved, { name: "tbl-4", table_label: "T4" }).table).toBe("tbl-1");
+	});
+
+	it("says what Send still needs", () => {
+		const types = [dineIn, takeaway];
+		expect(sendBlocker({ ...fresh(), service_type: null }, types)).toBe("needs-service-type");
+		expect(sendBlocker({ ...fresh(), service_type: "Gone" }, types)).toBe("needs-service-type");
+		expect(sendBlocker({ ...fresh(), table: null }, types)).toBe("needs-table");
+		expect(sendBlocker(fresh(), types)).toBeNull();
+		expect(sendBlocker(chooseServiceType(fresh(), takeaway), types)).toBeNull();
+		expect(sendBlocker(withServerOrder(null, serverOrder()), [])).toBeNull();
+	});
+
+	it("removes chosen lines", () => {
+		let draft = addMenuItem(fresh(), biryani, nextId);
+		draft = addMenuItem(draft, tea, nextId);
+		expect(removeUnsentLines(draft, ["line-1"]).unsent.map((line) => line.item_code)).toEqual(["GE-TEA"]);
+	});
+});
+
+describe("mergeIntoOrder", () => {
+	const building = () => {
+		let draft = addMenuItem({ ...fresh(), table: null, table_label: null }, biryani, nextId);
+		draft = addMenuItem(draft, tea, nextId);
+		return setHeader(draft, { customer: "Amina", customer_name: "Amina" });
+	};
+
+	it("moves the lines, with their ids, onto the open order as one new round", () => {
+		const { draft, droppedNote } = mergeIntoOrder(building(), serverOrder());
+		expect(draft.order?.name).toBe("VRO-1");
+		expect([draft.table, draft.service_type]).toEqual(["tbl-1", "Dine In"]);
+		expect(droppedNote).toBeNull();
+		expect(planSave(draft)).toEqual([
+			{
+				kind: "add_items",
+				params: {
+					order: "VRO-1",
+					items: [
+						{ line_id: "line-1", item_code: "GE-BIRYANI", qty: 1 },
+						{ line_id: "line-2", item_code: "GE-TEA", qty: 1, uom: "Nos" },
+					],
+				},
+			},
+		]);
+	});
+
+	it("keeps the order's customer", () => {
+		expect(effectiveHeader(mergeIntoOrder(building(), serverOrder()).draft).customer).toBe("Walk-in Customer");
+	});
+
+	it("sends the draft's note when the order has none", () => {
+		const { draft, droppedNote } = mergeIntoOrder(setHeader(building(), { order_note: "birthday" }), serverOrder());
+		expect(droppedNote).toBeNull();
+		expect(planSave(draft)[0]).toEqual({ kind: "update_order", params: { order: "VRO-1", order_note: "birthday" } });
+	});
+
+	it("keeps the order's note when both have one, and reports the dropped note", () => {
+		const { draft, droppedNote } = mergeIntoOrder(
+			setHeader(building(), { order_note: "birthday" }),
+			serverOrder({ order_note: "window seat" }),
+		);
+		expect(droppedNote).toBe("birthday");
+		expect(effectiveHeader(draft).order_note).toBe("window seat");
+		expect(planSave(draft).map((step) => step.kind)).toEqual(["add_items"]);
 	});
 });

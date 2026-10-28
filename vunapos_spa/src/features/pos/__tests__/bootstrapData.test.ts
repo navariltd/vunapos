@@ -67,6 +67,7 @@ const cached: Required<CachedProfile> = {
 	},
 	can_take_payment: true,
 	restaurant_roles: ["VunaPOS Cashier", "VunaPOS Restaurant Manager"],
+	can_edit_floor_plan: true,
 };
 
 // Cached but not read by the screens today. Add a field here only on purpose.
@@ -77,6 +78,7 @@ describe("toBootstrapData", () => {
 		const data = toBootstrapData(cached, "cashier.grace@goldenecho.test");
 		expect(data.can_take_payment).toBe(true);
 		expect(data.restaurant_roles).toEqual(["VunaPOS Cashier", "VunaPOS Restaurant Manager"]);
+		expect(data.can_edit_floor_plan).toBe(true);
 		expect(data.restaurant).toEqual(cached.restaurant);
 		expect(data.current_user).toBe("cashier.grace@goldenecho.test");
 		expect(data.pos_profile).toBe("Nairobi");
@@ -92,10 +94,12 @@ describe("toBootstrapData", () => {
 		const older: CachedProfile = { ...cached };
 		delete older.can_take_payment;
 		delete older.restaurant_roles;
+		delete older.can_edit_floor_plan;
 		delete older.restaurant;
 		const data = toBootstrapData(older, null);
 		expect(data.can_take_payment).toBeUndefined();
 		expect(data.restaurant_roles).toBeUndefined();
+		expect(data.can_edit_floor_plan).toBeUndefined();
 		expect(data.current_user).toBeUndefined();
 	});
 });

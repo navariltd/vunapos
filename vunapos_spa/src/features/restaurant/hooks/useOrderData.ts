@@ -4,6 +4,7 @@ import { useFrappePostCall } from "frappe-react-sdk";
 import {
 	VunaApiError,
 	getMenu,
+	getRestaurantOrder,
 	getTableStatus,
 	listRestaurantOrders,
 	vunaMethods,
@@ -32,18 +33,20 @@ export function useOpenOrders(posProfile?: string) {
 	return usePolledData(posProfile ? `orders:${posProfile}` : null, fetcher);
 }
 
-// The menu for an order's service type and table (floor). Reloads when either
-// changes; `reload` fetches it again after MENU_ITEM_NOT_AVAILABLE.
+// The menu for an order's service type and table (floor). Without a table it spans
+// every floor, and without a service type every type (items say where they're
+// served). Reloads when either changes; `reload` fetches it again after
+// MENU_ITEM_NOT_AVAILABLE.
 export function useMenu(posProfile?: string, serviceType?: string | null, table?: string | null) {
 	const call = useFrappePostCall(vunaMethods.getMenu);
 	const [revision, setRevision] = useState(0);
-	const key = posProfile && serviceType ? `${posProfile}|${serviceType}|${table || ""}|${revision}` : null;
+	const key = posProfile ? `${posProfile}|${serviceType || ""}|${table || ""}|${revision}` : null;
 	const [result, setResult] = useState<{ key: string; menu: MenuDTO | null; error: string | null; code: string | null } | null>(
 		null,
 	);
 
 	useEffect(() => {
-		if (!key || !posProfile || !serviceType) return undefined;
+		if (!key || !posProfile) return undefined;
 		let active = true;
 		void getMenu(call.call, { pos_profile: posProfile, service_type: serviceType, table })
 			.then((menu) => {
@@ -72,4 +75,21 @@ export function useMenu(posProfile?: string, serviceType?: string | null, table?
 		isLoading: Boolean(key) && !current,
 		reload,
 	};
+}
+
+// Fetches a menu once, outside the screen's own menu: to check the lines against
+// another service type, a table's floor or another order before switching.
+export function useMenuFetcher(posProfile?: string) {
+	const call = useFrappePostCall(vunaMethods.getMenu);
+	return useCallback(
+		(serviceType: string | null, table?: string | null) =>
+			getMenu(call.call, { pos_profile: posProfile || "", service_type: serviceType, table }),
+		[call.call, posProfile],
+	);
+}
+
+// Loads one order, e.g. the open order on a table the lines are being added to.
+export function useOrderFetcher() {
+	const call = useFrappePostCall(vunaMethods.getRestaurantOrder);
+	return useCallback((order: string) => getRestaurantOrder(call.call, order), [call.call]);
 }

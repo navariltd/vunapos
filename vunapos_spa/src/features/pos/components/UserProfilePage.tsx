@@ -1,4 +1,4 @@
-import { DoorClosed, Laptop, Moon, Sun, UserRound } from "lucide-react";
+import { DoorClosed, LayoutDashboard, Laptop, Moon, Sun, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../../../lib/cn";
@@ -12,9 +12,11 @@ type UserProfilePageProps = {
   // Restaurant mode only. Omitted in Retail, which keeps its fixed subtitle.
   roleLabel?: string;
   onCloseShift?: () => void;
+  // Restaurant mode, managers only: phones have no sidebar link to the floor editor.
+  onEditFloorPlan?: () => void;
 };
 
-export function UserProfilePage({ bootstrap, roleLabel, onCloseShift }: UserProfilePageProps) {
+export function UserProfilePage({ bootstrap, roleLabel, onCloseShift, onEditFloorPlan }: UserProfilePageProps) {
   const defaultCustomer = formatDefaultCustomer(bootstrap?.default_customer);
   const themeMode = useThemeStore((s) => s.mode);
   const { setTheme } = useThemeSync();
@@ -46,6 +48,17 @@ export function UserProfilePage({ bootstrap, roleLabel, onCloseShift }: UserProf
           ) : null}
           <LogoutButton />
         </div>
+
+        {onEditFloorPlan ? (
+          <button
+            type="button"
+            className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-outline-variant px-3 text-sm font-medium text-on-surface hover:bg-surface-container-high lg:hidden"
+            onClick={onEditFloorPlan}
+          >
+            <LayoutDashboard className="size-4" />
+            Edit floor plan
+          </button>
+        ) : null}
 
         <div className="mt-6 rounded-md border border-outline-variant bg-surface-container-low p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">

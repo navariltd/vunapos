@@ -13,7 +13,8 @@ export function restaurantRoleLabel(roles?: string[] | null) {
 }
 
 // Restaurant pages a user may open. Close Shift is for cashiers only; any
-// other page (including retail URLs) falls back to the floor.
+// other page (including retail URLs) falls back to a new order. The floor is
+// allowed but only shows while a table is being picked.
 export function isRestaurantPageAllowed(page: POSPage, canTakePayment: boolean) {
   if (page === "Close Shift") return canTakePayment;
   return ["Floor", "Floor Editor", "Orders", "Order", "Profile"].includes(page);

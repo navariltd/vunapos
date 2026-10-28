@@ -7,7 +7,7 @@ from frappe.utils import cint, cstr, flt
 
 from vunapos.dto.restaurant import floor_to_dict
 from vunapos.services.profile_service import require_pos_profile_assignment
-from vunapos.setup.utils import DEFAULT_POS_MODE, RESTAURANT_MANAGER_ROLE
+from vunapos.setup.utils import DEFAULT_POS_MODE, FLOOR_PLAN_MANAGER_ROLES
 
 CANVAS_WIDTH = 1000
 CANVAS_HEIGHT = 700
@@ -15,7 +15,7 @@ FLOOR_DOCTYPE = "VunaPOS Restaurant Floor"
 TABLE_DOCTYPE = "VunaPOS Restaurant Table"
 ELEMENT_DOCTYPE = "VunaPOS Floor Element"
 ORDER_DOCTYPE = "VunaPOS Restaurant Order"
-MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
+MANAGER_ROLES = FLOOR_PLAN_MANAGER_ROLES
 ELEMENT_TYPES = ("Wall", "Door", "Window", "Bar Counter", "Plant", "Label")
 TABLE_SHAPES = ("Square", "Round", "Rectangle", "Oval")
 DEFAULT_TABLE_SHAPE = "Square"
