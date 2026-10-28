@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 
-import type { CachedServiceType } from "../../../lib/types";
 import {
 	deriveTableStatuses,
 	elapsedLabel,
@@ -8,10 +7,8 @@ import {
 	parseServerDatetime,
 	statusFor,
 	tableAccessibleName,
-	tableServiceType,
 	tableStatusBadge,
 	tableStatusLines,
-	tableTapAction,
 	waitersLabel,
 } from "../tableStatus";
 import type { TableStatusDTO } from "../types";
@@ -23,6 +20,7 @@ const order = (name: string, openedAt: string, pax: number, waiter: string, wait
 	waiter,
 	waiter_name: waiterName,
 	opened_at: openedAt,
+	item_count: 2,
 });
 
 const rows: TableStatusDTO[] = [
@@ -45,10 +43,9 @@ const rows: TableStatusDTO[] = [
 describe("deriveTableStatuses", () => {
 	const statuses = deriveTableStatuses(rows);
 
-	it("sums guests, starts the clock at the earliest order and lists waiters once", () => {
+	it("starts the clock at the earliest order and lists waiters once", () => {
 		const t2 = statusFor(statuses, "t2");
 		expect(t2.kind).toBe("occupied");
-		expect(t2.guests).toBe(6);
 		expect(t2.openedAt).toBe("2026-10-27 12:00:00");
 		expect(t2.orders.map((row) => row.name)).toEqual(["VRO-7", "VRO-8", "VRO-9"]);
 		expect(t2.waiters).toEqual(["Jane Wanjiku", "Brian Otieno"]);
@@ -94,53 +91,22 @@ describe("elapsedLabel", () => {
 	});
 });
 
-describe("tableTapAction", () => {
-	const statuses = deriveTableStatuses(rows);
-	it("starts an order on a free table", () => {
-		expect(tableTapAction(statusFor(statuses, "t1"), false)).toEqual({ kind: "start" });
-	});
-	it("opens the oldest open order on an occupied table", () => {
-		expect(tableTapAction(statusFor(statuses, "t2"), false)).toEqual({ kind: "open", order: "VRO-7" });
-	});
-	it("lets the user choose when several orders per table are allowed", () => {
-		const action = tableTapAction(statusFor(statuses, "t2"), true);
-		expect(action.kind).toBe("choose");
-	});
-});
-
-describe("tableServiceType", () => {
-	const type = (name: string, order: number, requiresTable: boolean, isDefault = false): CachedServiceType => ({
-		name,
-		service_type_name: name,
-		requires_table: requiresTable,
-		display_order: order,
-		is_default: isDefault,
-	});
-
-	it("uses the default type when it needs a table", () => {
-		expect(tableServiceType([type("Takeaway", 1, false), type("Dine In", 2, true, true)])?.name).toBe("Dine In");
-	});
-
-	it("otherwise the first table type in display order", () => {
-		const types = [type("Takeaway", 1, false, true), type("Terrace", 3, true), type("Dine In", 2, true)];
-		expect(tableServiceType(types)?.name).toBe("Dine In");
-		expect(tableServiceType([type("Takeaway", 1, false, true)])).toBeNull();
-	});
-});
-
 describe("table text", () => {
 	const statuses = deriveTableStatuses(rows);
 	const now = new Date("2026-10-27T12:45:00");
 
-	it("puts the status word first, then guests and waiter", () => {
+	it("puts the status word first, then the waiter (no guests)", () => {
 		expect(tableStatusLines(statusFor(statuses, "t1"), 4, now)).toEqual(["Free", "4 seats"]);
-		expect(tableStatusLines(statusFor(statuses, "t2"), 6, now)).toEqual(["Occupied · 45 min", "6 guests · Jane +1"]);
+		expect(tableStatusLines(statusFor(statuses, "t2"), 6, now)).toEqual(["Occupied · 45 min", "Jane +1"]);
 		expect(tableStatusLines(statusFor(statuses, "t3"), 2, now)).toEqual(["Occupied · 1 h 45 min", "mary"]);
 	});
 
 	it("gives screen readers the full picture", () => {
 		expect(tableAccessibleName("T2", 6, statusFor(statuses, "t2"), now)).toBe(
-			"Table T2, 6 seats, occupied, 6 guests, waiter Jane Wanjiku, Brian Otieno, open 45 min",
+			"Table T2, 6 seats, occupied, waiter Jane Wanjiku, Brian Otieno, open 45 min",
+		);
+		expect(tableAccessibleName("T1", 4, statusFor(statuses, "t1"), now, "Bar items not served here")).toBe(
+			"Table T1, 4 seats, free, Bar items not served here",
 		);
 		expect(tableAccessibleName("T1", 1, statusFor(statuses, "t1"), now)).toBe("Table T1, 1 seat, free");
 	});

@@ -15,15 +15,13 @@ export const TABLE_STATUS_LABEL: Record<TableStatusKind, string> = {
 export type TableStatusView = {
 	kind: TableStatusKind;
 	orders: TableOrderRefDTO[];
-	// Totals across the table's open orders.
-	guests: number;
 	// The earliest open order, which the time badge counts from.
 	openedAt: string | null;
 	// Distinct waiters on the table's open orders, in order of opening.
 	waiters: string[];
 };
 
-const FREE: TableStatusView = { kind: "free", orders: [], guests: 0, openedAt: null, waiters: [] };
+const FREE: TableStatusView = { kind: "free", orders: [], openedAt: null, waiters: [] };
 
 export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableStatusView> {
 	const result = new Map<string, TableStatusView>();
@@ -41,7 +39,6 @@ export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableSt
 		result.set(row.table, {
 			kind: "occupied",
 			orders,
-			guests: orders.reduce((sum, order) => sum + (order.pax || 0), 0),
 			openedAt: orders[0].opened_at,
 			waiters,
 		});
@@ -79,28 +76,6 @@ export function elapsedLabel(openedAt: string | null, now: Date): string | null 
 	return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
 
-export type TableTapAction =
-	| { kind: "start" }
-	| { kind: "open"; order: string }
-	| { kind: "choose"; orders: TableOrderRefDTO[] };
-
-// Free: start an order on it. Occupied: open its order, or let the user choose when
-// the profile allows several orders on one table.
-export function tableTapAction(view: TableStatusView, allowMultipleOrders: boolean): TableTapAction {
-	if (view.kind === "free" || !view.orders.length) return { kind: "start" };
-	if (allowMultipleOrders) return { kind: "choose", orders: view.orders };
-	return { kind: "open", order: view.orders[0].name };
-}
-
-// The service type for an order started by tapping a free table: the default when
-// it uses tables, otherwise the first type (in display order) that does.
-export function tableServiceType(serviceTypes: CachedServiceType[]): CachedServiceType | null {
-	const ordered = [...serviceTypes].sort((a, b) => a.display_order - b.display_order);
-	const fallback = ordered.find((row) => row.requires_table) ?? null;
-	const preferred = ordered.find((row) => row.is_default);
-	return preferred?.requires_table ? preferred : fallback;
-}
-
 export function sortedServiceTypes(serviceTypes: CachedServiceType[]): CachedServiceType[] {
 	return [...serviceTypes].sort((a, b) => a.display_order - b.display_order);
 }
@@ -116,17 +91,12 @@ export function waitersLabel(waiters: string[]): string {
 	return waiters.length > 1 ? `${first} +${waiters.length - 1}` : first;
 }
 
-function guestsLabel(guests: number): string | null {
-	return guests > 0 ? `${guests} ${guests === 1 ? "guest" : "guests"}` : null;
-}
-
 // Secondary lines drawn on a table, most important first (they drop out from the
 // end when the table is small). The status word is always first: never colour alone.
 export function tableStatusLines(view: TableStatusView, seats: number, now: Date): string[] {
 	if (view.kind === "free") return [TABLE_STATUS_LABEL.free, `${seats} ${seats === 1 ? "seat" : "seats"}`];
 	const elapsed = elapsedLabel(view.openedAt, now);
-	const second = [guestsLabel(view.guests), waitersLabel(view.waiters)].filter(Boolean).join(" · ");
-	return [[TABLE_STATUS_LABEL.occupied, elapsed].filter(Boolean).join(" · "), second].filter(Boolean);
+	return [[TABLE_STATUS_LABEL.occupied, elapsed].filter(Boolean).join(" · "), waitersLabel(view.waiters)].filter(Boolean);
 }
 
 // A small table drops status text that does not fit. Whenever any is dropped, the
@@ -135,15 +105,20 @@ export function tableStatusBadge(view: TableStatusView, lines: string[], shown: 
 	return shown < lines.length ? view.kind : null;
 }
 
-// Screen readers get everything, including the full waiter names.
-export function tableAccessibleName(label: string, seats: number, view: TableStatusView, now: Date): string {
+// Screen readers get everything, including the full waiter names and any picker warning.
+export function tableAccessibleName(
+	label: string,
+	seats: number,
+	view: TableStatusView,
+	now: Date,
+	warning?: string | null,
+): string {
 	const parts = [`Table ${label}`, `${seats} ${seats === 1 ? "seat" : "seats"}`, TABLE_STATUS_LABEL[view.kind].toLowerCase()];
 	if (view.kind === "occupied") {
-		const guests = guestsLabel(view.guests);
-		if (guests) parts.push(guests);
 		if (view.waiters.length) parts.push(`waiter ${view.waiters.join(", ")}`);
 		const elapsed = elapsedLabel(view.openedAt, now);
 		if (elapsed) parts.push(elapsed === "now" ? "opened just now" : `open ${elapsed}`);
 	}
+	if (warning) parts.push(warning);
 	return parts.join(", ");
 }

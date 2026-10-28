@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from "react";
+import { TriangleAlert } from "lucide-react";
 
 import { boxCenter, screenPxToCanvas, statusBadgeCenter, tableTextLayout, tableTextLines } from "../floorPlanGeometry";
 import {
@@ -32,10 +33,12 @@ type TableShapeProps = {
   now?: Date;
   selected?: boolean;
   muted?: boolean;
+  // Picking a table: e.g. "Bar items not served here". Shown as a corner mark.
+  warning?: string | null;
   onActivate?: () => void;
 };
 
-export function TableShape({ table, scale, status, now, selected, muted, onActivate }: TableShapeProps) {
+export function TableShape({ table, scale, status, now, selected, muted, warning, onActivate }: TableShapeProps) {
   const center = boxCenter(table);
   const strokeWidth = screenPxToCanvas(selected ? 3 : status ? 2.5 : 2, scale);
   const seatsText = `${table.seats} ${table.seats === 1 ? "seat" : "seats"}`;
@@ -56,7 +59,7 @@ export function TableShape({ table, scale, status, now, selected, muted, onActiv
   const dash = style?.dash && !selected ? `${screenPxToCanvas(6, scale)} ${screenPxToCanvas(4, scale)}` : undefined;
   const interactive = Boolean(onActivate);
   const label = status
-    ? tableAccessibleName(table.table_label, table.seats, status, clock)
+    ? tableAccessibleName(table.table_label, table.seats, status, clock, warning)
     : `Table ${table.table_label}, ${seatsText}`;
 
   return (
@@ -133,6 +136,7 @@ export function TableShape({ table, scale, status, now, selected, muted, onActiv
         </text>
       ))}
       {badge ? <StatusBadge kind={badge} table={textBox} center={center} scale={scale} /> : null}
+      {warning ? <WarningBadge table={textBox} center={center} scale={scale} /> : null}
     </g>
   );
 }
@@ -170,6 +174,41 @@ function StatusBadge({
         height={iconSize}
         color="var(--color-surface)"
         strokeWidth={3}
+      />
+    </g>
+  );
+}
+
+// The picker's warning mark, on the opposite corner from the status badge.
+function WarningBadge({
+  table,
+  center,
+  scale,
+}: {
+  table: { shape?: string; width: number; height: number };
+  center: { x: number; y: number };
+  scale: number;
+}) {
+  const at = statusBadgeCenter(table, center, "top-left");
+  const radius = screenPxToCanvas(10, scale);
+  const iconSize = radius * 1.2;
+  return (
+    <g className="pointer-events-none" aria-hidden="true">
+      <circle
+        cx={at.x}
+        cy={at.y}
+        r={radius}
+        fill="var(--color-tertiary)"
+        stroke="var(--color-surface)"
+        strokeWidth={screenPxToCanvas(1.5, scale)}
+      />
+      <TriangleAlert
+        x={at.x - iconSize / 2}
+        y={at.y - iconSize / 2 - radius * 0.05}
+        width={iconSize}
+        height={iconSize}
+        color="var(--color-on-tertiary)"
+        strokeWidth={2.5}
       />
     </g>
   );

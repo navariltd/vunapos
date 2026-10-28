@@ -90,7 +90,7 @@ describe("navigationStore", () => {
 
 		navigateToPosPage("Profile");
 
-		expect(guard).toHaveBeenCalledWith("Profile");
+		expect(guard).toHaveBeenCalledWith("Profile", "/vunapos/profile");
 		expect(pushState).not.toHaveBeenCalled();
 		expect(useNavigationStore.getState().activePage).toBe("Floor Editor");
 
@@ -124,6 +124,8 @@ describe("navigationStore", () => {
 
 		navigateToOrder("VRO-1");
 		expect(pushState).not.toHaveBeenCalled();
+		// The guard sees which order is being opened, not just the page.
+		expect(guard).toHaveBeenCalledWith("Order", "/vunapos/order/VRO-1");
 
 		navigateToOrder("VRO-1", { replace: true });
 		expect(replaceState).toHaveBeenCalledWith({ vunaposPage: "Order", order: "VRO-1" }, "", "/vunapos/order/VRO-1");

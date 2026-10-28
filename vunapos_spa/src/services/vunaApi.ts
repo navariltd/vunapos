@@ -639,9 +639,13 @@ export function saveFloorPlan(
 
 export function getMenu(
 	call: FrappeCall,
-	params: { pos_profile: string; service_type: string; table?: string | null },
+	params: { pos_profile: string; service_type?: string | null; table?: string | null },
 ) {
-	return callAndUnwrap<MenuDTO>(call, { ...params, table: params.table || undefined });
+	return callAndUnwrap<MenuDTO>(call, {
+		pos_profile: params.pos_profile,
+		service_type: params.service_type || undefined,
+		table: params.table || undefined,
+	});
 }
 
 export function getTableStatus(call: FrappeCall, posProfile: string) {

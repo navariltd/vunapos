@@ -13,11 +13,13 @@ type FloorCanvasProps = {
   // In service: each table's status (tables missing from it are free) and the clock.
   statuses?: Map<string, TableStatusView>;
   now?: Date;
+  // Picking a table: why this floor can't serve some of the order, on every table.
+  warning?: string | null;
 };
 
 // Read-only floor drawing on the fixed 1000 x 700 virtual canvas. The SVG
 // viewBox scales it to the container while keeping the aspect ratio.
-export function FloorCanvas({ floor, onTableActivate, statuses, now }: FloorCanvasProps) {
+export function FloorCanvas({ floor, onTableActivate, statuses, now, warning }: FloorCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { scale } = useCanvasScale(containerRef);
 
@@ -57,6 +59,7 @@ export function FloorCanvas({ floor, onTableActivate, statuses, now }: FloorCanv
             scale={scale}
             status={statuses ? statusFor(statuses, table.name) : undefined}
             now={now}
+            warning={warning}
             onActivate={onTableActivate ? () => onTableActivate(table) : undefined}
           />
         ))}

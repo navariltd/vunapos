@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
 
-import { navigateToOrder } from "../../../lib/stores/navigationStore";
 import {
 	VunaApiError,
 	addRestaurantOrderItems,
@@ -16,6 +15,8 @@ import { planSave, withServerOrder, type SaveStep } from "../orderDraft";
 import { describeOrderError, type OrderErrorView } from "../orderErrors";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import type { OrderPreviewDTO, RestaurantOrderDTO } from "../types";
+
+export type SaveResult = { ok: boolean; created: RestaurantOrderDTO | null };
 
 // Loading, saving and previewing the order in the draft store. Save sends the
 // planned steps one by one; after each success the draft is rebuilt from the
@@ -50,17 +51,21 @@ export function useOrderActions({ onMenuChanged }: { onMenuChanged?: () => void 
 		async (order: string) => {
 			const loaded = await getRestaurantOrder(getCall.call, order);
 			const { draft, setDraft } = useOrderDraftStore.getState();
-			setDraft(withServerOrder(draft, loaded));
+			// Pending changes carry over only for the same order: a new order's lines
+			// never leak into an existing one (that's mergeIntoOrder's job).
+			setDraft(withServerOrder(draft?.order?.name === loaded.name ? draft : null, loaded));
 			return loaded;
 		},
 		[getCall.call],
 	);
 
-	const save = useCallback(async (): Promise<boolean> => {
+	// Sends the draft. A new order's create step leaves the draft as it is and returns
+	// the created order, so the screen can reset to the next new order.
+	const save = useCallback(async (): Promise<SaveResult> => {
 		const store = useOrderDraftStore.getState();
-		if (!store.draft) return false;
+		if (!store.draft) return { ok: false, created: null };
 		const steps = planSave(store.draft);
-		if (!steps.length) return true;
+		if (!steps.length) return { ok: true, created: null };
 		setSaving(true);
 		setError(null);
 		let changed = false;
@@ -68,11 +73,11 @@ export function useOrderActions({ onMenuChanged }: { onMenuChanged?: () => void 
 			for (const step of steps) {
 				const order = await runStep(step);
 				changed = true;
+				if (step.kind === "create") return { ok: true, created: order };
 				const current = useOrderDraftStore.getState().draft;
 				useOrderDraftStore.getState().setDraft(withServerOrder(current, order));
-				if (step.kind === "create") navigateToOrder(order.name, { replace: true });
 			}
-			return true;
+			return { ok: true, created: null };
 		} catch (caught) {
 			const view = describeOrderError(caught instanceof VunaApiError ? caught : (caught as Error));
 			if (view.action === "reload-menu") {
@@ -90,7 +95,7 @@ export function useOrderActions({ onMenuChanged }: { onMenuChanged?: () => void 
 				if (name) await load(name).catch(() => undefined);
 			}
 			setError(view);
-			return false;
+			return { ok: false, created: null };
 		} finally {
 			setSaving(false);
 			if (changed) useOrderDraftStore.getState().markOrdersChanged();

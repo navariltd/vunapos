@@ -68,7 +68,7 @@ export function FloorEditor({ posProfile }: FloorEditorProps) {
   );
 
   useEffect(() => {
-    if (plan && !plan.can_edit) replacePosPage("Floor");
+    if (plan && !plan.can_edit) replacePosPage("Order");
   }, [plan]);
 
   const floor = draft ? findFloor(draft, activeFloorKey) : undefined;
@@ -105,7 +105,7 @@ export function FloorEditor({ posProfile }: FloorEditorProps) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [saving]);
 
-  const leave = () => (dirty ? guard.requestLeave("Floor") : navigateToPosPage("Floor"));
+  const leave = () => (dirty ? guard.requestLeave("Order") : navigateToPosPage("Order"));
 
   const save = async () => {
     if (await editor.save(saveCall.call)) {

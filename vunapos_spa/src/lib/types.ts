@@ -200,6 +200,8 @@ export type CachedProfile = {
 	// User-level, sent with the profile: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
 	restaurant_roles?: string[];
+	// Restaurant managers (and System Managers) may edit the floor plan.
+	can_edit_floor_plan?: boolean;
 };
 
 export type CachedPosSession = {

@@ -66,7 +66,8 @@ export const useNavigationStore = create<NavigationStore>((set) => ({
 
 // Returns false to stop a navigation, e.g. while the floor editor has unsaved
 // changes. The guard is expected to ask the user and navigate again itself.
-export type NavigationGuard = (page: POSPage) => boolean;
+// `path` is where the navigation goes (pages like Order have several paths).
+export type NavigationGuard = (page: POSPage, path: string) => boolean;
 
 let navigationGuard: NavigationGuard | null = null;
 
@@ -75,8 +76,8 @@ export function setNavigationGuard(guard: NavigationGuard | null) {
 }
 
 export function navigateToPosPage(page: POSPage) {
-	if (navigationGuard && !navigationGuard(page)) return;
 	const path = getPosPagePath(page);
+	if (navigationGuard && !navigationGuard(page, path)) return;
 	if (window.location.pathname !== path || window.location.hash) {
 		window.history.pushState({ vunaposPage: page }, "", path);
 	}
@@ -115,8 +116,8 @@ export function getInvoiceDoctypeFromPath(pathname = window.location.pathname): 
 // Goes through the navigation guard like any page change; `replace` only renames
 // the current screen's URL (a new order that was just saved), so it skips it.
 export function navigateToOrder(order?: string | null, { replace = false } = {}) {
-	if (!replace && navigationGuard && !navigationGuard("Order")) return;
 	const path = order ? `/vunapos/order/${encodeURIComponent(order)}` : getPosPagePath("Order");
+	if (!replace && navigationGuard && !navigationGuard("Order", path)) return;
 	if (replace) window.history.replaceState({ vunaposPage: "Order", order }, "", path);
 	else if (window.location.pathname !== path) window.history.pushState({ vunaposPage: "Order", order }, "", path);
 	useNavigationStore.getState().setActivePage("Order");
@@ -142,7 +143,7 @@ export function navigateToCustomerPayment(customer: string, invoice?: string) {
 export function initPosNavigation() {
 	const syncFromLocation = () => {
 		const page = getPosPageFromPath(window.location.pathname);
-		if (navigationGuard && !navigationGuard(page)) {
+		if (navigationGuard && !navigationGuard(page, window.location.pathname)) {
 			// The browser has already moved; put the guarded page back in the address bar.
 			window.history.pushState({ vunaposPage: useNavigationStore.getState().activePage }, "", useNavigationStore.getState().currentPath);
 			return;

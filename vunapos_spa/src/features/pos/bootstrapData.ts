@@ -60,5 +60,6 @@ export function toBootstrapData(profile: CachedProfile, currentUser?: string | n
 		restaurant: profile.restaurant,
 		can_take_payment: profile.can_take_payment,
 		restaurant_roles: profile.restaurant_roles,
+		can_edit_floor_plan: profile.can_edit_floor_plan,
 	};
 }

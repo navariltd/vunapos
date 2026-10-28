@@ -4,10 +4,11 @@ import { LayoutGrid, List, Search } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { cn } from "../../../lib/cn";
-import { ItemGrid } from "../../pos/components/ItemGrid";
 import type { CatalogueView } from "../../pos/components/ItemSearch";
 import type { ItemDTO } from "../../pos/types";
-import type { MenuDTO } from "../types";
+import { menuItemTag } from "../menuConflicts";
+import type { MenuDTO, MenuItemDTO } from "../types";
+import { MenuCardGrid } from "./MenuCardGrid";
 import { MenuListRow } from "./MenuListRow";
 
 type MenuPanelProps = {
@@ -25,8 +26,9 @@ type MenuPanelProps = {
 const ALL = "__all__";
 
 // The menu for the order's service type and table: category tabs, search, and
-// the items as compact rows on phones or the retail item grid from md up. Items
-// with variants are listed separately, disabled (stage 1).
+// the items as compact rows on phones or cards (or rows) from md up. Before a table
+// is chosen, items limited to some floors (or service types) carry a tag saying
+// where they're served. Items with variants are listed separately, disabled.
 export function MenuPanel({ menu, isLoading, error, currency, disabled, quantities, onRetry, onAddItem }: MenuPanelProps) {
   const [category, setCategory] = useState<string>(ALL);
   const [query, setQuery] = useState("");
@@ -52,6 +54,24 @@ export function MenuPanel({ menu, isLoading, error, currency, disabled, quantiti
       (!needle || item.item_name.toLowerCase().includes(needle) || item.item_code.toLowerCase().includes(needle)),
   );
   const orderable = visible.filter((item) => !item.has_variants);
+  // Tags matter only before a table is chosen; with one, the menu is that floor's.
+  const tagFor = (item: MenuItemDTO) => (menu.table ? null : menuItemTag(item, menu));
+  const rows = orderable.length ? (
+    <ul className="divide-y divide-outline-variant">
+      {orderable.map((item) => (
+        <MenuListRow
+          key={item.item_code}
+          item={item}
+          qty={quantities.get(item.item_code) ?? 0}
+          tag={tagFor(item)}
+          currency={currency}
+          onAdd={onAddItem}
+        />
+      ))}
+    </ul>
+  ) : (
+    <EmptyState title="No items found" description="Try another name or category." />
+  );
   const templates = visible.filter((item) => item.has_variants);
 
   return (
@@ -102,26 +122,16 @@ export function MenuPanel({ menu, isLoading, error, currency, disabled, quantiti
       <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain", disabled && "pointer-events-none opacity-60")}>
         {orderable.length || !templates.length ? (
           <>
-            <div className="md:hidden">
-              {orderable.length ? (
-                <ul className="divide-y divide-outline-variant">
-                  {orderable.map((item) => (
-                    <MenuListRow
-                      key={item.item_code}
-                      item={item}
-                      qty={quantities.get(item.item_code) ?? 0}
-                      currency={currency}
-                      onAdd={onAddItem}
-                    />
-                  ))}
-                </ul>
-              ) : (
-                <EmptyState title="No items found" description="Try another name or category." />
-              )}
-            </div>
-            <div className="hidden md:block">
-              <ItemGrid currency={currency} items={orderable} view={view} onAddItem={onAddItem} />
-            </div>
+            <div className={view === "grid" ? "md:hidden" : undefined}>{rows}</div>
+            {view === "grid" ? (
+              <div className="hidden md:block">
+                {orderable.length ? (
+                  <MenuCardGrid items={orderable} currency={currency} tagFor={tagFor} onAdd={onAddItem} />
+                ) : (
+                  rows
+                )}
+              </div>
+            ) : null}
           </>
         ) : null}
         {templates.length ? (
