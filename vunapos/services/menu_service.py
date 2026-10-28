@@ -7,6 +7,11 @@ unioned, and each listed item group includes all of its descendant groups.
 
 Fallbacks, in order: the menu table, then the standard POS Profile Item Groups
 table, then no restriction (every sales item).
+
+Before a table is chosen (menu-first ordering), the menu for a service type that
+uses tables spans every floor, and without a service type it spans every type.
+Each item then says where it may be served (allowed_floors, allowed_service_types),
+so the order screen can tag it and warn when a table's floor can't serve it.
 """
 
 import frappe
@@ -53,39 +58,92 @@ def _category(item_group, label):
 	}
 
 
-def get_menu_definition(profile, service_type=None, floor=None):
+def get_menu_definition(profile, service_type=None, floor=None, any_floor=False, any_service_type=False):
 	"""Resolve the menu categories for an order context.
 
-	Returns {"restricted", "source", "categories", "item_groups"}. When
+	Returns {"restricted", "source", "categories", "item_groups", "scopes"}. When
 	restricted is False every sales item is on the menu and item_groups is None.
 	When it is True, item_groups lists every allowed group (possibly empty).
+
+	any_floor / any_service_type include menu rows for every floor / service type
+	(an order with no table or no service type yet). scopes lists each matching
+	menu row's groups with its floor and service type, for allowed_scope().
 	"""
 	rows = profile.get("vunapos_restaurant_menu") or []
+	scopes = []
 	if rows:
 		matching = [
 			row
 			for row in rows
-			if (not row.floor or row.floor == floor)
-			and (not row.service_type or row.service_type == service_type)
+			if (not row.floor or any_floor or row.floor == floor)
+			and (not row.service_type or any_service_type or row.service_type == service_type)
 		]
 		matching.sort(key=lambda row: (cint(row.display_order), cint(row.idx)))
 		pairs = [(row.item_group, row.label) for row in matching]
 		source = SOURCE_MENU
 	elif profile.get("item_groups"):
+		matching = []
 		pairs = [(row.item_group, None) for row in profile.get("item_groups") if row.item_group]
 		source = SOURCE_PROFILE_ITEM_GROUPS
 	else:
-		return {"restricted": False, "source": SOURCE_ALL_ITEMS, "categories": [], "item_groups": None}
+		return {
+			"restricted": False,
+			"source": SOURCE_ALL_ITEMS,
+			"categories": [],
+			"item_groups": None,
+			"scopes": [],
+		}
 
 	categories = []
-	seen = set()
+	groups_by_category = {}
 	for item_group, label in pairs:
-		if item_group in seen:
+		if item_group in groups_by_category:
 			continue
-		seen.add(item_group)
-		categories.append(_category(item_group, label))
+		category = _category(item_group, label)
+		groups_by_category[item_group] = category["item_groups"]
+		categories.append(category)
+	for row in matching:
+		scopes.append(
+			{
+				"item_groups": set(groups_by_category.get(row.item_group) or []),
+				"floor": row.floor or None,
+				"service_type": row.service_type or None,
+			}
+		)
 	item_groups = sorted({group for category in categories for group in category["item_groups"]})
-	return {"restricted": True, "source": source, "categories": categories, "item_groups": item_groups}
+	return {
+		"restricted": True,
+		"source": source,
+		"categories": categories,
+		"item_groups": item_groups,
+		"scopes": scopes,
+	}
+
+
+def allowed_scope(item_group, scopes):
+	"""Where an item group may be served: {"floors", "service_types"}.
+
+	Each is None when any matching menu row leaves it open (every floor, every
+	service type), otherwise the sorted names from the rows that list the group.
+	No scopes (an unrestricted menu) means served everywhere.
+	"""
+	floors, service_types = set(), set()
+	any_floor = any_service_type = not scopes
+	for scope in scopes:
+		if item_group not in scope["item_groups"]:
+			continue
+		if scope["floor"]:
+			floors.add(scope["floor"])
+		else:
+			any_floor = True
+		if scope["service_type"]:
+			service_types.add(scope["service_type"])
+		else:
+			any_service_type = True
+	return {
+		"floors": None if any_floor or not floors else sorted(floors),
+		"service_types": None if any_service_type or not service_types else sorted(service_types),
+	}
 
 
 def items_priced_in(price_list, item_codes):
@@ -154,13 +212,43 @@ def list_service_types(pos_profile):
 	return get_profile_service_types(profile)
 
 
+def _requires_table(service_type):
+	return bool(service_type) and bool(
+		cint(frappe.db.get_value("VunaPOS Service Type", service_type, "requires_table"))
+	)
+
+
+def _floor_labels(floor_names):
+	if not floor_names:
+		return []
+	labels = dict(
+		frappe.get_all(
+			"VunaPOS Restaurant Floor",
+			filters={"name": ["in", list(floor_names)]},
+			fields=["name", "floor_name"],
+			as_list=True,
+		)
+	)
+	return [{"floor": name, "floor_name": labels.get(name) or name} for name in sorted(floor_names)]
+
+
 def get_menu(pos_profile, service_type=None, table=None, query=None, customer=None, price_list=None):
-	"""Return the menu categories and priced items for an order context."""
+	"""Return the menu categories and priced items for an order context.
+
+	Without a table, a service type that uses tables gets the menu of every floor,
+	and no service type gets the menu of every type, each item tagged with where
+	it may be served. With a table, or for a type without tables, the menu is
+	exactly what the order may contain.
+	"""
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_profile(profile.name)
 	service_price_list = get_service_type_pricing(profile, service_type)["price_list"]
 	floor = resolve_table_floor(profile.name, table)
-	menu = get_menu_definition(profile, service_type, floor)
+	any_service_type = not service_type
+	any_floor = not table and (any_service_type or _requires_table(service_type))
+	menu = get_menu_definition(
+		profile, service_type, floor, any_floor=any_floor, any_service_type=any_service_type
+	)
 	if menu["restricted"] and not menu["item_groups"]:
 		items = []
 	else:
@@ -176,8 +264,13 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 		# are not sold for that service type.
 		priced = items_priced_in(service_price_list, [item["item_code"] for item in items])
 		items = [item for item in items if item["item_code"] in priced]
+	floor_names = set()
 	for item in items:
 		item["menu_category"] = _category_for(item.get("item_group"), menu["categories"])
+		scope = allowed_scope(item.get("item_group"), menu["scopes"])
+		item["allowed_floors"] = scope["floors"]
+		item["allowed_service_types"] = scope["service_types"] if any_service_type else None
+		floor_names.update(scope["floors"] or [])
 	return {
 		"pos_profile": profile.name,
 		"service_type": service_type,
@@ -190,6 +283,7 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 			{"item_group": category["item_group"], "label": category["label"]}
 			for category in menu["categories"]
 		],
+		"floors": _floor_labels(floor_names),
 		"items": items,
 	}
 

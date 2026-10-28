@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 
 from vunapos.dto.profile import profile_to_dict
-from vunapos.setup.utils import CASHIER_ROLE, RESTAURANT_ROLES
+from vunapos.setup.utils import CASHIER_ROLE, FLOOR_PLAN_MANAGER_ROLES, RESTAURANT_ROLES
 
 SUPPORTED_INVOICE_MODES = ("Sales Invoice", "POS Invoice")
 
@@ -226,6 +226,8 @@ def get_restaurant_user_context():
 		# VunaPOS Cashier role alone; other roles, managers included, don't count.
 		"can_take_payment": CASHIER_ROLE in roles,
 		"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
+		# Shows the "Edit floor plan" link (same rule as floor_plan_service.is_floor_plan_manager).
+		"can_edit_floor_plan": any(role in roles for role in FLOOR_PLAN_MANAGER_ROLES),
 	}
 
 

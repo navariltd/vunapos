@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
+from frappe.query_builder.functions import Sum
 from frappe.utils import cint, cstr, flt, now_datetime
 
 from vunapos.dto.invoice import invoice_to_dict
@@ -39,6 +40,7 @@ from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.services.service_type_service import get_default_service_type, resolve_service_type
 
 ORDER_DOCTYPE = "VunaPOS Restaurant Order"
+ORDER_ITEM_DOCTYPE = "VunaPOS Restaurant Order Item"
 STATUS_OPEN = "Open"
 STATUS_BILLED = "Billed"
 STATUS_CANCELLED = "Cancelled"
@@ -596,6 +598,20 @@ def preview_order(order, customer=None):
 	return {"order": order_to_dict(doc), "invoice": invoice_to_dict(invoice)}
 
 
+def _item_counts(orders):
+	"""Total quantity on each order's lines."""
+	if not orders:
+		return {}
+	child = frappe.qb.DocType(ORDER_ITEM_DOCTYPE)
+	rows = (
+		frappe.qb.from_(child)
+		.select(child.parent, Sum(child.qty))
+		.where((child.parenttype == ORDER_DOCTYPE) & child.parent.isin(orders))
+		.groupby(child.parent)
+	).run()
+	return {parent: flt(qty) for parent, qty in rows}
+
+
 def get_table_status(pos_profile=None):
 	"""Derive each active table's status from its open orders (never stored)."""
 	profile = _restaurant_profile(pos_profile)
@@ -606,12 +622,14 @@ def get_table_status(pos_profile=None):
 		order_by="table_label asc",
 	)
 	orders_by_table = {}
-	for row in frappe.get_all(
+	rows = frappe.get_all(
 		ORDER_DOCTYPE,
 		filters={"pos_profile": profile.name, "status": STATUS_OPEN, "restaurant_table": ["is", "set"]},
 		fields=["name", "restaurant_table", "service_type", "pax", "waiter", "opened_at"],
 		order_by="opened_at asc",
-	):
+	)
+	item_counts = _item_counts([row.name for row in rows])
+	for row in rows:
 		orders_by_table.setdefault(row.restaurant_table, []).append(
 			{
 				"name": row.name,
@@ -620,6 +638,7 @@ def get_table_status(pos_profile=None):
 				"waiter": row.waiter,
 				"waiter_name": waiter_name(row.waiter),
 				"opened_at": row.opened_at,
+				"item_count": item_counts.get(row.name, 0),
 			}
 		)
 	return [
