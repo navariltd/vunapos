@@ -10,6 +10,7 @@ import type { BatchAllocationDTO, CustomerDTO, HeldInvoiceDTO, ItemDTO, PaymentI
 export function useCartActions() {
 	const api = useCartApi();
 	const addCartItemAction = useCartStore((s) => s.addCartItem);
+	const addCartItemUomAction = useCartStore((s) => s.addCartItemUom);
 	const scanBarcodeAction = useCartStore((s) => s.scanBarcode);
 	const updateCartItemQtyAction = useCartStore((s) => s.updateCartItemQty);
 	const updateCartItemPricingAction = useCartStore((s) => s.updateCartItemPricing);
@@ -35,6 +36,8 @@ export function useCartActions() {
 	return useMemo(
 		() => ({
 			addCartItem: (item: ItemDTO) => addCartItemAction(item, api),
+			addCartItemUom: (lineId: string, uom: string, conversionFactor: number) =>
+				addCartItemUomAction(lineId, uom, conversionFactor, api),
 			scanBarcode: (barcode: string) => scanBarcodeAction(barcode, api),
 			updateCartItemQty: (rowName: string, qty: number) => updateCartItemQtyAction(rowName, qty, api),
 			updateCartItemPricing: (rowName: string, pricingOverride?: PricingOverrideDTO) =>
@@ -83,6 +86,7 @@ export function useCartActions() {
 		[
 			api,
 			addCartItemAction,
+			addCartItemUomAction,
 			scanBarcodeAction,
 			updateCartItemQtyAction,
 			updateCartItemPricingAction,

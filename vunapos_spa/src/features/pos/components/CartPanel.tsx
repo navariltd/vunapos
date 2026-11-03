@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
-import { getActiveCustomer, useCartStore } from "../stores/cartStore";
+import { getActiveCustomer, getCartLineId, useCartStore } from "../stores/cartStore";
 import type {
   BatchAllocationDTO,
   CustomerDTO,
@@ -61,6 +61,11 @@ type CartPanelProps = {
     uom: string,
     conversionFactor: number,
   ) => Promise<void>;
+  onAddItemUom: (
+    lineId: string,
+    uom: string,
+    conversionFactor: number,
+  ) => Promise<void>;
   onUpdateSerialAllocations: (
     rowName: string,
     allocations: SerialAllocationDTO[],
@@ -100,6 +105,7 @@ export function CartPanel({
   onUpdateNote,
   onUpdateBatchAllocations,
   onUpdateUom,
+  onAddItemUom,
   onUpdateSerialAllocations,
   isOnline,
   posProfile,
@@ -113,6 +119,21 @@ export function CartPanel({
   const total = getInvoiceTotal(invoice);
   const taxes = invoice?.taxes || [];
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!expandedRow) return;
+
+    const collapseOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target;
+      const row = target instanceof Element
+        ? target.closest<HTMLElement>("[data-cart-row-id]")
+        : null;
+      if (row?.dataset.cartRowId !== expandedRow) setExpandedRow(null);
+    };
+
+    document.addEventListener("pointerdown", collapseOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", collapseOnOutsideClick);
+  }, [expandedRow]);
 
   return (
     <aside
@@ -186,33 +207,47 @@ export function CartPanel({
 
       <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {items?.length ? (
-          items?.map((item, index) => {
-            const rowIdentity = `${item.row_name}-${item.uom || item.stock_uom || ""}-${Number(item.conversion_factor || 1)}-${index}`;
+          items?.map((item) => {
+            // Keep the React identity stable when the cashier changes UOM. The
+            // expanded item details should remain open while its pricing and
+            // conversion factor are recalculated.
+            const rowIdentity = getCartLineId(item);
+            const usedUoms = new Set(
+              items
+                .filter((row) => row.item_code === item.item_code)
+                .map((row) => row.uom || row.stock_uom || ""),
+            );
+            const additionalUoms = (item.uoms || []).filter(
+              (row) => row.uom && !usedUoms.has(row.uom),
+            );
             return (
-              <CartItemRow
-                key={rowIdentity}
-                currency={currency}
-                allowDiscountChange={allowDiscountChange}
-                allowRateChange={allowRateChange}
-                disabled={isMutating}
-                expanded={expandedRow === rowIdentity}
-                isOnline={isOnline}
-                item={item}
-                onLoadBatches={onLoadBatches}
-                onRemove={onRemoveItem}
-                onToggle={() =>
-                  setExpandedRow((current) =>
-                    current === rowIdentity ? null : rowIdentity,
-                  )
-                }
-                onUpdateQty={onUpdateQty}
-                onUpdatePricing={onUpdatePricing}
-                onUpdateNote={onUpdateNote}
-                onUpdateBatchAllocations={onUpdateBatchAllocations}
-                onUpdateUom={onUpdateUom}
-                onUpdateSerialAllocations={onUpdateSerialAllocations}
-                warehouse={warehouse}
-              />
+              <div key={rowIdentity} data-cart-row-id={rowIdentity}>
+                <CartItemRow
+                  currency={currency}
+                  allowDiscountChange={allowDiscountChange}
+                  allowRateChange={allowRateChange}
+                  disabled={isMutating}
+                  expanded={expandedRow === rowIdentity}
+                  isOnline={isOnline}
+                  item={item}
+                  additionalUoms={additionalUoms}
+                  onLoadBatches={onLoadBatches}
+                  onRemove={onRemoveItem}
+                  onToggle={() =>
+                    setExpandedRow((current) =>
+                      current === rowIdentity ? null : rowIdentity,
+                    )
+                  }
+                  onUpdateQty={onUpdateQty}
+                  onUpdatePricing={onUpdatePricing}
+                  onUpdateNote={onUpdateNote}
+                  onUpdateBatchAllocations={onUpdateBatchAllocations}
+                  onUpdateUom={onUpdateUom}
+                  onAddItemUom={onAddItemUom}
+                  onUpdateSerialAllocations={onUpdateSerialAllocations}
+                  warehouse={warehouse}
+                />
+              </div>
             );
           })
         ) : (
