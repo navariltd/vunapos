@@ -600,7 +600,7 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number, stock
 	}
 }
 
-function validateAggregateAvailableQty(items: InvoiceItemDTO[], itemCode: string) {
+function validateAggregateAvailableQty(items: InvoiceItemDTO[], itemCode: string, targetLineId?: string) {
 	const matchingItems = items.filter((item) => item.item_code === itemCode && !item.is_free_item);
 	const stockItem = matchingItems.find((item) =>
 		item.is_stock_item !== 0
@@ -620,6 +620,28 @@ function validateAggregateAvailableQty(items: InvoiceItemDTO[], itemCode: string
 			maximumFractionDigits: 6,
 		}).format(value);
 		const stockUom = stockItem.stock_uom || "stock units";
+		const targetItem = targetLineId
+			? matchingItems.find((item) => isCartLine(item, targetLineId))
+			: undefined;
+		if (targetItem) {
+			const targetFactor = Number(targetItem.conversion_factor || 1);
+			const targetStockQty = Number(targetItem.qty || 0) * targetFactor;
+			const allocatedElsewhere = Math.max(0, requestedStockQty - targetStockQty);
+			const maximumTargetQty = Math.max(0, (availableStockQty - allocatedElsewhere) / targetFactor);
+			const targetUom = targetItem.uom || targetItem.stock_uom || "units";
+			if (allocatedElsewhere > 0.000001) {
+				const otherRows = matchingItems.filter((item) => getCartLineId(item) !== getCartLineId(targetItem));
+				const allocationSource = otherRows.length === 1
+					? `The ${otherRows[0].uom || otherRows[0].stock_uom || "other UOM"} row`
+					: "The other UOM rows";
+				throw new Error(
+					`You can enter up to ${formatQty(maximumTargetQty)} ${targetUom} on this row. ${allocationSource} already uses ${formatQty(allocatedElsewhere)} of the ${formatQty(availableStockQty)} ${stockUom} available.`,
+				);
+			}
+			throw new Error(
+				`Only ${formatQty(maximumTargetQty)} ${targetUom} is available for ${stockItem.item_name}.`,
+			);
+		}
 		throw new Error(
 			`Insufficient stock for ${stockItem.item_name}. The cart requires ${formatQty(requestedStockQty)} ${stockUom}, but only ${formatQty(availableStockQty)} ${stockUom} is available.`,
 		);
@@ -752,6 +774,7 @@ type CartActions = {
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	setTransactionOrderType: (orderType: "Sales Invoice" | "Sales Order") => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<string | undefined>;
+	addCartItemUom: (lineId: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
 	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
@@ -1073,9 +1096,6 @@ export const useCartStore = create<CartStore>((set, get) => {
 								&& (row.uom || row.stock_uom) === itemUom
 								&& Number(row.conversion_factor || 1) === itemConversionFactor
 							) {
-								if (get().transactionOrderType !== "Sales Order") {
-									validateAvailableQty(row, row.qty + 1);
-								}
 								return mergeScannedTracking(row, itemForCart);
 							}
 							return row;
@@ -1084,7 +1104,16 @@ export const useCartStore = create<CartStore>((set, get) => {
 							? [itemToCartRow(itemForCart), ...currentItems]
 							: [...currentItems, itemToCartRow(itemForCart)];
 					if (get().transactionOrderType !== "Sales Order") {
-						validateAggregateAvailableQty(nextItems, itemForCart.item_code);
+						const changedItem = nextItems.find((row) =>
+							row.item_code === itemForCart.item_code
+							&& (row.uom || row.stock_uom) === itemUom
+							&& Number(row.conversion_factor || 1) === itemConversionFactor,
+						);
+						validateAggregateAvailableQty(
+							nextItems,
+							itemForCart.item_code,
+							changedItem ? getCartLineId(changedItem) : undefined,
+						);
 					}
 
 					await applyOptimisticLocalCart(nextItems, currentInvoice, api);
@@ -1114,6 +1143,71 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return initialUom.notice;
 		},
 
+		addCartItemUom: async (lineId, uom, conversionFactor, api) => {
+			const invoice = get().invoice;
+			if (!invoice || !(conversionFactor > 0)) return;
+			const sourceIndex = invoice.items.findIndex((item) => isCartLine(item, lineId));
+			if (sourceIndex < 0) return;
+			const source = invoice.items[sourceIndex];
+			if (invoice.items.some((item) =>
+				item.item_code === source.item_code
+				&& (item.uom || item.stock_uom) === uom,
+			)) {
+				throw new Error(`${source.item_name} is already in the cart using ${uom}.`);
+			}
+
+			const oldFactor = Number(source.conversion_factor || 1);
+			const stockRate = Number(source.price_list_rate ?? source.rate) / oldFactor;
+			const configuredRate = source.uoms?.find((row) => row.uom === uom)?.rate;
+			const rate = configuredRate == null ? stockRate * conversionFactor : Number(configuredRate);
+			const newItem: InvoiceItemDTO = {
+				...source,
+				row_name: `${source.item_code}::${uom}::${conversionFactor}`,
+				cart_line_id: createCartLineId({
+					item_code: source.item_code,
+					uom,
+					stock_uom: source.stock_uom,
+					conversion_factor: conversionFactor,
+				}),
+				qty: 1,
+				uom,
+				conversion_factor: conversionFactor,
+				rate,
+				price_list_rate: rate,
+				amount: rate,
+				discount_percentage: 0,
+				discount_amount: 0,
+				pricing_rules: null,
+				pricing_override: undefined,
+				pricing_override_audit: null,
+				pricing_override_by: null,
+				item_note: null,
+				batch_no: null,
+				serial_and_batch_bundle: null,
+				batch_allocations: [],
+				serial_allocations: [],
+			};
+			const nextItems = get().newItemPosition === "Top"
+				? [newItem, ...invoice.items]
+				: [...invoice.items, newItem];
+			if (get().transactionOrderType !== "Sales Order") {
+				validateAggregateAvailableQty(nextItems, source.item_code, getCartLineId(newItem));
+			}
+
+			if (isLocalCart(invoice)) {
+				await applyOptimisticLocalCart(nextItems, invoice, api);
+				return;
+			}
+			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+				invoice_doctype: invoice.doctype,
+				invoice_name: invoice.name,
+				customer: invoice.customer,
+				price_list: get().selectedPriceList,
+				items: cartItemsPayload(nextItems),
+			}));
+			set({ invoice: preservePricingOverrides(updated, nextItems) });
+		},
+
 		scanBarcode: async (barcode, api) => {
 			const value = barcode.trim();
 			if (!value) throw new Error("A barcode is required.");
@@ -1141,16 +1235,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 						? invoice.items.filter((row) => !isCartLine(row, lineId))
 						: invoice.items.map((row) => {
 							if (isCartLine(row, lineId)) {
-								if (get().transactionOrderType !== "Sales Order") {
-									validateAvailableQty(row, qty);
-								}
 								return updateLocalQty(row, qty);
 							}
 							return row;
 						});
 				if (qty > 0 && get().transactionOrderType !== "Sales Order") {
 					const changedItem = nextItems.find((item) => isCartLine(item, lineId));
-					if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code);
+					if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code, lineId);
 				}
 				if (!nextItems.length) {
 					set({ invoice: null });
@@ -1165,7 +1256,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 				const nextItems = invoice.items.map((item) =>
 					isCartLine(item, lineId) ? updateLocalQty(item, qty) : item,
 				);
-				validateAggregateAvailableQty(nextItems, targetItem.item_code);
+				validateAggregateAvailableQty(nextItems, targetItem.item_code, lineId);
 			}
 
 			if (qty <= 0) {
@@ -1264,7 +1355,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			});
 			if (get().transactionOrderType !== "Sales Order") {
 				const changedItem = nextItems.find((item) => isCartLine(item, lineId));
-				if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code);
+				if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code, lineId);
 			}
 			if (isLocalCart(invoice)) {
 				await applyOptimisticLocalCart(nextItems, invoice, api);

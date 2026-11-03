@@ -442,10 +442,29 @@ describe("updateCartItemQty", () => {
 
 		await expect(
 			useCartStore.getState().updateCartItemQty(pcsLineId, 23584, makeApi()),
-		).rejects.toThrow("cart requires 47,584 Pcs");
+		).rejects.toThrow("You can enter up to 23,583 Pcs on this row");
 		rows = useCartStore.getState().invoice!.items;
 		expect(rows.find((row) => row.uom === "Carton")?.qty).toBe(1000);
 		expect(rows.find((row) => row.uom === "Pcs")?.qty).toBe(23583);
+	});
+
+	it("reports the maximum allowed quantity in the row's selling UOM", async () => {
+		const item = makeItem({
+			item_code: "F61",
+			item_name: "Dairy Joy 200ml",
+			is_stock_item: 1,
+			actual_qty: 47583,
+			stock_uom: "Pcs",
+			uom: "Carton",
+			conversion_factor: 24,
+		});
+		await useCartStore.getState().addCartItem(item, makeApi());
+		const row = useCartStore.getState().invoice!.items[0];
+
+		await expect(
+			useCartStore.getState().updateCartItemQty(row.cart_line_id!, 1983, makeApi()),
+		).rejects.toThrow("Only 1,982.625 Carton is available for Dairy Joy 200ml");
+		expect(useCartStore.getState().invoice!.items[0].qty).toBe(1);
 	});
 
 	it("removes the row when qty is set to zero", async () => {
@@ -535,6 +554,72 @@ describe("updateCartItemQty", () => {
 		expect(invoice?.totals.total_taxes_and_charges).toBeCloseTo(576, 2);
 		expect(invoice?.totals.grand_total).toBeCloseTo(4176, 2);
 		expect(invoice?.taxes?.[0]?.account_head).toBe("VAT - TC");
+	});
+});
+
+describe("addCartItemUom", () => {
+	it("adds an unused UOM as a clean, independent row", async () => {
+		const item = makeItem({
+			item_code: "F61",
+			item_name: "Dairy Joy 200ml",
+			is_stock_item: 1,
+			actual_qty: 47583,
+			stock_uom: "Pcs",
+			uom: "Carton",
+			conversion_factor: 24,
+			rate: 480,
+			price_list_rate: 480,
+			uoms: [
+				{ uom: "Pcs", conversion_factor: 1, rate: 20 },
+				{ uom: "Carton", conversion_factor: 24, rate: 480 },
+			],
+		});
+		await useCartStore.getState().addCartItem(item, makeApi());
+		const carton = useCartStore.getState().invoice!.items[0];
+
+		await useCartStore.getState().addCartItemUom(carton.cart_line_id!, "Pcs", 1, makeApi());
+
+		const rows = useCartStore.getState().invoice!.items;
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toMatchObject({ uom: "Carton", qty: 1, rate: 480 });
+		expect(rows[1]).toMatchObject({
+			uom: "Pcs",
+			qty: 1,
+			rate: 20,
+			item_note: null,
+			batch_allocations: [],
+			serial_allocations: [],
+		});
+		expect(rows[0].cart_line_id).not.toBe(rows[1].cart_line_id);
+	});
+
+	it("refuses to add a UOM that already has a cart row", async () => {
+		await useCartStore.getState().addCartItem(makeItem({ uom: "Nos", stock_uom: "Nos" }), makeApi());
+		const row = useCartStore.getState().invoice!.items[0];
+
+		await expect(
+			useCartStore.getState().addCartItemUom(row.cart_line_id!, "Nos", 1, makeApi()),
+		).rejects.toThrow("already in the cart using Nos");
+	});
+
+	it("places the additional UOM at the top when configured by the POS Profile", async () => {
+		useCartStore.getState().setNewItemPosition("Top");
+		const item = makeItem({
+			item_code: "F61",
+			stock_uom: "Pcs",
+			uom: "Carton",
+			conversion_factor: 24,
+			uoms: [
+				{ uom: "Pcs", conversion_factor: 1, rate: 20 },
+				{ uom: "Carton", conversion_factor: 24, rate: 480 },
+			],
+		});
+		await useCartStore.getState().addCartItem(item, makeApi());
+		const source = useCartStore.getState().invoice!.items[0];
+
+		await useCartStore.getState().addCartItemUom(source.cart_line_id!, "Pcs", 1, makeApi());
+
+		expect(useCartStore.getState().invoice!.items.map((row) => row.uom)).toEqual(["Pcs", "Carton"]);
 	});
 });
 
