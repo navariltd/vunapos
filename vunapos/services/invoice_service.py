@@ -1151,7 +1151,9 @@ def _build_invoice_doc(
 	return doc, profile
 
 
-def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, delivery_date=None):
+def _build_sales_order_doc(
+	pos_profile=None, customer=None, price_list=None, delivery_date=None, service_type=None
+):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
 	if not customer:
@@ -1170,6 +1172,7 @@ def _build_sales_order_doc(pos_profile=None, customer=None, price_list=None, del
 	_set_if_has_field(doc, "set_warehouse", profile.warehouse)
 	_set_if_has_field(doc, "disable_rounded_total", profile.get("disable_rounded_total"))
 	_set_if_has_field(doc, "vunapos_pos_profile", profile.name)
+	_set_if_has_field(doc, "vunapos_service_type", service_type or None)
 	_sync_profile_pricing_fields(doc, profile, price_list)
 	if hasattr(doc, "set_missing_values"):
 		doc.set_missing_values()
@@ -1813,6 +1816,7 @@ def create_invoice_from_cart(
 	idempotency_key=None,
 	invoice_doctype=None,
 	service_type=None,
+	sales_order=None,
 ):
 	savepoint = "vunapos_hold_invoice"
 	frappe.db.savepoint(savepoint)
@@ -1833,6 +1837,8 @@ def create_invoice_from_cart(
 			_set_if_has_field(doc, IDEMPOTENCY_FIELD, str(idempotency_key).strip())
 
 		_append_cart_items(doc, profile, cart_items)
+		if sales_order:
+			_link_sales_order_rows(doc, cart_items, sales_order)
 		_recalculate(doc, profile, price_list)
 		_apply_loyalty_redemption(doc, loyalty_points)
 
@@ -1841,6 +1847,17 @@ def create_invoice_from_cart(
 	except Exception:
 		frappe.db.rollback(save_point=savepoint)
 		raise
+
+
+def _link_sales_order_rows(doc, cart_items, sales_order):
+	"""Point each invoice line at the Sales Order line it bills (`so_detail` in the cart item).
+
+	Internal callers only (restaurant billing): the public checkout API never
+	passes `sales_order`, so a client cannot bill someone else's order lines.
+	"""
+	for row, item in zip(doc.get("items"), cart_items, strict=False):
+		row.sales_order = sales_order
+		row.so_detail = item.get("so_detail")
 
 
 def create_and_submit_invoice(
@@ -1859,6 +1876,7 @@ def create_and_submit_invoice(
 	salesperson_token=None,
 	checkout_fields=None,
 	service_type=None,
+	sales_order=None,
 ):
 	existing = find_invoice_by_idempotency_key(idempotency_key, SUPPORTED_INVOICE_DOCTYPES)
 	if existing:
@@ -1942,6 +1960,7 @@ def create_and_submit_invoice(
 			loyalty_points=loyalty_points,
 			idempotency_key=idempotency_key,
 			service_type=service_type,
+			sales_order=sales_order,
 		)
 		doc = frappe.get_doc(draft["doctype"], draft["name"])
 		if (

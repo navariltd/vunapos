@@ -18,6 +18,10 @@ _READ = {"read": 1}
 # invoices to users who never create any.
 _OWN_INVOICE_READ = {"read": 1, "if_owner": 1}
 _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
+# A restaurant order is a Sales Order that every till of the restaurant works
+# on, so these rights are not limited to the creator. ERPNext's Update Items
+# (used to change lines) checks write and create on the order.
+_ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
 _MENU_READS = {
 	"POS Profile": _READ,
@@ -31,14 +35,21 @@ _MENU_READS = {
 # Grants on Frappe/ERPNext doctypes, so each role works without Sales User or
 # Accounts User. Permissions on VunaPOS doctypes live in their DocType JSON.
 ROLE_PERMISSIONS = {
-	WAITER_ROLE: {**_MENU_READS, "Sales Invoice": _OWN_INVOICE_READ, "POS Invoice": _OWN_INVOICE_READ},
+	WAITER_ROLE: {
+		**_MENU_READS,
+		"Sales Order": _ORDERS,
+		"Sales Invoice": _OWN_INVOICE_READ,
+		"POS Invoice": _OWN_INVOICE_READ,
+	},
 	RESTAURANT_MANAGER_ROLE: {
 		**_MENU_READS,
+		"Sales Order": {**_ORDERS, "cancel": 1},
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
 	},
 	CASHIER_ROLE: {
 		**_MENU_READS,
+		"Sales Order": _ORDERS,
 		"Sales Invoice": _BILLING,
 		"POS Invoice": _BILLING,
 		"POS Opening Entry": _SHIFT,
@@ -784,13 +795,142 @@ def ensure_vunapos_custom_fields():
 	}
 	for invoice_doctype in ("Sales Invoice", "POS Invoice"):
 		custom_fields[invoice_doctype].extend(_restaurant_invoice_fields())
+	custom_fields["Sales Order"].extend(_restaurant_order_fields())
+	custom_fields["Sales Order Item"] = _restaurant_order_item_fields()
 	create_custom_fields(custom_fields, ignore_validate=True)
 	ensure_sales_invoice_stock_reservation_option()
 	ensure_default_service_types()
 
 
+def _restaurant_order_fields():
+	"""A restaurant order is a Sales Order carrying these fields (see restaurant_order_service).
+
+	All are no_copy, so duplicating or amending one in Desk makes a plain Sales
+	Order rather than a second open order on the same table.
+	"""
+
+	def field(fieldname, label, fieldtype, insert_after, **values):
+		return {
+			"fieldname": fieldname,
+			"label": label,
+			"fieldtype": fieldtype,
+			"insert_after": insert_after,
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+			**values,
+		}
+
+	return [
+		{
+			"fieldname": "vunapos_restaurant_order_section",
+			"label": "Restaurant Order",
+			"fieldtype": "Section Break",
+			"insert_after": "vunapos_session_verified_at",
+			"depends_on": "eval:doc.vunapos_restaurant",
+		},
+		field(
+			"vunapos_restaurant",
+			"Restaurant",
+			"Link",
+			"vunapos_restaurant_order_section",
+			options="VunaPOS Restaurant",
+			allow_on_submit=0,
+			search_index=1,
+		),
+		field(
+			"vunapos_service_type",
+			"Service Type",
+			"Link",
+			"vunapos_restaurant",
+			options="VunaPOS Service Type",
+		),
+		field(
+			"vunapos_restaurant_table",
+			"Table",
+			"Link",
+			"vunapos_service_type",
+			options="VunaPOS Restaurant Table",
+			search_index=1,
+		),
+		field("vunapos_pax", "Guests", "Int", "vunapos_restaurant_table", read_only=0),
+		field("vunapos_waiter", "Waiter", "Link", "vunapos_pax", options="User"),
+		field("vunapos_opened_at", "Opened At", "Datetime", "vunapos_waiter"),
+		{
+			"fieldname": "vunapos_restaurant_order_column_break",
+			"fieldtype": "Column Break",
+			"insert_after": "vunapos_opened_at",
+		},
+		field(
+			"vunapos_order_note",
+			"Order Note",
+			"Small Text",
+			"vunapos_restaurant_order_column_break",
+			read_only=0,
+		),
+		field("vunapos_billing_doctype", "Billed On", "Link", "vunapos_order_note", options="DocType"),
+		field(
+			"vunapos_billing_invoice",
+			"Billing Invoice",
+			"Dynamic Link",
+			"vunapos_billing_doctype",
+			options="vunapos_billing_doctype",
+		),
+		field("vunapos_billed_by", "Billed By", "Link", "vunapos_billing_invoice", options="User"),
+		field("vunapos_billed_at", "Billed At", "Datetime", "vunapos_billed_by"),
+		field("vunapos_cancel_reason", "Cancel Reason", "Small Text", "vunapos_billed_at"),
+		field("vunapos_cancel_approved_by", "Cancel Approved By", "Data", "vunapos_cancel_reason"),
+		field("vunapos_cancelled_by", "Cancelled By", "Link", "vunapos_cancel_approved_by", options="User"),
+		field("vunapos_cancelled_at", "Cancelled At", "Datetime", "vunapos_cancelled_by"),
+	]
+
+
+def _restaurant_order_item_fields():
+	"""Restaurant order lines. `vunapos_item_note` has the same name as on invoice lines."""
+	return [
+		{
+			"fieldname": "vunapos_line_id",
+			"label": "VunaPOS Line ID",
+			"fieldtype": "Data",
+			"insert_after": "item_name",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": "vunapos_item_note",
+			"label": "Item Note",
+			"fieldtype": "Small Text",
+			"insert_after": "vunapos_line_id",
+			"allow_on_submit": 1,
+		},
+		{
+			"fieldname": "vunapos_added_by",
+			"label": "Added By",
+			"fieldtype": "Link",
+			"options": "User",
+			"insert_after": "vunapos_item_note",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+		},
+		{
+			"fieldname": "vunapos_added_at",
+			"label": "Added At",
+			"fieldtype": "Datetime",
+			"insert_after": "vunapos_added_by",
+			"read_only": 1,
+			"allow_on_submit": 1,
+			"no_copy": 1,
+		},
+	]
+
+
 def _restaurant_invoice_fields():
-	"""Restaurant context stamped on the invoice that bills a Restaurant Order."""
+	"""Restaurant context stamped on the invoice that bills a restaurant order.
+
+	The order itself is linked through the invoice lines (`sales_order`/`so_detail`).
+	"""
 	return [
 		{
 			"fieldname": "vunapos_restaurant_section",
@@ -800,22 +940,11 @@ def _restaurant_invoice_fields():
 			"collapsible": 1,
 		},
 		{
-			"fieldname": "vunapos_restaurant_order",
-			"label": "VunaPOS Restaurant Order",
-			"fieldtype": "Link",
-			"options": "VunaPOS Restaurant Order",
-			"insert_after": "vunapos_restaurant_section",
-			"read_only": 1,
-			"allow_on_submit": 1,
-			"no_copy": 1,
-			"search_index": 1,
-		},
-		{
 			"fieldname": "vunapos_service_type",
 			"label": "VunaPOS Service Type",
 			"fieldtype": "Link",
 			"options": "VunaPOS Service Type",
-			"insert_after": "vunapos_restaurant_order",
+			"insert_after": "vunapos_restaurant_section",
 			"read_only": 1,
 			"allow_on_submit": 1,
 			"no_copy": 1,

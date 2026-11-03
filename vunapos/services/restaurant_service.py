@@ -102,6 +102,31 @@ def validate_restaurant_doc(doc):
 			)
 
 
+def allow_repeated_order_items():
+	"""Turn on Selling Settings "Allow Item to Be Added Multiple Times".
+
+	A restaurant order repeats items (a second round of the same drink, or one
+	dish with two different notes), which ERPNext refuses on a Sales Order
+	without this setting. Returns True when it was switched on now.
+	"""
+	if cint(frappe.db.get_single_value("Selling Settings", "allow_multiple_items")):
+		return False
+	frappe.db.set_single_value("Selling Settings", "allow_multiple_items", 1)
+	return True
+
+
+def on_restaurant_update(doc):
+	if cint(doc.enabled) and allow_repeated_order_items():
+		frappe.msgprint(
+			_(
+				"Allow Item to Be Added Multiple Times is now on in Selling Settings, so an order "
+				"can hold the same item on several lines."
+			),
+			title=_("Selling Settings"),
+			indicator="blue",
+		)
+
+
 def validate_profile_restaurant(profile, method=None):
 	"""POS Profile validate hook: a Restaurant-mode profile needs a restaurant of its company."""
 	if profile.get("vunapos_pos_mode") != "Restaurant":

@@ -113,9 +113,13 @@
   {
    "link_doctype": "VunaPOS Restaurant Floor",
    "link_fieldname": "restaurant"
+  },
+  {
+   "link_doctype": "Sales Order",
+   "link_fieldname": "vunapos_restaurant"
   }
  ],
- "modified": "2026-11-04 09:00:00.000000",
+ "modified": "2026-11-05 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "VunaPOS Restaurant",

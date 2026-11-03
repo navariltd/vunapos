@@ -5,7 +5,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, cstr, flt
 
-from vunapos.dto.restaurant import floor_to_dict
+from vunapos.dto.restaurant import ORDER_STATUS_FIELDS, ORDER_STATUS_OPEN, floor_to_dict, order_status
 from vunapos.services.profile_service import require_pos_profile_assignment
 from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE
 from vunapos.setup.utils import DEFAULT_POS_MODE, RESTAURANT_MANAGER_ROLE
@@ -15,7 +15,7 @@ CANVAS_HEIGHT = 700
 FLOOR_DOCTYPE = "VunaPOS Restaurant Floor"
 TABLE_DOCTYPE = "VunaPOS Restaurant Table"
 ELEMENT_DOCTYPE = "VunaPOS Floor Element"
-ORDER_DOCTYPE = "VunaPOS Restaurant Order"
+ORDER_DOCTYPE = "Sales Order"
 MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
 ELEMENT_TYPES = ("Wall", "Door", "Window", "Bar Counter", "Plant", "Label")
 TABLE_SHAPES = ("Square", "Round", "Rectangle", "Oval")
@@ -461,14 +461,14 @@ def _validate_payload(payload, restaurant, existing_floors, existing_tables):
 def _retire_table(table_name):
 	orders = frappe.get_all(
 		ORDER_DOCTYPE,
-		filters={"restaurant_table": table_name},
-		fields=["name", "status"],
+		filters={"vunapos_restaurant_table": table_name},
+		fields=["name", *ORDER_STATUS_FIELDS],
 		order_by="creation desc",
 		limit_page_length=20,
 	)
 	if orders:
 		table_label = frappe.db.get_value(TABLE_DOCTYPE, table_name, "table_label")
-		has_open_order = any(row.status == "Open" for row in orders)
+		has_open_order = any(order_status(row) == ORDER_STATUS_OPEN for row in orders)
 		_throw(
 			"TABLE_HAS_OPEN_ORDERS" if has_open_order else "TABLE_HAS_ORDERS",
 			_("Table {0} has open orders. Bill or cancel them before removing the table.").format(table_label)
