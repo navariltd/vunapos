@@ -4,9 +4,11 @@ import secrets
 
 import frappe
 from frappe import _
+from frappe.utils import cint
 
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.profile_service import require_pos_profile_assignment, resolve_pos_profile
+from vunapos.services.restaurant_service import get_profile_restaurant
 
 PIN_PATTERN = re.compile(r"^\d{4,6}$")
 
@@ -163,12 +165,17 @@ def refresh_salesperson_pin(pos_profile: str, token: str) -> dict:
 	}
 
 
+def _restaurant_flag(profile, fieldname):
+	restaurant = get_profile_restaurant(profile)
+	return bool(restaurant and cint(restaurant.get(fieldname)))
+
+
 def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal") -> dict:
 	profile = resolve_pos_profile(pos_profile)
 	require_pos_profile_assignment(profile.name)
 	if action == "item_removal" and not profile.get("vunapos_require_manager_pin_item_removal"):
 		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for item removal."))
-	if action == "order_cancel" and not profile.get("vunapos_require_manager_pin_order_cancel"):
+	if action == "order_cancel" and not _restaurant_flag(profile, "require_manager_pin_order_cancel"):
 		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for order cancellation."))
 	if not isinstance(pin, str) or not PIN_PATTERN.fullmatch(pin):
 		_failure("INVALID_PIN_FORMAT", _("PIN must contain 4 to 6 digits."))

@@ -201,6 +201,7 @@ def checkout_order(
 	salesperson: str | None = None,
 	salesperson_token: str | None = None,
 	checkout_fields: dict | str | None = None,
+	pos_profile: str | None = None,
 ):
 	try:
 		return success(
@@ -218,6 +219,7 @@ def checkout_order(
 				salesperson=salesperson,
 				salesperson_token=salesperson_token,
 				checkout_fields=checkout_fields,
+				pos_profile=pos_profile,
 			)
 		)
 	except Exception as exc:
@@ -225,8 +227,10 @@ def checkout_order(
 
 
 @frappe.whitelist()
-def preview_order(order: str, customer: str | None = None):
+def preview_order(order: str, customer: str | None = None, pos_profile: str | None = None):
 	try:
-		return success(restaurant_order_service.preview_order(order, customer=customer))
+		return success(
+			restaurant_order_service.preview_order(order, customer=customer, pos_profile=pos_profile)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)

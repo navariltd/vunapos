@@ -117,11 +117,12 @@ def validate_service_type_price(profile, item_code, service_type):
 def resolve_table_floor(profile_name, table):
 	if not table:
 		return None
-	row = frappe.db.get_value(TABLE_DOCTYPE, table, ["pos_profile", "floor"], as_dict=True)
-	if not row or row.pos_profile != profile_name:
+	restaurant = frappe.db.get_value("POS Profile", profile_name, "vunapos_restaurant")
+	row = frappe.db.get_value(TABLE_DOCTYPE, table, ["restaurant", "floor"], as_dict=True)
+	if not row or not restaurant or row.restaurant != restaurant:
 		_throw(
 			"TABLE_NOT_FOUND",
-			_("Table {0} does not belong to POS Profile {1}").format(table, profile_name),
+			_("Table {0} does not belong to restaurant {1}").format(table, restaurant),
 			{"table": table},
 		)
 	return row.floor
@@ -195,7 +196,7 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 
 
 def validate_profile_menu(profile, method=None):
-	"""POS Profile validate hook: menu floors must belong to this profile.
+	"""POS Profile validate hook: menu floors must belong to this profile's restaurant.
 
 	Runs only when a profile is saved in Desk, so it uses frappe.throw (which
 	shows the message there) rather than an API error code.
@@ -203,9 +204,9 @@ def validate_profile_menu(profile, method=None):
 	for row in profile.get("vunapos_restaurant_menu") or []:
 		if not row.floor:
 			continue
-		floor_profile = frappe.db.get_value("VunaPOS Restaurant Floor", row.floor, "pos_profile")
-		if floor_profile != profile.name:
+		floor_restaurant = frappe.db.get_value("VunaPOS Restaurant Floor", row.floor, "restaurant")
+		if floor_restaurant != profile.get("vunapos_restaurant"):
 			frappe.throw(
-				_("Menu row {0}: floor {1} belongs to a different POS Profile").format(row.idx, row.floor),
+				_("Menu row {0}: floor {1} belongs to a different restaurant").format(row.idx, row.floor),
 				title=_("Menu"),
 			)

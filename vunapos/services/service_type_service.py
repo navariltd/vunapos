@@ -3,6 +3,7 @@ from frappe import _
 from frappe.utils import cint
 
 from vunapos.dto.restaurant import service_type_to_dict
+from vunapos.services.restaurant_service import get_profile_restaurant
 
 SERVICE_TYPE_DOCTYPE = "VunaPOS Service Type"
 
@@ -32,9 +33,12 @@ def _enabled_service_types():
 
 
 def get_profile_service_types(profile):
-	"""Return the enabled service types a POS Profile offers, in display order."""
+	"""Return the enabled service types the profile's restaurant offers, in display order."""
 	enabled = _enabled_service_types()
-	rows = [row for row in profile.get("vunapos_service_types") or [] if row.service_type]
+	restaurant = get_profile_restaurant(profile)
+	rows = [
+		row for row in (restaurant.get("service_types") if restaurant else None) or [] if row.service_type
+	]
 	if rows:
 		offered_names = {row.service_type for row in rows}
 		offered = [row for row in enabled if row.name in offered_names]
@@ -114,32 +118,12 @@ def resolve_service_type(profile, service_type):
 	if not row:
 		_throw(
 			"SERVICE_TYPE_NOT_ALLOWED",
-			_("Service type {0} is not offered by POS Profile {1}").format(service_type, profile.name),
+			_("Service type {0} is not offered at restaurant {1}").format(
+				service_type, profile.get("vunapos_restaurant")
+			),
 			{"service_type": service_type, "pos_profile": profile.name},
 		)
 	return row
-
-
-def validate_profile_service_types(profile, method=None):
-	"""POS Profile validate hook: at most one default service type."""
-	defaults = [
-		row.service_type for row in profile.get("vunapos_service_types") or [] if cint(row.is_default)
-	]
-	if len(defaults) > 1:
-		frappe.throw(
-			_("Only one service type can be the default. Untick Default on all but one of: {0}").format(
-				", ".join(defaults)
-			),
-			title=_("Service Types"),
-		)
-	seen = set()
-	for row in profile.get("vunapos_service_types") or []:
-		if row.service_type in seen:
-			frappe.throw(
-				_("Service type {0} is listed more than once").format(row.service_type),
-				title=_("Service Types"),
-			)
-		seen.add(row.service_type)
 
 
 SERVICE_TAXES_FLAG = "vunapos_service_type_taxes"

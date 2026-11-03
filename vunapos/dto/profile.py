@@ -7,15 +7,24 @@ from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.checkout_queue_service import get_queue_limits
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
+from vunapos.services.restaurant_service import get_profile_restaurant
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 
 
 def _restaurant_settings(profile):
+	restaurant = get_profile_restaurant(profile)
 	return {
+		"restaurant": restaurant.name if restaurant else None,
+		"restaurant_name": restaurant.restaurant_name if restaurant else None,
+		"branch": restaurant.branch if restaurant else None,
 		"service_types": get_profile_service_types(profile),
-		"allow_multiple_orders_per_table": bool(profile.get("vunapos_allow_multiple_orders_per_table")),
-		"require_manager_pin_order_cancel": bool(profile.get("vunapos_require_manager_pin_order_cancel")),
+		"allow_multiple_orders_per_table": bool(
+			cint(restaurant and restaurant.allow_multiple_orders_per_table)
+		),
+		"require_manager_pin_order_cancel": bool(
+			cint(restaurant and restaurant.require_manager_pin_order_cancel)
+		),
 	}
 
 

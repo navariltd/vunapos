@@ -36,6 +36,11 @@ from vunapos.services.menu_service import (
 )
 from vunapos.services.pin_service import consume_pin_token
 from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.restaurant_service import (
+	get_profile_restaurant,
+	get_restaurant_profiles,
+	require_restaurant_access,
+)
 from vunapos.services.service_type_service import get_default_service_type, resolve_service_type
 
 ORDER_DOCTYPE = "VunaPOS Restaurant Order"
@@ -77,6 +82,11 @@ def _clean_note(note, label):
 # ---- document validation (also runs on Desk edits) ----
 
 
+def _restaurant_setting(profile, fieldname):
+	restaurant = get_profile_restaurant(profile)
+	return restaurant.get(fieldname) if restaurant else None
+
+
 def _validate_table(doc, profile, service_type):
 	if service_type["requires_table"] and not doc.restaurant_table:
 		_throw(
@@ -91,14 +101,16 @@ def _validate_table(doc, profile, service_type):
 	table = frappe.db.get_value(
 		TABLE_DOCTYPE,
 		doc.restaurant_table,
-		["pos_profile", "is_active", "table_label"],
+		["restaurant", "is_active", "table_label"],
 		as_dict=True,
 		for_update=True,
 	)
-	if not table or table.pos_profile != profile.name:
+	if not table or table.restaurant != profile.vunapos_restaurant:
 		_throw(
 			"TABLE_NOT_FOUND",
-			_("Table {0} does not belong to POS Profile {1}").format(doc.restaurant_table, profile.name),
+			_("Table {0} does not belong to restaurant {1}").format(
+				doc.restaurant_table, profile.vunapos_restaurant
+			),
 			{"table": doc.restaurant_table},
 		)
 	if not cint(table.is_active):
@@ -107,7 +119,7 @@ def _validate_table(doc, profile, service_type):
 			_("Table {0} is not active").format(table.table_label),
 			{"table": doc.restaurant_table},
 		)
-	if cint(profile.get("vunapos_allow_multiple_orders_per_table")):
+	if cint(_restaurant_setting(profile, "allow_multiple_orders_per_table")):
 		return
 	other = frappe.db.get_value(
 		ORDER_DOCTYPE,
@@ -203,7 +215,9 @@ def _load_order(order, for_update=False):
 	if not order or not frappe.db.exists(ORDER_DOCTYPE, order):
 		_throw("ORDER_NOT_FOUND", _("Order {0} was not found").format(order), {"order": order})
 	doc = frappe.get_doc(ORDER_DOCTYPE, order, for_update=for_update)
-	profile = resolve_pos_profile(doc.pos_profile)
+	profile = frappe.get_cached_doc("POS Profile", doc.pos_profile)
+	# Orders belong to the restaurant, so staff of any of its tills can open them.
+	require_restaurant_access(profile.vunapos_restaurant)
 	return doc, profile
 
 
@@ -221,6 +235,22 @@ def _load_open_order(order):
 def _restaurant_profile(pos_profile):
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_profile(profile.name)
+	return profile
+
+
+def _billing_profile(order_profile, pos_profile):
+	"""The till that bills: the cashier's own, which must be in the order's restaurant."""
+	if not pos_profile or pos_profile == order_profile.name:
+		return order_profile
+	profile = _restaurant_profile(pos_profile)
+	if profile.vunapos_restaurant != order_profile.vunapos_restaurant:
+		_throw(
+			"ORDER_RESTAURANT_MISMATCH",
+			_("POS Profile {0} is not in restaurant {1}").format(
+				profile.name, order_profile.vunapos_restaurant
+			),
+			{"pos_profile": profile.name, "restaurant": order_profile.vunapos_restaurant},
+		)
 	return profile
 
 
@@ -349,7 +379,8 @@ def get_order(order):
 
 def list_orders(pos_profile=None, status=STATUS_OPEN, table=None, service_type=None, limit=100):
 	profile = _restaurant_profile(pos_profile)
-	filters = {"pos_profile": profile.name}
+	# Every till of the restaurant shares its tables and orders.
+	filters = {"pos_profile": ["in", get_restaurant_profiles(profile.vunapos_restaurant)]}
 	if status:
 		filters["status"] = status
 	if table:
@@ -446,7 +477,7 @@ def cancel_order(order, reason=None, manager_pin_token=None):
 	if not reason:
 		_throw("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
 	approved_by = None
-	if cint(profile.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():
+	if cint(_restaurant_setting(profile, "require_manager_pin_order_cancel")) and not is_floor_plan_manager():
 		approved_by = consume_pin_token(manager_pin_token, profile, "manager").get("subject")
 	doc.update(
 		{
@@ -493,13 +524,17 @@ def checkout_order(
 	salesperson=None,
 	salesperson_token=None,
 	checkout_fields=None,
+	pos_profile=None,
 ):
 	"""Bill an open order through the standard VunaPOS checkout.
 
-	The billing user needs an open POS shift (checkout enforces it). The
-	invoice is created and owned by that user, so POS closing works unchanged.
+	`pos_profile` is the billing till, defaulting to the till the order was
+	taken on; it must be in the same restaurant. The billing user needs an open
+	POS shift on it (checkout enforces it). The invoice is created and owned by
+	that user, so POS closing works unchanged.
 	"""
-	doc, _profile = _load_order(order, for_update=True)
+	doc, order_profile = _load_order(order, for_update=True)
+	billing_profile = _billing_profile(order_profile, pos_profile)
 	idempotency_key = cstr(idempotency_key).strip() or None
 	if doc.status == STATUS_BILLED:
 		if (
@@ -530,7 +565,7 @@ def checkout_order(
 	frappe.db.savepoint(savepoint)
 	try:
 		invoice = create_and_submit_invoice(
-			pos_profile=doc.pos_profile,
+			pos_profile=billing_profile.name,
 			customer=customer or doc.customer,
 			items=cart_items,
 			payments=payments,
@@ -574,7 +609,7 @@ def _order_cart_items(doc):
 	]
 
 
-def preview_order(order, customer=None):
+def preview_order(order, customer=None, pos_profile=None):
 	"""Price an open order exactly as checkout will, without saving anything.
 
 	Uses the service type's price list, offers (pricing rules) and taxes, such
@@ -582,6 +617,7 @@ def preview_order(order, customer=None):
 	so waiters can show the bill. Stock is checked at checkout, not here.
 	"""
 	doc, profile = _load_order(order)
+	profile = _billing_profile(profile, pos_profile)
 	if not doc.get("items"):
 		_throw("ORDER_EMPTY", _("Add at least one item before previewing the order"), {"order": doc.name})
 	invoice, profile = _build_invoice_doc(
@@ -601,14 +637,18 @@ def get_table_status(pos_profile=None):
 	profile = _restaurant_profile(pos_profile)
 	tables = frappe.get_all(
 		TABLE_DOCTYPE,
-		filters={"pos_profile": profile.name, "is_active": 1},
+		filters={"restaurant": profile.vunapos_restaurant, "is_active": 1},
 		fields=["name", "table_label", "floor", "seats"],
 		order_by="table_label asc",
 	)
 	orders_by_table = {}
 	for row in frappe.get_all(
 		ORDER_DOCTYPE,
-		filters={"pos_profile": profile.name, "status": STATUS_OPEN, "restaurant_table": ["is", "set"]},
+		filters={
+			"pos_profile": ["in", get_restaurant_profiles(profile.vunapos_restaurant)],
+			"status": STATUS_OPEN,
+			"restaurant_table": ["is", "set"],
+		},
 		fields=["name", "restaurant_table", "service_type", "pax", "waiter", "opened_at"],
 		order_by="opened_at asc",
 	):

@@ -1,0 +1,11 @@
+# Copyright (c) 2026, Navari Limited and contributors
+# For license information, please see license.txt
+
+from frappe.model.document import Document
+
+from vunapos.services.restaurant_service import validate_restaurant_doc
+
+
+class VunaPOSRestaurant(Document):
+	def validate(self):
+		validate_restaurant_doc(self)
