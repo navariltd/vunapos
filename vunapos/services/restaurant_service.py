@@ -80,6 +80,15 @@ def validate_restaurant_doc(doc):
 				title=_("Service Types"),
 			)
 		seen.add(row.service_type)
+	if doc.default_menu:
+		menu_company = frappe.db.get_value("VunaPOS Menu", doc.default_menu, "company")
+		if menu_company and menu_company != doc.company:
+			frappe.throw(
+				_("Menu {0} belongs to company {1}, not {2}").format(
+					doc.default_menu, menu_company, doc.company
+				),
+				title=_("Menu"),
+			)
 	if not doc.is_new() and doc.has_value_changed("company"):
 		profiles = frappe.get_all(
 			"POS Profile",

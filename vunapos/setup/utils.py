@@ -130,31 +130,12 @@ def ensure_vunapos_custom_fields():
 				"mandatory_depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 			},
 			{
-				"fieldname": "vunapos_menu_section",
-				"label": "Menu",
-				"fieldtype": "Section Break",
-				"insert_after": "vunapos_restaurant",
-				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
-			},
-			{
-				"fieldname": "vunapos_restaurant_menu",
-				"label": "Menu",
-				"fieldtype": "Table",
-				"options": "VunaPOS Menu Item Group",
-				"insert_after": "vunapos_menu_section",
-				"description": (
-					"Item groups on the menu, shown as categories in this order. Set a Floor or Service Type "
-					"to limit a row to it. If this table is empty, the Item Groups table on this profile is "
-					"used, and if that is empty too, every sales item is on the menu."
-				),
-			},
-			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
 				# stays first in the VunaPOS tab after a customisation sync.
 				"fieldname": "vunapos_sales_section",
 				"label": "Sales Settings",
 				"fieldtype": "Section Break",
-				"insert_after": "vunapos_restaurant_menu",
+				"insert_after": "vunapos_restaurant",
 			},
 			{
 				"fieldname": "vunapos_home_screen_section",
