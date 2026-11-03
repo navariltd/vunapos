@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -114,6 +114,21 @@ export function CartPanel({
   const taxes = invoice?.taxes || [];
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!expandedRow) return;
+
+    const collapseOnOutsideClick = (event: PointerEvent) => {
+      const target = event.target;
+      const row = target instanceof Element
+        ? target.closest<HTMLElement>("[data-cart-row-id]")
+        : null;
+      if (row?.dataset.cartRowId !== expandedRow) setExpandedRow(null);
+    };
+
+    document.addEventListener("pointerdown", collapseOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", collapseOnOutsideClick);
+  }, [expandedRow]);
+
   return (
     <aside
       className={cn(
@@ -189,30 +204,31 @@ export function CartPanel({
           items?.map((item, index) => {
             const rowIdentity = `${item.row_name}-${item.uom || item.stock_uom || ""}-${Number(item.conversion_factor || 1)}-${index}`;
             return (
-              <CartItemRow
-                key={rowIdentity}
-                currency={currency}
-                allowDiscountChange={allowDiscountChange}
-                allowRateChange={allowRateChange}
-                disabled={isMutating}
-                expanded={expandedRow === rowIdentity}
-                isOnline={isOnline}
-                item={item}
-                onLoadBatches={onLoadBatches}
-                onRemove={onRemoveItem}
-                onToggle={() =>
-                  setExpandedRow((current) =>
-                    current === rowIdentity ? null : rowIdentity,
-                  )
-                }
-                onUpdateQty={onUpdateQty}
-                onUpdatePricing={onUpdatePricing}
-                onUpdateNote={onUpdateNote}
-                onUpdateBatchAllocations={onUpdateBatchAllocations}
-                onUpdateUom={onUpdateUom}
-                onUpdateSerialAllocations={onUpdateSerialAllocations}
-                warehouse={warehouse}
-              />
+              <div key={rowIdentity} data-cart-row-id={rowIdentity}>
+                <CartItemRow
+                  currency={currency}
+                  allowDiscountChange={allowDiscountChange}
+                  allowRateChange={allowRateChange}
+                  disabled={isMutating}
+                  expanded={expandedRow === rowIdentity}
+                  isOnline={isOnline}
+                  item={item}
+                  onLoadBatches={onLoadBatches}
+                  onRemove={onRemoveItem}
+                  onToggle={() =>
+                    setExpandedRow((current) =>
+                      current === rowIdentity ? null : rowIdentity,
+                    )
+                  }
+                  onUpdateQty={onUpdateQty}
+                  onUpdatePricing={onUpdatePricing}
+                  onUpdateNote={onUpdateNote}
+                  onUpdateBatchAllocations={onUpdateBatchAllocations}
+                  onUpdateUom={onUpdateUom}
+                  onUpdateSerialAllocations={onUpdateSerialAllocations}
+                  warehouse={warehouse}
+                />
+              </div>
             );
           })
         ) : (
