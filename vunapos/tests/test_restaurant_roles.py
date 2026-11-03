@@ -24,6 +24,8 @@ from vunapos.setup.utils import (
 	ensure_vunapos_roles,
 )
 from vunapos.tests.helpers import (
+	RESTAURANT_TEST,
+	TEST_TABLE_SERVICE,
 	create_invoice_with_item,
 	ensure_test_item,
 	ensure_test_restaurant_profile,
@@ -35,7 +37,7 @@ WAITER = "_test_vunapos_role_waiter@example.com"
 CASHIER = "_test_vunapos_role_cashier@example.com"
 MANAGER = "_test_vunapos_role_manager@example.com"
 MANAGER_CASHIER = "_test_vunapos_role_manager_cashier@example.com"
-SERVICE_TYPE = "Dine In"
+SERVICE_TYPE = TEST_TABLE_SERVICE
 
 
 class TestVunaPOSRestaurantRoles(IntegrationTestCase):
@@ -47,10 +49,6 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 		set_invoice_mode("Sales Invoice")
 		cls.profile = ensure_test_restaurant_profile()
 		cls.item = ensure_test_item()
-		if not frappe.db.exists("VunaPOS Service Type", SERVICE_TYPE):
-			frappe.get_doc(
-				{"doctype": "VunaPOS Service Type", "service_type_name": SERVICE_TYPE, "requires_table": 1}
-			).insert(ignore_permissions=True)
 		# Each user holds only the VunaPOS roles under test, so these tests prove
 		# the roles work without Sales User or Accounts User.
 		ensure_test_user(WAITER, roles=(WAITER_ROLE,), pos_profile=cls.profile)
@@ -75,9 +73,9 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 	@classmethod
 	def _create_floor_plan(cls):
 		frappe.db.delete(ORDER_DOCTYPE, {"pos_profile": cls.profile})
-		for name in frappe.get_all(TABLE_DOCTYPE, filters={"pos_profile": cls.profile}, pluck="name"):
+		for name in frappe.get_all(TABLE_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
 			frappe.delete_doc(TABLE_DOCTYPE, name, ignore_permissions=True)
-		for name in frappe.get_all(FLOOR_DOCTYPE, filters={"pos_profile": cls.profile}, pluck="name"):
+		for name in frappe.get_all(FLOOR_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
 			frappe.delete_doc(FLOOR_DOCTYPE, name, ignore_permissions=True)
 		result = save_floor_plan(
 			cls.profile,
