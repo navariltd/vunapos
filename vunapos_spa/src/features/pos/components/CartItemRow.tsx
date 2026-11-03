@@ -192,8 +192,9 @@ export function CartItemRow({
                   </span>
                 ) : null}
               </span>
-              <span className="block text-xs text-on-surface-variant">
+              <span className="block truncate text-xs text-on-surface-variant">
                 {item.item_code}
+                <span className="text-on-surface"> · {item.uom || item.stock_uom}</span>
               </span>
             </span>
             <ChevronDown
