@@ -471,7 +471,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 	def test_uom_rate_change_is_allowed_without_rate_edit_permission(self):
 		profile = ensure_test_pos_profile()
-		item_code = ensure_test_sales_uom_item("_Test Vuna UOM Rate Permission Item")
+		item_code = ensure_test_sales_uom_item("_Test Vuna UOM Rate Permission Item", is_stock_item=0)
+		# This test isolates a permission decision, not stock movement. Keeping its
+		# dedicated fixture non-stock prevents availability from failing first and
+		# hiding whether a system-calculated UOM rate is accepted.
 		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
 
 		draft = create_invoice_from_cart(
