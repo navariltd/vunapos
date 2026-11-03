@@ -21,6 +21,7 @@ import { formatCurrency } from "../utils";
 import { getCartLineId } from "../stores/cartStore";
 
 type CartItemRowProps = {
+  additionalUoms?: Array<{ uom: string; conversion_factor: number; rate?: number | null }>;
   allowDiscountChange?: boolean;
   allowRateChange?: boolean;
   currency?: string;
@@ -49,6 +50,11 @@ type CartItemRowProps = {
     uom: string,
     conversionFactor: number,
   ) => Promise<void>;
+  onAddItemUom: (
+    rowName: string,
+    uom: string,
+    conversionFactor: number,
+  ) => Promise<void>;
   onUpdateSerialAllocations: (
     rowName: string,
     allocations: SerialAllocationDTO[],
@@ -65,6 +71,7 @@ function plainDescription(description?: string) {
 }
 
 export function CartItemRow({
+  additionalUoms = [],
   allowDiscountChange,
   allowRateChange,
   currency,
@@ -79,6 +86,7 @@ export function CartItemRow({
   onUpdatePricing,
   onUpdateNote,
   onUpdateUom,
+  onAddItemUom,
   onUpdateSerialAllocations,
   isOnline,
   warehouse,
@@ -89,6 +97,9 @@ export function CartItemRow({
     sourceQty: number;
     value: string;
   } | null>(null);
+  const [quantityError, setQuantityError] = useState<string | null>(null);
+  const [addUomOpen, setAddUomOpen] = useState(false);
+  const [addUomError, setAddUomError] = useState<string | null>(null);
   const [batchData, setBatchData] = useState<ItemBatchesDTO | null>(null);
   const [batchError, setBatchError] = useState<string | null>(null);
   const [batchExpanded, setBatchExpanded] = useState(false);
@@ -100,7 +111,22 @@ export function CartItemRow({
       ? quantityDraft.value
       : String(item.qty);
   const setQuantity = (value: string, sourceQty = item.qty) => {
+    setQuantityError(null);
     setQuantityDraft({ rowName: lineId, sourceQty, value });
+  };
+
+  const quantityErrorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : "Unable to update the quantity.";
+
+  const updateQuantity = async (nextQuantity: number) => {
+    setQuantityError(null);
+    try {
+      await onUpdateQty(lineId, nextQuantity);
+      setQuantityDraft(null);
+    } catch (error) {
+      setQuantityDraft(null);
+      setQuantityError(quantityErrorMessage(error));
+    }
   };
 
   const commitQuantity = async () => {
@@ -110,11 +136,7 @@ export function CartItemRow({
       return;
     }
     if (nextQuantity !== item.qty) {
-      try {
-        await onUpdateQty(lineId, nextQuantity);
-      } catch {
-        setQuantity(String(item.qty));
-      }
+      await updateQuantity(nextQuantity);
     }
   };
 
@@ -221,9 +243,7 @@ export function CartItemRow({
               className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50"
               onClick={() => {
                 setQuantity(String(item.qty - 1), item.qty - 1);
-                void onUpdateQty(lineId, item.qty - 1).catch(() =>
-                  setQuantity(String(item.qty)),
-                );
+                void updateQuantity(item.qty - 1);
               }}
               aria-label={`Decrease ${item.item_name}`}
             >
@@ -251,9 +271,7 @@ export function CartItemRow({
               className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50"
               onClick={() => {
                 setQuantity(String(item.qty + 1), item.qty + 1);
-                void onUpdateQty(lineId, item.qty + 1).catch(() =>
-                  setQuantity(String(item.qty)),
-                );
+                void updateQuantity(item.qty + 1);
               }}
               aria-label={`Increase ${item.item_name}`}
             >
@@ -269,6 +287,15 @@ export function CartItemRow({
             </p>
           </div>
         </div>
+        {quantityError ? (
+          <p
+            role="alert"
+            className="mt-2 flex items-start gap-1.5 rounded-md bg-error-container px-2.5 py-2 text-xs font-medium text-on-error-container"
+          >
+            <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+            <span>{quantityError}</span>
+          </p>
+        ) : null}
       </div>
 
       {expanded && !item.is_free_item ? (
@@ -303,42 +330,94 @@ export function CartItemRow({
             </div>
           ) : null}
 
-          <label className="flex items-center justify-between gap-5 rounded-md border border-outline-variant bg-surface p-3">
-            <span className="shrink-0 text-xs font-medium text-on-surface-variant">
-              Selling UOM
-            </span>
-            <select
-              aria-label="Selling UOM"
-              className="h-[34px] min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-[13px]"
-              disabled={disabled || (item.uoms?.length || 0) < 2}
-              value={item.uom || item.stock_uom || ""}
-              onChange={(event) => {
-                const selected = item.uoms?.find(
-                  (row) => row.uom === event.target.value,
-                );
-                if (selected)
-                  void onUpdateUom(
-                    lineId,
-                    selected.uom,
-                    selected.conversion_factor,
-                  );
-              }}
-            >
-              {(item.uoms?.length
-                ? item.uoms
-                : [
-                    {
-                      uom: item.uom || item.stock_uom || "",
-                      conversion_factor: 1,
-                    },
-                  ]
-              ).map((row) => (
-                <option key={row.uom} value={row.uom}>
-                  {row.uom} ({row.conversion_factor} {item.stock_uom})
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="rounded-md border border-outline-variant bg-surface p-3">
+            <div className="flex items-center gap-2">
+              <label className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="shrink-0 text-xs font-medium text-on-surface-variant">
+                  Selling UOM
+                </span>
+                <select
+                  aria-label="Selling UOM"
+                  className="h-[34px] min-w-[88px] flex-1 rounded-md border border-outline-variant bg-surface px-2 text-[13px]"
+                  disabled={disabled || (item.uoms?.length || 0) < 2}
+                  value={item.uom || item.stock_uom || ""}
+                  onChange={(event) => {
+                    const selected = item.uoms?.find(
+                      (row) => row.uom === event.target.value,
+                    );
+                    if (selected)
+                      void onUpdateUom(
+                        lineId,
+                        selected.uom,
+                        selected.conversion_factor,
+                      );
+                  }}
+                >
+                  {(item.uoms?.length
+                    ? item.uoms
+                    : [
+                        {
+                          uom: item.uom || item.stock_uom || "",
+                          conversion_factor: 1,
+                        },
+                      ]
+                  ).map((row) => (
+                    <option key={row.uom} value={row.uom}>
+                      {row.uom} ({row.conversion_factor} {item.stock_uom})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {additionalUoms.length ? (
+                <button
+                  type="button"
+                  className={`flex h-[34px] shrink-0 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-xs font-semibold transition-colors ${addUomOpen ? "border-primary bg-primary-container text-on-primary-container" : "border-outline-variant text-primary hover:border-primary hover:bg-primary-container"}`}
+                  disabled={itemDisabled}
+                  onClick={() => {
+                    setAddUomError(null);
+                    setAddUomOpen((value) => !value);
+                  }}
+                  aria-expanded={addUomOpen}
+                  aria-label="Add another selling UOM"
+                >
+                  <Plus className="size-3.5" />
+                  Add UOM
+                </button>
+              ) : null}
+            </div>
+            {additionalUoms.length ? (
+              <>
+                {addUomOpen ? (
+                  <div className="mt-3 flex flex-wrap gap-2 border-t border-outline-variant pt-3">
+                    {additionalUoms.map((row) => (
+                      <button
+                        key={row.uom}
+                        type="button"
+                        className="cursor-pointer rounded-md border border-outline-variant bg-surface-container-low px-3 py-2 text-xs font-medium text-on-surface hover:border-primary hover:bg-primary-container hover:text-on-primary-container"
+                        onClick={() => {
+                          setAddUomError(null);
+                          void onAddItemUom(lineId, row.uom, row.conversion_factor).then(
+                            () => setAddUomOpen(false),
+                            (error: unknown) => setAddUomError(
+                              error instanceof Error ? error.message : "Unable to add this UOM.",
+                            ),
+                          );
+                        }}
+                      >
+                        {row.uom} ({row.conversion_factor} {item.stock_uom})
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {addUomError ? (
+                  <p role="alert" className="mt-2 flex items-start gap-1.5 text-xs font-medium text-error">
+                    <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                    <span>{addUomError}</span>
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </div>
 
           <PricingEditor
             key={`${item.uom}-${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}

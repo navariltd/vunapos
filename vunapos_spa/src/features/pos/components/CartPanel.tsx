@@ -61,6 +61,11 @@ type CartPanelProps = {
     uom: string,
     conversionFactor: number,
   ) => Promise<void>;
+  onAddItemUom: (
+    lineId: string,
+    uom: string,
+    conversionFactor: number,
+  ) => Promise<void>;
   onUpdateSerialAllocations: (
     rowName: string,
     allocations: SerialAllocationDTO[],
@@ -100,6 +105,7 @@ export function CartPanel({
   onUpdateNote,
   onUpdateBatchAllocations,
   onUpdateUom,
+  onAddItemUom,
   onUpdateSerialAllocations,
   isOnline,
   posProfile,
@@ -206,6 +212,14 @@ export function CartPanel({
             // expanded item details should remain open while its pricing and
             // conversion factor are recalculated.
             const rowIdentity = getCartLineId(item);
+            const usedUoms = new Set(
+              items
+                .filter((row) => row.item_code === item.item_code)
+                .map((row) => row.uom || row.stock_uom || ""),
+            );
+            const additionalUoms = (item.uoms || []).filter(
+              (row) => row.uom && !usedUoms.has(row.uom),
+            );
             return (
               <div key={rowIdentity} data-cart-row-id={rowIdentity}>
                 <CartItemRow
@@ -216,6 +230,7 @@ export function CartPanel({
                   expanded={expandedRow === rowIdentity}
                   isOnline={isOnline}
                   item={item}
+                  additionalUoms={additionalUoms}
                   onLoadBatches={onLoadBatches}
                   onRemove={onRemoveItem}
                   onToggle={() =>
@@ -228,6 +243,7 @@ export function CartPanel({
                   onUpdateNote={onUpdateNote}
                   onUpdateBatchAllocations={onUpdateBatchAllocations}
                   onUpdateUom={onUpdateUom}
+                  onAddItemUom={onAddItemUom}
                   onUpdateSerialAllocations={onUpdateSerialAllocations}
                   warehouse={warehouse}
                 />
