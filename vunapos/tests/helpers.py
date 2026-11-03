@@ -365,8 +365,8 @@ def ensure_test_item():
 	return item.name
 
 
-def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
-	"""Create a stock item whose configured sales UOM is an 18-unit box."""
+def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item", is_stock_item=1):
+	"""Create an item whose configured sales UOM is an 18-unit box."""
 	stock_uom = frappe.db.get_value("UOM", {"name": "Nos"}, "name") or frappe.db.get_value("UOM", {}, "name")
 	box_uom = frappe.db.get_value("UOM", {"name": "Box"}, "name")
 	if not box_uom:
@@ -383,7 +383,7 @@ def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
 				"stock_uom": stock_uom,
 				"sales_uom": box_uom,
 				"is_sales_item": 1,
-				"is_stock_item": 1,
+				"is_stock_item": is_stock_item,
 				"standard_rate": 100,
 				"uoms": [{"uom": box_uom, "conversion_factor": 18}],
 			}
@@ -392,7 +392,7 @@ def ensure_test_sales_uom_item(item_code="_Test VunaPOS Sales UOM Item"):
 		item.insert(ignore_permissions=True)
 	item.sales_uom = box_uom
 	item.is_sales_item = 1
-	item.is_stock_item = 1
+	item.is_stock_item = is_stock_item
 	_prepare_test_stock_item(item)
 	if not any(row.uom == box_uom for row in item.get("uoms", [])):
 		item.append("uoms", {"uom": box_uom, "conversion_factor": 18})

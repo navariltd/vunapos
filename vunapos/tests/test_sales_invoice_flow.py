@@ -469,6 +469,37 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"][0]["rate"], 80)
 
+	def test_uom_rate_change_is_allowed_without_rate_edit_permission(self):
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_sales_uom_item("_Test Vuna UOM Rate Permission Item", is_stock_item=0)
+		# This test isolates a permission decision, not stock movement. Keeping its
+		# dedicated fixture non-stock prevents availability from failing first and
+		# hiding whether a system-calculated UOM rate is accepted.
+		frappe.db.set_value("POS Profile", profile, "allow_rate_change", 0, update_modified=False)
+
+		draft = create_invoice_from_cart(
+			pos_profile=profile,
+			items=[{"item_code": item_code, "qty": 1, "uom": "Nos"}],
+		)
+		self.assertTrue(draft["ok"], draft)
+
+		updated = update_invoice_from_cart(
+			invoice_doctype=draft["data"]["doctype"],
+			invoice_name=draft["data"]["name"],
+			items=[{"item_code": item_code, "qty": 1, "uom": "Box"}],
+		)
+		self.assertTrue(updated["ok"], updated)
+		self.assertEqual(updated["data"]["items"][0]["uom"], "Box")
+
+		amount = updated["data"]["totals"]["rounded_total"] or updated["data"]["totals"]["grand_total"]
+		response = checkout_invoice(
+			draft["data"]["doctype"],
+			draft["data"]["name"],
+			payments=[{"mode_of_payment": "Cash", "amount": amount}],
+		)
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["items"][0]["uom"], "Box")
+
 	def test_preview_reprices_cart_when_quantity_crosses_pricing_rule_threshold(self):
 		profile_name = ensure_test_pos_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)

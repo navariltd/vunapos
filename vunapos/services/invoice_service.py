@@ -1290,6 +1290,7 @@ def _validate_existing_pricing_permissions(doc, profile):
 			doc,
 			profile,
 			item_tax_template=item.get("item_tax_template"),
+			pricing_item={"uom": item.get("uom")},
 		)
 		rate_changed = flt(item.rate, precision) != flt(baseline.get("rate"), precision)
 		discount_changed = flt(item.get("discount_percentage"), precision) != flt(

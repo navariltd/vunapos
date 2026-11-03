@@ -71,6 +71,23 @@ function isLocalCart(invoice?: InvoiceDTO | null) {
 	return Boolean(invoice?.is_local);
 }
 
+let nextCartLineId = 1;
+
+function createCartLineId(item: Pick<InvoiceItemDTO, "item_code" | "uom" | "stock_uom" | "conversion_factor">) {
+	const uom = item.uom || item.stock_uom || "";
+	return `${item.item_code}::${uom}::${Number(item.conversion_factor || 1)}::${nextCartLineId++}`;
+}
+
+export function getCartLineId(item: InvoiceItemDTO) {
+	return item.cart_line_id || item.row_name;
+}
+
+function isCartLine(item: InvoiceItemDTO, lineId: string) {
+	// UI callers use cart_line_id. Keep row_name as a compatibility fallback for
+	// existing integrations and server-backed rows that predate client line IDs.
+	return getCartLineId(item) === lineId || item.row_name === lineId;
+}
+
 // A brand-new local cart that has not yet been materialized as a server draft.
 export function isUnsyncedLocalCart(invoice?: InvoiceDTO | null): boolean {
 	return isLocalCart(invoice) && !invoice?.source_invoice_doctype;
@@ -178,6 +195,7 @@ function invoiceToLocalCart(invoice: InvoiceDTO): InvoiceDTO {
 		source_invoice_name: invoice.name,
 		items: invoice.items.map((item) => ({
 			...item,
+			cart_line_id: item.cart_line_id || item.row_name || createCartLineId(item),
 			pricing_override: item.pricing_override ?? pricingOverrideFromSavedItem(item),
 		})),
 	};
@@ -197,13 +215,24 @@ function pricingOverrideFromSavedItem(item: InvoiceItemDTO): InvoiceItemDTO["pri
 }
 
 function preservePricingOverrides(invoice: InvoiceDTO, sourceItems: InvoiceItemDTO[]): InvoiceDTO {
-	const sourceByCode = new Map(sourceItems.map((item) => [item.item_code, item]));
+	const unmatchedSourceIndexes = new Set(sourceItems.map((_, index) => index));
 	return {
 		...invoice,
 		items: invoice.items.map((item) => {
-			const source = sourceByCode.get(item.item_code);
+			const exactIndex = sourceItems.findIndex((candidate, index) =>
+				unmatchedSourceIndexes.has(index)
+				&& candidate.item_code === item.item_code
+				&& (candidate.uom || candidate.stock_uom) === (item.uom || item.stock_uom)
+				&& Number(candidate.conversion_factor || 1) === Number(item.conversion_factor || 1),
+			);
+			const sourceIndex = exactIndex >= 0 ? exactIndex : sourceItems.findIndex((candidate, index) =>
+				unmatchedSourceIndexes.has(index) && candidate.item_code === item.item_code,
+			);
+			const source = sourceIndex >= 0 ? sourceItems[sourceIndex] : undefined;
+			if (sourceIndex >= 0) unmatchedSourceIndexes.delete(sourceIndex);
 			return {
 				...item,
+				cart_line_id: source?.cart_line_id || item.cart_line_id || item.row_name || createCartLineId(item),
 				uoms: source?.uoms || item.uoms,
 				barcode: source?.barcode || item.barcode,
 				item_tax: source?.item_tax ?? item.item_tax,
@@ -223,11 +252,49 @@ function localizePreviewInvoice(
 	selectedCustomer?: CustomerDTO | null,
 	sourceInvoice?: Pick<InvoiceDTO, "doctype" | "name">,
 ) {
-	const metadataFor = (item: InvoiceItemDTO) => localItems.find((candidate) =>
-		candidate.item_code === item.item_code
-		&& (candidate.uom || candidate.stock_uom) === (item.uom || item.stock_uom)
-		&& Number(candidate.conversion_factor || 1) === Number(item.conversion_factor || 1),
-	) || localItems.find((candidate) => candidate.item_code === item.item_code);
+	const unmatchedLocalIndexes = new Set(localItems.map((_, index) => index));
+	const metadataFor = (item: InvoiceItemDTO) => {
+		const matchingIndex = localItems.findIndex((candidate, index) =>
+			unmatchedLocalIndexes.has(index)
+			&& candidate.item_code === item.item_code
+			&& (candidate.uom || candidate.stock_uom) === (item.uom || item.stock_uom)
+			&& Number(candidate.conversion_factor || 1) === Number(item.conversion_factor || 1),
+		);
+		const fallbackIndex = matchingIndex >= 0 ? matchingIndex : localItems.findIndex((candidate, index) =>
+			unmatchedLocalIndexes.has(index) && candidate.item_code === item.item_code,
+		);
+		if (fallbackIndex < 0) return undefined;
+		unmatchedLocalIndexes.delete(fallbackIndex);
+		return localItems[fallbackIndex];
+	};
+	const usedRowNames = new Set<string>();
+	const usedCartLineIds = new Set<string>();
+	const localizedItems = preview.items.map((item, index) => {
+		const metadata = metadataFor(item);
+		const preferredRowName = metadata?.row_name || item.row_name;
+		const uomIdentity = `${item.item_code}::${item.uom || item.stock_uom || ""}::${Number(item.conversion_factor || 1)}`;
+		let rowName = preferredRowName || uomIdentity;
+		// ERPNext can return the item code (or the same child-row name) for more
+		// than one UOM line in a preview. Never let that collapse two cart rows
+		// into one update target: quantity mutations are keyed by row_name.
+		if (usedRowNames.has(rowName)) rowName = `${uomIdentity}::${index}`;
+		usedRowNames.add(rowName);
+		let cartLineId = metadata?.cart_line_id || createCartLineId(item);
+		if (usedCartLineIds.has(cartLineId)) cartLineId = createCartLineId(item);
+		usedCartLineIds.add(cartLineId);
+		return {
+			...item,
+			row_name: rowName,
+			cart_line_id: cartLineId,
+			actual_qty: metadata?.actual_qty,
+			is_stock_item: metadata?.is_stock_item,
+			allow_negative_stock: metadata?.allow_negative_stock,
+			has_batch_no: metadata?.has_batch_no,
+			has_serial_no: metadata?.has_serial_no,
+			warehouse: metadata?.warehouse,
+			item_tax: metadata?.item_tax,
+		};
+	});
 	return {
 		...preview,
 		name: sourceInvoice?.name || "Not invoiced yet",
@@ -236,20 +303,7 @@ function localizePreviewInvoice(
 		source_invoice_name: sourceInvoice?.name,
 		customer: selectedCustomer?.customer || preview.customer,
 		customer_name: selectedCustomer?.customer_name || preview.customer_name,
-		items: preview.items.map((item) => {
-			const metadata = metadataFor(item);
-			return {
-				...item,
-				row_name: item.row_name || metadata?.row_name || item.item_code,
-				actual_qty: metadata?.actual_qty,
-				is_stock_item: metadata?.is_stock_item,
-				allow_negative_stock: metadata?.allow_negative_stock,
-				has_batch_no: metadata?.has_batch_no,
-				has_serial_no: metadata?.has_serial_no,
-				warehouse: metadata?.warehouse,
-				item_tax: metadata?.item_tax,
-			};
-		}),
+		items: localizedItems,
 	};
 }
 
@@ -273,6 +327,12 @@ function assembledToInvoiceDTO(
 			const meta = metadataFor(item);
 			return {
 				row_name: meta?.row_name || item.item_code,
+				cart_line_id: meta?.cart_line_id || createCartLineId({
+					item_code: item.item_code,
+					uom: item.uom || meta?.uom,
+					stock_uom: meta?.stock_uom,
+					conversion_factor: item.conversion_factor || meta?.conversion_factor,
+				}),
 				item_code: item.item_code,
 				item_name: meta?.item_name || item.item_code,
 				description: meta?.description,
@@ -395,13 +455,23 @@ function itemToCartRow(item: ItemDTO, qty = 1): InvoiceItemDTO {
 	const rate = Number(item.rate || 0);
 	const tracking = item.scan_tracking;
 	const conversionFactor = Number(item.conversion_factor || 1);
+	const uom = item.uom || item.stock_uom;
 	return {
-		row_name: item.item_code,
+		// Local rows need a stable identity before ERPNext assigns a child-row name.
+		// Include the UOM so the same item can be sold in separate UOM rows without
+		// quantity edits targeting both rows.
+		row_name: `${item.item_code}::${uom || ""}::${conversionFactor}`,
+		cart_line_id: createCartLineId({
+			item_code: item.item_code,
+			uom,
+			stock_uom: item.stock_uom,
+			conversion_factor: conversionFactor,
+		}),
 		item_code: item.item_code,
 		item_name: item.item_name,
 		description: item.description,
 		qty,
-		uom: item.uom || item.stock_uom,
+		uom,
 		stock_uom: item.stock_uom,
 		conversion_factor: conversionFactor,
 		uoms: item.uoms,
@@ -527,6 +597,54 @@ function validateAvailableQty(item: ItemDTO | InvoiceItemDTO, qty: number, stock
 	const stockQty = stockQtyOverride ?? (qty * Number(("conversion_factor" in item && item.conversion_factor) || 1));
 	if (stockQty > Number(item.actual_qty || 0)) {
 		throw new Error(`Insufficient stock for ${item.item_name}. Available quantity is ${item.actual_qty}.`);
+	}
+}
+
+function validateAggregateAvailableQty(items: InvoiceItemDTO[], itemCode: string, targetLineId?: string) {
+	const matchingItems = items.filter((item) => item.item_code === itemCode && !item.is_free_item);
+	const stockItem = matchingItems.find((item) =>
+		item.is_stock_item !== 0
+		&& item.is_stock_item !== false
+		&& item.actual_qty !== undefined
+		&& item.actual_qty !== null,
+	);
+	if (!stockItem || allowsNegativeStock(stockItem)) return;
+
+	const requestedStockQty = matchingItems.reduce(
+		(total, item) => total + Number(item.qty || 0) * Number(item.conversion_factor || 1),
+		0,
+	);
+	const availableStockQty = Number(stockItem.actual_qty || 0);
+	if (requestedStockQty > availableStockQty + 0.000001) {
+		const formatQty = (value: number) => new Intl.NumberFormat(undefined, {
+			maximumFractionDigits: 6,
+		}).format(value);
+		const stockUom = stockItem.stock_uom || "stock units";
+		const targetItem = targetLineId
+			? matchingItems.find((item) => isCartLine(item, targetLineId))
+			: undefined;
+		if (targetItem) {
+			const targetFactor = Number(targetItem.conversion_factor || 1);
+			const targetStockQty = Number(targetItem.qty || 0) * targetFactor;
+			const allocatedElsewhere = Math.max(0, requestedStockQty - targetStockQty);
+			const maximumTargetQty = Math.max(0, (availableStockQty - allocatedElsewhere) / targetFactor);
+			const targetUom = targetItem.uom || targetItem.stock_uom || "units";
+			if (allocatedElsewhere > 0.000001) {
+				const otherRows = matchingItems.filter((item) => getCartLineId(item) !== getCartLineId(targetItem));
+				const allocationSource = otherRows.length === 1
+					? `The ${otherRows[0].uom || otherRows[0].stock_uom || "other UOM"} row`
+					: "The other UOM rows";
+				throw new Error(
+					`You can enter up to ${formatQty(maximumTargetQty)} ${targetUom} on this row. ${allocationSource} already uses ${formatQty(allocatedElsewhere)} of the ${formatQty(availableStockQty)} ${stockUom} available.`,
+				);
+			}
+			throw new Error(
+				`Only ${formatQty(maximumTargetQty)} ${targetUom} is available for ${stockItem.item_name}.`,
+			);
+		}
+		throw new Error(
+			`Insufficient stock for ${stockItem.item_name}. The cart requires ${formatQty(requestedStockQty)} ${stockUom}, but only ${formatQty(availableStockQty)} ${stockUom} is available.`,
+		);
 	}
 }
 
@@ -656,6 +774,7 @@ type CartActions = {
 	setSelectedCustomer: (customer: CustomerDTO | null | undefined) => void;
 	setTransactionOrderType: (orderType: "Sales Invoice" | "Sales Order") => void;
 	addCartItem: (item: ItemDTO, api: CartApi) => Promise<string | undefined>;
+	addCartItemUom: (lineId: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
 	scanBarcode: (barcode: string, api: CartApi) => Promise<ItemDTO>;
 	updateCartItemQty: (rowName: string, qty: number, api: CartApi) => Promise<void>;
 	updateCartItemUom: (rowName: string, uom: string, conversionFactor: number, api: CartApi) => Promise<void>;
@@ -977,9 +1096,6 @@ export const useCartStore = create<CartStore>((set, get) => {
 								&& (row.uom || row.stock_uom) === itemUom
 								&& Number(row.conversion_factor || 1) === itemConversionFactor
 							) {
-								if (get().transactionOrderType !== "Sales Order") {
-									validateAvailableQty(row, row.qty + 1);
-								}
 								return mergeScannedTracking(row, itemForCart);
 							}
 							return row;
@@ -987,6 +1103,18 @@ export const useCartStore = create<CartStore>((set, get) => {
 						: get().newItemPosition === "Top"
 							? [itemToCartRow(itemForCart), ...currentItems]
 							: [...currentItems, itemToCartRow(itemForCart)];
+					if (get().transactionOrderType !== "Sales Order") {
+						const changedItem = nextItems.find((row) =>
+							row.item_code === itemForCart.item_code
+							&& (row.uom || row.stock_uom) === itemUom
+							&& Number(row.conversion_factor || 1) === itemConversionFactor,
+						);
+						validateAggregateAvailableQty(
+							nextItems,
+							itemForCart.item_code,
+							changedItem ? getCartLineId(changedItem) : undefined,
+						);
+					}
 
 					await applyOptimisticLocalCart(nextItems, currentInvoice, api);
 				}).catch((error) => {
@@ -1015,6 +1143,71 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return initialUom.notice;
 		},
 
+		addCartItemUom: async (lineId, uom, conversionFactor, api) => {
+			const invoice = get().invoice;
+			if (!invoice || !(conversionFactor > 0)) return;
+			const sourceIndex = invoice.items.findIndex((item) => isCartLine(item, lineId));
+			if (sourceIndex < 0) return;
+			const source = invoice.items[sourceIndex];
+			if (invoice.items.some((item) =>
+				item.item_code === source.item_code
+				&& (item.uom || item.stock_uom) === uom,
+			)) {
+				throw new Error(`${source.item_name} is already in the cart using ${uom}.`);
+			}
+
+			const oldFactor = Number(source.conversion_factor || 1);
+			const stockRate = Number(source.price_list_rate ?? source.rate) / oldFactor;
+			const configuredRate = source.uoms?.find((row) => row.uom === uom)?.rate;
+			const rate = configuredRate == null ? stockRate * conversionFactor : Number(configuredRate);
+			const newItem: InvoiceItemDTO = {
+				...source,
+				row_name: `${source.item_code}::${uom}::${conversionFactor}`,
+				cart_line_id: createCartLineId({
+					item_code: source.item_code,
+					uom,
+					stock_uom: source.stock_uom,
+					conversion_factor: conversionFactor,
+				}),
+				qty: 1,
+				uom,
+				conversion_factor: conversionFactor,
+				rate,
+				price_list_rate: rate,
+				amount: rate,
+				discount_percentage: 0,
+				discount_amount: 0,
+				pricing_rules: null,
+				pricing_override: undefined,
+				pricing_override_audit: null,
+				pricing_override_by: null,
+				item_note: null,
+				batch_no: null,
+				serial_and_batch_bundle: null,
+				batch_allocations: [],
+				serial_allocations: [],
+			};
+			const nextItems = get().newItemPosition === "Top"
+				? [newItem, ...invoice.items]
+				: [...invoice.items, newItem];
+			if (get().transactionOrderType !== "Sales Order") {
+				validateAggregateAvailableQty(nextItems, source.item_code, getCartLineId(newItem));
+			}
+
+			if (isLocalCart(invoice)) {
+				await applyOptimisticLocalCart(nextItems, invoice, api);
+				return;
+			}
+			const updated = await runMutation(() => updateInvoiceFromCart(api.updateInvoiceFromCart, {
+				invoice_doctype: invoice.doctype,
+				invoice_name: invoice.name,
+				customer: invoice.customer,
+				price_list: get().selectedPriceList,
+				items: cartItemsPayload(nextItems),
+			}));
+			set({ invoice: preservePricingOverrides(updated, nextItems) });
+		},
+
 		scanBarcode: async (barcode, api) => {
 			const value = barcode.trim();
 			if (!value) throw new Error("A barcode is required.");
@@ -1030,7 +1223,7 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return item;
 		},
 
-		updateCartItemQty: async (rowName, qty, api) => {
+		updateCartItemQty: async (lineId, qty, api) => {
 			const invoice = get().invoice;
 			if (!invoice) {
 				return;
@@ -1039,16 +1232,17 @@ export const useCartStore = create<CartStore>((set, get) => {
 			if (isLocalCart(invoice)) {
 				const nextItems =
 					qty <= 0
-						? invoice.items.filter((row) => row.row_name !== rowName)
+						? invoice.items.filter((row) => !isCartLine(row, lineId))
 						: invoice.items.map((row) => {
-							if (row.row_name === rowName) {
-								if (get().transactionOrderType !== "Sales Order") {
-									validateAvailableQty(row, qty);
-								}
+							if (isCartLine(row, lineId)) {
 								return updateLocalQty(row, qty);
 							}
 							return row;
 						});
+				if (qty > 0 && get().transactionOrderType !== "Sales Order") {
+					const changedItem = nextItems.find((item) => isCartLine(item, lineId));
+					if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code, lineId);
+				}
 				if (!nextItems.length) {
 					set({ invoice: null });
 					return;
@@ -1056,13 +1250,21 @@ export const useCartStore = create<CartStore>((set, get) => {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
+			const targetItem = invoice.items.find((item) => isCartLine(item, lineId));
+			if (!targetItem) return;
+			if (qty > 0 && get().transactionOrderType !== "Sales Order") {
+				const nextItems = invoice.items.map((item) =>
+					isCartLine(item, lineId) ? updateLocalQty(item, qty) : item,
+				);
+				validateAggregateAvailableQty(nextItems, targetItem.item_code, lineId);
+			}
 
 			if (qty <= 0) {
 				const updatedInvoice = await runMutation(() =>
 					removeItem(api.removeItem, {
 						invoice_doctype: invoice.doctype,
 						invoice_name: invoice.name,
-						row_name: rowName,
+						row_name: targetItem.row_name,
 					}),
 				);
 				set({ invoice: updatedInvoice });
@@ -1073,19 +1275,19 @@ export const useCartStore = create<CartStore>((set, get) => {
 				updateItem(api.updateItem, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
-					row_name: rowName,
+					row_name: targetItem.row_name,
 					qty,
 				}),
 			);
 			set({ invoice: updatedInvoice });
 		},
 
-		updateCartItemPricing: async (rowName, pricingOverride, api) => {
+		updateCartItemPricing: async (lineId, pricingOverride, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
-			const targetItem = invoice.items.find((item) => item.row_name === rowName);
+			const targetItem = invoice.items.find((item) => isCartLine(item, lineId));
 			const nextItems = invoice.items.map((item) =>
-				item.row_name === rowName ? { ...item, pricing_override: pricingOverride } : item,
+				isCartLine(item, lineId) ? { ...item, pricing_override: pricingOverride } : item,
 			);
 			const profile = await profileRepository.getActive();
 			const isDeliveryCharge = Boolean(
@@ -1115,13 +1317,13 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: preservePricingOverrides(updatedInvoice, nextItems) });
 		},
 
-		updateCartItemNote: async (rowName, note, api) => {
+		updateCartItemNote: async (lineId, note, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
 			const cleanNote = note.trim();
 			if (cleanNote.length > 500) throw new Error("Item notes cannot exceed 500 characters.");
 			const nextItems = invoice.items.map((item) =>
-				item.row_name === rowName ? { ...item, item_note: cleanNote || null } : item,
+				isCartLine(item, lineId) ? { ...item, item_note: cleanNote || null } : item,
 			);
 			if (isLocalCart(invoice)) {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
@@ -1137,11 +1339,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: preservePricingOverrides(updated, nextItems) });
 		},
 
-		updateCartItemUom: async (rowName, uom, conversionFactor, api) => {
+		updateCartItemUom: async (lineId, uom, conversionFactor, api) => {
 			const invoice = get().invoice;
 			if (!invoice || !(conversionFactor > 0)) return;
 			const nextItems = invoice.items.map((item) => {
-				if (item.row_name !== rowName) return item;
+				if (!isCartLine(item, lineId)) return item;
 				const oldFactor = Number(item.conversion_factor || 1);
 				const stockRate = Number(item.price_list_rate ?? item.rate) / oldFactor;
 				const configuredRate = item.uoms?.find((row) => row.uom === uom)?.rate;
@@ -1151,6 +1353,10 @@ export const useCartStore = create<CartStore>((set, get) => {
 					pricing_override: undefined, batch_allocations: [], serial_allocations: []
 				};
 			});
+			if (get().transactionOrderType !== "Sales Order") {
+				const changedItem = nextItems.find((item) => isCartLine(item, lineId));
+				if (changedItem) validateAggregateAvailableQty(nextItems, changedItem.item_code, lineId);
+			}
 			if (isLocalCart(invoice)) {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
@@ -1163,10 +1369,10 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: updated });
 		},
 
-		updateCartItemSerialAllocations: async (rowName, allocations, api) => {
+		updateCartItemSerialAllocations: async (lineId, allocations, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
-			const nextItems = invoice.items.map((item) => item.row_name === rowName
+			const nextItems = invoice.items.map((item) => isCartLine(item, lineId)
 				? { ...item, serial_allocations: allocations || [] } : item);
 			if (isLocalCart(invoice)) {
 				// Store the selected serials before recalculating the preview. This closes the
@@ -1183,11 +1389,11 @@ export const useCartStore = create<CartStore>((set, get) => {
 			set({ invoice: updated });
 		},
 
-		updateCartItemBatchAllocations: async (rowName, allocations, api) => {
+		updateCartItemBatchAllocations: async (lineId, allocations, api) => {
 			const invoice = get().invoice;
 			if (!invoice) return;
 			const nextItems = invoice.items.map((item) =>
-				item.row_name === rowName ? { ...item, batch_allocations: allocations || [] } : item,
+				isCartLine(item, lineId) ? { ...item, batch_allocations: allocations || [] } : item,
 			);
 			if (get().transactionOrderType !== "Sales Order" && invoice.source_invoice_doctype !== "Sales Order") {
 				validateManualBatchAllocations(nextItems);
@@ -1220,14 +1426,14 @@ export const useCartStore = create<CartStore>((set, get) => {
 			return { ...fresh, verified_at: new Date().toISOString() };
 		},
 
-		removeCartItem: async (rowName, api, managerPinToken) => {
+		removeCartItem: async (lineId, api, managerPinToken) => {
 			const invoice = get().invoice;
 			if (!invoice) {
 				return;
 			}
 
 			if (isLocalCart(invoice)) {
-				const nextItems = invoice.items.filter((row) => row.row_name !== rowName);
+				const nextItems = invoice.items.filter((row) => !isCartLine(row, lineId));
 				if (!nextItems.length) {
 					set({ invoice: null });
 					return;
@@ -1235,12 +1441,14 @@ export const useCartStore = create<CartStore>((set, get) => {
 				await applyOptimisticLocalCart(nextItems, invoice, api);
 				return;
 			}
+			const targetItem = invoice.items.find((item) => isCartLine(item, lineId));
+			if (!targetItem) return;
 
 			const updatedInvoice = await runMutation(() =>
 				removeItem(api.removeItem, {
 					invoice_doctype: invoice.doctype,
 					invoice_name: invoice.name,
-					row_name: rowName,
+					row_name: targetItem.row_name,
 					manager_pin_token: managerPinToken,
 				}),
 			);

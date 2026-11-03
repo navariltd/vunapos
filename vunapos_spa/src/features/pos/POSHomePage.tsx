@@ -1202,6 +1202,7 @@ export function POSHomePage({
               cartActions.updateCartItemBatchAllocations
             }
             onUpdateUom={cartActions.updateCartItemUom}
+            onAddItemUom={cartActions.addCartItemUom}
             onUpdateSerialAllocations={
               cartActions.updateCartItemSerialAllocations
             }
@@ -1299,6 +1300,7 @@ export function POSHomePage({
                 cartActions.updateCartItemBatchAllocations
               }
               onUpdateUom={cartActions.updateCartItemUom}
+              onAddItemUom={cartActions.addCartItemUom}
               onUpdateSerialAllocations={
                 cartActions.updateCartItemSerialAllocations
               }
