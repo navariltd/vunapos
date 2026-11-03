@@ -3,7 +3,7 @@ import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { cn } from "../../../lib/cn";
-import { getActiveCustomer, useCartStore } from "../stores/cartStore";
+import { getActiveCustomer, getCartLineId, useCartStore } from "../stores/cartStore";
 import type {
   BatchAllocationDTO,
   CustomerDTO,
@@ -201,8 +201,11 @@ export function CartPanel({
 
       <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {items?.length ? (
-          items?.map((item, index) => {
-            const rowIdentity = `${item.row_name}-${item.uom || item.stock_uom || ""}-${Number(item.conversion_factor || 1)}-${index}`;
+          items?.map((item) => {
+            // Keep the React identity stable when the cashier changes UOM. The
+            // expanded item details should remain open while its pricing and
+            // conversion factor are recalculated.
+            const rowIdentity = getCartLineId(item);
             return (
               <div key={rowIdentity} data-cart-row-id={rowIdentity}>
                 <CartItemRow

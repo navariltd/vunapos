@@ -18,6 +18,7 @@ import type {
   SerialAllocationDTO,
 } from "../types";
 import { formatCurrency } from "../utils";
+import { getCartLineId } from "../stores/cartStore";
 
 type CartItemRowProps = {
   allowDiscountChange?: boolean;
@@ -82,6 +83,7 @@ export function CartItemRow({
   isOnline,
   warehouse,
 }: CartItemRowProps) {
+	const lineId = getCartLineId(item);
   const [quantityDraft, setQuantityDraft] = useState<{
     rowName: string;
     sourceQty: number;
@@ -93,12 +95,12 @@ export function CartItemRow({
   const [serialExpanded, setSerialExpanded] = useState(false);
   const requestedBatches = useRef<string | null>(null);
   const quantity =
-    quantityDraft?.rowName === item.row_name &&
+    quantityDraft?.rowName === lineId &&
     quantityDraft.sourceQty === item.qty
       ? quantityDraft.value
       : String(item.qty);
   const setQuantity = (value: string, sourceQty = item.qty) => {
-    setQuantityDraft({ rowName: item.row_name, sourceQty, value });
+    setQuantityDraft({ rowName: lineId, sourceQty, value });
   };
 
   const commitQuantity = async () => {
@@ -109,7 +111,7 @@ export function CartItemRow({
     }
     if (nextQuantity !== item.qty) {
       try {
-        await onUpdateQty(item.row_name, nextQuantity);
+        await onUpdateQty(lineId, nextQuantity);
       } catch {
         setQuantity(String(item.qty));
       }
@@ -171,10 +173,10 @@ export function CartItemRow({
             type="button"
             className="flex min-w-0 flex-1 cursor-pointer items-start justify-between gap-3 text-left"
             onClick={() => {
-              if (!item.is_free_item) onToggle(item.row_name);
+              if (!item.is_free_item) onToggle(lineId);
             }}
             aria-expanded={expanded}
-            aria-controls={`cart-item-details-${item.row_name}`}
+            aria-controls={`cart-item-details-${lineId}`}
           >
             <span className="min-w-0">
               <span className="flex items-center gap-2">
@@ -205,7 +207,7 @@ export function CartItemRow({
             type="button"
             className="flex size-8 shrink-0 items-center justify-center rounded-md text-error hover:bg-error-container disabled:opacity-50"
             disabled={itemDisabled}
-            onClick={() => onRemove(item.row_name)}
+            onClick={() => onRemove(lineId)}
             aria-label={`Remove ${item.item_name}`}
           >
             <Trash2 className="size-4" />
@@ -219,7 +221,7 @@ export function CartItemRow({
               className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50"
               onClick={() => {
                 setQuantity(String(item.qty - 1), item.qty - 1);
-                void onUpdateQty(item.row_name, item.qty - 1).catch(() =>
+                void onUpdateQty(lineId, item.qty - 1).catch(() =>
                   setQuantity(String(item.qty)),
                 );
               }}
@@ -229,7 +231,7 @@ export function CartItemRow({
             </button>
             <input
               aria-label={`${item.item_name} quantity`}
-              className="h-10 w-14 border-x border-outline-variant bg-surface px-1 text-center text-sm font-semibold outline-none focus:border-primary"
+              className="h-10 w-20 border-x border-outline-variant bg-surface px-1 text-center text-sm font-semibold outline-none focus:border-primary"
               disabled={itemDisabled}
               inputMode="decimal"
               min="0.000001"
@@ -249,7 +251,7 @@ export function CartItemRow({
               className="flex h-10 w-10 items-center justify-center hover:bg-surface-container-low disabled:opacity-50"
               onClick={() => {
                 setQuantity(String(item.qty + 1), item.qty + 1);
-                void onUpdateQty(item.row_name, item.qty + 1).catch(() =>
+                void onUpdateQty(lineId, item.qty + 1).catch(() =>
                   setQuantity(String(item.qty)),
                 );
               }}
@@ -271,7 +273,7 @@ export function CartItemRow({
 
       {expanded && !item.is_free_item ? (
         <div
-          id={`cart-item-details-${item.row_name}`}
+          id={`cart-item-details-${lineId}`}
           className="space-y-4 border-t border-primary bg-surface-container-low p-4"
         >
           {description ? (
@@ -301,34 +303,12 @@ export function CartItemRow({
             </div>
           ) : null}
 
-          <PricingEditor
-            key={`${item.uom}-${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
-            allowDiscountChange={Boolean(allowDiscountChange)}
-            allowRateChange={Boolean(allowRateChange)}
-            currency={currency}
-            disabled={itemDisabled}
-            item={item}
-            onUpdate={(override) => onUpdatePricing(item.row_name, override)}
-          />
-          {item.pricing_override ? (
-            <div className="mt-3 rounded-md border border-tertiary bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container">
-              <span className="font-semibold">Manual price override:</span>{" "}
-              {pricingOverrideLabel(item.pricing_override, currency)}
-              {item.pricing_override_by
-                ? ` · ${item.pricing_override_by}`
-                : " · current cashier"}
-            </div>
-          ) : item.pricing_rules ? (
-            <div className="mt-3 rounded-md bg-secondary-container px-3 py-2 text-xs text-on-secondary-container">
-              Promotion or pricing rule applied: {item.pricing_rules}
-            </div>
-          ) : null}
-
           <label className="flex items-center justify-between gap-5 rounded-md border border-outline-variant bg-surface p-3">
             <span className="shrink-0 text-xs font-medium text-on-surface-variant">
-              UOM
+              Selling UOM
             </span>
             <select
+              aria-label="Selling UOM"
               className="h-[34px] min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-2 text-[13px]"
               disabled={disabled || (item.uoms?.length || 0) < 2}
               value={item.uom || item.stock_uom || ""}
@@ -338,7 +318,7 @@ export function CartItemRow({
                 );
                 if (selected)
                   void onUpdateUom(
-                    item.row_name,
+                    lineId,
                     selected.uom,
                     selected.conversion_factor,
                   );
@@ -360,11 +340,34 @@ export function CartItemRow({
             </select>
           </label>
 
+          <PricingEditor
+            key={`${item.uom}-${item.rate}-${item.discount_percentage || 0}-${item.discount_amount || 0}`}
+            allowDiscountChange={Boolean(allowDiscountChange)}
+            allowRateChange={Boolean(allowRateChange)}
+            currency={currency}
+            disabled={itemDisabled}
+            item={item}
+            onUpdate={(override) => onUpdatePricing(lineId, override)}
+          />
+          {item.pricing_override ? (
+            <div className="mt-3 rounded-md border border-tertiary bg-tertiary-container px-3 py-2 text-xs text-on-tertiary-container">
+              <span className="font-semibold">Manual price override:</span>{" "}
+              {pricingOverrideLabel(item.pricing_override, currency)}
+              {item.pricing_override_by
+                ? ` · ${item.pricing_override_by}`
+                : " · current cashier"}
+            </div>
+          ) : item.pricing_rules ? (
+            <div className="mt-3 rounded-md bg-secondary-container px-3 py-2 text-xs text-on-secondary-container">
+              Promotion or pricing rule applied: {item.pricing_rules}
+            </div>
+          ) : null}
+
           <ItemNoteEditor
             key={item.item_note || "empty-note"}
             disabled={Boolean(disabled)}
             item={item}
-            onSave={(note) => onUpdateNote(item.row_name, note)}
+            onSave={(note) => onUpdateNote(lineId, note)}
           />
 
           {isSerialTracked ? (
@@ -393,7 +396,7 @@ export function CartItemRow({
                   disabled={Boolean(disabled)}
                   item={item}
                   onSave={(rows) =>
-                    onUpdateSerialAllocations(item.row_name, rows)
+                    onUpdateSerialAllocations(lineId, rows)
                   }
                 />
               ) : null}
@@ -434,7 +437,7 @@ export function CartItemRow({
                     setBatchError(null);
                   }}
                   onSave={(allocations) =>
-                    onUpdateBatchAllocations(item.row_name, allocations)
+                    onUpdateBatchAllocations(lineId, allocations)
                   }
                 />
               ) : null}
@@ -687,7 +690,6 @@ function PricingEditor({
     ? numericRate / (1 + inclusiveTaxRate / 100)
     : numericRate;
   const inclusiveRate = baseRate * (1 + taxRate / 100);
-  const taxPerUnit = inclusiveRate - baseRate;
 
   const apply = async (type: PricingOverrideDTO["type"], rawValue: string) => {
     const value = Number(rawValue);
@@ -783,16 +785,6 @@ function PricingEditor({
           />
         ) : null}
       </div>
-      {taxRate > 0 ? (
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <ReadOnlyValue label="Tax rate" value={`${taxRate}%`} />
-          <ReadOnlyPrice
-            label="Tax per unit"
-            value={taxPerUnit}
-            currency={currency}
-          />
-        </div>
-      ) : null}
       <div className="mt-3 grid grid-cols-2 gap-3">
         <PriceInput
           label="Discount %"
