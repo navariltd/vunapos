@@ -358,6 +358,8 @@ export type BatchAllocationResultDTO = {
 
 export type InvoiceItemDTO = {
 	row_name: string;
+	/** Immutable browser-side identity. ERPNext row names may be absent or duplicated in previews. */
+	cart_line_id?: string;
 	item_code: string;
 	item_name: string;
 	description?: string;
