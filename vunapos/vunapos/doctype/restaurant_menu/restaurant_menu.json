@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "field:menu_name",
  "creation": "2026-11-04 09:00:00.000000",
- "description": "What a restaurant sells: item groups (with their child groups) shown as categories, plus single items to add or hide. Prices stay in Item Price and Pricing Rules.",
+ "description": "Restaurant sales items organized into independent Menu Sections / Courses with availability controls. Configure modifiers and add-ons on Item. Prices stay in Item Price and Pricing Rules.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -14,7 +14,9 @@
   "groups_section",
   "item_groups",
   "items_section",
-  "items"
+  "items",
+  "modifiers_section",
+  "modifier_assignments"
  ],
  "fields": [
   {
@@ -46,25 +48,42 @@
   {
    "fieldname": "groups_section",
    "fieldtype": "Section Break",
-   "label": "Categories"
+   "label": "Legacy Item Groups",
+   "hidden": 1
   },
   {
    "fieldname": "item_groups",
    "fieldtype": "Table",
    "label": "Item Groups",
+   "hidden": 1,
    "options": "Restaurant Menu Item Group"
   },
   {
    "fieldname": "items_section",
    "fieldtype": "Section Break",
-   "label": "Single Items"
+   "label": "Menu Items"
   },
   {
-   "description": "Add an item whose group is not on the menu, or hide one item from a group that is.",
+   "description": "Link items or variant templates to a Section / Course. Clear Available to temporarily stop ordering an item.",
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Items",
    "options": "Restaurant Menu Item"
+  },
+  {
+   "fieldname": "modifiers_section",
+   "fieldtype": "Section Break",
+   "label": "Legacy Modifier Assignments",
+   "hidden": 1
+  },
+  {
+   "fieldname": "modifier_assignments",
+   "fieldtype": "Table",
+   "label": "Legacy Modifier Assignments",
+   "hidden": 1,
+   "read_only": 1,
+   "options": "Restaurant Menu Modifier",
+   "description": "Retained as migration history. Configure current modifier groups on Item."
   }
  ],
  "grid_page_length": 50,

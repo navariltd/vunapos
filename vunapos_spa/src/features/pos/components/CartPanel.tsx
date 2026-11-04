@@ -27,6 +27,7 @@ type CartPanelProps = {
   };
   beforeCustomer?: ReactNode;
   afterItems?: ReactNode;
+  renderItemFooter?: (rowName: string) => ReactNode;
   customerDisabled?: boolean;
   primaryActionLabel?: string;
   hideHold?: boolean;
@@ -85,6 +86,7 @@ type CartPanelProps = {
 };
 
 export function CartPanel({
+  renderItemFooter,
   presentation,
   beforeCustomer,
   afterItems,
@@ -224,30 +226,32 @@ export function CartPanel({
               item.uom || item.stock_uom || ""
             }-${Number(item.conversion_factor || 1)}-${index}`;
             return (
-              <CartItemRow
-                key={rowIdentity}
-                currency={currency}
-                allowDiscountChange={allowDiscountChange}
-                allowRateChange={allowRateChange}
-                disabled={isMutating}
-                expanded={expandedRow === rowIdentity}
-                isOnline={isOnline}
-                item={item}
-                onLoadBatches={onLoadBatches}
-                onRemove={onRemoveItem}
-                onToggle={() =>
-                  setExpandedRow((current) =>
-                    current === rowIdentity ? null : rowIdentity
-                  )
-                }
-                onUpdateQty={onUpdateQty}
-                onUpdatePricing={onUpdatePricing}
-                onUpdateNote={onUpdateNote}
-                onUpdateBatchAllocations={onUpdateBatchAllocations}
-                onUpdateUom={onUpdateUom}
-                onUpdateSerialAllocations={onUpdateSerialAllocations}
-                warehouse={warehouse}
-              />
+              <div key={rowIdentity}>
+                <CartItemRow
+                  currency={currency}
+                  allowDiscountChange={allowDiscountChange}
+                  allowRateChange={allowRateChange}
+                  disabled={isMutating}
+                  expanded={expandedRow === rowIdentity}
+                  isOnline={isOnline}
+                  item={item}
+                  onLoadBatches={onLoadBatches}
+                  onRemove={onRemoveItem}
+                  onToggle={() =>
+                    setExpandedRow((current) =>
+                      current === rowIdentity ? null : rowIdentity
+                    )
+                  }
+                  onUpdateQty={onUpdateQty}
+                  onUpdatePricing={onUpdatePricing}
+                  onUpdateNote={onUpdateNote}
+                  onUpdateBatchAllocations={onUpdateBatchAllocations}
+                  onUpdateUom={onUpdateUom}
+                  onUpdateSerialAllocations={onUpdateSerialAllocations}
+                  warehouse={warehouse}
+                />
+                {renderItemFooter?.(item.row_name || "")}
+              </div>
             );
           })
         ) : (

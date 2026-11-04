@@ -1,10 +1,11 @@
-import type { OrderLineInput, RestaurantOrderDTO } from "./types";
+import type { OrderLineInput, RestaurantOrderDTO, SelectedModifier } from "./types";
 
 // An order being taken on this device. `order` is what the server last returned
 // (null until the first save); everything else is waiting to be sent with Save.
 export const MAX_NOTE_LENGTH = 500;
 
 export type UnsentLine = {
+	modifiers?: SelectedModifier[];
 	line_id: string;
 	item_code: string;
 	item_name: string;
@@ -140,12 +141,13 @@ function trimEdit(edit: SentLineEdit, serverQty: number, serverNote: string): Se
 
 export function addMenuItem(
 	draft: OrderDraft,
-	item: { item_code: string; item_name: string; uom?: string },
+	item: { item_code: string; item_name: string; uom?: string; modifiers?: SelectedModifier[] },
 	newLineId: () => string,
 ): OrderDraft {
 	// Taps on the same item add to its waiting line, unless that line has a note
 	// (a different instruction gets its own line).
-	const existing = draft.unsent.find((line) => line.item_code === item.item_code && line.uom === item.uom && !line.note);
+	const signature = (selections?: SelectedModifier[]) => (selections || []).map((choice) => `${choice.group}:${choice.option}`).sort().join("|");
+	const existing = draft.unsent.find((line) => line.item_code === item.item_code && line.uom === item.uom && !line.note && signature(line.modifiers) === signature(item.modifiers));
 	if (existing) {
 		return setUnsentQty(draft, existing.line_id, existing.qty + 1);
 	}
@@ -153,7 +155,7 @@ export function addMenuItem(
 		...draft,
 		unsent: [
 			...draft.unsent,
-			{ line_id: newLineId(), item_code: item.item_code, item_name: item.item_name, uom: item.uom, qty: 1, note: "" },
+			{ line_id: newLineId(), item_code: item.item_code, item_name: item.item_name, uom: item.uom, qty: 1, note: "", ...(item.modifiers?.length ? { modifiers: item.modifiers } : {}) },
 		],
 	};
 }
@@ -249,6 +251,7 @@ function lineInput(line: UnsentLine): OrderLineInput {
 	const input: OrderLineInput = { line_id: line.line_id, item_code: line.item_code, qty: line.qty };
 	if (line.uom) input.uom = line.uom;
 	if (line.note.trim()) input.note = line.note.trim();
+	if (line.modifiers?.length) input.modifiers = line.modifiers.map(({ group, option }) => ({ group, option }));
 	return input;
 }
 

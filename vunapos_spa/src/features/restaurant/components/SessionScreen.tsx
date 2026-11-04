@@ -21,6 +21,7 @@ import {
   openRestaurantSession,
   updateRestaurantSession,
   cancelEmptyRestaurantSession,
+  VunaApiError,
   getTemplateVariants,
   vunaMethods,
 } from "../../../services/vunaApi";
@@ -46,6 +47,8 @@ import { restaurantCart } from "../restaurantCart";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import { Sheet } from "./Sheet";
 import { TablePlanPicker } from "./TablePlanPicker";
+import { ModifierPicker } from "./ModifierPicker";
+import type { ModifierGroupDTO, SelectedModifier } from "../types";
 
 /** Restaurant workflow controller around the SAME selling workspace and cart used by retail. */
 export function SessionScreen({
@@ -152,6 +155,11 @@ export function SessionScreen({
   ]);
 
   const [knownItems, setKnownItems] = useState<ItemDTO[]>([]);
+  const [customizing, setCustomizing] = useState<{
+    item: ItemDTO;
+    groups: ModifierGroupDTO[];
+    lineId?: string;
+  } | null>(null);
   const invoice = useMemo(
     () =>
       activeDraft
@@ -174,8 +182,8 @@ export function SessionScreen({
     );
   }, [menu.menu, category, query]);
 
-  const addItem = async (item: ItemDTO) => {
-    if (busy) return;
+  const addItem = async (item: ItemDTO, modifiers?: SelectedModifier[]) => {
+    if (busy || (session && session.status !== "Open")) return;
     setError(null);
     if (item.has_variants) {
       const request = ++variantRequest.current;
@@ -188,7 +196,14 @@ export function SessionScreen({
           customer: header?.customer || undefined,
           price_list: session?.selling_price_list || undefined,
         });
-        if (request === variantRequest.current) setVariants(response.variants);
+        if (request === variantRequest.current)
+          setVariants(
+            response.variants.filter(
+              (row) =>
+                !menu.menu?.available_item_codes ||
+                menu.menu.available_item_codes.includes(row.item_code)
+            )
+          );
       } catch (caught) {
         if (request === variantRequest.current)
           setError(
@@ -199,6 +214,14 @@ export function SessionScreen({
       }
       return;
     }
+    const groups =
+      menu.menu?.modifier_groups?.[item.item_code] ||
+      menu.menu?.modifier_groups?.[item.variant_of || ""] ||
+      [];
+    if (modifiers === undefined && groups.length) {
+      setCustomizing({ item, groups });
+      return;
+    }
     setKnownItems((current) => [
       ...current.filter((row) => row.item_code !== item.item_code),
       item,
@@ -207,7 +230,12 @@ export function SessionScreen({
     updateDraft((current) => {
       const next = addMenuItem(
         current,
-        { item_code: item.item_code, item_name: item.item_name, uom: item.uom },
+        {
+          item_code: item.item_code,
+          item_name: item.item_name,
+          uom: item.uom,
+          modifiers,
+        },
         newId
       );
       if (
@@ -272,6 +300,15 @@ export function SessionScreen({
         navigateToRestaurantSession(visit.name, { replace: true });
       else await result.refresh();
     } catch (caught) {
+      if (
+        caught instanceof VunaApiError &&
+        [
+          "INVALID_MODIFIERS",
+          "MENU_ITEM_NOT_AVAILABLE",
+          "ADDON_PRICE_REQUIRED",
+        ].includes(caught.code || "")
+      )
+        menu.reload();
       setError(
         caught instanceof Error
           ? caught.message
@@ -366,7 +403,13 @@ export function SessionScreen({
       );
   };
 
-  if (bootstrap.data && !serviceTypes?.length) return <EmptyState title="No service types configured" description="Add a service type to this Restaurant before taking orders." />;
+  if (bootstrap.data && !serviceTypes?.length)
+    return (
+      <EmptyState
+        title="No service types configured"
+        description="Add a service type to this Restaurant before taking orders."
+      />
+    );
   if (!activeDraft || !invoice || (sessionName && !session))
     return (
       <EmptyState
@@ -406,10 +449,13 @@ export function SessionScreen({
               );
               setCategory("");
               if (service.requires_table) {
-                setSelectedTables(session?.tables.filter((row) => !row.released_at).map((row) => row.table) || []);
+                setSelectedTables(
+                  session?.tables
+                    .filter((row) => !row.released_at)
+                    .map((row) => row.table) || []
+                );
                 setTablePicker(true);
-              }
-              else setCartOpen(false);
+              } else setCartOpen(false);
             }}
           >
             {service.service_type_name}
@@ -514,6 +560,33 @@ export function SessionScreen({
         isMutating: readOnly,
       }}
       beforeCustomer={context}
+      renderItemFooter={(id) => {
+        const line = activeDraft.unsent.find((row) => row.line_id === id);
+        const item = [...(menu.menu?.items || []), ...knownItems].find(
+          (row) => row.item_code === line?.item_code
+        );
+        const groups =
+          item &&
+          (menu.menu?.modifier_groups?.[item.item_code] ||
+            menu.menu?.modifier_groups?.[item.variant_of || ""]);
+        if (!line || !item || (!groups?.length && !line.modifiers?.length))
+          return null;
+        return (
+          <button
+            type="button"
+            disabled={readOnly}
+            className="w-full cursor-pointer rounded-md px-3 py-2 text-left text-xs text-primary hover:bg-surface-container-low"
+            onClick={() =>
+              setCustomizing({ item, groups: groups || [], lineId: id })
+            }
+          >
+            {line.modifiers?.length
+              ? line.modifiers.map((choice) => choice.label).join(" · ")
+              : "Customize options"}{" "}
+            · Edit
+          </button>
+        );
+      }}
       customerDisabled={Boolean(session?.rounds.length) || readOnly}
       primaryActionLabel={busy ? "Sending…" : "Send round"}
       hideHold
@@ -565,6 +638,32 @@ export function SessionScreen({
   );
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+      {customizing ? (
+        <ModifierPicker
+          key={customizing.lineId || customizing.item.item_code}
+          itemName={customizing.item.item_name}
+          groups={customizing.groups}
+          currency={currency}
+          initial={
+            activeDraft.unsent.find((row) => row.line_id === customizing.lineId)
+              ?.modifiers
+          }
+          onClose={() => setCustomizing(null)}
+          onConfirm={(choices) => {
+            if (customizing.lineId)
+              updateDraft((current) => ({
+                ...current,
+                unsent: current.unsent.map((line) =>
+                  line.line_id === customizing.lineId
+                    ? { ...line, modifiers: choices }
+                    : line
+                ),
+              }));
+            else void addItem(customizing.item, choices);
+            setCustomizing(null);
+          }}
+        />
+      ) : null}
       <SellingWorkspace
         items={visibleItems}
         isLoading={menu.isLoading}
@@ -619,59 +718,70 @@ export function SessionScreen({
       >
         {renderCart("hidden xl:flex")}
       </SellingWorkspace>
-      {tablePicker ? <TablePlanPicker
-        plan={floor.plan}
-        statuses={status.data}
-        multiple={Boolean(session)}
-        selectedTables={session ? selectedTables : activeDraft.table ? [activeDraft.table] : []}
-        busy={busy}
-        loading={floor.isLoading || status.isLoading}
-        error={error || floor.error || status.error}
-        onRetry={() => { floor.reload(); void status.refresh(); }}
-        onSelect={(table) => void pickTable(table)}
-        onClose={() => setTablePicker(false)}
-        footer={
-          session ? (
-            <Button
-              disabled={busy || !selectedTables.length}
-              onClick={async () => {
-                if (inFlight.current) return;
-                inFlight.current = true;
-                setBusy(true);
-                try {
-                  await updateRestaurantSession(updateCall.call, {
-                    session: session.name,
-                    tables: selectedTables,
-                  });
-                  const first = floor.plan?.floors
-                    .flatMap((row) => row.tables)
-                    .find((row) => row.name === selectedTables[0]);
-                  updateDraft((current) => ({
-                    ...current,
-                    table: first?.name || null,
-                    table_label: first?.table_label || null,
-                  }));
-                  markChanged();
-                  await result.refresh();
-                  setTablePicker(false);
-                  setCartOpen(false);
-                } catch (caught) {
-                  setError(
-                    caught instanceof Error
-                      ? caught.message
-                      : "Unable to update tables."
-                  );
-                } finally {
-                  inFlight.current = false;
-                  setBusy(false);
-                }
-              }}
-            >
-              Save assigned tables ({selectedTables.length})
-            </Button>
-          ) : undefined
-        }
-      /> : null}
+      {tablePicker ? (
+        <TablePlanPicker
+          plan={floor.plan}
+          statuses={status.data}
+          multiple={Boolean(session)}
+          selectedTables={
+            session
+              ? selectedTables
+              : activeDraft.table
+              ? [activeDraft.table]
+              : []
+          }
+          busy={busy}
+          loading={floor.isLoading || status.isLoading}
+          error={error || floor.error || status.error}
+          onRetry={() => {
+            floor.reload();
+            void status.refresh();
+          }}
+          onSelect={(table) => void pickTable(table)}
+          onClose={() => setTablePicker(false)}
+          footer={
+            session ? (
+              <Button
+                disabled={busy || !selectedTables.length}
+                onClick={async () => {
+                  if (inFlight.current) return;
+                  inFlight.current = true;
+                  setBusy(true);
+                  try {
+                    await updateRestaurantSession(updateCall.call, {
+                      session: session.name,
+                      tables: selectedTables,
+                    });
+                    const first = floor.plan?.floors
+                      .flatMap((row) => row.tables)
+                      .find((row) => row.name === selectedTables[0]);
+                    updateDraft((current) => ({
+                      ...current,
+                      table: first?.name || null,
+                      table_label: first?.table_label || null,
+                    }));
+                    markChanged();
+                    await result.refresh();
+                    setTablePicker(false);
+                    setCartOpen(false);
+                  } catch (caught) {
+                    setError(
+                      caught instanceof Error
+                        ? caught.message
+                        : "Unable to update tables."
+                    );
+                  } finally {
+                    inFlight.current = false;
+                    setBusy(false);
+                  }
+                }}
+              >
+                Save assigned tables ({selectedTables.length})
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : null}
       <Sheet
         isOpen={roundsOpen}
         title="Submitted rounds"
@@ -767,6 +877,11 @@ export function SessionScreen({
               {round.items.map((line) => (
                 <li key={line.line_id}>
                   {line.qty} {line.uom} × {line.item_name}
+                  {line.modifiers?.length ? (
+                    <p className="text-xs text-on-surface-variant">
+                      {line.modifiers.map((choice) => choice.label).join(" · ")}
+                    </p>
+                  ) : null}
                   {line.note ? (
                     <p className="text-xs text-on-surface-variant">
                       {line.note}

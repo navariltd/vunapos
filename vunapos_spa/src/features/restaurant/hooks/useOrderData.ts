@@ -12,6 +12,7 @@ import {
 import { deriveTableStatuses } from "../tableStatus";
 import type { MenuDTO } from "../types";
 import { usePolledData } from "./usePolledData";
+import { useConfigurationRealtime } from "../../pos/hooks/useConfigurationRealtime";
 
 // Table status for the floor, polled while the floor is on screen.
 export function useTableStatus(posProfile?: string) {
@@ -79,6 +80,20 @@ export function useMenu(
 ) {
   const call = useFrappePostCall(vunaMethods.getMenu);
   const [revision, setRevision] = useState(0);
+  useConfigurationRealtime(async (event) => {
+    if (
+      [
+        "Restaurant Menu",
+        "Menu Section",
+        "Restaurant Modifier Group",
+        "Item",
+        "Item Price",
+        "Pricing Rule",
+        "Price List",
+      ].includes(event.doctype || "")
+    )
+      setRevision((current) => current + 1);
+  });
   const key =
     posProfile && serviceType
       ? `${posProfile}|${serviceType}|${table || ""}|${customer || ""}|${

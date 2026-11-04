@@ -143,6 +143,8 @@ def order_to_dict(doc):
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),
 				"note": row.vunapos_item_note,
+				"modifiers": frappe.parse_json(row.get("vunapos_modifiers") or "[]"),
+				"parent_line_id": row.get("vunapos_parent_line_id"),
 				"added_by": row.vunapos_added_by or doc.owner,
 				"added_at": row.vunapos_added_at or row.creation,
 			}

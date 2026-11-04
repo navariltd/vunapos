@@ -10,9 +10,10 @@ def _key(kind, *parts):
 	return CACHE_KEY_PREFIX + ":".join([kind, *(str(part or "") for part in parts)])
 
 
-def item_search_key(user, query, profile, customer, price_list, limit, item_groups=None):
+def item_search_key(user, query, profile, customer, price_list, limit, item_groups=None, item_codes=None):
 	groups = "" if item_groups is None else ",".join(sorted(item_groups)) or "-"
-	return _key("items", user, query, profile, customer, price_list, limit, groups)
+	codes = "" if item_codes is None else ",".join(sorted(item_codes)) or "-"
+	return _key("items", user, query, profile, customer, price_list, limit, groups, codes)
 
 
 def customer_search_key(user, query, limit):

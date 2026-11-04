@@ -839,6 +839,40 @@ def ensure_vunapos_custom_fields():
 		}
 	)
 	custom_fields["Sales Order Item"] = _restaurant_order_item_fields()
+	custom_fields["Item"] = [
+		{"fieldname": "vunapos_restaurant_tab", "fieldtype": "Tab Break", "label": "Restaurant"},
+		{
+			"fieldname": "vunapos_restaurant_options_override",
+			"fieldtype": "Check",
+			"label": "Override Template Restaurant Options",
+			"default": "0",
+			"depends_on": "eval:doc.variant_of",
+			"insert_after": "vunapos_restaurant_tab",
+			"description": "Use only this variant's settings, even if both tables below are empty.",
+		},
+		{
+			"fieldname": "vunapos_restaurant_modifiers",
+			"fieldtype": "Table",
+			"label": "Modifier Groups",
+			"options": "Restaurant Item Modifier",
+			"insert_after": "vunapos_restaurant_options_override",
+			"description": "Reusable preparation choices, such as sugar preference or milk choice. Variants inherit template settings unless configured here or overridden.",
+		},
+		{
+			"fieldname": "vunapos_restaurant_addons_section",
+			"fieldtype": "Section Break",
+			"label": "Add-ons",
+			"insert_after": "vunapos_restaurant_modifiers",
+		},
+		{
+			"fieldname": "vunapos_restaurant_addons",
+			"fieldtype": "Table",
+			"label": "Optional Add-ons",
+			"options": "Restaurant Item Addon",
+			"insert_after": "vunapos_restaurant_addons_section",
+			"description": "Extras linked to ERPNext Items, priced using the transaction's selling price list. These choices are optional and apply per main selling unit.",
+		},
+	]
 	create_custom_fields(custom_fields, ignore_validate=True)
 	from vunapos.services.restaurant_service import backfill_branch_companies
 
@@ -933,6 +967,22 @@ def _restaurant_order_fields():
 def _restaurant_order_item_fields():
 	"""Restaurant order lines. `vunapos_item_note` has the same name as on invoice lines."""
 	return [
+		{
+			"fieldname": "vunapos_modifiers",
+			"label": "Modifier Selections",
+			"fieldtype": "Long Text",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "vunapos_item_note",
+		},
+		{
+			"fieldname": "vunapos_parent_line_id",
+			"label": "Add-on Parent Line",
+			"fieldtype": "Data",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "vunapos_modifiers",
+		},
 		{
 			"fieldname": "vunapos_line_id",
 			"label": "Line ID",

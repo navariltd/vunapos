@@ -7,7 +7,10 @@
  "field_order": [
   "item_code",
   "item_name",
-  "action"
+  "action",
+  "menu_section",
+  "available",
+  "display_order"
  ],
  "fields": [
   {
@@ -35,6 +38,26 @@
    "label": "Action",
    "options": "Include\nExclude",
    "reqd": 1
+  },
+  {
+   "fieldname": "menu_section",
+   "fieldtype": "Link",
+   "label": "Section / Course",
+   "options": "Menu Section",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "available",
+   "fieldtype": "Check",
+   "label": "Available",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "label": "Display Order",
+   "default": "0"
   }
  ],
  "grid_page_length": 50,

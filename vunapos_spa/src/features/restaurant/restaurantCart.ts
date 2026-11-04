@@ -14,13 +14,14 @@ export function restaurantCart(
     const factor = Number(
       option?.conversion_factor || item?.conversion_factor || 1
     );
-    const rate =
+    const baseRate =
       uom === item?.uom
         ? Number(item.rate || 0)
         : option?.rate != null
         ? Number(option.rate)
         : (Number(item?.rate || 0) * factor) /
           Number(item?.conversion_factor || 1);
+    const rate = baseRate + (line.modifiers || []).reduce((sum, choice) => sum + choice.extra_rate, 0);
     return {
       row_name: line.line_id,
       item_code: line.item_code,

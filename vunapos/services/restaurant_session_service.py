@@ -397,6 +397,8 @@ def protect_committed_round(doc, method=None):
 		"warehouse",
 		"item_tax_template",
 		"vunapos_item_note",
+		"vunapos_modifiers",
+		"vunapos_parent_line_id",
 	)
 	old_lines = [tuple(row.get(field) for field in line_fields) for row in before.items]
 	new_lines = [tuple(row.get(field) for field in line_fields) for row in doc.items]

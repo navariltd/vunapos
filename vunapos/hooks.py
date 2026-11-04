@@ -55,6 +55,7 @@ fixtures = [
 
 # include js in doctype views
 doctype_js = {
+	"Item": "public/js/item_restaurant.js",
 	"POS Profile": "public/js/pos_profile.js",
 	"POS Settings": "public/js/pos_profile.js",
 }
@@ -184,6 +185,9 @@ doc_events = {
 		"Pricing Rule",
 		"Mode of Payment",
 		"Restaurant",
+		"Restaurant Menu",
+		"Menu Section",
+		"Restaurant Modifier Group",
 	)
 }
 doc_events["POS Settings"] = {
@@ -203,6 +207,7 @@ doc_events["POS Profile"] = {
 doc_events["Branch"] = {
 	"validate": "vunapos.services.restaurant_service.validate_branch_doc",
 }
+doc_events["Item"]["validate"] = "vunapos.services.modifier_service.validate_item_options"
 doc_events["Sales Order"] = {
 	"before_update_after_submit": "vunapos.services.restaurant_session_service.protect_committed_round",
 }

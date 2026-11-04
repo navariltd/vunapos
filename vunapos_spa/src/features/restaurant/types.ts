@@ -95,6 +95,8 @@ export type {
 // ---- orders (vunapos/dto/restaurant.py, vunapos/services/restaurant_order_service.py) ----
 
 export type MenuDTO = {
+	available_item_codes?: string[] | null;
+	modifier_groups?: Record<string, ModifierGroupDTO[]>;
 	pos_profile: string;
 	service_type: string | null;
 	table: string | null;
@@ -126,6 +128,8 @@ export type TableStatusDTO = {
 };
 
 export type RestaurantOrderLineDTO = {
+	modifiers?: Array<{ label: string }>;
+	parent_line_id?: string | null;
 	line_id: string;
 	item_code: string;
 	item_name: string;
@@ -195,6 +199,12 @@ export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> &
 	rounds: RestaurantOrderDTO[];
 };
 
-export type OrderLineInput = { item_code: string; qty: number; uom?: string; note?: string; line_id: string };
+export type OrderLineInput = { item_code: string; qty: number; uom?: string; note?: string; line_id: string; modifiers?: Array<{ group: string; option: string }> };
+
+export type ModifierGroupDTO = {
+	name: string; label: string; min_selections: number; max_selections: number;
+	options: Array<{ name: string; label: string; addon_item?: string | null; addon_qty: number; uom?: string | null; rate: number; available: boolean }>;
+};
+export type SelectedModifier = { group: string; option: string; label: string; extra_rate: number };
 
 export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };

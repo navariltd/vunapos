@@ -60,7 +60,11 @@ from vunapos.services.menu_service import (
 from vunapos.services.pin_service import consume_pin_token
 from vunapos.services.profile_service import resolve_pos_profile
 from vunapos.services.restaurant_service import get_profile_restaurant, require_restaurant_access
-from vunapos.services.service_type_service import get_default_service_type, resolve_service_type
+from vunapos.services.service_type_service import (
+	get_default_service_type,
+	get_service_type_pricing,
+	resolve_service_type,
+)
 
 ORDER_DOCTYPE = "Sales Order"
 MAX_NOTE_LENGTH = 500
@@ -270,19 +274,39 @@ def _new_lines(items, existing_line_ids=()):
 				qty=qty,
 				uom=uom,
 				note=_clean_note(item.get("note"), _("Item note")),
+				modifiers=item.get("modifiers"),
 			)
 		)
 	return lines
 
 
-def _validate_lines(profile, service_type, table, lines, existing_rows=()):
+def _validate_lines(profile, service_type, table, lines, existing_rows=(), price_list=None, customer=None):
 	"""Item, menu and price rules for lines being added. Lines already on the
 	order are not re-checked, so an open order is not blocked by a menu change."""
 	floor = resolve_table_floor(profile.name, table)
 	menu = get_menu_definition(profile, service_type, floor)
+	from vunapos.services.modifier_service import expand_modifier_lines
+
+	lines[:] = expand_modifier_lines(lines)
+	addon_codes = {line.item_code for line in lines if line.get("parent_line_id")}
+	priced_addons = set()
+	if addon_codes:
+		from vunapos.services.menu_service import items_priced_in
+		from vunapos.services.price_list_service import resolve_price_list
+
+		resolved_list = resolve_price_list(
+			profile,
+			customer=customer or profile.customer,
+			requested_price_list=price_list or get_service_type_pricing(profile, service_type)["price_list"],
+		)
+		priced_addons = items_priced_in(resolved_list, addon_codes)
 	for line in lines:
 		item = _validate_item(profile, line.item_code)
-		validate_menu_item(profile, line.item_code, item.item_group, service_type, floor, menu=menu)
+		if not line.get("parent_line_id"):
+			validate_menu_item(profile, line.item_code, item.item_group, service_type, floor, menu=menu)
+		else:
+			if line.item_code not in priced_addons:
+				_throw("ADDON_PRICE_REQUIRED", _("Add a selling price for add-on {0}").format(line.item_code))
 		validate_service_type_price(profile, line.item_code, service_type)
 	if cint(frappe.db.get_single_value("Selling Settings", "allow_multiple_items")):
 		return
@@ -332,7 +356,10 @@ def _load_open_order(order):
 
 
 def _require_editable_round(doc):
-	if doc.get("vunapos_restaurant_session") and doc.docstatus == 1:
+	if (
+		doc.get("vunapos_restaurant_session")
+		or any(row.get("vunapos_parent_line_id") for row in doc.get("items") or [])
+	) and doc.docstatus == 1:
 		_throw(
 			"ROUND_ALREADY_COMMITTED", _("This round has been sent. Create a new round for additional items.")
 		)
@@ -424,6 +451,8 @@ def _update_lines(doc, lines_values, new_lines=()):
 				"vunapos_item_note": line.note,
 				"vunapos_added_by": frappe.session.user,
 				"vunapos_added_at": now,
+				"vunapos_modifiers": line.get("modifiers_snapshot"),
+				"vunapos_parent_line_id": line.get("parent_line_id"),
 			},
 			update_modified=False,
 		)
@@ -543,7 +572,7 @@ def create_order(
 	lines = _new_lines(items)
 	if not lines:
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
-	_validate_lines(profile, service_type, table, lines)
+	_validate_lines(profile, service_type, table, lines, price_list=price_list, customer=customer)
 
 	doc, profile = _build_sales_order_doc(
 		pos_profile=profile.name, customer=customer or None, service_type=service_type, price_list=price_list
@@ -577,6 +606,8 @@ def create_order(
 				"vunapos_line_id": line.line_id,
 				"vunapos_added_by": frappe.session.user,
 				"vunapos_added_at": now,
+				"vunapos_modifiers": line.get("modifiers_snapshot"),
+				"vunapos_parent_line_id": line.get("parent_line_id"),
 			}
 		)
 	_apply_header_pricing(doc, profile, price_list)
