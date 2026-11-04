@@ -9,6 +9,7 @@ from vunapos.dto.profile import profile_to_dict
 from vunapos.services.floor_plan_service import FLOOR_DOCTYPE, TABLE_DOCTYPE
 from vunapos.setup.utils import RESTAURANT_MANAGER_ROLE
 from vunapos.tests.helpers import (
+	RESTAURANT_TEST,
 	ensure_test_pos_profile,
 	ensure_test_restaurant_profile,
 	ensure_test_user,
@@ -54,9 +55,9 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.profile = ensure_test_restaurant_profile()
-		for name in frappe.get_all(TABLE_DOCTYPE, filters={"pos_profile": self.profile}, pluck="name"):
+		for name in frappe.get_all(TABLE_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
 			frappe.delete_doc(TABLE_DOCTYPE, name, ignore_permissions=True)
-		for name in frappe.get_all(FLOOR_DOCTYPE, filters={"pos_profile": self.profile}, pluck="name"):
+		for name in frappe.get_all(FLOOR_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
 			frappe.delete_doc(FLOOR_DOCTYPE, name, ignore_permissions=True)
 
 	def tearDown(self):
@@ -82,7 +83,7 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self.assertEqual(response["errors"][0]["code"], code, response)
 
 	def _floor_count(self):
-		return frappe.db.count(FLOOR_DOCTYPE, {"pos_profile": self.profile})
+		return frappe.db.count(FLOOR_DOCTYPE, {"restaurant": RESTAURANT_TEST})
 
 	def test_empty_plan_loads_with_canvas_and_version(self):
 		plan = self._load()
@@ -106,7 +107,7 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self.assertEqual([table["table_label"] for table in floor["tables"]], ["T1", "T2"])
 		self.assertEqual(floor["elements"][0]["rotation"], 90)
 		table_name = result["id_map"]["tables"]["t2"]
-		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "pos_profile"), self.profile)
+		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "restaurant"), RESTAURANT_TEST)
 		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "shape"), "Round")
 
 	def test_tables_have_no_colour_of_their_own(self):
@@ -201,7 +202,7 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 			save_floor_plan(retail_profile, {"version": "", "floors": [_floor()]}),
 			"POS_MODE_NOT_RESTAURANT",
 		)
-		self.assertFalse(frappe.db.exists(FLOOR_DOCTYPE, {"pos_profile": retail_profile}))
+		self.assertEqual(self._floor_count(), 0)
 
 	def test_waiter_can_read_active_layout_but_not_save(self):
 		ensure_test_user(WAITER, roles=("Sales User",), pos_profile=self.profile)
@@ -261,7 +262,9 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self._assert_error(response, "RuntimeError")
 		self.assertTrue(frappe.db.exists(TABLE_DOCTYPE, table["name"]))
 		self.assertEqual(frappe.db.get_value(FLOOR_DOCTYPE, floor["name"], "floor_name"), "Main Hall")
-		self.assertFalse(frappe.db.exists(TABLE_DOCTYPE, {"table_label": "T5", "pos_profile": self.profile}))
+		self.assertFalse(
+			frappe.db.exists(TABLE_DOCTYPE, {"table_label": "T5", "restaurant": RESTAURANT_TEST})
+		)
 
 	def test_desk_edits_use_the_same_validators(self):
 		[floor] = self._save_ok([_floor(tables=[_table()])])["plan"]["floors"]
@@ -283,9 +286,9 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self.assertEqual(raised.exception.vuna_error_code, "DUPLICATE_TABLE_LABEL")
 
 		duplicate.table_label = "T2"
-		duplicate.pos_profile = None
+		duplicate.restaurant = None
 		duplicate.insert(ignore_permissions=True)
-		self.assertEqual(duplicate.pos_profile, self.profile)
+		self.assertEqual(duplicate.restaurant, RESTAURANT_TEST)
 		self.assertEqual(duplicate.shape, "Square")
 
 	def test_profile_dto_exposes_pos_mode_with_retail_fallback(self):

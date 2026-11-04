@@ -260,15 +260,66 @@ def ensure_test_pos_profile():
 
 
 RESTAURANT_TEST_PROFILE = "_Test VunaPOS Restaurant Profile"
+RESTAURANT_TEST = "_Test VunaPOS Restaurant"
+# Plain test service types, so a site's configured Dine In / Takeaway (prices,
+# service charges) never change what the tests see.
+TEST_TABLE_SERVICE = "_Test VunaPOS Table Service"
+TEST_COUNTER_SERVICE = "_Test VunaPOS Counter Service"
+TEST_DELIVERY_SERVICE = "_Test VunaPOS Delivery Service"
+TEST_SERVICE_TYPES = ((TEST_TABLE_SERVICE, 1), (TEST_COUNTER_SERVICE, 0), (TEST_DELIVERY_SERVICE, 0))
+
+
+def ensure_test_service_types():
+	for index, (name, requires_table) in enumerate(TEST_SERVICE_TYPES):
+		if not frappe.db.exists("VunaPOS Service Type", name):
+			frappe.get_doc(
+				{
+					"doctype": "VunaPOS Service Type",
+					"service_type_name": name,
+					"requires_table": requires_table,
+					# After the seeded types, so their display order is unchanged.
+					"display_order": 200 + index,
+				}
+			).insert(ignore_permissions=True)
+		frappe.db.set_value(
+			"VunaPOS Service Type",
+			name,
+			{"enabled": 1, "requires_table": requires_table, "price_list": None, "taxes_and_charges": None},
+		)
+	return [name for name, _requires_table in TEST_SERVICE_TYPES]
+
+
+def ensure_test_restaurant(name=RESTAURANT_TEST):
+	"""A restaurant offering only the plain test service types (table service by default)."""
+	service_types = ensure_test_service_types()
+	if not frappe.db.exists("VunaPOS Restaurant", name):
+		frappe.get_doc(
+			{
+				"doctype": "VunaPOS Restaurant",
+				"restaurant_name": name,
+				"company": _company(),
+				"service_types": [
+					{"service_type": service_type, "is_default": int(index == 0)}
+					for index, service_type in enumerate(service_types)
+				],
+			}
+		).insert(ignore_permissions=True)
+	return name
 
 
 def ensure_test_restaurant_profile():
+	restaurant = ensure_test_restaurant()
 	if not frappe.db.exists("POS Profile", RESTAURANT_TEST_PROFILE):
 		profile = frappe.copy_doc(frappe.get_doc("POS Profile", ensure_test_pos_profile()))
 		profile.set("__newname", RESTAURANT_TEST_PROFILE)
 		profile.vunapos_pos_mode = "Restaurant"
+		profile.vunapos_restaurant = restaurant
 		profile.insert(ignore_permissions=True)
-	frappe.db.set_value("POS Profile", RESTAURANT_TEST_PROFILE, "vunapos_pos_mode", "Restaurant")
+	frappe.db.set_value(
+		"POS Profile",
+		RESTAURANT_TEST_PROFILE,
+		{"vunapos_pos_mode": "Restaurant", "vunapos_restaurant": restaurant},
+	)
 	return RESTAURANT_TEST_PROFILE
 
 

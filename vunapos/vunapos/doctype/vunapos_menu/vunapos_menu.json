@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:menu_name",
+ "creation": "2026-11-04 09:00:00.000000",
+ "description": "What a restaurant sells: item groups (with their child groups) shown as categories, plus single items to add or hide. Prices stay in Item Price and Pricing Rules.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "menu_name",
+  "enabled",
+  "column_break_main",
+  "company",
+  "groups_section",
+  "item_groups",
+  "items_section",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "menu_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Menu Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "groups_section",
+   "fieldtype": "Section Break",
+   "label": "Categories"
+  },
+  {
+   "fieldname": "item_groups",
+   "fieldtype": "Table",
+   "label": "Item Groups",
+   "options": "VunaPOS Menu Item Group"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Single Items"
+  },
+  {
+   "description": "Add an item whose group is not on the menu, or hide one item from a group that is.",
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "VunaPOS Menu Item"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "link_doctype": "VunaPOS Restaurant",
+   "link_fieldname": "default_menu"
+  }
+ ],
+ "modified": "2026-11-04 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "VunaPOS Menu",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "menu_name",
+ "sort_order": "ASC",
+ "states": []
+}

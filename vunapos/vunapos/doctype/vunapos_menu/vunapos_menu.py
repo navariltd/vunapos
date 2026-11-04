@@ -3,6 +3,9 @@
 
 from frappe.model.document import Document
 
+from vunapos.services.menu_service import validate_menu_doc
 
-class VunaPOSProfileServiceType(Document):
-	pass
+
+class VunaPOSMenu(Document):
+	def validate(self):
+		validate_menu_doc(self)

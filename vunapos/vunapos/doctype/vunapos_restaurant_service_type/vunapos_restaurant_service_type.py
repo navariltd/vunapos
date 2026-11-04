@@ -4,5 +4,5 @@
 from frappe.model.document import Document
 
 
-class VunaPOSRestaurantOrderItem(Document):
+class VunaPOSRestaurantServiceType(Document):
 	pass

@@ -85,6 +85,11 @@ def _configuration_profile_names(doc: Document, method: str | None) -> list[str]
 	profile's default list, so those must still reach all enabled profiles.
 	"""
 	filters = {"disabled": 0}
+	if doc.doctype == "VunaPOS Restaurant":
+		# Restaurant settings reach the tills of that restaurant only.
+		return frappe.get_all(
+			"POS Profile", filters={**filters, "vunapos_restaurant": doc.name}, pluck="name"
+		)
 	companies = {doc.get("company")}
 	if doc.doctype in COMPANY_SCOPED_CONFIGURATION_DOCTYPES and method == "on_update":
 		# Frappe retains the pre-save document through on_update; no capture hook is needed.

@@ -169,6 +169,7 @@ doc_events = {
 		"Price List",
 		"Pricing Rule",
 		"Mode of Payment",
+		"VunaPOS Restaurant",
 	)
 }
 doc_events["POS Settings"] = {
@@ -179,8 +180,7 @@ doc_events["POS Settings"] = {
 doc_events["POS Profile"] = {
 	"validate": [
 		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
-		"vunapos.services.service_type_service.validate_profile_service_types",
-		"vunapos.services.menu_service.validate_profile_menu",
+		"vunapos.services.restaurant_service.validate_profile_restaurant",
 	],
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
