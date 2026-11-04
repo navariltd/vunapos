@@ -1,3 +1,6 @@
+from functools import wraps
+from uuid import uuid4
+
 import frappe
 
 from vunapos.services import restaurant_order_service
@@ -6,6 +9,25 @@ from vunapos.services.floor_plan_service import save_floor_plan as save_floor_pl
 from vunapos.services.menu_service import get_menu as get_menu_service
 from vunapos.services.menu_service import list_service_types
 from vunapos.utils.response import failure, success
+
+
+def _atomic_write(fn):
+	"""Caught errors still return HTTP 200; roll back before Frappe commits that request."""
+
+	@wraps(fn)
+	def wrapped(*args, **kwargs):
+		savepoint = f"restaurant_{uuid4().hex}"
+		frappe.db.savepoint(savepoint)
+		try:
+			result = fn(*args, **kwargs)
+			if not result.get("ok"):
+				frappe.db.rollback(save_point=savepoint)
+			return result
+		except Exception:
+			frappe.db.rollback(save_point=savepoint)
+			raise
+
+	return wrapped
 
 
 def _failure_from_exception(exc):
@@ -25,6 +47,7 @@ def get_floor_plan(pos_profile: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def save_floor_plan(pos_profile: str, payload: dict | str):
 	try:
 		return success(save_floor_plan_service(pos_profile=pos_profile, payload=payload))
@@ -73,6 +96,7 @@ def get_table_status(pos_profile: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def create_order(
 	pos_profile: str,
 	service_type: str | None = None,
@@ -127,6 +151,7 @@ def list_orders(
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def update_order(
 	order: str,
 	service_type: str | None = None,
@@ -151,6 +176,7 @@ def update_order(
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def add_order_items(order: str, items: list | str):
 	try:
 		return success(restaurant_order_service.add_items(order, items))
@@ -159,6 +185,7 @@ def add_order_items(order: str, items: list | str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def update_order_item(order: str, line_id: str, qty: float | str | None = None, note: str | None = None):
 	try:
 		return success(restaurant_order_service.update_item(order, line_id, qty=qty, note=note))
@@ -167,6 +194,7 @@ def update_order_item(order: str, line_id: str, qty: float | str | None = None, 
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def remove_order_item(order: str, line_id: str, manager_pin_token: str | None = None):
 	try:
 		return success(
@@ -177,6 +205,7 @@ def remove_order_item(order: str, line_id: str, manager_pin_token: str | None = 
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def cancel_order(order: str, reason: str | None = None, manager_pin_token: str | None = None):
 	try:
 		return success(
@@ -187,6 +216,7 @@ def cancel_order(order: str, reason: str | None = None, manager_pin_token: str |
 
 
 @frappe.whitelist(methods=["POST"])
+@_atomic_write
 def checkout_order(
 	order: str,
 	payments: list | str | None = None,

@@ -1,8 +1,10 @@
 [pre_model_sync]
+vunapos.patches.v1_0.rename_restaurant_doctypes
 # Patches added in this section will be executed before doctypes are migrated
 # Read docs to understand patches: https://frappeframework.com/docs/v14/user/en/database-migrations
 
 [post_model_sync]
+vunapos.patches.v1_0.move_restaurant_cancel_pin_to_profile
 # Patches added in this section will be executed after doctypes are migrated
 vunapos.patches.v1_0.remove_offline_session_ttl_field #1
 vunapos.patches.v1_0.enable_pos_profile_operation_controls

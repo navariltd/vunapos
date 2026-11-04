@@ -23,7 +23,7 @@ def _restaurant_settings(profile):
 			cint(restaurant and restaurant.allow_multiple_orders_per_table)
 		),
 		"require_manager_pin_order_cancel": bool(
-			cint(restaurant and restaurant.require_manager_pin_order_cancel)
+			cint(profile.get("vunapos_require_manager_pin_order_cancel"))
 		),
 	}
 

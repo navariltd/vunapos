@@ -1,0 +1,157 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:restaurant_name",
+ "creation": "2026-11-03 09:00:00.000000",
+ "description": "A restaurant or outlet: its floors and tables, service types and order rules. Every POS Profile in Restaurant mode belongs to one restaurant, so several tills share it.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "restaurant_name",
+  "enabled",
+  "column_break_main",
+  "company",
+  "branch",
+  "menu_section",
+  "default_menu",
+  "service_section",
+  "service_types",
+  "orders_section",
+  "allow_multiple_orders_per_table"
+ ],
+ "fields": [
+  {
+   "fieldname": "restaurant_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Restaurant Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "menu_section",
+   "fieldtype": "Section Break",
+   "label": "Menu"
+  },
+  {
+   "fieldname": "default_menu",
+   "fieldtype": "Link",
+   "label": "Default Menu",
+   "options": "Restaurant Menu"
+  },
+  {
+   "fieldname": "service_section",
+   "fieldtype": "Section Break",
+   "label": "Service Types"
+  },
+  {
+   "fieldname": "service_types",
+   "fieldtype": "Table",
+   "label": "Service Types",
+   "options": "Restaurant Service Type Assignment"
+  },
+  {
+   "fieldname": "orders_section",
+   "fieldtype": "Section Break",
+   "label": "Orders"
+  },
+  {
+   "default": "0",
+   "description": "By default a table holds one open order until it is billed or cancelled.",
+   "fieldname": "allow_multiple_orders_per_table",
+   "fieldtype": "Check",
+   "label": "Allow Multiple Open Orders per Table"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "link_doctype": "POS Profile",
+   "link_fieldname": "vunapos_restaurant"
+  },
+  {
+   "link_doctype": "Restaurant Floor",
+   "link_fieldname": "restaurant"
+  },
+  {
+   "link_doctype": "Sales Order",
+   "link_fieldname": "vunapos_restaurant"
+  }
+ ],
+ "modified": "2026-11-05 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "Restaurant",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "restaurant_name",
+ "sort_order": "ASC",
+ "states": []
+}

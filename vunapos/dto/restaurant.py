@@ -59,7 +59,7 @@ def service_type_to_dict(row, is_default=False):
 
 
 def _table_label(table):
-	return frappe.db.get_value("VunaPOS Restaurant Table", table, "table_label") if table else None
+	return frappe.db.get_value("Restaurant Table", table, "table_label") if table else None
 
 
 def waiter_name(user):

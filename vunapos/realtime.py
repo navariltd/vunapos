@@ -85,7 +85,7 @@ def _configuration_profile_names(doc: Document, method: str | None) -> list[str]
 	profile's default list, so those must still reach all enabled profiles.
 	"""
 	filters = {"disabled": 0}
-	if doc.doctype == "VunaPOS Restaurant":
+	if doc.doctype == "Restaurant":
 		# Restaurant settings reach the tills of that restaurant only.
 		return frappe.get_all(
 			"POS Profile", filters={**filters, "vunapos_restaurant": doc.name}, pluck="name"

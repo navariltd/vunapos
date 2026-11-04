@@ -1,6 +1,6 @@
 # Restaurant POS Design
 
-Status: agreed design decisions for the VunaPOS Restaurant POS feature. Decisions 1-4
+Status: agreed design decisions for the Restaurant POS feature. Decisions 1-4
 apply to the current phase (floor plan backend and editor). Decisions 5-8 are recorded
 now so early work does not block them, and are implemented in later phases. Decisions 6
 and 12 (shift on entry for cashiers, and the restaurant roles) are built. Decision 13 is
@@ -55,7 +55,7 @@ built as far as removing the table colour; the status colours come with the orde
 
 - In Restaurant mode, whether a user needs a shift depends on one role: **VunaPOS
   Cashier**. Bootstrap returns it as `can_take_payment`. No other role counts, including
-  VunaPOS Restaurant Manager and System Manager.
+  Restaurant Manager and System Manager.
 - Users with `can_take_payment` must open a POS Opening Entry on entry. `RestaurantApp`
   wraps the restaurant shell in the same `PosOpeningGate` and `PosOpeningEntryDialog`
   that Retail uses.
@@ -152,7 +152,7 @@ Agreed proposal (documentation only, nothing built yet):
 
 ### 12. Restaurant roles
 
-- **VunaPOS Waiter**, **VunaPOS Cashier** and **VunaPOS Restaurant Manager** are created
+- **VunaPOS Waiter**, **VunaPOS Cashier** and **Restaurant Manager** are created
   in code with the permissions they need, so no manual setup is needed per site. See
   [Roles](#roles). **VunaPOS Kitchen** comes later and must follow the same pattern.
 - Every role gets read permission on POS Profile.
@@ -166,7 +166,7 @@ Agreed proposal (documentation only, nothing built yet):
 
 - Tables have no colour of their own. The `color` field was removed from VunaPOS
   Restaurant Table, so a table's colour always means its status (decision 3).
-- Floor `background_color` and VunaPOS Floor Element `color` are unchanged: they are decor.
+- Floor `background_color` and Restaurant Floor Element `color` are unchanged: they are decor.
 - Until the order flow supplies a status, every table is drawn in one neutral style:
   surface fill with an `on-surface-variant` outline, and the primary colour when selected.
 - Agreed status palette (light / dark theme):
@@ -193,9 +193,9 @@ All doctypes are in module VunaPOS.
 
 | Doctype | Kind | Notes |
 | --- | --- | --- |
-| VunaPOS Restaurant Floor | Standalone, hash naming, title `floor_name` | `floor_name`, `pos_profile`, `display_order`, `is_active`, `background_color`, `background_image` (public file), `elements` |
-| VunaPOS Floor Element | Child table of Floor | `element_type` (Wall, Door, Window, Bar Counter, Plant, Label), `label`, `x`, `y`, `width`, `height`, `rotation`, `color` |
-| VunaPOS Restaurant Table | Standalone, hash naming, title `table_label` | `floor`, `pos_profile`, `table_label`, `seats`, `shape`, `x`, `y`, `width`, `height`, `rotation`, `is_active`. No colour (decision 13). |
+| Restaurant Floor | Standalone, hash naming, title `floor_name` | `floor_name`, `pos_profile`, `display_order`, `is_active`, `background_color`, `background_image` (public file), `elements` |
+| Restaurant Floor Element | Child table of Floor | `element_type` (Wall, Door, Window, Bar Counter, Plant, Label), `label`, `x`, `y`, `width`, `height`, `rotation`, `color` |
+| Restaurant Table | Standalone, hash naming, title `table_label` | `floor`, `pos_profile`, `table_label`, `seats`, `shape`, `x`, `y`, `width`, `height`, `rotation`, `is_active`. No colour (decision 13). |
 
 - Tables are standalone so future Restaurant Orders can link to them. Elements are a
   child table because nothing links to them.
@@ -301,17 +301,17 @@ tables that have linked orders. Its callers do not change.
 
 ## Permissions
 
-- Roles: **VunaPOS Restaurant Manager**, **VunaPOS Cashier** and **VunaPOS Waiter**,
+- Roles: **Restaurant Manager**, **VunaPOS Cashier** and **VunaPOS Waiter**,
   created by `ensure_vunapos_roles()` during install, migrate and test setup. See
   [Roles](#roles).
-- Saving a floor plan requires VunaPOS Restaurant Manager or System Manager.
+- Saving a floor plan requires Restaurant Manager or System Manager.
 - Saving does not require the manager to be assigned to the POS Profile, so a manager
   can set up floors for any profile.
 - Reading a floor plan requires that the user is assigned to the POS Profile, or is a
   manager. Reads do not need DocType permissions or a POS Opening Entry, so waiters can
   load the floor. Opening VunaPOS at all still needs read permission on POS Profile,
   which bootstrap checks (see decision 12).
-- DocType permissions: VunaPOS Restaurant Manager and System Manager have full access to
+- DocType permissions: Restaurant Manager and System Manager have full access to
   Floor and Table; Sales User, VunaPOS Waiter and VunaPOS Cashier have read only.
 
 ## Roles
@@ -320,11 +320,11 @@ Each role works on its own: a user does not also need Sales User or Accounts Use
 existing Sales User rules on the VunaPOS doctypes are kept, so current setups keep
 working.
 
-| Doctype | VunaPOS Waiter | VunaPOS Cashier | VunaPOS Restaurant Manager |
+| Doctype | VunaPOS Waiter | VunaPOS Cashier | Restaurant Manager |
 | --- | --- | --- | --- |
 | POS Profile | Read | Read | Read |
-| VunaPOS Restaurant Order | Read, write, create, print | Read, write, create, print | Full |
-| VunaPOS Service Type, Floor, Table | Read | Read | Full |
+| Restaurant Order | Read, write, create, print | Read, write, create, print | Full |
+| Restaurant Service Type, Floor, Table | Read | Read | Full |
 | Item, Customer | Read | Read | Read |
 | Account | Select | Select | Select |
 | Sales Invoice, POS Invoice | Read, only if creator | Read, write, create, submit, print | Read, only if creator |

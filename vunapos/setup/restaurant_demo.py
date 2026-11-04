@@ -447,8 +447,8 @@ def _ensure_service_type_pricing(company, currency):
 		("Takeaway", {"price_list": TAKEAWAY_PRICES, "taxes_and_charges": None}),
 		("Delivery", {"price_list": TAKEAWAY_PRICES, "taxes_and_charges": None}),
 	):
-		if frappe.db.exists("VunaPOS Service Type", service_type):
-			doc = frappe.get_doc("VunaPOS Service Type", service_type)
+		if frappe.db.exists("Restaurant Service Type", service_type):
+			doc = frappe.get_doc("Restaurant Service Type", service_type)
 			doc.update(values)
 			doc.save(ignore_permissions=True)
 
@@ -642,7 +642,7 @@ def _tables(profile_name):
 	return {
 		row.table_label: row.name
 		for row in frappe.get_all(
-			"VunaPOS Restaurant Table", filters={"pos_profile": profile_name}, fields=["name", "table_label"]
+			"Restaurant Table", filters={"pos_profile": profile_name}, fields=["name", "table_label"]
 		)
 	}
 
@@ -650,7 +650,7 @@ def _tables(profile_name):
 def _create_sample_orders(profile_name, mpesa):
 	from vunapos.services import restaurant_order_service as orders
 
-	if frappe.db.exists("VunaPOS Restaurant Order", {"pos_profile": profile_name}):
+	if frappe.db.exists("Restaurant Order", {"pos_profile": profile_name}):
 		_log("Sample orders already exist; not adding more")
 		return
 	tables = _tables(profile_name)

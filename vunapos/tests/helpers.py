@@ -259,8 +259,8 @@ def ensure_test_pos_profile():
 	return profile.name
 
 
-RESTAURANT_TEST_PROFILE = "_Test VunaPOS Restaurant Profile"
-RESTAURANT_TEST = "_Test VunaPOS Restaurant"
+RESTAURANT_TEST_PROFILE = "_Test Restaurant Profile"
+RESTAURANT_TEST = "_Test Restaurant"
 # Plain test service types, so a site's configured Dine In / Takeaway (prices,
 # service charges) never change what the tests see.
 TEST_TABLE_SERVICE = "_Test VunaPOS Table Service"
@@ -271,10 +271,10 @@ TEST_SERVICE_TYPES = ((TEST_TABLE_SERVICE, 1), (TEST_COUNTER_SERVICE, 0), (TEST_
 
 def ensure_test_service_types():
 	for index, (name, requires_table) in enumerate(TEST_SERVICE_TYPES):
-		if not frappe.db.exists("VunaPOS Service Type", name):
+		if not frappe.db.exists("Restaurant Service Type", name):
 			frappe.get_doc(
 				{
-					"doctype": "VunaPOS Service Type",
+					"doctype": "Restaurant Service Type",
 					"service_type_name": name,
 					"requires_table": requires_table,
 					# After the seeded types, so their display order is unchanged.
@@ -282,7 +282,7 @@ def ensure_test_service_types():
 				}
 			).insert(ignore_permissions=True)
 		frappe.db.set_value(
-			"VunaPOS Service Type",
+			"Restaurant Service Type",
 			name,
 			{"enabled": 1, "requires_table": requires_table, "price_list": None, "taxes_and_charges": None},
 		)
@@ -292,11 +292,17 @@ def ensure_test_service_types():
 def ensure_test_restaurant(name=RESTAURANT_TEST):
 	"""A restaurant offering only the plain test service types (table service by default)."""
 	service_types = ensure_test_service_types()
-	if not frappe.db.exists("VunaPOS Restaurant", name):
+	branch = f"{name} Branch"
+	if not frappe.db.exists("Branch", branch):
+		frappe.get_doc({"doctype": "Branch", "branch": branch, "vunapos_company": _company()}).insert(
+			ignore_permissions=True
+		)
+	if not frappe.db.exists("Restaurant", name):
 		frappe.get_doc(
 			{
-				"doctype": "VunaPOS Restaurant",
+				"doctype": "Restaurant",
 				"restaurant_name": name,
+				"branch": branch,
 				"company": _company(),
 				"service_types": [
 					{"service_type": service_type, "is_default": int(index == 0)}
@@ -304,6 +310,8 @@ def ensure_test_restaurant(name=RESTAURANT_TEST):
 				],
 			}
 		).insert(ignore_permissions=True)
+	elif not frappe.db.get_value("Restaurant", name, "branch"):
+		frappe.db.set_value("Restaurant", name, "branch", branch)
 	return name
 
 

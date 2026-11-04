@@ -1,6 +1,6 @@
 """Restaurant menu: which items a restaurant sells.
 
-A menu is its own record (VunaPOS Menu): item groups shown as categories, each
+A menu is its own record (Restaurant Menu): item groups shown as categories, each
 including all of its descendant groups, plus single items to include or
 exclude. Prices stay in ERPNext (Item Price, Pricing Rules).
 
@@ -21,7 +21,7 @@ from vunapos.services.service_type_service import (
 	get_service_type_pricing,
 )
 
-MENU_DOCTYPE = "VunaPOS Menu"
+MENU_DOCTYPE = "Restaurant Menu"
 INCLUDE, EXCLUDE = "Include", "Exclude"
 SOURCE_MENU = "Menu"
 SOURCE_PROFILE_ITEM_GROUPS = "POS Profile Item Groups"
@@ -245,7 +245,7 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 
 
 def validate_menu_doc(doc):
-	"""VunaPOS Menu validate. Desk-only, so it uses frappe.throw."""
+	"""Restaurant Menu validate. Desk-only, so it uses frappe.throw."""
 	groups = set()
 	for row in doc.get("item_groups") or []:
 		if row.item_group in groups:
@@ -265,7 +265,7 @@ def validate_menu_doc(doc):
 		items.add(row.item_code)
 	if doc.company and not doc.is_new() and doc.has_value_changed("company"):
 		restaurants = frappe.get_all(
-			"VunaPOS Restaurant",
+			"Restaurant",
 			filters={"default_menu": doc.name, "company": ["!=", doc.company]},
 			pluck="name",
 		)

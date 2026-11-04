@@ -1,0 +1,155 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "creation": "2026-10-22 07:13:46.468878",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "floor",
+  "restaurant",
+  "table_label",
+  "seats",
+  "shape",
+  "x",
+  "y",
+  "width",
+  "height",
+  "rotation",
+  "is_active"
+ ],
+ "fields": [
+  {
+   "fieldname": "floor",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Floor",
+   "options": "Restaurant Floor",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fetch_from": "floor.restaurant",
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "table_label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Table Label",
+   "reqd": 1
+  },
+  {
+   "default": "2",
+   "fieldname": "seats",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Seats"
+  },
+  {
+   "default": "Square",
+   "fieldname": "shape",
+   "fieldtype": "Select",
+   "label": "Shape",
+   "options": "Square\nRound\nRectangle\nOval"
+  },
+  {
+   "default": "0",
+   "fieldname": "x",
+   "fieldtype": "Float",
+   "label": "X"
+  },
+  {
+   "default": "0",
+   "fieldname": "y",
+   "fieldtype": "Data",
+   "label": "Y"
+  },
+  {
+   "default": "80",
+   "fieldname": "height",
+   "fieldtype": "Float",
+   "label": "Height"
+  },
+  {
+   "default": "0",
+   "fieldname": "rotation",
+   "fieldtype": "Float",
+   "label": "Rotation"
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "label": "Is Active"
+  },
+  {
+   "default": "80",
+   "fieldname": "width",
+   "fieldtype": "Float",
+   "label": "Width"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-11-03 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "Restaurant Table",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "table_label"
+}

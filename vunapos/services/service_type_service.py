@@ -5,7 +5,7 @@ from frappe.utils import cint
 from vunapos.dto.restaurant import service_type_to_dict
 from vunapos.services.restaurant_service import get_profile_restaurant
 
-SERVICE_TYPE_DOCTYPE = "VunaPOS Service Type"
+SERVICE_TYPE_DOCTYPE = "Restaurant Service Type"
 
 
 def _throw(code, message, meta=None):

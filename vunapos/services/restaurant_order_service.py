@@ -689,7 +689,7 @@ def cancel_order(order, reason=None, manager_pin_token=None):
 	if not reason:
 		_throw("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
 	approved_by = None
-	if cint(_restaurant_setting(profile, "require_manager_pin_order_cancel")) and not is_floor_plan_manager():
+	if cint(profile.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():
 		approved_by = consume_pin_token(manager_pin_token, profile, "manager").get("subject")
 	doc.update(
 		{

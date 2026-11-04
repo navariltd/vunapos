@@ -148,6 +148,18 @@ after_migrate = "vunapos.setup.utils.ensure_vunapos_custom_fields"
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+permission_query_conditions = {
+	"Restaurant": "vunapos.restaurant_permissions.query_conditions",
+	"Restaurant Floor": "vunapos.restaurant_permissions.floor_conditions",
+	"Restaurant Table": "vunapos.restaurant_permissions.table_conditions",
+	"Sales Order": "vunapos.restaurant_permissions.order_conditions",
+}
+has_permission = {
+	"Restaurant": "vunapos.restaurant_permissions.has_permission",
+	"Restaurant Floor": "vunapos.restaurant_permissions.related_has_permission",
+	"Restaurant Table": "vunapos.restaurant_permissions.related_has_permission",
+	"Sales Order": "vunapos.restaurant_permissions.related_has_permission",
+}
 
 # Document Events
 # ---------------
@@ -169,7 +181,7 @@ doc_events = {
 		"Price List",
 		"Pricing Rule",
 		"Mode of Payment",
-		"VunaPOS Restaurant",
+		"Restaurant",
 	)
 }
 doc_events["POS Settings"] = {
@@ -185,6 +197,9 @@ doc_events["POS Profile"] = {
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
 	"on_trash": "vunapos.realtime.publish_configuration_change",
+}
+doc_events["Branch"] = {
+	"validate": "vunapos.services.restaurant_service.validate_branch_doc",
 }
 # Stock and tracking changes do not publish POS configuration events, but they
 # must invalidate cached catalogue balances immediately.

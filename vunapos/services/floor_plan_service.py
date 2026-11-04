@@ -7,14 +7,14 @@ from frappe.utils import cint, cstr, flt
 
 from vunapos.dto.restaurant import ORDER_STATUS_FIELDS, ORDER_STATUS_OPEN, floor_to_dict, order_status
 from vunapos.services.profile_service import require_pos_profile_assignment
-from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE
+from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE, require_restaurant_context
 from vunapos.setup.utils import DEFAULT_POS_MODE, RESTAURANT_MANAGER_ROLE
 
 CANVAS_WIDTH = 1000
 CANVAS_HEIGHT = 700
-FLOOR_DOCTYPE = "VunaPOS Restaurant Floor"
-TABLE_DOCTYPE = "VunaPOS Restaurant Table"
-ELEMENT_DOCTYPE = "VunaPOS Floor Element"
+FLOOR_DOCTYPE = "Restaurant Floor"
+TABLE_DOCTYPE = "Restaurant Table"
+ELEMENT_DOCTYPE = "Restaurant Floor Element"
 ORDER_DOCTYPE = "Sales Order"
 MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
 ELEMENT_TYPES = ("Wall", "Door", "Window", "Bar Counter", "Plant", "Label")
@@ -95,6 +95,8 @@ def require_restaurant_profile(pos_profile):
 			_("POS Profile {0} is not linked to a restaurant").format(pos_profile),
 			{"pos_profile": pos_profile},
 		)
+	_require_floor_plan_reader(pos_profile)
+	require_restaurant_context(restaurant, frappe.db.get_value("POS Profile", pos_profile, "company"))
 	return restaurant
 
 

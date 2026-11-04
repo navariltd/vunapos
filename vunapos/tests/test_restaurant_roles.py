@@ -40,7 +40,7 @@ MANAGER_CASHIER = "_test_vunapos_role_manager_cashier@example.com"
 SERVICE_TYPE = TEST_TABLE_SERVICE
 
 
-class TestVunaPOSRestaurantRoles(IntegrationTestCase):
+class TestRestaurantRoles(IntegrationTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()
@@ -65,14 +65,14 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		ensure_vunapos_roles()
 		# Free the table for the next order.
-		frappe.db.delete(ORDER_DOCTYPE, {"pos_profile": self.profile, "status": "Open"})
+		frappe.db.delete(ORDER_DOCTYPE, {"vunapos_pos_profile": self.profile, "docstatus": 1})
 
 	def tearDown(self):
 		frappe.set_user("Administrator")
 
 	@classmethod
 	def _create_floor_plan(cls):
-		frappe.db.delete(ORDER_DOCTYPE, {"pos_profile": cls.profile})
+		frappe.db.delete(ORDER_DOCTYPE, {"vunapos_pos_profile": cls.profile})
 		for name in frappe.get_all(TABLE_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
 			frappe.delete_doc(TABLE_DOCTYPE, name, ignore_permissions=True)
 		for name in frappe.get_all(FLOOR_DOCTYPE, filters={"restaurant": RESTAURANT_TEST}, pluck="name"):
@@ -196,7 +196,7 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 		self.assertTrue(can(ORDER_DOCTYPE, "create"))
 		self.assertTrue(can(ORDER_DOCTYPE, "write"))
 		self.assertFalse(can(ORDER_DOCTYPE, "delete"))
-		for doctype in ("VunaPOS Service Type", FLOOR_DOCTYPE, TABLE_DOCTYPE, "Item", "Customer"):
+		for doctype in ("Restaurant Service Type", FLOOR_DOCTYPE, TABLE_DOCTYPE, "Item", "Customer"):
 			self.assertTrue(can(doctype, "read"), doctype)
 		self.assertFalse(can(FLOOR_DOCTYPE, "write"))
 		self.assertFalse(can("Sales Invoice", "create"))
@@ -305,7 +305,8 @@ class TestVunaPOSRestaurantRoles(IntegrationTestCase):
 		# Refused by permission, before the shift check: a waiter can't bill even
 		# with an open shift.
 		self.assertEqual(response["errors"][0]["code"], "PermissionError", response)
-		self.assertEqual(frappe.db.get_value(ORDER_DOCTYPE, order["name"], "status"), "Open")
+		self.assertEqual(frappe.db.get_value(ORDER_DOCTYPE, order["name"], "docstatus"), 1)
+		self.assertEqual(frappe.db.get_value(ORDER_DOCTYPE, order["name"], "per_billed"), 0)
 
 	def test_cashier_opens_a_shift_bills_an_order_and_closes_the_shift(self):
 		frappe.set_user(CASHIER)
