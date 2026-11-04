@@ -4,7 +4,7 @@ import { ArrowDownUp, ChevronRight, Search } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { cn } from "../../../lib/cn";
-import { navigateToOrder } from "../../../lib/stores/navigationStore";
+import { navigateToOrder, navigateToRestaurantSession } from "../../../lib/stores/navigationStore";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useNow } from "../hooks/useNow";
@@ -73,7 +73,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
             <button
               type="button"
               className="flex min-h-16 w-full min-w-0 items-center gap-3 px-3 py-2 text-left hover:bg-surface-container-low sm:px-4"
-              onClick={() => navigateToOrder(order.name)}
+              onClick={() => order.restaurant_session ? navigateToRestaurantSession(order.restaurant_session) : navigateToOrder(order.name)}
             >
               <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-status-occupied-container text-sm font-semibold text-on-surface">
                 {order.table_label || "—"}
@@ -106,7 +106,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
     <section className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-y-auto p-4 pb-[84px] lg:pb-4">
       <div className="flex min-w-0 items-center gap-3">
         <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-on-surface">
-          Open orders
+          Open Orders
           {visible && orders ? (
             <span className="font-normal text-on-surface-variant">
               {" "}

@@ -66,6 +66,7 @@ ORDER_DOCTYPE = "Sales Order"
 MAX_NOTE_LENGTH = 500
 SUMMARY_FIELDS = (
 	"name",
+	"vunapos_restaurant_session",
 	*ORDER_STATUS_FIELDS,
 	"vunapos_service_type",
 	"vunapos_restaurant_table",
@@ -164,7 +165,7 @@ def _restaurant_setting(profile, fieldname):
 	return restaurant.get(fieldname) if restaurant else None
 
 
-def _validate_table(profile, service_type, table, order=None):
+def _validate_table(profile, service_type, table, order=None, restaurant_session=None):
 	"""Return the table the order should sit at: None unless the service type uses tables."""
 	if not service_type["requires_table"]:
 		# Tables belong only to service types that use them. Clearing the table
@@ -189,13 +190,22 @@ def _validate_table(profile, service_type, table, order=None):
 		)
 	if not cint(row.is_active):
 		_throw("TABLE_INACTIVE", _("Table {0} is not active").format(row.table_label), {"table": table})
+	if restaurant_session:
+		from vunapos.services.restaurant_session_service import lock_tables
+
+		lock_tables([table], profile.vunapos_restaurant, session=restaurant_session)
+		return table
+	from vunapos.services.restaurant_session_service import current_assignments, current_legacy_orders
+
+	for assignment in current_assignments(table):
+		if frappe.db.get_value("Restaurant Session", assignment.parent, "status", for_update=True) in (
+			"Open",
+			"Settling",
+		):
+			_throw("TABLE_OCCUPIED", _("Table {0} belongs to an active restaurant session.").format(table))
 	if cint(_restaurant_setting(profile, "allow_multiple_orders_per_table")):
 		return table
-	other = frappe.db.get_value(
-		ORDER_DOCTYPE,
-		_open_order_filters(vunapos_restaurant_table=table, name=["!=", order or ""]),
-		"name",
-	)
+	other = next((row.name for row in current_legacy_orders(table) if row.name != order), None)
 	if other:
 		_throw(
 			"TABLE_OCCUPIED",
@@ -321,6 +331,13 @@ def _load_open_order(order):
 	return doc, profile
 
 
+def _require_editable_round(doc):
+	if doc.get("vunapos_restaurant_session") and doc.docstatus == 1:
+		_throw(
+			"ROUND_ALREADY_COMMITTED", _("This round has been sent. Create a new round for additional items.")
+		)
+
+
 def _restaurant_profile(pos_profile):
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_profile(profile.name)
@@ -412,9 +429,9 @@ def _update_lines(doc, lines_values, new_lines=()):
 		)
 
 
-def _apply_header_pricing(doc, profile):
+def _apply_header_pricing(doc, profile, price_list=None):
 	"""Put the service type's (else the profile's) price list and taxes on the order."""
-	_sync_profile_pricing_fields(doc, profile)
+	_sync_profile_pricing_fields(doc, profile, price_list)
 	doc.set("taxes", [])
 	if doc.taxes_and_charges:
 		doc.extend("taxes", _get_taxes_and_charges("Sales Taxes and Charges Template", doc.taxes_and_charges))
@@ -488,6 +505,8 @@ def create_order(
 	order_note=None,
 	items=None,
 	idempotency_key=None,
+	restaurant_session=None,
+	price_list=None,
 ):
 	idempotency_key = cstr(idempotency_key).strip() or None
 	if idempotency_key:
@@ -498,13 +517,28 @@ def create_order(
 		)
 		if existing:
 			doc, _profile = _load_order(existing)
+			if doc.get("vunapos_restaurant_session") != restaurant_session:
+				_throw("IDEMPOTENCY_CONFLICT", _("This order key belongs to a different session."))
 			return order_to_dict(doc)
 	profile = _restaurant_profile(pos_profile)
 	if not service_type:
 		default = get_default_service_type(profile)
 		service_type = default["name"] if default else None
 	service_type_row = resolve_service_type(profile, service_type)
-	table = _validate_table(profile, service_type_row, table or None)
+	if restaurant_session:
+		from vunapos.services.restaurant_session_service import _load
+
+		session = _load(restaurant_session, for_update=True)
+		if (
+			session.status != "Open"
+			or session.restaurant != profile.vunapos_restaurant
+			or session.customer != customer
+			or session.service_type != service_type
+		):
+			_throw("SESSION_CONTEXT_MISMATCH", _("Order does not match the open Restaurant Session."))
+		if table and table not in [row.table for row in session.tables if not row.released_at]:
+			_throw("SESSION_CONTEXT_MISMATCH", _("Table is not assigned to this session."))
+	table = _validate_table(profile, service_type_row, table or None, restaurant_session=restaurant_session)
 	# A Sales Order cannot be submitted without lines.
 	lines = _new_lines(items)
 	if not lines:
@@ -512,12 +546,13 @@ def create_order(
 	_validate_lines(profile, service_type, table, lines)
 
 	doc, profile = _build_sales_order_doc(
-		pos_profile=profile.name, customer=customer or None, service_type=service_type
+		pos_profile=profile.name, customer=customer or None, service_type=service_type, price_list=price_list
 	)
 	now = now_datetime()
 	doc.update(
 		{
 			"vunapos_restaurant": profile.vunapos_restaurant,
+			"vunapos_restaurant_session": restaurant_session,
 			"vunapos_restaurant_table": table,
 			"vunapos_pax": _clean_pax(pax),
 			"vunapos_order_note": _clean_note(order_note, _("Order note")),
@@ -544,9 +579,9 @@ def create_order(
 				"vunapos_added_at": now,
 			}
 		)
-	_apply_header_pricing(doc, profile)
+	_apply_header_pricing(doc, profile, price_list)
 	_apply_sales_order_delivery_date(doc, None)
-	_recalculate(doc, profile)
+	_recalculate(doc, profile, price_list)
 	# ERPNext may populate child dates during recalculation; keep today.
 	_apply_sales_order_delivery_date(doc, None)
 	doc.insert()
@@ -587,6 +622,7 @@ def update_order(order, service_type=None, table=None, customer=None, pax=None, 
 	customer re-prices every line; lines are not re-checked against the menu.
 	"""
 	doc, profile = _load_open_order(order)
+	_require_editable_round(doc)
 	new_service_type = doc.vunapos_service_type if service_type is None else service_type
 	service_type_row = resolve_service_type(profile, new_service_type)
 	service_type_changed = new_service_type != doc.vunapos_service_type
@@ -615,6 +651,7 @@ def update_order(order, service_type=None, table=None, customer=None, pax=None, 
 
 def add_items(order, items):
 	doc, profile = _load_open_order(order)
+	_require_editable_round(doc)
 	if not _parse_list(items):
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
 	lines = _new_lines(items, {line_id(row) for row in doc.get("items")})
@@ -635,6 +672,7 @@ def add_items(order, items):
 
 def update_item(order, line_id, qty=None, note=None):
 	doc, profile = _load_open_order(order)
+	_require_editable_round(doc)
 	row = _find_line(doc, line_id)
 	if note is not None:
 		note = _clean_note(note, _("Item note"))
@@ -660,6 +698,7 @@ def update_item(order, line_id, qty=None, note=None):
 
 def remove_item(order, line_id, manager_pin_token=None):
 	doc, profile = _load_open_order(order)
+	_require_editable_round(doc)
 	row = _find_line(doc, line_id)
 	if len(doc.get("items")) == 1:
 		# A submitted Sales Order cannot be left without lines.
@@ -747,6 +786,11 @@ def checkout_order(
 	lines, so ERPNext marks the order billed.
 	"""
 	doc, order_profile = _load_order(order, for_update=True)
+	if doc.get("vunapos_restaurant_session"):
+		_throw(
+			"SESSION_SETTLEMENT_REQUIRED",
+			_("This round belongs to a Restaurant Session. Bill the complete session, not a single round."),
+		)
 	billing_profile = _billing_profile(order_profile, pos_profile)
 	idempotency_key = cstr(idempotency_key).strip() or None
 	if order_status(doc) == ORDER_STATUS_BILLED:
@@ -860,7 +904,9 @@ def get_table_status(pos_profile=None):
 	for row in frappe.get_all(
 		ORDER_DOCTYPE,
 		filters=_open_order_filters(
-			vunapos_restaurant=profile.vunapos_restaurant, vunapos_restaurant_table=["is", "set"]
+			vunapos_restaurant=profile.vunapos_restaurant,
+			vunapos_restaurant_table=["is", "set"],
+			vunapos_restaurant_session=["is", "not set"],
 		),
 		fields=[
 			"name",
@@ -882,13 +928,21 @@ def get_table_status(pos_profile=None):
 				"opened_at": row.vunapos_opened_at,
 			}
 		)
+	from vunapos.services.restaurant_session_service import list_sessions
+
+	sessions_by_table = {
+		table.table: session for session in list_sessions(profile.name) for table in session.tables
+	}
 	return [
 		{
 			"table": table.name,
 			"table_label": table.table_label,
 			"floor": table.floor,
 			"seats": cint(table.seats),
-			"status": "Occupied" if orders_by_table.get(table.name) else "Free",
+			"status": "Occupied"
+			if orders_by_table.get(table.name) or table.name in sessions_by_table
+			else "Free",
+			"session": sessions_by_table.get(table.name),
 			"orders": orders_by_table.get(table.name, []),
 		}
 		for table in tables

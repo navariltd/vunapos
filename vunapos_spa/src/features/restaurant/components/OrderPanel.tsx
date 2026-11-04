@@ -23,11 +23,12 @@ type OrderPanelProps = {
   readOnly: boolean;
   onChange: (update: (draft: OrderDraft) => OrderDraft) => void;
   onChangeContext?: () => void;
+  hideContext?: boolean;
 };
 
 // The order: where it is, who for, and its lines. Sent lines can only go up in
 // quantity (lowering removes items, stage 2); unsent lines are fully editable.
-export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChangeContext }: OrderPanelProps) {
+export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChangeContext, hideContext }: OrderPanelProps) {
   const header = effectiveHeader(draft);
   const sent = draft.order?.items ?? [];
   // Only before the first save; stage 1 has no switch on a saved order.
@@ -48,7 +49,7 @@ export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChang
         ) : null}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
+      {!hideContext ? <div className="grid grid-cols-1 gap-3 sm:grid-cols-[auto_minmax(0,1fr)]">
         <div>
           <span className="mb-1 block text-xs font-medium text-on-surface-variant">Guests</span>
           <div className="flex items-center gap-1">
@@ -89,7 +90,7 @@ export function OrderPanel({ draft, rates, currency, readOnly, onChange, onChang
             onClear={() => onChange((current) => setHeader(current, { customer: null, customer_name: null }))}
           />
         </div>
-      </div>
+      </div> : null}
 
       <label className="block">
         <span className="mb-1 block text-xs font-medium text-on-surface-variant">Order note</span>

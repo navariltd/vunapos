@@ -9,8 +9,8 @@ type HeldInvoicesPanelProps = {
   currency?: string;
   heldInvoices?: HeldInvoiceDTO[];
   isLoading?: boolean;
-  onEdit: (invoice: HeldInvoiceDTO) => void;
-  onCheckout: (invoice: HeldInvoiceDTO) => void;
+  onEdit?: (invoice: HeldInvoiceDTO) => void;
+  onCheckout?: (invoice: HeldInvoiceDTO) => void;
 };
 
 function formatModified(value?: string) {
@@ -51,7 +51,7 @@ export function HeldInvoicesPanel({
                 <th>Customer</th>
                 <th>Held at</th>
                 <th>Total</th>
-                <th className="px-4 text-right">Actions</th>
+                {onEdit || onCheckout ? <th className="px-4 text-right">Actions</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -101,18 +101,18 @@ export function HeldInvoicesPanel({
                   <td className="font-medium">
                     {formatCurrency(invoice.total ?? invoice.rounded_total ?? invoice.grand_total, invoice.currency || currency)}
                   </td>
-                  <td className="px-4 text-right">
+                  {onEdit || onCheckout ? <td className="px-4 text-right">
                     <div className="flex justify-end gap-1">
-                      <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(invoice)}>
+                      {onEdit ? <Button type="button" size="sm" variant="ghost" onClick={() => onEdit(invoice)}>
                         <Pencil className="mr-1 size-4" />
                         Edit
-                      </Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => onCheckout(invoice)}>
+                      </Button> : null}
+                      {onCheckout ? <Button type="button" size="sm" variant="secondary" onClick={() => onCheckout(invoice)}>
                         <ShoppingCart className="mr-1 size-4" />
                         Checkout
-                      </Button>
+                      </Button> : null}
                     </div>
-                  </td>
+                  </td> : null}
                 </tr>
               ))}
             </tbody>

@@ -11,6 +11,7 @@ import {
   navigateToPosPage,
   replacePosPage,
   useNavigationStore,
+  navigateToRestaurantSession,
 } from "../../../lib/stores/navigationStore";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import type { ItemDTO } from "../../pos/types";
@@ -24,6 +25,7 @@ import { newId } from "../ids";
 import {
   addMenuItem,
   draftSubtotal,
+  effectiveHeader,
   hasPendingChanges,
   itemQuantities,
   setContext,
@@ -58,7 +60,7 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
   const [preview, setPreview] = useState<OrderPreviewDTO | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const menu = useMenu(posProfile, draft?.service_type, draft?.table);
+  const menu = useMenu(posProfile, draft?.service_type, draft?.table, draft ? effectiveHeader(draft).customer : null);
   const { save, load, preview: loadPreview, saving, error, clearError } = useOrderActions({ onMenuChanged: menu.reload });
 
   // A saved order comes from the server (deep link or reload). A new one exists
@@ -73,7 +75,8 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
     if (!needsLoad) return;
     let active = true;
     load(orderName)
-      .then(() => {
+      .then((loaded) => {
+        if (active && loaded.restaurant_session) navigateToRestaurantSession(loaded.restaurant_session, { replace: true });
         if (active) setLoadError(null);
       })
       .catch((caught: unknown) => {

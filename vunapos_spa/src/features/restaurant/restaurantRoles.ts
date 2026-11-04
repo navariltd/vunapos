@@ -12,9 +12,26 @@ export function restaurantRoleLabel(roles?: string[] | null) {
   return labels.length ? labels.join(" · ") : "VunaPOS user";
 }
 
-// Restaurant pages a user may open. Close Shift is for cashiers only; any
-// other page (including retail URLs) falls back to the floor.
-export function isRestaurantPageAllowed(page: POSPage, canTakePayment: boolean) {
+// Shared pages remain available in restaurant mode, subject to profile feature
+// switches. Close Shift is cashier-only; backend document permissions still apply.
+export function isRestaurantPageAllowed(
+  page: POSPage,
+  canTakePayment: boolean,
+  features?: {
+    allowCustomerPayments?: boolean;
+    allowCustomerManagement?: boolean;
+  }
+) {
   if (page === "Close Shift") return canTakePayment;
-  return ["Floor", "Floor Editor", "Orders", "Order", "Profile"].includes(page);
+  if (page === "Payments") return features?.allowCustomerPayments !== false;
+  if (page === "Customers") return features?.allowCustomerManagement !== false;
+  return [
+    "Home",
+    "Floor",
+    "Floor Editor",
+    "Orders",
+    "Order",
+    "Profile",
+    "Invoices",
+  ].includes(page);
 }

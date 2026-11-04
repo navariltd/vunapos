@@ -22,7 +22,7 @@ describe("restaurantRoleLabel", () => {
 
 describe("isRestaurantPageAllowed", () => {
 	it("allows the floor, order pages and Profile to everyone", () => {
-		for (const page of ["Floor", "Floor Editor", "Orders", "Order", "Profile"] as const) {
+		for (const page of ["Home", "Floor", "Floor Editor", "Orders", "Order", "Profile"] as const) {
 			expect(isRestaurantPageAllowed(page, false)).toBe(true);
 		}
 	});
@@ -32,9 +32,16 @@ describe("isRestaurantPageAllowed", () => {
 		expect(isRestaurantPageAllowed("Close Shift", false)).toBe(false);
 	});
 
-	it("sends retail pages back to the floor", () => {
-		for (const page of ["Home", "Invoices", "Payments", "Customers"] as const) {
-			expect(isRestaurantPageAllowed(page, true)).toBe(false);
+	it("allows shared pages in restaurant mode", () => {
+		for (const page of ["Invoices", "Payments", "Customers"] as const) {
+			expect(isRestaurantPageAllowed(page, true)).toBe(true);
 		}
+	});
+
+	it("blocks disabled profile features even on direct navigation", () => {
+		const features = { allowCustomerPayments: false, allowCustomerManagement: false };
+		expect(isRestaurantPageAllowed("Payments", true, features)).toBe(false);
+		expect(isRestaurantPageAllowed("Customers", true, features)).toBe(false);
+		expect(isRestaurantPageAllowed("Invoices", true, features)).toBe(true);
 	});
 });

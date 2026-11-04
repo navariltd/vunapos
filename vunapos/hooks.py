@@ -152,12 +152,14 @@ permission_query_conditions = {
 	"Restaurant": "vunapos.restaurant_permissions.query_conditions",
 	"Restaurant Floor": "vunapos.restaurant_permissions.floor_conditions",
 	"Restaurant Table": "vunapos.restaurant_permissions.table_conditions",
+	"Restaurant Session": "vunapos.restaurant_permissions.session_conditions",
 	"Sales Order": "vunapos.restaurant_permissions.order_conditions",
 }
 has_permission = {
 	"Restaurant": "vunapos.restaurant_permissions.has_permission",
 	"Restaurant Floor": "vunapos.restaurant_permissions.related_has_permission",
 	"Restaurant Table": "vunapos.restaurant_permissions.related_has_permission",
+	"Restaurant Session": "vunapos.restaurant_permissions.related_has_permission",
 	"Sales Order": "vunapos.restaurant_permissions.related_has_permission",
 }
 
@@ -200,6 +202,9 @@ doc_events["POS Profile"] = {
 }
 doc_events["Branch"] = {
 	"validate": "vunapos.services.restaurant_service.validate_branch_doc",
+}
+doc_events["Sales Order"] = {
+	"before_update_after_submit": "vunapos.services.restaurant_session_service.protect_committed_round",
 }
 # Stock and tracking changes do not publish POS configuration events, but they
 # must invalidate cached catalogue balances immediately.

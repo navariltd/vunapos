@@ -116,6 +116,7 @@ export type TableOrderRefDTO = {
 };
 
 export type TableStatusDTO = {
+	session?: RestaurantSessionSummaryDTO | null;
 	table: string;
 	table_label: string;
 	floor: string;
@@ -130,6 +131,8 @@ export type RestaurantOrderLineDTO = {
 	item_name: string;
 	qty: number;
 	uom: string;
+	rate?: number;
+	amount?: number;
 	note: string | null;
 	added_by: string;
 	added_at: string;
@@ -138,6 +141,8 @@ export type RestaurantOrderLineDTO = {
 export type RestaurantOrderStatus = "Open" | "Billed" | "Cancelled";
 
 export type RestaurantOrderDTO = {
+	restaurant_session?: string | null;
+	grand_total?: number;
 	name: string;
 	status: RestaurantOrderStatus;
 	pos_profile: string;
@@ -160,6 +165,7 @@ export type RestaurantOrderDTO = {
 export type RestaurantOrderSummaryDTO = Pick<
 	RestaurantOrderDTO,
 	| "name"
+	| "restaurant_session"
 	| "status"
 	| "service_type"
 	| "table"
@@ -173,6 +179,21 @@ export type RestaurantOrderSummaryDTO = Pick<
 	| "invoice"
 	| "modified"
 >;
+
+export type RestaurantSessionSummaryDTO = {
+	name: string; customer: string; waiter: string; waiter_name: string | null;
+	guest_count: number; opened_at: string; service_type: string; modified: string;
+	tables: Array<{ table: string; table_label: string }>;
+};
+
+export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> & {
+	pos_profile: string; restaurant: string; branch: string; company: string;
+	selling_price_list?: string | null; currency?: string | null;
+	available_waiters?: Array<{ name: string; full_name: string }>;
+	status: "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
+	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
+	rounds: RestaurantOrderDTO[];
+};
 
 export type OrderLineInput = { item_code: string; qty: number; uom?: string; note?: string; line_id: string };
 

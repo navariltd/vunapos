@@ -127,6 +127,19 @@ export function getOrderFromPath(pathname = window.location.pathname): string | 
 	return match ? decodeURIComponent(match[1]) : null;
 }
 
+export function navigateToRestaurantSession(session: string, { replace = false } = {}) {
+	if (!replace && navigationGuard && !navigationGuard("Order")) return;
+	const path = `/vunapos/order/session/${encodeURIComponent(session)}`;
+	if (replace) window.history.replaceState({ vunaposPage: "Order", session }, "", path);
+	else window.history.pushState({ vunaposPage: "Order", session }, "", path);
+	useNavigationStore.getState().setActivePage("Order");
+}
+
+export function getRestaurantSessionFromPath(pathname: string): string | null {
+	const match = pathname.match(/^\/vunapos\/order\/session\/([^/]+)\/?$/);
+	return match ? decodeURIComponent(match[1]) : null;
+}
+
 export function getCustomerFromPath(pathname = window.location.pathname): string | null {
 	const match = pathname.match(/^\/vunapos\/customers\/([^/]+)\/?$/);
 	return match ? decodeURIComponent(match[1]) : null;

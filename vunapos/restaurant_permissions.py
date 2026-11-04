@@ -35,6 +35,10 @@ def table_conditions(user=None):
 	return _related_conditions("Restaurant Table", "restaurant", user)
 
 
+def session_conditions(user=None):
+	return _related_conditions("Restaurant Session", "restaurant", user)
+
+
 def order_conditions(user=None):
 	# Do not affect ordinary retail Sales Orders.
 	if not frappe.has_permission("Restaurant", "read", user=user or frappe.session.user):

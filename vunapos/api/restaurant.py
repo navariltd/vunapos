@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import frappe
 
-from vunapos.services import restaurant_order_service
+from vunapos.services import restaurant_order_service, restaurant_session_service
 from vunapos.services.floor_plan_service import get_floor_plan as get_floor_plan_service
 from vunapos.services.floor_plan_service import save_floor_plan as save_floor_plan_service
 from vunapos.services.menu_service import get_menu as get_menu_service
@@ -36,6 +36,85 @@ def _failure_from_exception(exc):
 		code=getattr(exc, "vuna_error_code", exc.__class__.__name__),
 		meta=getattr(exc, "vuna_error_meta", None),
 	)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def open_session(
+	pos_profile: str,
+	idempotency_key: str,
+	tables: list | str | None = None,
+	service_type: str | None = None,
+	customer: str | None = None,
+	guest_count: int = 0,
+):
+	try:
+		return success(
+			restaurant_session_service.open_session(
+				pos_profile, idempotency_key, tables, service_type, customer, guest_count
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_session(session: str):
+	try:
+		return success(restaurant_session_service.get_session(session))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def list_sessions(pos_profile: str):
+	try:
+		return success(restaurant_session_service.list_sessions(pos_profile))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def update_session(
+	session: str,
+	tables: list | str | None = None,
+	guest_count: int | None = None,
+	customer: str | None = None,
+	waiter: str | None = None,
+):
+	try:
+		return success(
+			restaurant_session_service.update_session(session, tables, guest_count, customer, waiter)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def cancel_empty_session(session: str):
+	try:
+		return success(restaurant_session_service.cancel_empty_session(session))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def create_session_round(
+	session: str,
+	items: list | str,
+	idempotency_key: str,
+	order_note: str | None = None,
+	pos_profile: str | None = None,
+):
+	try:
+		return success(
+			restaurant_session_service.create_round(session, items, idempotency_key, order_note, pos_profile)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
 
 
 @frappe.whitelist()

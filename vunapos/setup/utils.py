@@ -827,6 +827,17 @@ def ensure_vunapos_custom_fields():
 	for invoice_doctype in ("Sales Invoice", "POS Invoice"):
 		custom_fields[invoice_doctype].extend(_restaurant_invoice_fields())
 	custom_fields["Sales Order"].extend(_restaurant_order_fields())
+	custom_fields["Sales Order"].append(
+		{
+			"fieldname": "vunapos_restaurant_session",
+			"label": "Restaurant Session",
+			"fieldtype": "Link",
+			"options": "Restaurant Session",
+			"read_only": 1,
+			"insert_after": "vunapos_restaurant",
+			"search_index": 1,
+		}
+	)
 	custom_fields["Sales Order Item"] = _restaurant_order_item_fields()
 	create_custom_fields(custom_fields, ignore_validate=True)
 	from vunapos.services.restaurant_service import backfill_branch_companies

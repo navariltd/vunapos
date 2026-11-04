@@ -21,21 +21,28 @@ describe("retail navigation", () => {
 });
 
 describe("restaurant navigation", () => {
-	it("shows Floor and Orders in the main navigation for everyone", () => {
-		expect(labels(sidebarItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor", "Orders"]);
-		expect(labels(sidebarItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Floor", "Orders"]);
-		expect(labels(sidebarItems(undefined, "Restaurant"))).toEqual(["Floor", "Orders"]);
+	it("shares Sales History, Payments and Customers with retail", () => {
+		const expected = ["Home", "Orders", "Invoices", "Payments", "Customers"];
+		expect(labels(sidebarItems({ canTakePayment: true }, "Restaurant"))).toEqual([...expected, "Close Shift"]);
+		expect(labels(sidebarItems({ canTakePayment: false }, "Restaurant"))).toEqual(expected);
+		expect(labels(sidebarItems(undefined, "Restaurant"))).toEqual(expected);
 	});
 
-	it("puts Close Shift at the bottom of the sidebar, for cashiers only", () => {
-		expect(labels(sidebarFooterItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Close Shift"]);
-		expect(sidebarFooterItems({ canTakePayment: false }, "Restaurant")).toEqual([]);
-		expect(sidebarFooterItems(undefined, "Restaurant")).toEqual([]);
+	it("keeps only Floor below Collapse, regardless of cashier access", () => {
+		expect(labels(sidebarFooterItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor"]);
+		expect(labels(sidebarFooterItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Floor"]);
+		expect(labels(sidebarFooterItems(undefined, "Restaurant"))).toEqual(["Floor"]);
 	});
 
-	it("gives cashiers a fourth bottom nav item for Close Shift; waiters keep three", () => {
-		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Floor", "Orders", "Close Shift", "Profile"]);
-		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Floor", "Orders", "Profile"]);
+	it("keeps all shared and secondary pages reachable on mobile", () => {
+		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Home", "Orders", "Invoices", "Payments", "Customers", "Close Shift", "Floor", "Profile"]);
+		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Home", "Orders", "Invoices", "Payments", "Customers", "Floor", "Profile"]);
+	});
+
+	it("respects profile feature switches without hiding Floor", () => {
+		const features = { allowCustomerPayments: false, allowCustomerManagement: false };
+		expect(labels(sidebarItems(features, "Restaurant"))).toEqual(["Home", "Orders", "Invoices"]);
+		expect(labels(sidebarFooterItems(features, "Restaurant"))).toEqual(["Floor"]);
 	});
 
 	it("keeps Orders highlighted on the order screen, which is not a nav item itself", () => {

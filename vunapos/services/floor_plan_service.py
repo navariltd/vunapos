@@ -171,7 +171,7 @@ def _throw_duplicate_floor_name(floor_name):
 def _throw_duplicate_table_label(table_label):
 	_throw(
 		"DUPLICATE_TABLE_LABEL",
-		_("Table label {0} is already used in this POS Profile").format(table_label),
+		_("Table label {0} is already used on this floor").format(table_label),
 		{"table_label": table_label},
 	)
 
@@ -236,7 +236,7 @@ def validate_table_doc(doc):
 	key = _label_key(doc.table_label)
 	for row in frappe.get_all(
 		TABLE_DOCTYPE,
-		filters={"restaurant": doc.restaurant, "name": ["!=", doc.name or ""]},
+		filters={"restaurant": doc.restaurant, "floor": doc.floor, "name": ["!=", doc.name or ""]},
 		fields=["table_label"],
 	):
 		if _label_key(row.table_label) == key:
@@ -405,9 +405,9 @@ def _validate_payload(payload, restaurant, existing_floors, existing_tables):
 	"""Validate the complete layout before any write happens."""
 	floors = []
 	floor_names = set()
-	table_labels = set()
 	seen = {"floor_names": set(), "floor_ids": set(), "table_names": set(), "table_ids": set()}
 	for floor_row in payload.get("floors") or []:
+		table_labels = set()
 		if not isinstance(floor_row, dict):
 			_throw("INVALID_FLOOR_PLAN", _("Each floor must be an object"))
 		name, client_id = _row_identity(

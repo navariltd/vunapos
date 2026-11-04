@@ -25,6 +25,7 @@ export type OrderHeader = {
 };
 
 export type OrderDraft = {
+	restaurant_session?: string;
 	order: RestaurantOrderDTO | null;
 	pos_profile: string;
 	service_type: string;
@@ -144,7 +145,7 @@ export function addMenuItem(
 ): OrderDraft {
 	// Taps on the same item add to its waiting line, unless that line has a note
 	// (a different instruction gets its own line).
-	const existing = draft.unsent.find((line) => line.item_code === item.item_code && !line.note);
+	const existing = draft.unsent.find((line) => line.item_code === item.item_code && line.uom === item.uom && !line.note);
 	if (existing) {
 		return setUnsentQty(draft, existing.line_id, existing.qty + 1);
 	}
