@@ -3,14 +3,55 @@ from erpnext.setup.utils import enable_all_roles_and_domains
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.utils import now_datetime
 
+POS_MODES = ("Retail", "Restaurant")
+DEFAULT_POS_MODE = "Retail"
+RESTAURANT_MANAGER_ROLE = "VunaPOS Restaurant Manager"
+
+
+def ensure_vunapos_roles():
+	if frappe.db.exists("Role", RESTAURANT_MANAGER_ROLE):
+		return
+	frappe.get_doc(
+		{
+			"doctype": "Role",
+			"role_name": RESTAURANT_MANAGER_ROLE,
+			"desk_access": 1,
+		}
+	).insert(ignore_permissions=True)
+
 
 def ensure_vunapos_custom_fields():
 	for fieldname in ("vunapos_allow_delivery_items", "vunapos_delivery_item", "vunapos_apply_workflow"):
 		custom_field = f"POS Profile-{fieldname}"
 		if frappe.db.exists("Custom Field", custom_field):
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
+	ensure_vunapos_roles()
 	custom_fields = {
 		"POS Profile": [
+			{
+				"fieldname": "vunapos_pos_mode_section",
+				"label": "POS Mode",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_tab",
+			},
+			{
+				"fieldname": "vunapos_pos_mode",
+				"label": "POS Mode",
+				"fieldtype": "Select",
+				"options": "\n".join(POS_MODES),
+				"default": DEFAULT_POS_MODE,
+				"reqd": 1,
+				"insert_after": "vunapos_pos_mode_section",
+				"description": "Choose the VunaPOS interface for this profile. Restaurant enables floor plans and table service.",
+			},
+			{
+				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
+				# stays first in the VunaPOS tab after a customisation sync.
+				"fieldname": "vunapos_sales_section",
+				"label": "Sales Settings",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_pos_mode",
+			},
 			{
 				"fieldname": "vunapos_home_screen_section",
 				"label": "Mobile Settings",

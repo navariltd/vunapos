@@ -1,6 +1,16 @@
 import { create } from "zustand";
 
-export type POSPage = "Home" | "Invoices" | "Payments" | "Customers" | "Close Shift" | "Profile";
+export type POSPage =
+	| "Home"
+	| "Invoices"
+	| "Payments"
+	| "Customers"
+	| "Close Shift"
+	| "Profile"
+	| "Floor"
+	| "Floor Editor";
+
+export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor"];
 
 const PAGE_PATHS: Record<POSPage, string> = {
 	Home: "/vunapos",
@@ -9,6 +19,8 @@ const PAGE_PATHS: Record<POSPage, string> = {
 	Customers: "/vunapos/customers",
 	"Close Shift": "/vunapos/close-shift",
 	Profile: "/vunapos/profile",
+	Floor: "/vunapos/floor",
+	"Floor Editor": "/vunapos/floor/edit",
 };
 
 const PATH_PAGES = new Map(Object.entries(PAGE_PATHS).map(([page, path]) => [path, page as POSPage]));
@@ -46,7 +58,18 @@ export const useNavigationStore = create<NavigationStore>((set) => ({
 	}),
 }));
 
+// Returns false to stop a navigation, e.g. while the floor editor has unsaved
+// changes. The guard is expected to ask the user and navigate again itself.
+export type NavigationGuard = (page: POSPage) => boolean;
+
+let navigationGuard: NavigationGuard | null = null;
+
+export function setNavigationGuard(guard: NavigationGuard | null) {
+	navigationGuard = guard;
+}
+
 export function navigateToPosPage(page: POSPage) {
+	if (navigationGuard && !navigationGuard(page)) return;
 	const path = getPosPagePath(page);
 	if (window.location.pathname !== path || window.location.hash) {
 		window.history.pushState({ vunaposPage: page }, "", path);
@@ -96,7 +119,13 @@ export function navigateToCustomerPayment(customer: string, invoice?: string) {
 
 export function initPosNavigation() {
 	const syncFromLocation = () => {
-		useNavigationStore.getState().setActivePage(getPosPageFromPath(window.location.pathname));
+		const page = getPosPageFromPath(window.location.pathname);
+		if (navigationGuard && !navigationGuard(page)) {
+			// The browser has already moved; put the guarded page back in the address bar.
+			window.history.pushState({ vunaposPage: useNavigationStore.getState().activePage }, "", useNavigationStore.getState().currentPath);
+			return;
+		}
+		useNavigationStore.getState().setActivePage(page);
 	};
 	window.addEventListener("popstate", syncFromLocation);
 	return () => window.removeEventListener("popstate", syncFromLocation);
