@@ -32,10 +32,47 @@ def _atomic_write(fn):
 
 def _failure_from_exception(exc):
 	return failure(
-		str(exc),
+		frappe.utils.strip_html(str(exc)),
 		code=getattr(exc, "vuna_error_code", exc.__class__.__name__),
 		meta=getattr(exc, "vuna_error_meta", None),
 	)
+
+
+@frappe.whitelist(methods=["POST"])
+def validate_cart(
+	pos_profile: str,
+	service_type: str,
+	items: list | str,
+	table: str | None = None,
+	customer: str | None = None,
+	kitchen_routing: dict | str | None = None,
+	price_list: str | None = None,
+):
+	from vunapos.services.restaurant_stock_service import validate_cart as validate
+
+	try:
+		return success(
+			validate(pos_profile, service_type, items, table, customer, kitchen_routing, price_list)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def preview_cart(
+	pos_profile: str,
+	service_type: str,
+	items: list | str,
+	table: str | None = None,
+	customer: str | None = None,
+	price_list: str | None = None,
+):
+	from vunapos.services.restaurant_stock_service import preview_cart as preview
+
+	try:
+		return success(preview(pos_profile, service_type, items, table, customer, price_list))
+	except Exception as exc:
+		return _failure_from_exception(exc)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -62,6 +99,16 @@ def open_session(
 def get_session(session: str):
 	try:
 		return success(restaurant_session_service.get_session(session))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def get_kitchen_ticket(ticket: str):
+	from vunapos.services.kitchen_service import get_ticket
+
+	try:
+		return success(get_ticket(ticket))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
@@ -108,10 +155,13 @@ def create_session_round(
 	idempotency_key: str,
 	order_note: str | None = None,
 	pos_profile: str | None = None,
+	kitchen_routing: dict | str | None = None,
 ):
 	try:
 		return success(
-			restaurant_session_service.create_round(session, items, idempotency_key, order_note, pos_profile)
+			restaurant_session_service.create_round(
+				session, items, idempotency_key, order_note, pos_profile, kitchen_routing
+			)
 		)
 	except Exception as exc:
 		return _failure_from_exception(exc)

@@ -997,6 +997,17 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 		attributes.setdefault(row.parent, []).append(
 			{"attribute": row.attribute, "value": row.attribute_value}
 		)
+	variant_items = [
+		{
+			**_to_item_payload(row.name, profile, price_list=price_list),
+			"attributes": attributes.get(row.name, []),
+		}
+		for row in variants
+	]
+	if profile.get("vunapos_pos_mode") == "Restaurant" and profile.get("vunapos_restaurant"):
+		from vunapos.services.kitchen_service import classify_items
+
+		classify_items(profile.vunapos_restaurant, variant_items)
 	return {
 		"template": {
 			"item_code": template.name,
@@ -1004,11 +1015,5 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 			"description": template.description,
 			"variant_based_on": template.variant_based_on,
 		},
-		"variants": [
-			{
-				**_to_item_payload(row.name, profile, price_list=price_list),
-				"attributes": attributes.get(row.name, []),
-			}
-			for row in variants
-		],
+		"variants": variant_items,
 	}

@@ -98,6 +98,7 @@ def _load(session, for_update=False):
 def session_to_dict(doc):
 	from vunapos.dto.restaurant import order_to_dict, waiter_name
 	from vunapos.services.floor_plan_service import is_floor_plan_manager
+	from vunapos.services.kitchen_service import session_tickets
 
 	available_waiters = []
 	if is_floor_plan_manager():
@@ -133,6 +134,7 @@ def session_to_dict(doc):
 		"waiter_name": waiter_name(doc.waiter),
 		"guest_count": cint(doc.guest_count),
 		"status": doc.status,
+		"kitchen_tickets": session_tickets(doc),
 		"opened_at": doc.opened_at,
 		"modified": doc.modified,
 		"tables": [
@@ -322,7 +324,7 @@ def get_session(session):
 	return session_to_dict(_load(session))
 
 
-def create_round(session, items, idempotency_key, order_note=None, pos_profile=None):
+def create_round(session, items, idempotency_key, order_note=None, pos_profile=None, kitchen_routing=None):
 	from vunapos.services.restaurant_order_service import create_order
 
 	doc = _load(session, for_update=True)
@@ -347,6 +349,7 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 		idempotency_key=idempotency_key,
 		restaurant_session=doc.name,
 		price_list=doc.get("selling_price_list"),
+		kitchen_routing=kitchen_routing,
 	)
 
 
@@ -399,6 +402,8 @@ def protect_committed_round(doc, method=None):
 		"vunapos_item_note",
 		"vunapos_modifiers",
 		"vunapos_parent_line_id",
+		"vunapos_kitchen_station",
+		"vunapos_temporary_kitchen_routing",
 	)
 	old_lines = [tuple(row.get(field) for field in line_fields) for row in before.items]
 	new_lines = [tuple(row.get(field) for field in line_fields) for row in doc.items]

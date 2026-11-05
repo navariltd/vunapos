@@ -361,7 +361,10 @@ def _require_editable_round(doc):
 		or any(row.get("vunapos_parent_line_id") for row in doc.get("items") or [])
 	) and doc.docstatus == 1:
 		_throw(
-			"ROUND_ALREADY_COMMITTED", _("This round has been sent. Create a new round for additional items.")
+			"ROUND_ALREADY_COMMITTED",
+			_(
+				"This order is already placed. Add additional items from the POS catalogue and place a new order."
+			),
 		)
 
 
@@ -536,6 +539,7 @@ def create_order(
 	idempotency_key=None,
 	restaurant_session=None,
 	price_list=None,
+	kitchen_routing=None,
 ):
 	idempotency_key = cstr(idempotency_key).strip() or None
 	if idempotency_key:
@@ -573,6 +577,12 @@ def create_order(
 	if not lines:
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
 	_validate_lines(profile, service_type, table, lines, price_list=price_list, customer=customer)
+	if restaurant_session:
+		from vunapos.services.kitchen_service import route_lines
+		from vunapos.services.restaurant_stock_service import plan_stock
+
+		route_lines(profile.vunapos_restaurant, lines, kitchen_routing)
+		plan_stock(profile, lines)
 
 	doc, profile = _build_sales_order_doc(
 		pos_profile=profile.name, customer=customer or None, service_type=service_type, price_list=price_list
@@ -606,17 +616,35 @@ def create_order(
 				"vunapos_line_id": line.line_id,
 				"vunapos_added_by": frappe.session.user,
 				"vunapos_added_at": now,
+				"vunapos_kitchen_station": line.get("routed_station"),
+				"vunapos_temporary_kitchen_routing": cint(line.get("temporary_routing")),
 				"vunapos_modifiers": line.get("modifiers_snapshot"),
 				"vunapos_parent_line_id": line.get("parent_line_id"),
 			}
 		)
+		# Add-ons travel with the prepared parent, but remain separate stock
+		# lines (and are never counted again as BOM ingredients).
+		if restaurant_session and line.get("parent_line_id") and line.get("routed_station"):
+			row.warehouse = (
+				frappe.get_cached_value("Kitchen Station", line.routed_station, "raw_material_warehouse")
+				or profile.warehouse
+			)
 	_apply_header_pricing(doc, profile, price_list)
 	_apply_sales_order_delivery_date(doc, None)
 	_recalculate(doc, profile, price_list)
 	# ERPNext may populate child dates during recalculation; keep today.
 	_apply_sales_order_delivery_date(doc, None)
 	doc.insert()
-	doc.submit()
+	# ERPNext's global auto-reserve option must not reserve finished goods for
+	# made-to-order rows before their Work Orders have produced them.
+	if restaurant_session:
+		doc.reserve_stock = 0
+	previous_routing = frappe.flags.get("vunapos_kitchen_routing")
+	try:
+		frappe.flags.vunapos_kitchen_routing = kitchen_routing
+		doc.submit()
+	finally:
+		frappe.flags.vunapos_kitchen_routing = previous_routing
 	return order_to_dict(doc)
 
 

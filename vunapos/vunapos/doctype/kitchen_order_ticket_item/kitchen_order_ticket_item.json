@@ -1,0 +1,125 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Order Ticket Item",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": [
+  "sales_order_item",
+  "work_order",
+  "line_id",
+  "parent_line_id",
+  "item_code",
+  "item_name",
+  "qty",
+  "uom",
+  "conversion_factor",
+  "stock_qty",
+  "stock_uom",
+  "note",
+  "modifiers",
+  "temporary_routing"
+ ],
+ "fields": [
+  {
+   "fieldname": "work_order",
+   "label": "Work Order",
+   "fieldtype": "Link",
+   "options": "Work Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sales_order_item",
+   "label": "Sales Order Item",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "line_id",
+   "label": "Line ID",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "parent_line_id",
+   "label": "Add-on Parent Line",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_code",
+   "label": "Item",
+   "fieldtype": "Link",
+   "options": "Item",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "item_name",
+   "label": "Item Name",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "qty",
+   "label": "Quantity",
+   "fieldtype": "Float",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "uom",
+   "label": "Selling UOM",
+   "fieldtype": "Link",
+   "options": "UOM",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "conversion_factor",
+   "label": "Conversion Factor",
+   "fieldtype": "Float",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_qty",
+   "label": "Stock Quantity",
+   "fieldtype": "Float",
+   "read_only": 1
+  },
+  {
+   "fieldname": "stock_uom",
+   "label": "Stock UOM",
+   "fieldtype": "Link",
+   "options": "UOM",
+   "read_only": 1
+  },
+  {
+   "fieldname": "note",
+   "label": "Preparation Note",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "modifiers",
+   "label": "Modifier Snapshot",
+   "fieldtype": "Long Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "temporary_routing",
+   "label": "Temporary Station Selection",
+   "fieldtype": "Check",
+   "read_only": 1
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "editable_grid": 1,
+ "sort_field": "idx",
+ "sort_order": "ASC"
+}

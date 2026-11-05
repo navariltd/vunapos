@@ -9,7 +9,7 @@ table, then no restriction (every sales item).
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from vunapos.services.floor_plan_service import TABLE_DOCTYPE, require_restaurant_profile
 from vunapos.services.item_service import search_items
@@ -244,7 +244,37 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 	from vunapos.services.modifier_service import menu_modifier_groups
 
 	modifier_groups = menu_modifier_groups(profile, menu, items, customer, price_list or service_price_list)
+	from vunapos.services.kitchen_service import classify_items
+
+	classify_items(profile.vunapos_restaurant, items)
+	from vunapos.services.sync_service import _get_tax_settings
+
+	service_pricing = get_service_type_pricing(profile, service_type)
+	tax_template = service_pricing["taxes_and_charges"] or profile.get("taxes_and_charges")
+	tax_rows = (
+		frappe.get_cached_doc("Sales Taxes and Charges Template", tax_template).taxes if tax_template else []
+	)
+	tax_settings = _get_tax_settings()
 	return {
+		"pricing_context": {
+			"tax_rows": [
+				{
+					"account_head": row.account_head,
+					"charge_type": row.charge_type,
+					"rate": flt(row.rate),
+					"included_in_print_rate": bool(row.included_in_print_rate),
+					"description": row.description,
+				}
+				for row in tax_rows
+			],
+			"tax_settings": {
+				"addTaxesFromItemTaxTemplate": tax_settings["add_taxes_from_item_tax_template"],
+				"addTaxesFromTaxesAndChargesTemplate": tax_settings[
+					"add_taxes_from_taxes_and_charges_template"
+				],
+			},
+			"item_prices_include_tax": bool(profile.get("item_prices_include_tax")),
+		},
 		"pos_profile": profile.name,
 		"service_type": service_type,
 		"table": table,

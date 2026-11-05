@@ -256,6 +256,7 @@ def menu_modifier_groups(profile, menu, items, customer=None, price_list=None):
 						"addon_qty": flt(option.addon_qty) if option.addon_item else 0,
 						"uom": uom,
 						"rate": rate,
+						"item_tax": item.get("item_tax"),
 						"available": not option.addon_item or (option.addon_item in priced and bool(item)),
 					}
 				)

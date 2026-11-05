@@ -968,6 +968,21 @@ def _restaurant_order_item_fields():
 	"""Restaurant order lines. `vunapos_item_note` has the same name as on invoice lines."""
 	return [
 		{
+			"fieldname": "vunapos_kitchen_station",
+			"label": "Kitchen Station",
+			"fieldtype": "Link",
+			"options": "Kitchen Station",
+			"read_only": 1,
+			"insert_after": "vunapos_parent_line_id",
+		},
+		{
+			"fieldname": "vunapos_temporary_kitchen_routing",
+			"label": "Temporary Kitchen Routing",
+			"fieldtype": "Check",
+			"read_only": 1,
+			"insert_after": "vunapos_kitchen_station",
+		},
+		{
 			"fieldname": "vunapos_modifiers",
 			"label": "Modifier Selections",
 			"fieldtype": "Long Text",
