@@ -32,7 +32,7 @@ controlled commands; saving or cancelling a ticket directly is still blocked.
    cashier roles retain the shared selling navigation.
 4. Optional Branch and Kitchen Station User Permissions limit accessible stations,
    tickets, commands and action audits. Without station restrictions, staff see the
-   permitted Restaurant's stations. Disabled stations remain visible for completing
+   permitted Restaurant and active profile Branch's stations. Disabled stations remain visible for completing
    previously placed tickets; they do not receive new QSR routing.
 5. Kitchens with native BOM operations/Job Cards, inspection requirements or manual
    serial/batch production setup must complete those native ERPNext prerequisites.
@@ -148,9 +148,10 @@ batches; KDS does not rewrite placed quantities or reprice submitted orders.
 
 ## Next phase
 
-Session billing/settlement remains separate: combine all placed batches into one
-bill, reuse checkout/payment handling, preserve source order and reservation links,
-and release tables after successful billing. Mark served already permits a ready
-ticket after future settlement, since serving does not manufacture or issue stock.
+Session billing/settlement is implemented separately in
+[Phase 6](phase-6-session-billing.md): combine placed batches into one bill, reuse
+checkout/payment handling, preserve source order and reservation links, and release
+tables after successful billing. Mark served permits a ready ticket after
+settlement, since serving does not manufacture or issue stock.
 This phase does not introduce split bills, delivery/aggregators, kitchen printing,
 seat/guest tracking or course firing.

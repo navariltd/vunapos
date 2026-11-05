@@ -33,6 +33,8 @@ preparation actions without being explicitly assigned kitchen duties.
 - Keep waiter progress visibility and Mark served behavior unchanged.
 - Preserve Restaurant, Branch and Kitchen Station permission restrictions.
 - Keep cancellation/manager approval policy separate from preparation permissions.
+- Retain the explicit POS Profile-controlled cashier completion during billing
+  as a separate scoped permission; it must not grant general KDS preparation actions.
 
 ### Decision to resolve
 

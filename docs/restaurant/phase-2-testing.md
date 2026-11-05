@@ -32,7 +32,7 @@ need their normal opening shift.
    assignments retain release timestamps and users in the Session document.
 7. Try assigning a table occupied by another session: the backend must reject it.
 8. In View rounds, a manager can reassign the waiter to another staff member assigned to the
-   same restaurant. Customer changes are blocked after the first submitted round.
+   same Restaurant and Branch. Customer changes are blocked after the first submitted round.
 9. A session created before a failed first-round request remains visible in Open
    Orders. It can be reopened and retried, or cancelled while empty to release
    its tables. A session with rounds cannot use this empty-session action.

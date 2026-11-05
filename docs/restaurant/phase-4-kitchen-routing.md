@@ -10,7 +10,7 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
 ## What this phase includes
 
 - Kitchen Station master linked to Restaurant, with Branch/Company derived from it.
-  A station name is unique within its Restaurant, not globally across branches.
+  A station name is unique within its Restaurant and Branch, not globally across branches.
 - Explicit Item Group routing, including descendant groups. Menu Sections/Courses
   organize the catalogue; they do not control kitchen routing.
 - One submitted Kitchen Order Ticket per station per submitted session round.
