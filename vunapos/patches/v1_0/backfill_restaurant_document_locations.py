@@ -52,14 +52,19 @@ def execute():
 		_stamp("Sales Order", name, location)
 	for doctype in ("Sales Invoice", "POS Invoice"):
 		# Restrict the scan to restaurant sessions and invoices referencing restaurant orders.
+		item = frappe.qb.DocType(f"{doctype} Item")
+		order = frappe.qb.DocType("Sales Order")
 		names = set(
 			frappe.get_all(doctype, filters={"vunapos_restaurant_session": ["is", "set"]}, pluck="name")
 		)
 		names.update(
-			frappe.db.sql(
-				f"SELECT DISTINCT i.parent FROM `tab{doctype} Item` i INNER JOIN `tabSales Order` o ON o.name=i.sales_order WHERE coalesce(o.vunapos_restaurant, '') != ''",
-				pluck=True,
-			)
+			frappe.qb.from_(item)
+			.inner_join(order)
+			.on(order.name == item.sales_order)
+			.select(item.parent)
+			.distinct()
+			.where(order.vunapos_restaurant.isnotnull() & (order.vunapos_restaurant != ""))
+			.run(pluck=True)
 		)
 		for name in sorted(names):
 			doc = frappe.get_doc(doctype, name)

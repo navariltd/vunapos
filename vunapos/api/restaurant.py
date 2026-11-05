@@ -52,7 +52,9 @@ def get_kitchen_board(pos_profile: str, station: str | None = None, history: int
 
 
 @frappe.whitelist()
-def preview_session_bill(session: str, pos_profile: str | None = None, loyalty_points=None):
+def preview_session_bill(
+	session: str, pos_profile: str | None = None, loyalty_points: int | str | None = None
+):
 	from vunapos.services.restaurant_billing_service import preview
 
 	try:
@@ -67,13 +69,13 @@ def checkout_session(
 	session: str,
 	pos_profile: str,
 	fingerprint: str,
-	payments=None,
-	is_credit_sale=False,
-	due_date=None,
-	loyalty_points=None,
-	tax_id=None,
-	shipping_address_name=None,
-	checkout_fields=None,
+	payments: list | str | None = None,
+	is_credit_sale: bool | int | str = False,
+	due_date: str | None = None,
+	loyalty_points: int | str | None = None,
+	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	checkout_fields: dict | str | None = None,
 ):
 	from vunapos.services.restaurant_billing_service import checkout
 

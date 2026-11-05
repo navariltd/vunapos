@@ -379,7 +379,7 @@ def generate_tickets(order, method=None):
 					"sales_order": order.name,
 					"pos_profile": profile.name,
 					"service_type": session.service_type,
-					"table_labels": ", ".join(filter(None, tables)),
+					"table_labels": ", ".join(table for table in tables if table),
 					"waiter": order.get("vunapos_waiter"),
 					"sent_by": frappe.session.user,
 					"sent_at": now_datetime(),
