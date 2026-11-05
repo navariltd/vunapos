@@ -48,14 +48,14 @@ export function VariantPickerDialog({
       }
       return result;
     },
-    {},
+    {}
   );
   const visibleVariants = variants.filter((variant) => {
     const matchesAttributes = Object.entries(selectedAttributes).every(
       ([attribute, value]) =>
         variant.attributes?.some(
-          (entry) => entry.attribute === attribute && entry.value === value,
-        ),
+          (entry) => entry.attribute === attribute && entry.value === value
+        )
     );
     if (!matchesAttributes) return false;
     if (!normalizedQuery) return true;
@@ -87,7 +87,10 @@ export function VariantPickerDialog({
       >
         <header className="flex items-start gap-3 border-b border-outline-variant p-5">
           <div className="min-w-0 flex-1">
-            <h2 id="variant-picker-title" className="text-lg font-semibold text-on-surface">
+            <h2
+              id="variant-picker-title"
+              className="text-lg font-semibold text-on-surface"
+            >
               Select {template.item_name || template.item_code}
             </h2>
             <p className="mt-1 text-sm text-on-surface-variant">
@@ -128,7 +131,11 @@ export function VariantPickerDialog({
                         <button
                           key={`${attribute}-${value}`}
                           type="button"
-                          className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${selected ? "border-primary bg-primary-container text-on-primary-container" : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container"}`}
+                          className={`rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                            selected
+                              ? "border-primary bg-primary-container text-on-primary-container"
+                              : "border-outline-variant bg-surface-container-low text-on-surface hover:bg-surface-container"
+                          }`}
                           aria-pressed={selected}
                           onClick={() =>
                             setSelectedAttributes((current) => {
@@ -173,7 +180,9 @@ export function VariantPickerDialog({
                     <p className="font-medium text-on-surface">
                       {variant.item_name || variant.item_code}
                     </p>
-                    <p className="text-xs text-on-surface-variant">{variant.item_code}</p>
+                    <p className="text-xs text-on-surface-variant">
+                      {variant.item_code}
+                    </p>
                     {variant.attributes?.length ? (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {variant.attributes.map((attribute) => (
@@ -191,15 +200,31 @@ export function VariantPickerDialog({
                     <p className="font-medium text-on-surface">
                       {formatCurrency(Number(variant.rate || 0), currency)}
                     </p>
-                    <p className={`text-xs ${Number(variant.actual_qty || 0) > 0 ? "text-on-surface-variant" : "text-error"}`}>
-                      {Number(variant.actual_qty || 0) > 0
-                        ? `${variant.actual_qty} ${variant.stock_uom || "units"} available`
+                    <p
+                      className={`text-xs ${
+                        variant.is_qsr || Number(variant.actual_qty || 0) > 0
+                          ? "text-on-surface-variant"
+                          : "text-error"
+                      }`}
+                    >
+                      {variant.is_qsr
+                        ? "QSR · Made to order"
+                        : Number(variant.actual_qty || 0) > 0
+                        ? `${variant.actual_qty} ${
+                            variant.stock_uom || "units"
+                          } available`
                         : "Out of stock"}
                     </p>
                   </div>
                   <Button
                     size="sm"
-                    disabled={!ignoreStock && Number(variant.actual_qty || 0) <= 0}
+                    disabled={
+                      !ignoreStock &&
+                      !variant.is_qsr &&
+                      Boolean(variant.is_stock_item ?? true) &&
+                      !variant.allow_negative_stock &&
+                      Number(variant.actual_qty || 0) <= 0
+                    }
                     onClick={() => onSelect(variant)}
                   >
                     Add
@@ -210,7 +235,9 @@ export function VariantPickerDialog({
           )}
         </div>
         <footer className="flex justify-end border-t border-outline-variant p-4">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
         </footer>
       </div>
     </div>

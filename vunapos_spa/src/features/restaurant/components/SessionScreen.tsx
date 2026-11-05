@@ -11,12 +11,10 @@ import {
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import {
-  navigateToRestaurantSession,
-  navigateToPosPage,
-} from "../../../lib/stores/navigationStore";
+import { navigateToRestaurantSession } from "../../../lib/stores/navigationStore";
 import {
   createSessionRound,
+  validateRestaurantCart,
   getRestaurantSession,
   openRestaurantSession,
   updateRestaurantSession,
@@ -27,7 +25,8 @@ import {
 } from "../../../services/vunaApi";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { formatCurrency, normalizeDefaultCustomer } from "../../pos/utils";
-import type { ItemDTO, CustomerDTO } from "../../pos/types";
+import type { ItemDTO, CustomerDTO, InvoiceDTO } from "../../pos/types";
+import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useMenu, useTableStatus } from "../hooks/useOrderData";
 import { usePolledData } from "../hooks/usePolledData";
@@ -41,14 +40,24 @@ import {
   removeUnsent,
   setContext,
   setHeader,
+  type OrderDraft,
 } from "../orderDraft";
 import { committedSessionTotal, newSessionRound } from "../sessionDraft";
-import { restaurantCart } from "../restaurantCart";
+import { useRestaurantPricing } from "../hooks/useRestaurantPricing";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import { Sheet } from "./Sheet";
 import { TablePlanPicker } from "./TablePlanPicker";
 import { ModifierPicker } from "./ModifierPicker";
-import type { ModifierGroupDTO, SelectedModifier } from "../types";
+import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
+import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { parseKitchenRoutingIssue } from "../kitchenRouting";
+import { ValidatedDraftQueue } from "../validatedDraftQueue";
+import type { KitchenRoutingIssue } from "../types";
+import type {
+  ModifierGroupDTO,
+  SelectedModifier,
+  RestaurantSessionDTO,
+} from "../types";
 
 /** Restaurant workflow controller around the SAME selling workspace and cart used by retail. */
 export function SessionScreen({
@@ -59,6 +68,11 @@ export function SessionScreen({
   posProfile?: string;
 }) {
   const bootstrap = useBootstrapData();
+  // Opening a visit and sending a round are separate requests. Keep a newly
+  // opened visit authoritative even when routing/round submission needs a retry.
+  const [openedSession, setOpenedSession] =
+    useState<RestaurantSessionDTO | null>(null);
+  const effectiveSessionName = sessionName || openedSession?.name;
   const getCall = useFrappePostCall(vunaMethods.getRestaurantSession);
   const openCall = useFrappePostCall(vunaMethods.openRestaurantSession);
   const roundCall = useFrappePostCall(vunaMethods.createSessionRound);
@@ -67,15 +81,16 @@ export function SessionScreen({
     vunaMethods.cancelEmptyRestaurantSession
   );
   const variantsCall = useFrappePostCall(vunaMethods.getTemplateVariants);
+  const stockCall = useFrappePostCall(vunaMethods.validateRestaurantCart);
   const fetcher = useCallback(
-    () => getRestaurantSession(getCall.call, sessionName || ""),
-    [getCall.call, sessionName]
+    () => getRestaurantSession(getCall.call, effectiveSessionName || ""),
+    [getCall.call, effectiveSessionName]
   );
   const result = usePolledData(
-    sessionName ? `session:${sessionName}` : null,
+    effectiveSessionName ? `session:${effectiveSessionName}` : null,
     fetcher
   );
-  const session = result.data;
+  const session = result.data || openedSession;
   const draft = useOrderDraftStore((s) => s.draft);
   const setDraft = useOrderDraftStore((s) => s.setDraft);
   const updateDraft = useOrderDraftStore((s) => s.updateDraft);
@@ -98,10 +113,28 @@ export function SessionScreen({
   const [template, setTemplate] = useState<ItemDTO | null>(null);
   const variantRequest = useRef(0);
   const [variants, setVariants] = useState<TemplateVariant[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setErrorState] = useState<string | null>(null);
+  const showToast = useUiFeedbackStore((state) => state.showToast);
+  const setError = useCallback(
+    (message: string | null) => {
+      setErrorState(message);
+      if (message) showToast({ type: "error", message });
+    },
+    [showToast]
+  );
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const cartQueue = useRef(new ValidatedDraftQueue<OrderDraft>());
+  const cartEditEpoch = useRef(0);
+  const [checkingCart, setCheckingCart] = useState(false);
+  const [pendingCart, setPendingCart] = useState<{
+    source: OrderDraft | null;
+    candidate: OrderDraft;
+  } | null>(null);
+  const pendingCartEdit = useRef<((current: OrderDraft) => OrderDraft) | null>(
+    null
+  );
   const activeDraft = sessionName
     ? draft?.restaurant_session === sessionName
       ? draft
@@ -155,21 +188,34 @@ export function SessionScreen({
   ]);
 
   const [knownItems, setKnownItems] = useState<ItemDTO[]>([]);
+  const [routingIssue, setRoutingIssue] = useState<KitchenRoutingIssue | null>(
+    null
+  );
+  const [ticketName, setTicketName] = useState<string | null>(null);
   const [customizing, setCustomizing] = useState<{
     item: ItemDTO;
     groups: ModifierGroupDTO[];
     lineId?: string;
   } | null>(null);
-  const invoice = useMemo(
-    () =>
-      activeDraft
-        ? restaurantCart(activeDraft, [
-            ...(menu.menu?.items || []),
-            ...knownItems,
-          ])
-        : null,
-    [activeDraft, menu.menu, knownItems]
+  const catalogue = useMemo(
+    () => [...(menu.menu?.items || []), ...knownItems],
+    [menu.menu, knownItems]
   );
+  const visibleDraft =
+    activeDraft && pendingCart?.source === activeDraft
+      ? pendingCart.candidate
+      : activeDraft;
+  const pricing = useRestaurantPricing(
+    visibleDraft,
+    catalogue,
+    menu.menu,
+    bootstrap.data,
+    session?.selling_price_list,
+    setError,
+    visibleDraft !== activeDraft
+  );
+  const invoice = pricing.invoice;
+  const checkedPrices = useRef(new WeakMap<OrderDraft, InvoiceDTO>());
   const visibleItems = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return (menu.menu?.items || []).filter(
@@ -181,6 +227,72 @@ export function SessionScreen({
             .includes(needle))
     );
   }, [menu.menu, category, query]);
+
+  // Validate the entire candidate round, not just the clicked item's recipe:
+  // different items/UOMs can consume the same last ingredient.
+  const checkedEdit = (edit: (current: OrderDraft) => OrderDraft) => {
+    setError(null);
+    const epoch = cartEditEpoch.current;
+    let pendingCandidate: OrderDraft | null = null;
+    return cartQueue.current
+      .enqueue({
+        read: () => useOrderDraftStore.getState().draft,
+        commit: (next) => {
+          setDraft(next);
+          const preview = checkedPrices.current.get(next);
+          if (preview) pricing.accept(next, preview);
+        },
+        edit,
+        blocked: () =>
+          inFlight.current ||
+          epoch !== cartEditEpoch.current ||
+          useOrderDraftStore.getState().draft?.idempotency_key !==
+            activeDraft?.idempotency_key,
+        changed: (count) => setCheckingCart(count > 0),
+        validate: async (next) => {
+          pendingCandidate = next;
+          setPendingCart({
+            source: useOrderDraftStore.getState().draft,
+            candidate: next,
+          });
+          const step = planSave(next)[0];
+          if (step?.kind === "create" && step.params.items.length) {
+            const checked = await validateRestaurantCart(stockCall.call, {
+              pos_profile: next.pos_profile,
+              service_type: next.service_type,
+              table: next.table,
+              customer: effectiveHeader(next).customer,
+              items: step.params.items,
+              kitchen_routing: next.kitchen_routing,
+              price_list: session?.selling_price_list,
+            });
+            checkedPrices.current.set(next, checked.invoice);
+          }
+        },
+      })
+      .catch((caught: unknown) => {
+        if (
+          caught instanceof VunaApiError &&
+          ["KITCHEN_ROUTING_REQUIRED", "INVALID_KITCHEN_STATION"].includes(
+            caught.code || ""
+          )
+        ) {
+          pendingCartEdit.current = edit;
+          setRoutingIssue(parseKitchenRoutingIssue(caught.meta));
+        }
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Unable to check ingredient stock."
+        );
+        throw caught;
+      })
+      .finally(() =>
+        setPendingCart((current) =>
+          current?.candidate === pendingCandidate ? null : current
+        )
+      );
+  };
 
   const addItem = async (item: ItemDTO, modifiers?: SelectedModifier[]) => {
     if (busy || (session && session.status !== "Open")) return;
@@ -227,30 +339,34 @@ export function SessionScreen({
       item,
     ]);
     setPending(item.item_code);
-    updateDraft((current) => {
-      const next = addMenuItem(
-        current,
-        {
-          item_code: item.item_code,
-          item_name: item.item_name,
-          uom: item.uom,
-          modifiers,
-        },
-        newId
-      );
-      if (
-        bootstrap.data?.new_item_position === "Top" &&
-        next.unsent.length > current.unsent.length
-      )
-        return {
-          ...next,
-          unsent: [
-            next.unsent[next.unsent.length - 1],
-            ...next.unsent.slice(0, -1),
-          ],
-        };
-      return next;
-    });
+    try {
+      await checkedEdit((current) => {
+        const next = addMenuItem(
+          current,
+          {
+            item_code: item.item_code,
+            item_name: item.item_name,
+            uom: item.uom,
+            modifiers,
+          },
+          newId
+        );
+        if (
+          bootstrap.data?.new_item_position === "Top" &&
+          next.unsent.length > current.unsent.length
+        )
+          return {
+            ...next,
+            unsent: [
+              next.unsent[next.unsent.length - 1],
+              ...next.unsent.slice(0, -1),
+            ],
+          };
+        return next;
+      });
+    } catch {
+      /* checkedEdit displays the server's actionable error. */
+    }
     window.setTimeout(
       () => setPending((value) => (value === item.item_code ? null : value)),
       100
@@ -265,8 +381,15 @@ export function SessionScreen({
     else setQuery(value);
   };
 
-  const send = async () => {
-    if (!activeDraft || inFlight.current || !posProfile) return;
+  const send = async (kitchenRouting?: Record<string, string>) => {
+    if (
+      !activeDraft ||
+      inFlight.current ||
+      cartQueue.current.pending ||
+      !posProfile
+    )
+      return;
+    pendingCartEdit.current = null;
     if (type?.requires_table && !activeDraft.table) {
       setTablePicker(true);
       return;
@@ -287,12 +410,14 @@ export function SessionScreen({
           customer: header?.customer || null,
           guest_count: header?.pax || 0,
         }));
+      if (!sessionName) setOpenedSession(visit);
       await createSessionRound(roundCall.call, {
         session: visit.name,
         items: step.params.items,
         idempotency_key: activeDraft.idempotency_key,
         order_note: step.params.order_note,
         pos_profile: posProfile,
+        kitchen_routing: kitchenRouting || activeDraft.kitchen_routing,
       });
       setDraft(newSessionRound(visit, newId()));
       markChanged();
@@ -300,6 +425,13 @@ export function SessionScreen({
         navigateToRestaurantSession(visit.name, { replace: true });
       else await result.refresh();
     } catch (caught) {
+      if (
+        caught instanceof VunaApiError &&
+        ["KITCHEN_ROUTING_REQUIRED", "INVALID_KITCHEN_STATION"].includes(
+          caught.code || ""
+        )
+      )
+        setRoutingIssue(parseKitchenRoutingIssue(caught.meta));
       if (
         caught instanceof VunaApiError &&
         [
@@ -312,7 +444,7 @@ export function SessionScreen({
       setError(
         caught instanceof Error
           ? caught.message
-          : "Unable to send this round. You can retry safely."
+          : "Unable to place this order. You can retry safely."
       );
     } finally {
       inFlight.current = false;
@@ -332,7 +464,7 @@ export function SessionScreen({
       }
       if (activeDraft.unsent.length) {
         setError(
-          "Clear or send your current items before opening another table's session."
+          "Clear or place your current order before opening another table's session."
         );
         return;
       }
@@ -422,7 +554,8 @@ export function SessionScreen({
         }
       />
     );
-  const readOnly = busy || Boolean(session && session.status !== "Open");
+  const readOnly =
+    busy || checkingCart || Boolean(session && session.status !== "Open");
   const context = (
     <div className="mb-3 space-y-2">
       <div className="flex flex-wrap gap-2" aria-label="Service type">
@@ -532,16 +665,16 @@ export function SessionScreen({
         </label>
         {session ? (
           <Button variant="ghost" onClick={() => setRoundsOpen(true)}>
-            View rounds ({session.rounds.length})
+            View orders ({session.rounds.length})
           </Button>
         ) : null}
       </div>
-      {error || menu.error ? (
+      {menu.error ? (
         <p
           role="alert"
           className="rounded bg-error-container p-2 text-xs text-on-error-container"
         >
-          {error || menu.error}
+          {menu.error}
         </p>
       ) : null}
     </div>
@@ -588,10 +721,9 @@ export function SessionScreen({
         );
       }}
       customerDisabled={Boolean(session?.rounds.length) || readOnly}
-      primaryActionLabel={busy ? "Sending…" : "Send round"}
+      primaryActionLabel={busy ? "Placing order…" : "Place Order"}
       hideHold
-      estimated
-      totalsNote="Current unsent round estimate. ERPNext calculates final prices and taxes when sent."
+      totalsNote="Current order totals. Prices and taxes are recalculated when the order is placed."
       currency={currency}
       posProfile={posProfile}
       isOnline={navigator.onLine}
@@ -605,9 +737,12 @@ export function SessionScreen({
       onHold={() => {}}
       onSelectPriceList={() => {}}
       onSelectShippingAddress={() => {}}
-      onRemoveItem={(id) => updateDraft((current) => removeUnsent(current, id))}
+      onRemoveItem={(id) => {
+        cartEditEpoch.current++;
+        updateDraft((current) => removeUnsent(current, id));
+      }}
       onUpdateQty={async (id, qty) => {
-        updateDraft((current) => ({
+        await checkedEdit((current) => ({
           ...current,
           unsent: current.unsent.map((row) =>
             row.line_id === id ? { ...row, qty } : row
@@ -623,7 +758,7 @@ export function SessionScreen({
         }));
       }}
       onUpdateUom={async (id, uom) => {
-        updateDraft((current) => ({
+        await checkedEdit((current) => ({
           ...current,
           unsent: current.unsent.map((row) =>
             row.line_id === id ? { ...row, uom } : row
@@ -638,6 +773,46 @@ export function SessionScreen({
   );
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-surface">
+      {routingIssue ? (
+        <KitchenRoutingPicker
+          issue={routingIssue}
+          initial={activeDraft.kitchen_routing}
+          onClose={() => {
+            pendingCartEdit.current = null;
+            setRoutingIssue(null);
+          }}
+          onRetry={() => {
+            setRoutingIssue(null);
+            const edit = pendingCartEdit.current;
+            pendingCartEdit.current = null;
+            if (edit) void checkedEdit(edit).catch(() => undefined);
+            else void send();
+          }}
+          onConfirm={(selected) => {
+            const next = { ...activeDraft.kitchen_routing, ...selected };
+            setRoutingIssue(null);
+            const edit = pendingCartEdit.current;
+            pendingCartEdit.current = null;
+            if (edit)
+              void checkedEdit((current) =>
+                edit({ ...current, kitchen_routing: next })
+              ).catch(() => undefined);
+            else {
+              updateDraft((current) => ({ ...current, kitchen_routing: next }));
+              void send(next);
+            }
+          }}
+        />
+      ) : null}
+      {ticketName ? (
+        <KitchenTicketSheet
+          name={ticketName}
+          onClose={() => {
+            setTicketName(null);
+            setRoundsOpen(true);
+          }}
+        />
+      ) : null}
       {customizing ? (
         <ModifierPicker
           key={customizing.lineId || customizing.item.item_code}
@@ -651,14 +826,14 @@ export function SessionScreen({
           onClose={() => setCustomizing(null)}
           onConfirm={(choices) => {
             if (customizing.lineId)
-              updateDraft((current) => ({
+              void checkedEdit((current) => ({
                 ...current,
                 unsent: current.unsent.map((line) =>
                   line.line_id === customizing.lineId
                     ? { ...line, modifiers: choices }
                     : line
                 ),
-              }));
+              })).catch(() => undefined);
             else void addItem(customizing.item, choices);
             setCustomizing(null);
           }}
@@ -669,7 +844,6 @@ export function SessionScreen({
         isLoading={menu.isLoading}
         currency={currency}
         hideImages={bootstrap.data?.hide_images}
-        ignoreStock
         pendingItemCode={pending}
         query={query}
         onQueryChange={setQuery}
@@ -714,7 +888,10 @@ export function SessionScreen({
         mobileCart={renderCart("min-h-0 flex-1")}
         mobileCartOpen={cartOpen}
         onMobileCartOpenChange={setCartOpen}
-        cartQuantity={activeDraft.unsent.reduce((sum, row) => sum + row.qty, 0)}
+        cartQuantity={(visibleDraft || activeDraft).unsent.reduce(
+          (sum, row) => sum + row.qty,
+          0
+        )}
       >
         {renderCart("hidden xl:flex")}
       </SellingWorkspace>
@@ -784,7 +961,7 @@ export function SessionScreen({
       ) : null}
       <Sheet
         isOpen={roundsOpen}
-        title="Submitted rounds"
+        title="Placed orders"
         onClose={() => setRoundsOpen(false)}
       >
         <p className="mb-3 text-sm font-semibold">
@@ -847,9 +1024,10 @@ export function SessionScreen({
                   cancelCall.call,
                   session.name
                 );
+                setOpenedSession(null);
                 setDraft(null);
                 markChanged();
-                navigateToPosPage("Home");
+                guard.discardAndLeave("Home");
               } catch (caught) {
                 setError(
                   caught instanceof Error
@@ -870,7 +1048,7 @@ export function SessionScreen({
             className="mb-2 rounded-md border border-outline-variant p-3"
           >
             <summary className="cursor-pointer text-sm font-medium">
-              Round {index + 1} · {round.name} ·{" "}
+              Order {index + 1} · {round.name} ·{" "}
               {formatCurrency(round.grand_total || 0, currency)}
             </summary>
             <ul className="mt-2 space-y-2 text-sm">
@@ -890,6 +1068,23 @@ export function SessionScreen({
                 </li>
               ))}
             </ul>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(session.kitchen_tickets || [])
+                .filter((ticket) => ticket.sales_order === round.name)
+                .map((ticket) => (
+                  <Button
+                    key={ticket.name}
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setRoundsOpen(false);
+                      setTicketName(ticket.name);
+                    }}
+                  >
+                    {ticket.station_label} · {ticket.name} · {ticket.status}
+                  </Button>
+                ))}
+            </div>
           </details>
         ))}
       </Sheet>
@@ -906,7 +1101,6 @@ export function SessionScreen({
         template={template}
         variants={variants}
         currency={currency}
-        ignoreStock
         isLoading={variantsCall.loading}
         error={error}
         onClose={() => {
@@ -921,14 +1115,15 @@ export function SessionScreen({
       />
       <ConfirmDialog
         isOpen={guard.pendingPage !== null}
-        title="Discard unsent items?"
-        description="Submitted rounds remain saved. Only unsent cart items will be discarded."
+        title="Discard unplaced items?"
+        description="Placed orders remain saved. Only unplaced cart items will be discarded."
         confirmLabel="Discard"
         confirmDisabled={busy}
         loading={busy}
         onConfirm={() => {
           const target = guard.pendingPage;
           if (target) {
+            setOpenedSession(null);
             setDraft(null);
             guard.discardAndLeave(target);
           }
@@ -938,11 +1133,12 @@ export function SessionScreen({
       <ConfirmDialog
         isOpen={clearConfirm}
         title="Clear cart?"
-        description="Only unsent items will be removed. Submitted rounds remain saved."
+        description="Only unplaced items will be removed. Placed orders remain saved."
         confirmLabel="Clear cart"
         danger
         confirmDisabled={busy}
         onConfirm={() => {
+          cartEditEpoch.current++;
           updateDraft((current) => ({ ...current, unsent: [] }));
           setClearConfirm(false);
         }}

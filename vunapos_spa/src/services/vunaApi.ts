@@ -125,6 +125,9 @@ export const vunaMethods = {
 	getFloorPlan: "vunapos.api.restaurant.get_floor_plan",
 	openRestaurantSession: "vunapos.api.restaurant.open_session",
 	getRestaurantSession: "vunapos.api.restaurant.get_session",
+	getKitchenTicket: "vunapos.api.restaurant.get_kitchen_ticket",
+	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
+	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
 	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
 	updateRestaurantSession: "vunapos.api.restaurant.update_session",
 	cancelEmptyRestaurantSession: "vunapos.api.restaurant.cancel_empty_session",
@@ -684,9 +687,21 @@ export function updateRestaurantSession(call: FrappeCall, params: {
 }
 
 export function createSessionRound(call: FrappeCall, params: {
-	session: string; items: OrderLineInput[]; idempotency_key: string; order_note?: string | null; pos_profile?: string;
+	session: string; items: OrderLineInput[]; idempotency_key: string; order_note?: string | null; pos_profile?: string; kitchen_routing?: Record<string, string>;
 }) {
-	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items) });
+	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function validateRestaurantCart(call: FrappeCall, params: {
+	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; kitchen_routing?: Record<string, string>; price_list?: string | null;
+}) {
+	return callAndUnwrap<{ valid: boolean; qsr_items: string[]; invoice: InvoiceDTO }>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function previewRestaurantCart(call: FrappeCall, params: {
+	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; price_list?: string | null;
+}) {
+	return callAndUnwrap<InvoiceDTO>(call, { ...params, items: JSON.stringify(params.items) });
 }
 
 export function listRestaurantOrders(

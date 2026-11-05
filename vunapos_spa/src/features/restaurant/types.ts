@@ -95,6 +95,11 @@ export type {
 // ---- orders (vunapos/dto/restaurant.py, vunapos/services/restaurant_order_service.py) ----
 
 export type MenuDTO = {
+	pricing_context?: {
+		tax_rows: import("../../lib/invoiceEngine").TaxTemplateRow[];
+		tax_settings: import("../../lib/invoiceEngine").EngineTaxSettings;
+		item_prices_include_tax?: boolean;
+	};
 	available_item_codes?: string[] | null;
 	modifier_groups?: Record<string, ModifierGroupDTO[]>;
 	pos_profile: string;
@@ -191,6 +196,7 @@ export type RestaurantSessionSummaryDTO = {
 };
 
 export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> & {
+	kitchen_tickets?: KitchenTicketSummaryDTO[];
 	pos_profile: string; restaurant: string; branch: string; company: string;
 	selling_price_list?: string | null; currency?: string | null;
 	available_waiters?: Array<{ name: string; full_name: string }>;
@@ -203,8 +209,26 @@ export type OrderLineInput = { item_code: string; qty: number; uom?: string; not
 
 export type ModifierGroupDTO = {
 	name: string; label: string; min_selections: number; max_selections: number;
-	options: Array<{ name: string; label: string; addon_item?: string | null; addon_qty: number; uom?: string | null; rate: number; available: boolean }>;
+	options: Array<{ name: string; label: string; addon_item?: string | null; addon_qty: number; uom?: string | null; rate: number; item_tax?: ItemDTO["item_tax"]; available: boolean }>;
 };
 export type SelectedModifier = { group: string; option: string; label: string; extra_rate: number };
 
 export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };
+
+export type KitchenRoutingIssue = {
+	items: Array<{ item_code: string; item_group: string; reason: "missing" | "ambiguous" | "invalid"; candidates: string[] }>;
+	stations: Array<{ name: string; station_name: string }>;
+};
+
+export type KitchenTicketSummaryDTO = {
+	name: string; sales_order: string; kitchen_station: string; station_label: string;
+	status: string; sent_at: string;
+};
+
+export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
+	restaurant_session: string; table_labels?: string | null; service_type?: string | null;
+	sent_by: string; waiter?: string | null; order_note?: string | null;
+	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
+		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null;
+		modifiers: Array<{ label: string }>; temporary_routing: boolean }>;
+};

@@ -26,6 +26,7 @@ export type OrderHeader = {
 };
 
 export type OrderDraft = {
+	kitchen_routing?: Record<string, string>;
 	restaurant_session?: string;
 	order: RestaurantOrderDTO | null;
 	pos_profile: string;

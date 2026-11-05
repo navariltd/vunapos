@@ -85,6 +85,7 @@ export function useMenu(
       [
         "Restaurant Menu",
         "Menu Section",
+        "Kitchen Station",
         "Restaurant Modifier Group",
         "Item",
         "Item Price",

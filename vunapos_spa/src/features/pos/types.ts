@@ -262,6 +262,7 @@ export type BootstrapData = {
 };
 
 export type ItemDTO = {
+	is_qsr?: boolean;
 	item_code: string;
 	item_name: string;
 	modified?: string;
@@ -366,6 +367,8 @@ export type BatchAllocationResultDTO = {
 };
 
 export type InvoiceItemDTO = {
+	restaurant_parent_line_id?: string | null;
+	is_qsr?: boolean;
 	row_name: string;
 	item_code: string;
 	item_name: string;
