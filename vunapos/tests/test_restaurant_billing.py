@@ -187,9 +187,27 @@ class TestRestaurantBilling(IntegrationTestCase):
 			doc.save()
 
 	def test_pos_invoice_uses_the_same_visit_and_source_links(self):
+		from erpnext.accounts.doctype.pos_invoice.pos_invoice import POSInvoice
+
 		self._ready()
 		set_invoice_mode("POS Invoice")
-		response = self._checkout()
+		frappe.db.set_value("POS Profile", self.profile.name, "validate_stock_on_save", 1)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+		stock = frappe.db.get_value(
+			"Bin",
+			{"item_code": self.item, "warehouse": self.profile.warehouse},
+			["actual_qty", "reserved_stock"],
+			as_dict=True,
+		)
+		self.assertEqual(stock.actual_qty - stock.reserved_stock, 0)
+		# Older ERPNext versions do not deduct SREs. Emulate the newer native
+		# rejection so this regression cannot silently pass on those versions.
+		with patch.object(
+			POSInvoice,
+			"validate_stock_availablility",
+			side_effect=frappe.ValidationError("Native check excludes the visit's own reserved stock"),
+		):
+			response = self._checkout()
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["invoice"]["doctype"], "POS Invoice")
 		invoice = response["data"]["invoice"]
@@ -351,13 +369,104 @@ class TestRestaurantBilling(IntegrationTestCase):
 		self.assertTrue(self._checkout(preview)["ok"])
 
 	def test_pos_invoice_can_complete_preparation_during_billing(self):
+		from erpnext.accounts.doctype.pos_invoice.pos_invoice import POSInvoice
+
 		self.assertTrue(self._send()["ok"])
 		self._enable_billing_preparation()
 		set_invoice_mode("POS Invoice")
-		response = self._checkout()
+		frappe.db.set_value("POS Profile", self.profile.name, "validate_stock_on_save", 1)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+		with patch.object(
+			POSInvoice,
+			"validate_stock_availablility",
+			side_effect=frappe.ValidationError("Native check excludes the visit's own reserved stock"),
+		):
+			response = self._checkout()
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["invoice"]["doctype"], "POS Invoice")
 		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", self._tickets()[0], "status"), "Ready")
+
+	def test_pos_stock_override_does_not_apply_to_retail_or_returns(self):
+		from erpnext.accounts.doctype.pos_invoice.pos_invoice import POSInvoice
+
+		for values in ({}, {"is_return": 1, "vunapos_restaurant_session": self.session}):
+			doc = frappe.new_doc("POS Invoice")
+			doc.update(values)
+			with patch.object(
+				POSInvoice,
+				"validate_stock_availablility",
+				side_effect=frappe.ValidationError("Native stock validation"),
+			):
+				with self.assertRaisesRegex(frappe.ValidationError, "Native stock validation"):
+					doc.validate_stock_availablility()
+
+	def test_pos_bills_do_not_double_count_other_visits_live_reservations(self):
+		from vunapos.services.restaurant_billing_service import validate_billing_stock
+
+		set_invoice_mode("POS Invoice")
+		self._ready()
+		first = self._checkout()
+		self.assertTrue(first["ok"], first)
+		service = frappe.get_cached_value("Restaurant Session", self.session, "service_type")
+		second_session = restaurant.open_session(self.profile.name, str(uuid4()), service_type=service)
+		self.assertTrue(second_session["ok"], second_session)
+		self.session = second_session["data"]["name"]
+		self._ready()
+		second = self._checkout()
+		self.assertTrue(second["ok"], second)
+		first_doc = frappe.get_doc("POS Invoice", first["data"]["invoice"]["name"])
+		# A submitted bill must not subtract itself on validation/recovery.
+		validate_billing_stock(first_doc)
+
+	def test_restaurant_pos_stock_override_preserves_warehouse_permissions(self):
+		doc = frappe.new_doc("POS Invoice")
+		doc.vunapos_restaurant_session = self.session
+		doc.pos_profile = self.profile.name
+		doc.docstatus = 1
+		doc.append("items", {"item_code": self.item, "warehouse": self.profile.warehouse})
+		with (
+			patch("vunapos.services.restaurant_billing_service.validate_billing_invoice"),
+			patch("vunapos.services.restaurant_billing_service.validate_billing_stock") as stock,
+			patch("frappe.permissions.get_user_permissions", return_value={"Warehouse": ["restriction"]}),
+			patch("frappe.permissions.get_allowed_docs_for_doctype", return_value=["Other Warehouse"]),
+		):
+			with self.assertRaises(frappe.PermissionError):
+				doc.validate_stock_availablility()
+			stock.assert_not_called()
+
+	def test_restaurant_pos_stock_check_rejects_foreign_source_rows_before_crediting_reservations(self):
+		from vunapos.services.restaurant_billing_service import _build, _orders, _profile
+		from vunapos.services.restaurant_session_service import _load
+
+		self._ready()
+		set_invoice_mode("POS Invoice")
+		session = _load(self.session)
+		doc = _build(session, _profile(session, self.profile.name), _orders(session))
+		doc.docstatus = 1
+		doc.items[0].so_detail = "Another order's line"
+		with patch("vunapos.services.restaurant_billing_service.validate_billing_stock") as stock:
+			with self.assertRaises(frappe.ValidationError) as error:
+				doc.validate_stock_availablility()
+			self.assertEqual(error.exception.vuna_error_code, "SESSION_BILL_LINES_CHANGED")
+			stock.assert_not_called()
+
+	def test_pending_pos_bill_cannot_be_sold_again_after_source_reservations_are_released(self):
+		from vunapos.services.restaurant_billing_service import validate_billing_stock
+
+		set_invoice_mode("POS Invoice")
+		order = self._ready()
+		first = self._checkout()
+		self.assertTrue(first["ok"], first)
+		for name in frappe.get_all(
+			"Stock Reservation Entry",
+			filters={"voucher_type": "Sales Order", "voucher_no": order, "docstatus": 1},
+			pluck="name",
+		):
+			frappe.get_doc("Stock Reservation Entry", name).cancel()
+		doc = frappe.copy_doc(frappe.get_doc("POS Invoice", first["data"]["invoice"]["name"]))
+		with self.assertRaises(frappe.ValidationError) as error:
+			validate_billing_stock(doc)
+		self.assertEqual(error.exception.vuna_error_code, "SESSION_FINISHED_STOCK_REQUIRED")
 
 	def test_billing_completes_wip_transfer_then_manufacture(self):
 		warehouse = frappe.copy_doc(frappe.get_doc("Warehouse", self.profile.warehouse))

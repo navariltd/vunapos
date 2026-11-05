@@ -70,6 +70,12 @@ Without this setting, the normal kitchen-completes-first flow remains unchanged.
 - Stock validation credits only reservations belonging to this visit's source
   rows. It cannot use stock promised to another order. Pending Work Orders cannot
   be replaced by taking unrelated finished stock from the shelf.
+- Restaurant POS Invoices use source-validated stock availability rather than
+  rejecting their own reserved output as unavailable. Unconsolidated POS sales
+  are also counted, without counting another visit's live Sales Order reservation
+  twice. The current bill is excluded from its own pending-sales total. Warehouse
+  User Permissions remain enforced; retail POS Invoices and returns retain native
+  ERPNext validation.
 - Tracked rows consume exact batch/serial reservations from their Sales Orders.
   Configure **Auto Reserve Serial and Batch**, or explicitly allocate the source
   reservations in ERPNext. A missing exact allocation stops billing with an error;

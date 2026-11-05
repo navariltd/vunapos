@@ -400,6 +400,72 @@ def validate_billing_invoice(doc, method=None):
 	return session, orders
 
 
+def _pending_pos_stock_not_reserved(doc, code, warehouse):
+	"""Count unmerged POS commitments not already deducted as other orders' SREs.
+
+	POS Invoice defers stock issue until consolidation. Its source SRE can still
+	be live, so subtracting both would count the same stock twice. Never offset
+	a pending sale using SREs already credited to the current bill.
+	"""
+	from frappe.query_builder.functions import Sum
+
+	invoice = frappe.qb.DocType("POS Invoice")
+	conditions = (invoice.docstatus == 1) & (
+		invoice.consolidated_invoice.isnull() | (invoice.consolidated_invoice == "")
+	)
+	if doc.doctype == "POS Invoice" and doc.get("name"):
+		conditions &= invoice.name != doc.name
+	item = frappe.qb.DocType("POS Invoice Item")
+	rows = (
+		frappe.qb.from_(invoice)
+		.inner_join(item)
+		.on(item.parent == invoice.name)
+		.select(item.sales_order, item.so_detail, Sum(item.stock_qty).as_("qty"))
+		.where(conditions & (item.docstatus == 1) & (item.item_code == code) & (item.warehouse == warehouse))
+		.groupby(item.sales_order, item.so_detail)
+		.run(as_dict=True)
+	)
+	credited = {row.so_detail for row in doc.items if row.get("so_detail")}
+	reserved = defaultdict(float)
+	details = {row.so_detail for row in rows if row.so_detail and row.so_detail not in credited}
+	if details:
+		for row in frappe.get_all(
+			"Stock Reservation Entry",
+			filters={
+				"voucher_type": "Sales Order",
+				"voucher_detail_no": ["in", sorted(details)],
+				"item_code": code,
+				"warehouse": warehouse,
+				"docstatus": 1,
+			},
+			fields=["voucher_no", "voucher_detail_no", "reserved_qty", "delivered_qty"],
+		):
+			reserved[(row.voucher_no, row.voucher_detail_no)] += max(
+				0, flt(row.reserved_qty) - flt(row.delivered_qty)
+			)
+	pending = sum(
+		flt(row.qty) - min(max(0, flt(row.qty)), reserved[(row.sales_order, row.so_detail)]) for row in rows
+	)
+	# Other tills can sell bundles even though restaurant rounds do not support
+	# them. Their pending packed components also consume this warehouse's stock.
+	packed = frappe.qb.DocType("Packed Item")
+	packed_qty = (
+		frappe.qb.from_(invoice)
+		.inner_join(packed)
+		.on(packed.parent == invoice.name)
+		.select(Sum(packed.qty))
+		.where(
+			conditions
+			& (packed.docstatus == 1)
+			& (packed.parenttype == "POS Invoice")
+			& (packed.item_code == code)
+			& (packed.warehouse == warehouse)
+		)
+		.run()
+	)
+	return pending + flt(packed_qty[0][0] if packed_qty else 0)
+
+
 def validate_billing_stock(doc):
 	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
 		get_sre_reserved_qty_for_item_and_warehouse,
@@ -457,6 +523,7 @@ def validate_billing_stock(doc):
 			flt(get_stock_balance(code, warehouse))
 			- flt(get_sre_reserved_qty_for_item_and_warehouse(code, warehouse))
 			+ own
+			- _pending_pos_stock_not_reserved(doc, code, warehouse)
 		)
 		if qty > available + 0.000001:
 			fail(
