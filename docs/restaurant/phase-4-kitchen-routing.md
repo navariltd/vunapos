@@ -18,8 +18,9 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
 - Station-mapped Item Groups identify made-to-order **QSR** items, contextually
   within the selected Restaurant. They require an active, submitted default BOM
   for that exact Item/variant and Company. There is no permanent Item QSR checkbox.
-- Overlapping routing requires a temporary choice for each affected Item.
-  No station priority or most-specific-group precedence is inferred.
+- Routing now prefers the most-specific mapped Item Group (updated in Phase 5).
+  Active stations in the same Restaurant/Branch cannot share an exact group.
+  Legacy exact duplicates require correction or an explicit temporary choice.
 - Unmapped items are direct sale, use finished stock and create no KOT. Do not map
   bought-in drinks or retail products to a station unless they really are manufactured.
 - Add-ons follow their parent dish's station. Modifier labels, quantities, selling
@@ -48,8 +49,8 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
    Restaurant. Branch and Company are derived; no POS Profile-specific menu is added.
 2. Add the appropriate ERPNext Item Groups on each station. Use disjoint groups for
    automatic splitting, e.g. Prepared Food → Kitchen and Beverages → Bar. If one
-   station includes a parent group and another includes its child, their overlapping
-   Items require a temporary choice; neither mapping wins automatically.
+   station includes a parent group and another includes its child, the child mapping
+   wins for that subtree. Parent and leaf groups are both supported.
 3. Set each preparing station's Raw Material Warehouse. WIP is optional: with WIP,
    ERPNext uses material transfer then manufacture; without WIP, the Work Order
    skips transfer and manufacture consumes from the raw warehouse. All warehouses
@@ -80,8 +81,9 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
    Retrying the original request/key must not create another round or duplicate KOTs.
 4. Remove an Item's routing: it becomes direct sale and checks finished stock,
    not recipe ingredients. Restore the mapping: it shows QSR and checks ingredients.
-5. Configure overlapping station groups and repeat. The POS must ask instead of
-   guessing. Disable the selected station before retrying: it must require a new,
+5. Configure a parent group on one station and a child group on another. Items in
+   the child subtree must route to the child station. Assigning the same exact group
+   to a second active station must be rejected. Disable the selected station before retrying: it must require a new,
    enabled/permitted station. If none are available, the dialog explains setup is needed.
    After a failed first send, return to the cart and change its customer/table,
    then retry. The already-opened session remains authoritative; updated context

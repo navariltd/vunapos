@@ -1,5 +1,8 @@
 # Restaurant sessions and ordering rounds
 
+Phase 5 update: waiters now open and close their own POS shifts too, without gaining
+cashier payment rights. See [Phase 5 setup](phase-5-kitchen-display.md).
+
 ## Setup
 
 Run `bench --site <site> migrate`, then `bench build --app vunapos`.
