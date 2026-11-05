@@ -32,6 +32,7 @@ import { useMenu, useTableStatus } from "../hooks/useOrderData";
 import { usePolledData } from "../hooks/usePolledData";
 import { useUnsavedChangesGuard } from "../hooks/useUnsavedChangesGuard";
 import { newId } from "../ids";
+import { tableSelectionRequired } from "../tableContext";
 import {
   addMenuItem,
   effectiveHeader,
@@ -50,6 +51,7 @@ import { TablePlanPicker } from "./TablePlanPicker";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
 import { kitchenStatusClass } from "../kitchenStatus";
@@ -147,12 +149,17 @@ export function SessionScreen({
   const type = serviceTypes?.find(
     (row) => row.name === (session?.service_type || activeDraft?.service_type)
   );
+  const needsTable = tableSelectionRequired(
+    type?.requires_table,
+    activeDraft?.table
+  );
   const menu = useMenu(
     posProfile,
     type?.name,
     activeDraft?.table,
     session?.customer || header?.customer,
-    session?.selling_price_list
+    session?.selling_price_list,
+    !needsTable
   );
   const floor = useFloorPlan(posProfile);
   const status = useTableStatus(posProfile);
@@ -213,7 +220,7 @@ export function SessionScreen({
     bootstrap.data,
     session?.selling_price_list,
     setError,
-    visibleDraft !== activeDraft
+    visibleDraft !== activeDraft || needsTable
   );
   const invoice = pricing.invoice;
   const checkedPrices = useRef(new WeakMap<OrderDraft, InvoiceDTO>());
@@ -247,6 +254,9 @@ export function SessionScreen({
         blocked: () =>
           inFlight.current ||
           epoch !== cartEditEpoch.current ||
+          useOrderDraftStore.getState().draft?.service_type !==
+            activeDraft?.service_type ||
+          useOrderDraftStore.getState().draft?.table !== activeDraft?.table ||
           useOrderDraftStore.getState().draft?.idempotency_key !==
             activeDraft?.idempotency_key,
         changed: (count) => setCheckingCart(count > 0),
@@ -297,6 +307,10 @@ export function SessionScreen({
 
   const addItem = async (item: ItemDTO, modifiers?: SelectedModifier[]) => {
     if (busy || (session && session.status !== "Open")) return;
+    if (needsTable) {
+      setTablePicker(true);
+      return;
+    }
     setError(null);
     if (item.has_variants) {
       const request = ++variantRequest.current;
@@ -375,6 +389,10 @@ export function SessionScreen({
   };
 
   const scan = (value: string) => {
+    if (needsTable) {
+      setTablePicker(true);
+      return;
+    }
     const item = menu.menu?.items.find(
       (row) => row.item_code === value || row.barcode === value
     );
@@ -391,7 +409,7 @@ export function SessionScreen({
     )
       return;
     pendingCartEdit.current = null;
-    if (type?.requires_table && !activeDraft.table) {
+    if (needsTable) {
       setTablePicker(true);
       return;
     }
@@ -486,13 +504,17 @@ export function SessionScreen({
           : [...previous, table.name]
       );
     } else {
-      updateDraft((current) =>
-        setContext(current, {
-          service_type: current.service_type,
-          table: table.name,
-          table_label: table.table_label,
-        })
-      );
+      try {
+        await checkedEdit((current) =>
+          setContext(current, {
+            service_type: current.service_type,
+            table: table.name,
+            table_label: table.table_label,
+          })
+        );
+      } catch {
+        return;
+      }
       setTablePicker(false);
       setCartOpen(false);
     }
@@ -668,6 +690,14 @@ export function SessionScreen({
           <Button variant="ghost" onClick={() => setRoundsOpen(true)}>
             View orders ({session.rounds.length})
           </Button>
+        ) : null}
+        {session && posProfile ? (
+          <SessionBill
+            session={session}
+            posProfile={posProfile}
+            unsent={Boolean(activeDraft.unsent.length)}
+            onChanged={() => void result.refresh()}
+          />
         ) : null}
         {session?.preparation_status &&
         session.preparation_status !== "No preparation" ? (
@@ -852,7 +882,7 @@ export function SessionScreen({
         />
       ) : null}
       <SellingWorkspace
-        items={visibleItems}
+        items={needsTable ? [] : visibleItems}
         isLoading={menu.isLoading}
         currency={currency}
         hideImages={bootstrap.data?.hide_images}
@@ -868,10 +898,23 @@ export function SessionScreen({
           if (!readOnly) void addItem(item);
         }}
         onScan={scan}
-        onOpenCamera={() => setCameraOpen(true)}
+        onOpenCamera={() => {
+          if (needsTable) setTablePicker(true);
+          else setCameraOpen(true);
+        }}
         categories={
           <>
             <div className="mt-3 xl:hidden">{context}</div>
+            {needsTable ? (
+              <div className="my-4 rounded-lg border border-outline-variant bg-surface-container-low p-4 text-sm">
+                <p className="mb-3">
+                  Select a table to view its menu and add dine-in items.
+                </p>
+                <Button onClick={() => setTablePicker(true)}>
+                  Select table
+                </Button>
+              </div>
+            ) : null}
             <div
               className="mt-3 flex gap-2 overflow-x-auto"
               aria-label="Menu categories"

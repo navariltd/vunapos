@@ -42,17 +42,16 @@ function form() {
 }
 
 describe("Kitchen Station dependent links", () => {
-  it("filters Restaurants by Company and Branch by the selected Restaurant", async () => {
+  it("filters Branches by Company without locking Restaurant to one Branch", async () => {
     const { frm, handlers, queries } = form();
     expect(queries.get("restaurant")!().filters).toEqual({
       company: "Company",
       enabled: 1,
     });
-    expect(queries.get("branch")!().filters.name).toBe("");
+    expect(queries.get("branch")!().filters.name).toBeUndefined();
     await handlers.restaurant(frm);
-    expect(frm.doc.branch).toBe("Town");
+    expect(frm.doc.branch).toBe("");
     expect(queries.get("branch")!().filters).toEqual({
-      name: "Town",
       vunapos_company: "Company",
     });
   });

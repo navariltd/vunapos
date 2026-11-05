@@ -51,6 +51,7 @@ export function useOpenOrders(posProfile?: string) {
         name: session.name,
         restaurant_session: session.name,
         preparation_status: session.preparation_status,
+        billing_pending: session.status === "Settling",
         status: "Open" as const,
         service_type: session.service_type,
         table: session.tables[0]?.table ?? null,
@@ -77,7 +78,8 @@ export function useMenu(
   serviceType?: string | null,
   table?: string | null,
   customer?: string | null,
-  priceList?: string | null
+  priceList?: string | null,
+  enabled = true
 ) {
   const call = useFrappePostCall(vunaMethods.getMenu);
   const [revision, setRevision] = useState(0);
@@ -97,7 +99,7 @@ export function useMenu(
       setRevision((current) => current + 1);
   });
   const key =
-    posProfile && serviceType
+    enabled && posProfile && serviceType
       ? `${posProfile}|${serviceType}|${table || ""}|${customer || ""}|${
           priceList || ""
         }|${revision}`

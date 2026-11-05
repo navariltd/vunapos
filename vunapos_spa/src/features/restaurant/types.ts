@@ -150,6 +150,8 @@ export type RestaurantOrderLineDTO = {
 export type RestaurantOrderStatus = "Open" | "Billed" | "Cancelled";
 
 export type RestaurantOrderDTO = {
+	restaurant?: string | null;
+	branch?: string | null;
 	restaurant_session?: string | null;
 	grand_total?: number;
 	name: string;
@@ -187,9 +189,12 @@ export type RestaurantOrderSummaryDTO = Pick<
 	| "invoice_doctype"
 	| "invoice"
 	| "modified"
-> & { preparation_status?: string };
+> & { preparation_status?: string; billing_pending?: boolean };
+
+export type RestaurantSessionStatus = "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
 
 export type RestaurantSessionSummaryDTO = {
+  status?: RestaurantSessionStatus;
 	preparation_status?: string;
 	name: string; customer: string; waiter: string; waiter_name: string | null;
 	guest_count: number; opened_at: string; service_type: string; modified: string;
@@ -197,11 +202,12 @@ export type RestaurantSessionSummaryDTO = {
 };
 
 export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> & {
+  billing_doctype?: string | null; billing_invoice?: string | null; billing_profile?: string | null;
 	kitchen_tickets?: KitchenTicketSummaryDTO[];
 	pos_profile: string; restaurant: string; branch: string; company: string;
 	selling_price_list?: string | null; currency?: string | null;
 	available_waiters?: Array<{ name: string; full_name: string }>;
-	status: "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
+	status: RestaurantSessionStatus;
 	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
 	rounds: RestaurantOrderDTO[];
 };
@@ -215,6 +221,8 @@ export type ModifierGroupDTO = {
 export type SelectedModifier = { group: string; option: string; label: string; extra_rate: number };
 
 export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };
+export type SessionBillDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO; fingerprint: string; account_reference: string; gateway_links?: import("../pos/types").GatewayPaymentLinkDTO[]; can_checkout?: boolean; checkout_block_reason?: string | null; will_complete_preparation?: boolean };
+export type SessionSettlementDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO };
 
 export type KitchenRoutingIssue = {
 	items: Array<{ item_code: string; item_group: string; reason: "missing" | "ambiguous" | "invalid"; candidates: string[] }>;

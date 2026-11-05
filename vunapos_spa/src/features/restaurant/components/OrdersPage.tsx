@@ -130,6 +130,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end gap-1">
+                {order.billing_pending ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Billing pending</span> : null}
                 <span className="text-xs font-medium text-on-surface-variant">
                   {elapsedLabel(order.opened_at, now)}
                 </span>

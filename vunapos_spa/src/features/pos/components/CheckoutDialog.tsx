@@ -46,6 +46,9 @@ import type {
 import { formatCurrency, getInvoiceTotal } from "../utils";
 
 type CheckoutDialogProps = {
+  presentation?: { invoice: InvoiceDTO | null; isSubmitting: boolean };
+  hideCartActions?: boolean;
+  initialGatewayLinks?: GatewayPaymentLinkDTO[];
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
 	autoAllocatePaymentBalance?: boolean;
@@ -139,6 +142,9 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 }
 
 export function CheckoutDialog({
+  presentation,
+  hideCartActions,
+  initialGatewayLinks,
   allowCreditSales,
   allowPartialPayment,
 	autoAllocatePaymentBalance,
@@ -182,6 +188,9 @@ export function CheckoutDialog({
 
   return (
     <CheckoutDialogContent
+      presentation={presentation}
+      hideCartActions={hideCartActions}
+      initialGatewayLinks={initialGatewayLinks}
       key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
@@ -223,6 +232,9 @@ export function CheckoutDialog({
 }
 
 function CheckoutDialogContent({
+  presentation,
+  hideCartActions,
+  initialGatewayLinks,
   allowCreditSales,
   allowPartialPayment,
 	autoAllocatePaymentBalance,
@@ -259,12 +271,15 @@ function CheckoutDialogContent({
 	onSearchCheckoutLinkOptions,
 	workflow,
 }: Omit<CheckoutDialogProps, "isOpen">) {
-  const invoice = useCartStore((s) => s.invoice);
-  const isSubmitting = useCartStore((s) => s.isMutating);
+  const storedInvoice = useCartStore((s) => s.invoice);
+  const storedSubmitting = useCartStore((s) => s.isMutating);
+  const invoice = presentation ? presentation.invoice : storedInvoice;
+  const isSubmitting = presentation ? presentation.isSubmitting : storedSubmitting;
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
+  const transactionDoctype = isSalesOrder ? "Sales Order" : invoice?.doctype || orderType;
   const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
-  const activeWorkflow = workflow?.enabled ? workflow.workflows[orderType] : undefined;
+  const activeWorkflow = workflow?.enabled ? workflow.workflows[transactionDoctype] : undefined;
 
   const total = getInvoiceTotal(invoice);
   const precision = normalizeCurrencyPrecision(currencyPrecision ?? 2);
@@ -303,6 +318,9 @@ function CheckoutDialogContent({
   const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
   const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
   const [amounts, setAmounts] = useState(() =>
+    initialGatewayLinks?.[0]
+      ? allocateAllToMode(availableModes, initialGatewayLinks[0].mode_of_payment, payableMinor, precision)
+      :
     (allowCreditSales && defaultSaleType === "Credit Sale") ||
     (isSalesOrder && Boolean(allowSalesOrderPayments))
       ? Object.fromEntries(
@@ -333,10 +351,10 @@ function CheckoutDialogContent({
       .then((options) => setLinkOptions((current) => ({ ...current, [field.fieldname]: options })))
       .catch(() => setLinkOptions((current) => ({ ...current, [field.fieldname]: [] })))
       .finally(() => setLinkSearchLoading((current) => current === field.fieldname ? null : current));
-  }, [onSearchCheckoutLinkOptions]);
+  }, [onSearchCheckoutLinkOptions, posProfile]);
 	const configuredFields = useMemo(
-		() => (checkoutFields || []).filter((field) => field.doctype === orderType),
-		[checkoutFields, orderType],
+		() => (checkoutFields || []).filter((field) => field.doctype === transactionDoctype),
+		[checkoutFields, transactionDoctype],
 	);
 	const requiredFieldMissing = configuredFields.find(
 		(field) => field.required && !String(additionalFields[field.fieldname] || "").trim(),
@@ -389,7 +407,7 @@ function CheckoutDialogContent({
   const [checkoutTaxId, setCheckoutTaxId] = useState("");
   const [gatewayLinks, setGatewayLinks] = useState<
     Record<string, GatewayPaymentLinkDTO | undefined>
-  >({});
+  >(() => Object.fromEntries((initialGatewayLinks || []).map((link) => [link.mode_of_payment, link])));
   const [gatewayPhones, setGatewayPhones] = useState<Record<string, string>>(
     () =>
       customer?.mobile_no
@@ -1360,31 +1378,31 @@ function CheckoutDialogContent({
             />
           </div>
         </div>
-        <div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-outline-variant px-3 py-3 xl:flex xl:px-6">
+        <div className={`grid shrink-0 grid-cols-2 items-center gap-2 border-t border-outline-variant px-3 py-3 xl:flex xl:px-6${hideCartActions ? " xl:justify-end" : ""}`}>
           <Button
             variant="ghost"
-            className="!hidden min-w-0 px-2 text-xs xl:!inline-flex xl:px-3 xl:text-sm"
+            className={`${hideCartActions ? "" : "!hidden"} min-w-0 px-2 text-xs xl:!inline-flex xl:px-3 xl:text-sm`}
             onClick={onClose}
             disabled={isSubmitting}
           >
             Back
           </Button>
-          <Button
+          {!hideCartActions ? <Button
             variant="danger"
             className="!hidden min-w-0 gap-1 px-2 text-xs xl:!inline-flex xl:gap-2 xl:px-3 xl:text-sm"
             onClick={onClear}
             disabled={isSubmitting}
           >
             <Trash2 className="size-4" /> Clear
-          </Button>
-          <Button
+          </Button> : null}
+          {!hideCartActions ? <Button
             variant="ghost"
             className="min-w-0 gap-1 px-2 text-xs bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container xl:ml-auto xl:min-w-28 xl:gap-2 xl:px-3 xl:text-sm"
             onClick={onHold}
             disabled={isSubmitting}
           >
             <Pause className="size-4" /> Hold
-          </Button>
+          </Button> : null}
           <Button
             disabled={!isPayable || isSubmitting || deliveryApplying}
             onClick={async () => {

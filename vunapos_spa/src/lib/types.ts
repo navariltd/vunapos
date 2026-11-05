@@ -124,6 +124,7 @@ export type CachedRestaurantSettings = {
 	service_types: CachedServiceType[];
 	allow_multiple_orders_per_table: boolean;
 	require_manager_pin_order_cancel: boolean;
+	complete_preparation_on_billing?: boolean;
 };
 
 export type CachedProfile = {

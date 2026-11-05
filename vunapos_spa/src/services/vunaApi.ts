@@ -135,6 +135,8 @@ export const vunaMethods = {
 	updateRestaurantSession: "vunapos.api.restaurant.update_session",
 	cancelEmptyRestaurantSession: "vunapos.api.restaurant.cancel_empty_session",
 	createSessionRound: "vunapos.api.restaurant.create_session_round",
+	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
+	checkoutSession: "vunapos.api.restaurant.checkout_session",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 	getMenu: "vunapos.api.restaurant.get_menu",
 	getTableStatus: "vunapos.api.restaurant.get_table_status",
@@ -675,6 +677,18 @@ export function getRestaurantSession(call: FrappeCall, session: string) {
 
 export function cancelEmptyRestaurantSession(call: FrappeCall, session: string) {
 	return callAndUnwrap<RestaurantSessionDTO>(call, { session });
+}
+
+export function previewSessionBill(call: FrappeCall, params: { session: string; pos_profile: string; loyalty_points?: number }) {
+  return callAndUnwrap<import("../features/restaurant/types").SessionBillDTO>(call, params);
+}
+
+export function checkoutSession(call: FrappeCall, params: {
+  session: string; pos_profile: string; fingerprint: string; payments: PaymentInput[];
+  is_credit_sale?: boolean; due_date?: string; loyalty_points?: number; tax_id?: string;
+  shipping_address_name?: string; checkout_fields?: Record<string, string | number | boolean | null>;
+}) {
+  return callAndUnwrap<import("../features/restaurant/types").SessionSettlementDTO>(call, params);
 }
 
 export function listRestaurantSessions(call: FrappeCall, pos_profile: string) {
