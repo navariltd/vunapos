@@ -52,6 +52,7 @@ import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
+import { kitchenStatusClass } from "../kitchenStatus";
 import type { KitchenRoutingIssue } from "../types";
 import type {
   ModifierGroupDTO,
@@ -668,6 +669,17 @@ export function SessionScreen({
             View orders ({session.rounds.length})
           </Button>
         ) : null}
+        {session?.preparation_status &&
+        session.preparation_status !== "No preparation" ? (
+          <span
+            title="Preparation across stations you can access"
+            className={`rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
+              session.preparation_status
+            )}`}
+          >
+            Kitchen: {session.preparation_status}
+          </span>
+        ) : null}
       </div>
       {menu.error ? (
         <p
@@ -1014,7 +1026,9 @@ export function SessionScreen({
             </select>
           </label>
         ) : null}
-        {session && !session.rounds.length && !activeDraft.unsent.length ? (
+        {session &&
+        !session.rounds.some((order) => order.status !== "Cancelled") &&
+        !activeDraft.unsent.length ? (
           <Button
             disabled={busy}
             onClick={async () => {
@@ -1039,7 +1053,7 @@ export function SessionScreen({
               }
             }}
           >
-            Cancel empty session and release tables
+            Close session and release tables
           </Button>
         ) : null}
         {session?.rounds.map((round, index) => (

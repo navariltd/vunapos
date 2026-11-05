@@ -19,24 +19,25 @@ import { FloorView } from "./components/FloorView";
 import { OrderScreen } from "./components/OrderScreen";
 import { SessionScreen } from "./components/SessionScreen";
 import { OrdersPage } from "./components/OrdersPage";
+import { KitchenPage } from "./components/KitchenPage";
 import { RestaurantToast } from "./components/RestaurantToast";
 import { SharedRestaurantPages } from "./components/SharedRestaurantPages";
 import {
   isRestaurantPageAllowed,
   restaurantRoleLabel,
+  isKitchenOnlyUser,
+  needsRestaurantShift,
 } from "./restaurantRoles";
 
-// Restaurant mode shell. Per design decision 6, users who can take payment
-// (VunaPOS Cashier) must have an open shift before they get in; everyone else,
-// managers included, goes straight to the floor with no shift.
+// All selling users own shifts; only kitchen-only operators bypass opening.
 export function RestaurantApp() {
   const bootstrap = useBootstrapData();
   const canTakePayment = Boolean(bootstrap.data?.can_take_payment);
 
-  if (canTakePayment) {
+  if (needsRestaurantShift(bootstrap.data?.restaurant_roles, canTakePayment, bootstrap.data?.can_manage_restaurant)) {
     return (
       <PosOpeningGate>
-        <RestaurantShell canTakePayment />
+        <RestaurantShell canTakePayment={canTakePayment} />
       </PosOpeningGate>
     );
   }
@@ -48,8 +49,16 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
   const sessionName = getRestaurantSessionFromPath(currentPath);
+  const roles = bootstrap.data?.restaurant_roles || [];
+  const canManageShift = needsRestaurantShift(roles, canTakePayment, bootstrap.data?.can_manage_restaurant);
+  const kitchenOnly = isKitchenOnlyUser(
+    roles,
+    bootstrap.data?.can_manage_restaurant
+  );
   const features = {
     canTakePayment,
+    canManageShift,
+    kitchenOnly,
     allowCustomerManagement:
       bootstrap.data?.allow_customer_management !== false,
     allowCustomerPayments: bootstrap.data?.allow_customer_payments !== false,
@@ -62,8 +71,8 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
 
   useEffect(() => {
     // Disabled profile features and pages the user can't use return to selling.
-    if (!isAllowedPage) replacePosPage("Home");
-  }, [isAllowedPage]);
+    if (!isAllowedPage) replacePosPage(kitchenOnly ? "Kitchen" : "Home");
+  }, [isAllowedPage, kitchenOnly]);
 
   const posProfile = bootstrap.data?.pos_profile;
 
@@ -90,12 +99,12 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
             bootstrap={bootstrap.data}
             roleLabel={restaurantRoleLabel(bootstrap.data?.restaurant_roles)}
             onCloseShift={
-              canTakePayment
+              canManageShift
                 ? () => navigateToPosPage("Close Shift")
                 : undefined
             }
           />
-        ) : activePage === "Close Shift" && canTakePayment && posProfile ? (
+        ) : activePage === "Close Shift" && canManageShift && posProfile ? (
           <CloseShiftPage
             currency={bootstrap.data?.currency}
             posProfile={posProfile}
@@ -105,6 +114,8 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
           <FloorEditor posProfile={posProfile} />
         ) : activePage === "Orders" ? (
           <OrdersPage posProfile={posProfile} />
+        ) : activePage === "Kitchen" ? (
+          <KitchenPage posProfile={posProfile} />
         ) : activePage === "Order" && getOrderFromPath(currentPath) ? (
           <OrderScreen posProfile={posProfile} />
         ) : activePage === "Order" || activePage === "Home" ? (

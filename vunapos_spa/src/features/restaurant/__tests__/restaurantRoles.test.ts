@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { isRestaurantPageAllowed, restaurantRoleLabel } from "../restaurantRoles";
+import { isRestaurantPageAllowed, restaurantRoleLabel, needsRestaurantShift } from "../restaurantRoles";
+
+describe("restaurant shifts", () => {
+	it("requires a personal shift for waiters and cashiers, not kitchen-only users", () => {
+		expect(needsRestaurantShift(["VunaPOS Waiter"])).toBe(true);
+		expect(needsRestaurantShift(["VunaPOS Cashier"])).toBe(true);
+		expect(needsRestaurantShift(["VunaPOS Kitchen User"])).toBe(false);
+		expect(needsRestaurantShift(["VunaPOS Restaurant Manager"])).toBe(true);
+		expect(needsRestaurantShift([])).toBe(true);
+		expect(needsRestaurantShift(["Sales User"])).toBe(true);
+		expect(needsRestaurantShift(undefined)).toBe(true);
+		expect(needsRestaurantShift(["VunaPOS Kitchen User"], false, true)).toBe(true);
+		expect(isRestaurantPageAllowed("Close Shift", false, { canManageShift: true })).toBe(true);
+	});
+});
 
 describe("restaurantRoleLabel", () => {
 	it("names each VunaPOS role", () => {

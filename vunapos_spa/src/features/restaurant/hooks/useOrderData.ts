@@ -50,6 +50,7 @@ export function useOpenOrders(posProfile?: string) {
       ...sessions.map((session) => ({
         name: session.name,
         restaurant_session: session.name,
+        preparation_status: session.preparation_status,
         status: "Open" as const,
         service_type: session.service_type,
         table: session.tables[0]?.table ?? null,

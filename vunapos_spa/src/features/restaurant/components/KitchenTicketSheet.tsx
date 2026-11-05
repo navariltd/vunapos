@@ -2,6 +2,8 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
 import { Sheet } from "./Sheet";
+import { KitchenActions } from "./KitchenActions";
+import { kitchenStatusClass } from "../kitchenStatus";
 
 export function KitchenTicketSheet({
   name,
@@ -13,7 +15,12 @@ export function KitchenTicketSheet({
   const response = useFrappeGetCall<unknown>(
     vunaMethods.getKitchenTicket,
     { ticket: name },
-    ["kitchen-ticket", name]
+    ["kitchen-ticket", name],
+    {
+      refreshInterval: 12000,
+      refreshWhenHidden: false,
+      shouldRetryOnError: false,
+    }
   );
   let ticket: KitchenTicketDTO | null = null;
   let error = response.error?.message;
@@ -52,6 +59,13 @@ export function KitchenTicketSheet({
       ) : (
         <div className="space-y-4">
           <div className="rounded-lg bg-surface-container-low p-3 text-sm">
+            <span
+              className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
+                ticket.status
+              )}`}
+            >
+              {ticket.status}
+            </span>
             <p>
               {ticket.sales_order} · {ticket.service_type}
             </p>
@@ -110,9 +124,39 @@ export function KitchenTicketSheet({
               </li>
             ))}
           </ul>
+          {ticket.available_actions?.length || ticket.can_cancel_order ? (
+            <KitchenActions
+              ticket={ticket}
+              onChanged={() => void response.mutate()}
+            />
+          ) : null}
+          {ticket.actions?.length ? (
+            <details className="rounded-md border border-outline-variant p-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Preparation activity
+              </summary>
+              <ul className="mt-2 space-y-2">
+                {ticket.actions.map((action) => (
+                  <li key={action.name} className="text-xs">
+                    <p className="font-medium">
+                      {action.action} · {action.outcome} · {action.actor}
+                    </p>
+                    <p className="text-on-surface-variant">
+                      {action.occurred_at} · {action.from_status} →{" "}
+                      {action.to_status}
+                    </p>
+                    {action.reason ? <p>{action.reason}</p> : null}
+                    {action.error_message ? (
+                      <p className="text-error">{action.error_message}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           <p className="text-xs text-on-surface-variant">
-            This is an immutable preparation snapshot. Kitchen progress actions
-            are not available in this phase.
+            Preparation instructions remain an immutable snapshot. Progress
+            actions are recorded separately.
           </p>
         </div>
       )}

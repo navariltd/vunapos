@@ -1,5 +1,6 @@
 import {
   ClipboardList,
+  CookingPot,
   CreditCard,
   Home,
   LogOut,
@@ -25,8 +26,10 @@ export type NavItem = {
 export type NavFeatureFlags = {
   allowCustomerManagement?: boolean;
   allowCustomerPayments?: boolean;
-  // Restaurant mode: only users with the VunaPOS Cashier role close shifts.
+  // Shift ownership is separate from permission to receive payment.
   canTakePayment?: boolean;
+  canManageShift?: boolean;
+  kitchenOnly?: boolean;
 };
 
 const items: NavItem[] = [
@@ -34,6 +37,7 @@ const items: NavItem[] = [
   { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
   // The order screen is not a nav item; Orders stays highlighted while it is open.
   { label: "Orders", title: "Open Orders", icon: ClipboardList, modes: ["Restaurant"], activeFor: ["Order"] },
+  { label: "Kitchen", title: "Kitchen", icon: CookingPot, modes: ["Restaurant"] },
   { label: "Invoices", title: "Sales History", icon: ReceiptText, modes: ["Retail", "Restaurant"] },
   { label: "Payments", title: "Payments", icon: CreditCard, modes: ["Retail", "Restaurant"] },
   { label: "Customers", title: "Customers", icon: Users, modes: ["Retail", "Restaurant"] },
@@ -56,12 +60,13 @@ export function isItemActive(item: NavItem, activePage: POSPage) {
 export function sidebarItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
   return items.filter((item) => {
     if (!item.modes.includes(mode)) return false;
+    if (mode === "Restaurant" && features?.kitchenOnly) return item.label === "Kitchen";
     if (item.label === "Payments")
       return features?.allowCustomerPayments !== false;
     if (item.label === "Customers")
       return features?.allowCustomerManagement !== false;
     // Keep Close Shift in the same main-navigation position as retail.
-    if (mode === "Restaurant" && item.label === "Close Shift") return Boolean(features?.canTakePayment);
+    if (mode === "Restaurant" && item.label === "Close Shift") return Boolean(features?.canManageShift ?? features?.canTakePayment);
     if (mode === "Restaurant" && item.label === "Floor") return false;
     return true;
   });
@@ -69,7 +74,8 @@ export function sidebarItems(features?: NavFeatureFlags, mode: PosMode = "Retail
 
 // Items at the bottom of the sidebar, just above the user card. Restaurant mode
 // keeps Floor available to everyone below Collapse.
-export function sidebarFooterItems(_features?: NavFeatureFlags, mode: PosMode = "Retail") {
+export function sidebarFooterItems(features?: NavFeatureFlags, mode: PosMode = "Retail") {
+  if (features?.kitchenOnly) return [];
   if (mode !== "Restaurant") return [];
   return items.filter((item) => item.label === "Floor");
 }

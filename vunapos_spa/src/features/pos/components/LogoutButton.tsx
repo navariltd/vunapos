@@ -19,9 +19,11 @@ export function LogoutButton() {
   const bootstrap = useBootstrapData();
   const posMode = bootstrap.data?.pos_mode;
   const canTakePayment = bootstrap.data?.can_take_payment;
+  const shiftContext = { posMode, canTakePayment, restaurantRoles: bootstrap.data?.restaurant_roles, canManageRestaurant: bootstrap.data?.can_manage_restaurant };
   // Shares its request with PosOpeningGate; skipped for users who hold no shifts.
   const { session } = usePosSessionStatus(
-    shiftCheckNeeded({ posMode, canTakePayment }) ? bootstrap.data?.pos_profile : undefined,
+    shiftCheckNeeded(shiftContext) ? bootstrap.data?.pos_profile : undefined,
+    bootstrap.data?.current_user,
   );
   const [loggingOut, setLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -39,7 +41,7 @@ export function LogoutButton() {
   }
 
   function requestLogout() {
-    if (shouldConfirmLogout({ posMode, canTakePayment, shiftOpen: Boolean(session?.ready) })) {
+    if (shouldConfirmLogout({ ...shiftContext, shiftOpen: Boolean(session?.ready) })) {
       setConfirmOpen(true);
       return;
     }

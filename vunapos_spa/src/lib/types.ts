@@ -199,6 +199,7 @@ export type CachedProfile = {
 	restaurant?: CachedRestaurantSettings | null;
 	// User-level, sent with the profile: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
+	can_manage_restaurant?: boolean;
 	restaurant_roles?: string[];
 };
 

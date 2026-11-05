@@ -126,6 +126,9 @@ export const vunaMethods = {
 	openRestaurantSession: "vunapos.api.restaurant.open_session",
 	getRestaurantSession: "vunapos.api.restaurant.get_session",
 	getKitchenTicket: "vunapos.api.restaurant.get_kitchen_ticket",
+	getKitchenBoard: "vunapos.api.restaurant.get_kitchen_board",
+	kitchenAction: "vunapos.api.restaurant.kitchen_action",
+	cancelKitchenOrder: "vunapos.api.restaurant.cancel_kitchen_order",
 	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
 	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
 	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
@@ -696,6 +699,18 @@ export function validateRestaurantCart(call: FrappeCall, params: {
 	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; kitchen_routing?: Record<string, string>; price_list?: string | null;
 }) {
 	return callAndUnwrap<{ valid: boolean; qsr_items: string[]; invoice: InvoiceDTO }>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string; station?: string; history?: number; start?: number }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params);
+}
+
+export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
+}
+
+export function cancelKitchenOrder(call: FrappeCall, params: { ticket: string; request_key: string; expected_status: string; reason: string; manager_pin_token?: string }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
 }
 
 export function previewRestaurantCart(call: FrappeCall, params: {

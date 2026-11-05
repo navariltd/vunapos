@@ -7,9 +7,10 @@ describe("shouldConfirmLogout", () => {
 		expect(shouldConfirmLogout({ posMode: "Restaurant", canTakePayment: true, shiftOpen: true })).toBe(true);
 	});
 
-	it("does not ask restaurant users who don't take payment", () => {
-		expect(shouldConfirmLogout({ posMode: "Restaurant", canTakePayment: false, shiftOpen: true })).toBe(false);
-		expect(shouldConfirmLogout({ posMode: "Restaurant", shiftOpen: true })).toBe(false);
+	it("asks restaurant selling users even without payment rights", () => {
+		expect(shouldConfirmLogout({ posMode: "Restaurant", canTakePayment: false, shiftOpen: true })).toBe(true);
+		expect(shouldConfirmLogout({ posMode: "Restaurant", restaurantRoles: ["VunaPOS Waiter"], shiftOpen: true })).toBe(true);
+		expect(shouldConfirmLogout({ posMode: "Restaurant", restaurantRoles: ["VunaPOS Kitchen User"], shiftOpen: true })).toBe(false);
 	});
 
 	it("asks any retail user with an open shift", () => {
@@ -24,8 +25,9 @@ describe("shouldConfirmLogout", () => {
 });
 
 describe("shiftCheckNeeded", () => {
-	it("skips the session request for restaurant users without payment rights", () => {
-		expect(shiftCheckNeeded({ posMode: "Restaurant", canTakePayment: false })).toBe(false);
+	it("skips the session request only for kitchen-only operators", () => {
+		expect(shiftCheckNeeded({ posMode: "Restaurant", canTakePayment: false })).toBe(true);
+		expect(shiftCheckNeeded({ posMode: "Restaurant", restaurantRoles: ["VunaPOS Kitchen User"] })).toBe(false);
 		expect(shiftCheckNeeded({ posMode: "Restaurant", canTakePayment: true })).toBe(true);
 		expect(shiftCheckNeeded({ posMode: "Retail" })).toBe(true);
 	});

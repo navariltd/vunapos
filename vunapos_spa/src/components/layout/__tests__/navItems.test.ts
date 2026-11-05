@@ -21,8 +21,11 @@ describe("retail navigation", () => {
 });
 
 describe("restaurant navigation", () => {
+	it("lets a waiter close their own shift without payment rights", () => {
+		expect(labels(sidebarItems({ canTakePayment: false, canManageShift: true }, "Restaurant"))).toContain("Close Shift");
+	});
 	it("shares Sales History, Payments and Customers with retail", () => {
-		const expected = ["Home", "Orders", "Invoices", "Payments", "Customers"];
+		const expected = ["Home", "Orders", "Kitchen", "Invoices", "Payments", "Customers"];
 		expect(labels(sidebarItems({ canTakePayment: true }, "Restaurant"))).toEqual([...expected, "Close Shift"]);
 		expect(labels(sidebarItems({ canTakePayment: false }, "Restaurant"))).toEqual(expected);
 		expect(labels(sidebarItems(undefined, "Restaurant"))).toEqual(expected);
@@ -35,13 +38,13 @@ describe("restaurant navigation", () => {
 	});
 
 	it("keeps all shared and secondary pages reachable on mobile", () => {
-		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Home", "Orders", "Invoices", "Payments", "Customers", "Close Shift", "Floor", "Profile"]);
-		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Home", "Orders", "Invoices", "Payments", "Customers", "Floor", "Profile"]);
+		expect(labels(bottomNavItems({ canTakePayment: true }, "Restaurant"))).toEqual(["Home", "Orders", "Kitchen", "Invoices", "Payments", "Customers", "Close Shift", "Floor", "Profile"]);
+		expect(labels(bottomNavItems({ canTakePayment: false }, "Restaurant"))).toEqual(["Home", "Orders", "Kitchen", "Invoices", "Payments", "Customers", "Floor", "Profile"]);
 	});
 
 	it("respects profile feature switches without hiding Floor", () => {
 		const features = { allowCustomerPayments: false, allowCustomerManagement: false };
-		expect(labels(sidebarItems(features, "Restaurant"))).toEqual(["Home", "Orders", "Invoices"]);
+		expect(labels(sidebarItems(features, "Restaurant"))).toEqual(["Home", "Orders", "Kitchen", "Invoices"]);
 		expect(labels(sidebarFooterItems(features, "Restaurant"))).toEqual(["Floor"]);
 	});
 
@@ -49,5 +52,11 @@ describe("restaurant navigation", () => {
 		const orders = sidebarItems({}, "Restaurant").find((item) => item.label === "Orders");
 		expect(orders?.activeFor).toEqual(["Order"]);
 		expect(labels(sidebarItems({}, "Restaurant"))).not.toContain("Order");
+	});
+
+	it("gives kitchen-only users a focused kitchen/profile navigation", () => {
+		expect(labels(sidebarItems({ kitchenOnly: true }, "Restaurant"))).toEqual(["Kitchen"]);
+		expect(sidebarFooterItems({ kitchenOnly: true }, "Restaurant")).toEqual([]);
+		expect(labels(bottomNavItems({ kitchenOnly: true }, "Restaurant"))).toEqual(["Kitchen", "Profile"]);
 	});
 });

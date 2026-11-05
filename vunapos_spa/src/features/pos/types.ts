@@ -193,6 +193,7 @@ export type POSClosingPreviewDTO = {
 
 
 export type BootstrapData = {
+	can_manage_restaurant?: boolean;
 	user?: unknown;
 	current_user?: string;
 	pos_profile?: string;
