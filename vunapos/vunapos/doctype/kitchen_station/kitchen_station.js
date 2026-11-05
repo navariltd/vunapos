@@ -5,7 +5,6 @@ frappe.ui.form.on("Kitchen Station", {
 		}));
 		frm.set_query("branch", () => ({
 			filters: {
-				name: frm.restaurant_branch || "",
 				...(frm.doc.company ? { vunapos_company: frm.doc.company } : {}),
 			},
 		}));
@@ -25,13 +24,9 @@ frappe.ui.form.on("Kitchen Station", {
 		if (!frm.doc.restaurant) return;
 		const restaurant = frm.doc.restaurant;
 		const company = frm.doc.company;
-		const { message } = await frappe.db.get_value("Restaurant", restaurant, [
-			"company",
-			"branch",
-		]);
+		const { message } = await frappe.db.get_value("Restaurant", restaurant, ["company"]);
 		if (frm.doc.restaurant !== restaurant || frm.doc.company !== company) return;
 		if (message && frm.doc.company && message.company !== frm.doc.company) {
-			frm.restaurant_branch = null;
 			await frm.set_value({ restaurant: null, branch: null });
 		}
 	},
@@ -39,13 +34,13 @@ frappe.ui.form.on("Kitchen Station", {
 
 async function set_restaurant_context(frm) {
 	const restaurant = frm.doc.restaurant;
-	frm.restaurant_branch = null;
 	if (!restaurant) {
 		if (frm.doc.branch) await frm.set_value("branch", null);
 		return;
 	}
-	const { message } = await frappe.db.get_value("Restaurant", restaurant, ["company", "branch"]);
+	const { message } = await frappe.db.get_value("Restaurant", restaurant, "company");
 	if (frm.doc.restaurant !== restaurant || !message) return;
-	frm.restaurant_branch = message.branch;
-	await frm.set_value({ company: message.company, branch: message.branch });
+	if (frm.doc.company !== message.company) {
+		await frm.set_value({ company: message.company, branch: null });
+	}
 }

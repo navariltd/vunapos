@@ -97,6 +97,8 @@ def line_id(row):
 
 def order_summary_to_dict(row):
 	return {
+		"restaurant": row.get("vunapos_restaurant"),
+		"branch": row.get("vunapos_branch"),
 		"restaurant_session": row.get("vunapos_restaurant_session"),
 		"name": row.name,
 		"status": order_status(row),
@@ -123,6 +125,7 @@ def order_to_dict(doc):
 		"sales_order_status": doc.status,
 		"pos_profile": doc.vunapos_pos_profile,
 		"restaurant": doc.vunapos_restaurant,
+		"branch": doc.get("vunapos_branch"),
 		"service_type": doc.vunapos_service_type,
 		"table": doc.vunapos_restaurant_table,
 		"table_label": _table_label(doc.vunapos_restaurant_table),

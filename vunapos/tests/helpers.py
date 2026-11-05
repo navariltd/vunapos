@@ -302,7 +302,6 @@ def ensure_test_restaurant(name=RESTAURANT_TEST):
 			{
 				"doctype": "Restaurant",
 				"restaurant_name": name,
-				"branch": branch,
 				"company": _company(),
 				"service_types": [
 					{"service_type": service_type, "is_default": int(index == 0)}
@@ -310,8 +309,6 @@ def ensure_test_restaurant(name=RESTAURANT_TEST):
 				],
 			}
 		).insert(ignore_permissions=True)
-	elif not frappe.db.get_value("Restaurant", name, "branch"):
-		frappe.db.set_value("Restaurant", name, "branch", branch)
 	return name
 
 
@@ -322,11 +319,16 @@ def ensure_test_restaurant_profile():
 		profile.set("__newname", RESTAURANT_TEST_PROFILE)
 		profile.vunapos_pos_mode = "Restaurant"
 		profile.vunapos_restaurant = restaurant
+		profile.vunapos_branch = f"{restaurant} Branch"
 		profile.insert(ignore_permissions=True)
 	frappe.db.set_value(
 		"POS Profile",
 		RESTAURANT_TEST_PROFILE,
-		{"vunapos_pos_mode": "Restaurant", "vunapos_restaurant": restaurant},
+		{
+			"vunapos_pos_mode": "Restaurant",
+			"vunapos_restaurant": restaurant,
+			"vunapos_branch": f"{restaurant} Branch",
+		},
 	)
 	# Generic order fixtures are direct-sale items. QSR tests explicitly opt
 	# into station groups, recipes and ingredient stock.
@@ -338,6 +340,7 @@ def ensure_test_restaurant_profile():
 			{
 				"doctype": "Kitchen Station",
 				"station_name": station,
+				"branch": f"{restaurant} Branch",
 				"restaurant": restaurant,
 				"enabled": 1,
 				"item_groups": [],

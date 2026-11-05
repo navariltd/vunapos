@@ -11,6 +11,10 @@
   "enabled",
   "column_break_main",
   "company",
+  "restaurant",
+  "branch",
+  "floor_wise_menu",
+  "floors",
   "groups_section",
   "item_groups",
   "items_section",
@@ -44,6 +48,36 @@
    "in_standard_filter": 1,
    "label": "Company",
    "options": "Company"
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "description": "Required for branch-specific menus; leave blank for a shared default menu."
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "description": "Optional. Restrict this menu to one branch."
+  },
+  {
+   "fieldname": "floor_wise_menu",
+   "fieldtype": "Check",
+   "label": "Floor-wise Menu",
+   "default": "0"
+  },
+  {
+   "fieldname": "floors",
+   "fieldtype": "Table",
+   "label": "Floors",
+   "options": "Restaurant Menu Floor",
+   "depends_on": "eval:doc.floor_wise_menu",
+   "mandatory_depends_on": "eval:doc.floor_wise_menu"
   },
   {
    "fieldname": "groups_section",

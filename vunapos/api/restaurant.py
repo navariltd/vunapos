@@ -51,6 +51,51 @@ def get_kitchen_board(pos_profile: str, station: str | None = None, history: int
 		return _failure_from_exception(exc)
 
 
+@frappe.whitelist()
+def preview_session_bill(session: str, pos_profile: str | None = None, loyalty_points=None):
+	from vunapos.services.restaurant_billing_service import preview
+
+	try:
+		return success(preview(session, pos_profile, loyalty_points))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def checkout_session(
+	session: str,
+	pos_profile: str,
+	fingerprint: str,
+	payments=None,
+	is_credit_sale=False,
+	due_date=None,
+	loyalty_points=None,
+	tax_id=None,
+	shipping_address_name=None,
+	checkout_fields=None,
+):
+	from vunapos.services.restaurant_billing_service import checkout
+
+	try:
+		return success(
+			checkout(
+				session,
+				pos_profile,
+				fingerprint,
+				payments,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
+				loyalty_points=loyalty_points,
+				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				checkout_fields=checkout_fields,
+			)
+		)
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
 @frappe.whitelist(methods=["POST"])
 def kitchen_action(ticket: str, action: str, request_key: str, expected_status: str):
 	from vunapos.services.kitchen_lifecycle_service import transition

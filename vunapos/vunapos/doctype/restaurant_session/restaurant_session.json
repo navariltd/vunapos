@@ -20,10 +20,18 @@
   "status",
   "opened_at",
   "closed_at",
+  "billing_doctype",
+  "billing_invoice",
+  "billing_profile",
+  "billing_fingerprint",
   "tables",
   "idempotency_key"
  ],
  "fields": [
+  {"fieldname": "billing_doctype", "label": "Billing Document Type", "fieldtype": "Link", "options": "DocType", "read_only": 1},
+  {"fieldname": "billing_invoice", "label": "Bill", "fieldtype": "Dynamic Link", "options": "billing_doctype", "read_only": 1},
+  {"fieldname": "billing_profile", "label": "Billing POS Profile", "fieldtype": "Link", "options": "POS Profile", "read_only": 1},
+  {"fieldname": "billing_fingerprint", "label": "Bill Fingerprint", "fieldtype": "Data", "read_only": 1, "hidden": 1},
   {
    "fieldname": "selling_price_list", "label": "Price List", "fieldtype": "Link", "options": "Price List", "read_only": 1
   },

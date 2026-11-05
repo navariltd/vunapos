@@ -1,8 +1,7 @@
 """The restaurant behind a POS Profile.
 
-A POS Profile is a till. The restaurant (Restaurant) holds what every
-till in it shares: floors and tables, service types and the order rules. A
-profile in Restaurant mode links to exactly one restaurant of its own company.
+A POS Profile is a till in one Branch. Restaurant is the shared Company-level
+business; its service types and order rules apply across its branch locations.
 """
 
 import frappe
@@ -14,9 +13,7 @@ RESTAURANT_DOCTYPE = "Restaurant"
 
 def validate_branch_company(branch, company):
 	if not branch:
-		_throw(
-			"RESTAURANT_BRANCH_REQUIRED", _("Select a Branch on the Restaurant before operating this POS.")
-		)
+		_throw("RESTAURANT_BRANCH_REQUIRED", _("Select the operating Branch on the POS Profile."))
 	branch_company = frappe.db.get_value("Branch", branch, "vunapos_company")
 	if not branch_company or branch_company != company:
 		_throw(
@@ -27,7 +24,7 @@ def validate_branch_company(branch, company):
 		)
 
 
-def require_restaurant_context(restaurant, company=None):
+def require_restaurant_context(restaurant, company=None, branch=None):
 	"""Validate location ownership and enforce Frappe User Permissions, including Branch."""
 	doc = frappe.get_cached_doc(RESTAURANT_DOCTYPE, restaurant)
 	if not cint(doc.enabled):
@@ -36,20 +33,33 @@ def require_restaurant_context(restaurant, company=None):
 		_throw(
 			"RESTAURANT_COMPANY_MISMATCH", _("Restaurant and POS Profile must belong to the same company.")
 		)
-	validate_branch_company(doc.branch, doc.company)
 	doc.check_permission("read")
-	frappe.get_doc("Branch", doc.branch).check_permission("read")
+	if branch:
+		validate_branch_company(branch, doc.company)
+		frappe.get_doc("Branch", branch).check_permission("read")
 	return doc
 
 
 def validate_branch_doc(doc, method=None):
 	"""Never let a Branch company change invalidate its restaurant history."""
 	if not doc.is_new() and doc.has_value_changed("vunapos_company"):
-		conflicts = frappe.get_all(
-			RESTAURANT_DOCTYPE,
-			filters={"branch": doc.name, "company": ["!=", doc.get("vunapos_company") or ""]},
-			pluck="name",
-		)
+		company = doc.get("vunapos_company") or ""
+		conflicts = []
+		for doctype, branch_field in (
+			("POS Profile", "vunapos_branch"),
+			("Kitchen Station", "branch"),
+			("Restaurant Session", "branch"),
+		):
+			conflicts.extend(
+				frappe.get_all(
+					doctype, filters={branch_field: doc.name, "company": ["!=", company]}, pluck="name"
+				)
+			)
+		for floor in frappe.get_all(
+			"Restaurant Floor", filters={"branch": doc.name}, fields=["name", "restaurant"]
+		):
+			if frappe.get_cached_value("Restaurant", floor.restaurant, "company") != company:
+				conflicts.append(floor.name)
 		if conflicts:
 			_throw(
 				"RESTAURANT_BRANCH_COMPANY_MISMATCH",
@@ -58,11 +68,15 @@ def validate_branch_doc(doc, method=None):
 
 
 def backfill_branch_companies():
-	"""Only infer ownership from unambiguous existing Restaurant links; never invent locations."""
+	"""Only infer ownership from unambiguous existing profiles; never invent locations."""
 	if not frappe.db.exists("DocType", RESTAURANT_DOCTYPE):
 		return
 	companies = {}
-	for row in frappe.get_all(RESTAURANT_DOCTYPE, fields=["branch", "company"]):
+	for row in frappe.get_all(
+		"POS Profile",
+		fields=["vunapos_branch as branch", "company"],
+		filters={"vunapos_pos_mode": "Restaurant"},
+	):
 		if row.branch and row.company:
 			companies.setdefault(row.branch, set()).add(row.company)
 	for branch, owners in companies.items():
@@ -102,20 +116,23 @@ def require_profile_restaurant(profile):
 	return restaurant
 
 
-def get_restaurant_profiles(restaurant):
-	"""Every till (POS Profile) of a restaurant."""
-	return frappe.get_all(
-		"POS Profile", filters={"vunapos_restaurant": restaurant, "disabled": 0}, pluck="name"
-	)
+def get_restaurant_profiles(restaurant, branch=None, enabled_only=True):
+	"""Enabled tills of a Restaurant, optionally restricted to one operating Branch."""
+	filters = {"vunapos_restaurant": restaurant}
+	if enabled_only:
+		filters["disabled"] = 0
+	if branch:
+		filters["vunapos_branch"] = branch
+	return frappe.get_all("POS Profile", filters=filters, pluck="name")
 
 
-def require_restaurant_access(restaurant, user=None):
-	"""Staff of any till in a restaurant may work on its tables and orders."""
+def require_restaurant_access(restaurant, user=None, branch=None):
+	"""Staff assigned to a till in this Restaurant/Branch may work on its operations."""
 	user = user or frappe.session.user
 	if user != frappe.session.user:
 		raise frappe.PermissionError(_("Restaurant access must be checked for the current user."))
-	require_restaurant_context(restaurant)
-	profiles = get_restaurant_profiles(restaurant) if restaurant else []
+	require_restaurant_context(restaurant, branch=branch)
+	profiles = get_restaurant_profiles(restaurant, branch) if restaurant else []
 	if not profiles or not frappe.db.exists("POS Profile User", {"parent": ["in", profiles], "user": user}):
 		exc = frappe.PermissionError(
 			_("User {0} is not assigned to any POS Profile of restaurant {1}").format(user, restaurant)
@@ -127,22 +144,6 @@ def require_restaurant_access(restaurant, user=None):
 
 def validate_restaurant_doc(doc):
 	"""Restaurant validate. Desk-only, so it uses frappe.throw."""
-	validate_branch_company(doc.branch, doc.company)
-	if not doc.is_new() and doc.has_value_changed("branch"):
-		if any(
-			frappe.db.exists(doctype, {field: doc.name})
-			for doctype, field in (
-				("POS Profile", "vunapos_restaurant"),
-				("Restaurant Floor", "restaurant"),
-				("Sales Order", "vunapos_restaurant"),
-			)
-		):
-			_throw(
-				"RESTAURANT_BRANCH_IN_USE",
-				_(
-					"Cannot move a configured restaurant to another Branch. Create a new restaurant for that location."
-				),
-			)
 	defaults = [row.service_type for row in doc.get("service_types") or [] if cint(row.is_default)]
 	if len(defaults) > 1:
 		frappe.throw(
@@ -160,7 +161,10 @@ def validate_restaurant_doc(doc):
 			)
 		seen.add(row.service_type)
 	if doc.default_menu:
-		menu_company = frappe.db.get_value("Restaurant Menu", doc.default_menu, "company")
+		menu = frappe.get_cached_doc("Restaurant Menu", doc.default_menu)
+		menu_company = menu.company
+		if menu.get("restaurant") and menu.restaurant != doc.name:
+			_throw("MENU_CONTEXT_MISMATCH", _("The default menu belongs to another Restaurant."))
 		if menu_company and menu_company != doc.company:
 			frappe.throw(
 				_("Menu {0} belongs to company {1}, not {2}").format(
@@ -169,6 +173,16 @@ def validate_restaurant_doc(doc):
 				title=_("Menu"),
 			)
 	if not doc.is_new() and doc.has_value_changed("company"):
+		if any(
+			frappe.db.exists(doctype, {"restaurant": doc.name})
+			for doctype in ("Restaurant Floor", "Kitchen Station")
+		):
+			_throw(
+				"RESTAURANT_COMPANY_IN_USE",
+				_(
+					"This Restaurant has branch locations. Create another Restaurant instead of changing its Company."
+				),
+			)
 		profiles = frappe.get_all(
 			"POS Profile",
 			filters={"vunapos_restaurant": doc.name, "company": ["!=", doc.company]},
@@ -223,6 +237,16 @@ def validate_profile_restaurant(profile, method=None):
 			),
 			title=_("Restaurant"),
 		)
-	restaurant = frappe.get_cached_doc(RESTAURANT_DOCTYPE, profile.vunapos_restaurant)
-	validate_branch_company(restaurant.branch, profile.company)
-	profile.vunapos_branch = restaurant.branch
+	validate_branch_company(profile.get("vunapos_branch"), profile.company)
+	if not profile.is_new() and any(
+		profile.has_value_changed(field) for field in ("vunapos_restaurant", "vunapos_branch")
+	):
+		if frappe.db.exists("Restaurant Session", {"pos_profile": profile.name}) or frappe.db.exists(
+			"Sales Order", {"vunapos_pos_profile": profile.name, "vunapos_restaurant": ["is", "set"]}
+		):
+			_throw(
+				"RESTAURANT_PROFILE_LOCATION_IN_USE",
+				_(
+					"This POS Profile has restaurant history. Create a new profile instead of changing its Restaurant or Branch."
+				),
+			)

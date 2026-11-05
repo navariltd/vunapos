@@ -55,8 +55,8 @@ def validate_session(doc):
 		_fail("INVALID_PAX", _("Guests cannot be negative."))
 	profile = frappe.get_cached_doc("POS Profile", doc.pos_profile)
 	restaurant = profile.vunapos_restaurant
-	context = require_restaurant_context(restaurant, profile.company)
-	if (doc.restaurant, doc.branch, doc.company) != (restaurant, context.branch, profile.company):
+	require_restaurant_context(restaurant, profile.company, profile.vunapos_branch)
+	if (doc.restaurant, doc.branch, doc.company) != (restaurant, profile.vunapos_branch, profile.company):
 		_fail("SESSION_CONTEXT_MISMATCH", _("Restaurant Session location does not match its POS Profile."))
 	service = resolve_service_type(profile, doc.service_type)
 	active_tables = [row.table for row in doc.tables if not row.released_at]
@@ -67,14 +67,28 @@ def validate_session(doc):
 	if len(active_tables) != len(set(active_tables)):
 		_fail("DUPLICATE_TABLE", _("A table cannot be assigned twice to the same session."))
 
+	from vunapos.services.menu_service import get_menu_definition, resolve_table_floor
 
-def lock_tables(tables, restaurant, session=None):
+	menus = {
+		get_menu_definition(profile, doc.service_type, resolve_table_floor(profile.name, table))["menu"]
+		for table in active_tables
+	}
+	if len(menus) > 1:
+		_fail("SESSION_MENU_MISMATCH", _("Choose tables using the same menu for one session."))
+
+
+def lock_tables(tables, restaurant, session=None, branch=None):
 	"""All entry points lock table rows in a stable order, then check current ownership."""
 	for table in sorted(set(tables)):
 		row = frappe.db.get_value(
-			"Restaurant Table", table, ["restaurant", "is_active"], as_dict=True, for_update=True
+			"Restaurant Table", table, ["restaurant", "branch", "is_active"], as_dict=True, for_update=True
 		)
-		if not row or row.restaurant != restaurant or not cint(row.is_active):
+		if (
+			not row
+			or row.restaurant != restaurant
+			or (branch and row.branch != branch)
+			or not cint(row.is_active)
+		):
 			_fail("TABLE_NOT_FOUND", _("Table {0} is unavailable in this restaurant.").format(table))
 		for assignment in current_assignments(table):
 			if (
@@ -90,7 +104,7 @@ def lock_tables(tables, restaurant, session=None):
 
 def _load(session, for_update=False):
 	doc = frappe.get_doc(SESSION, session, for_update=for_update)
-	require_restaurant_access(doc.restaurant)
+	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
 	return doc
 
@@ -104,7 +118,9 @@ def session_to_dict(doc):
 	available_waiters = []
 	if is_floor_plan_manager():
 		profiles = frappe.get_all(
-			"POS Profile", filters={"vunapos_restaurant": doc.restaurant, "disabled": 0}, pluck="name"
+			"POS Profile",
+			filters={"vunapos_restaurant": doc.restaurant, "vunapos_branch": doc.branch, "disabled": 0},
+			pluck="name",
 		)
 		users = (
 			frappe.get_all("POS Profile User", filters={"parent": ["in", profiles]}, pluck="user")
@@ -136,6 +152,9 @@ def session_to_dict(doc):
 		"waiter_name": waiter_name(doc.waiter),
 		"guest_count": cint(doc.guest_count),
 		"status": doc.status,
+		"billing_doctype": doc.get("billing_doctype"),
+		"billing_invoice": doc.get("billing_invoice"),
+		"billing_profile": doc.get("billing_profile"),
 		"kitchen_tickets": tickets,
 		"preparation_status": preparation_summary(tickets),
 		"opened_at": doc.opened_at,
@@ -165,11 +184,24 @@ def list_sessions(pos_profile):
 
 	profile = resolve_pos_profile(pos_profile)
 	restaurant = require_restaurant_profile(profile.name)
-	require_restaurant_access(restaurant)
+	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
 	rows = frappe.get_all(
 		SESSION,
-		filters={"restaurant": restaurant, "status": ["in", ACTIVE_STATUSES]},
-		fields=["name", "customer", "waiter", "guest_count", "opened_at", "service_type", "modified"],
+		filters={
+			"restaurant": restaurant,
+			"branch": profile.vunapos_branch,
+			"status": ["in", ACTIVE_STATUSES],
+		},
+		fields=[
+			"name",
+			"customer",
+			"waiter",
+			"guest_count",
+			"opened_at",
+			"service_type",
+			"modified",
+			"status",
+		],
 		order_by="opened_at asc",
 	)
 	if not rows:
@@ -241,9 +273,11 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 		from vunapos.services.floor_plan_service import require_floor_plan_manager
 
 		require_floor_plan_manager()
-		require_restaurant_access(doc.restaurant, user=None)
+		require_restaurant_access(doc.restaurant, user=None, branch=doc.branch)
 		profiles = frappe.get_all(
-			"POS Profile", filters={"vunapos_restaurant": doc.restaurant, "disabled": 0}, pluck="name"
+			"POS Profile",
+			filters={"vunapos_restaurant": doc.restaurant, "vunapos_branch": doc.branch, "disabled": 0},
+			pluck="name",
 		)
 		if not frappe.db.exists("POS Profile User", {"parent": ["in", profiles], "user": waiter}):
 			_fail("WAITER_NOT_ASSIGNED", _("Choose a waiter assigned to this restaurant."))
@@ -254,7 +288,7 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 		if not isinstance(tables, list) or len(tables) != len(set(tables)):
 			_fail("INVALID_TABLES", _("Choose each table once."))
 		old = [row.table for row in doc.tables if not row.released_at]
-		lock_tables(set(old) | set(tables), doc.restaurant, session=doc.name)
+		lock_tables(set(old) | set(tables), doc.restaurant, session=doc.name, branch=doc.branch)
 		for row in doc.tables:
 			if not row.released_at and row.table not in tables:
 				row.update(
@@ -282,7 +316,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_staff_shift(profile.name)
 	restaurant = require_restaurant_profile(profile.name)
-	require_restaurant_access(restaurant)
+	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
 	# Serialize retries on the profile even for takeaway sessions without tables.
 	frappe.db.get_value("POS Profile", profile.name, "name", for_update=True)
 	existing = frappe.db.get_value(SESSION, {"idempotency_key": idempotency_key}, "name", for_update=True)
@@ -302,8 +336,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 		_fail("TABLE_NOT_APPLICABLE", _("This service type does not use tables."))
 	if len(tables) != len(set(tables)):
 		_fail("DUPLICATE_TABLE", _("Choose each table once."))
-	lock_tables(tables, restaurant)
-	context = frappe.get_cached_doc("Restaurant", restaurant)
+	lock_tables(tables, restaurant, branch=profile.vunapos_branch)
 	from vunapos.services.invoice_service import _build_sales_order_doc
 
 	priced, _profile = _build_sales_order_doc(
@@ -313,7 +346,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 		{
 			"doctype": SESSION,
 			"restaurant": restaurant,
-			"branch": context.branch,
+			"branch": profile.vunapos_branch,
 			"company": profile.company,
 			"pos_profile": profile.name,
 			"service_type": service_type,
@@ -350,9 +383,9 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 	if not idempotency_key:
 		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required for each round."))
 	tables = [row.table for row in doc.tables if not row.released_at]
-	lock_tables(tables, doc.restaurant, session=doc.name)
+	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
 	profile = resolve_pos_profile(pos_profile or doc.pos_profile)
-	if require_restaurant_profile(profile.name) != doc.restaurant:
+	if require_restaurant_profile(profile.name) != doc.restaurant or profile.vunapos_branch != doc.branch:
 		_fail("SESSION_CONTEXT_MISMATCH", _("Choose a POS Profile belonging to this session's restaurant."))
 	return create_order(
 		pos_profile=profile.name,
@@ -381,7 +414,12 @@ def cancel_empty_session(session):
 			"SESSION_HAS_ROUNDS",
 			_("A session with ordering rounds must use the order cancellation or settlement workflow."),
 		)
-	lock_tables([row.table for row in doc.tables if not row.released_at], doc.restaurant, session=doc.name)
+	lock_tables(
+		[row.table for row in doc.tables if not row.released_at],
+		doc.restaurant,
+		session=doc.name,
+		branch=doc.branch,
+	)
 	for row in doc.tables:
 		if not row.released_at:
 			row.update(

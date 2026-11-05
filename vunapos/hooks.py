@@ -216,10 +216,14 @@ doc_events["Branch"] = {
 }
 doc_events["Item"]["validate"] = "vunapos.services.modifier_service.validate_item_options"
 doc_events["Sales Order"] = {
+	"validate": "vunapos.services.restaurant_location_service.validate_location_snapshot",
 	"on_cancel": "vunapos.services.kitchen_lifecycle_service.allow_cancelled_order_audit_links",
 	"on_submit": "vunapos.services.kitchen_service.generate_tickets",
 	"before_cancel": "vunapos.services.kitchen_service.protect_order_cancellation",
-	"before_update_after_submit": "vunapos.services.restaurant_session_service.protect_committed_round",
+	"before_update_after_submit": [
+		"vunapos.services.restaurant_location_service.validate_location_snapshot",
+		"vunapos.services.restaurant_session_service.protect_committed_round",
+	],
 }
 # Stock and tracking changes do not publish POS configuration events, but they
 # must invalidate cached catalogue balances immediately.
@@ -245,6 +249,19 @@ doc_events.update(
 
 # Scheduled Tasks
 # ---------------
+
+for _billing_doctype in ("Sales Invoice", "POS Invoice"):
+	doc_events.setdefault(_billing_doctype, {}).update(
+		{
+			"validate": [
+				"vunapos.services.restaurant_location_service.validate_location_snapshot",
+				"vunapos.services.restaurant_billing_service.validate_billing_invoice",
+			],
+			"before_update_after_submit": "vunapos.services.restaurant_location_service.validate_location_snapshot",
+			"on_submit": "vunapos.services.restaurant_billing_service.on_submit",
+			"before_submit": "vunapos.services.restaurant_billing_service.before_submit",
+		}
+	)
 
 scheduler_events = {
 	"cron": {

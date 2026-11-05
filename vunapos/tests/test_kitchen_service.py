@@ -86,6 +86,7 @@ class TestKitchenService(IntegrationTestCase):
 					"doctype": "Kitchen Station",
 					"station_name": f"Kitchen {suffix} {self.token}",
 					"restaurant": restaurant_name or self.profile.vunapos_restaurant,
+					"branch": f"{restaurant_name} Branch" if restaurant_name else self.profile.vunapos_branch,
 					"enabled": enabled,
 					"raw_material_warehouse": self.profile.warehouse,
 					"item_groups": [{"item_group": name} for name in groups],
@@ -126,9 +127,7 @@ class TestKitchenService(IntegrationTestCase):
 		self.assertEqual(work_order.sales_order_item, ticket.items[0].sales_order_item)
 		self.assertEqual(work_order.fg_warehouse, self.profile.warehouse)
 		self.assertEqual(work_order.required_items[0].stock_reserved_qty, 2)
-		self.assertEqual(
-			ticket.branch, frappe.get_cached_value("Restaurant", self.profile.vunapos_restaurant, "branch")
-		)
+		self.assertEqual(ticket.branch, self.profile.vunapos_branch)
 		self.assertEqual(len(restaurant.get_session(self.session)["data"]["kitchen_tickets"]), 1)
 		self.assertEqual(
 			restaurant.get_kitchen_ticket(ticket.name)["data"]["items"][0]["item_code"], self.item
@@ -375,13 +374,14 @@ class TestKitchenService(IntegrationTestCase):
 		self.assertFalse(self._tickets())
 		self.assertFalse(frappe.db.exists("Sales Order", {"vunapos_restaurant_session": self.session}))
 
-	def test_station_rejects_branch_or_company_from_another_restaurant(self):
+	def test_station_rejects_branch_without_matching_company(self):
 		station = frappe.get_doc("Kitchen Station", self.station)
-		other = frappe.get_doc("Restaurant", ensure_test_restaurant(f"Foreign Branch {self.token}"))
-		station.branch = other.branch
+		station.branch = (
+			frappe.get_doc({"doctype": "Branch", "branch": f"Unassigned {self.token}"}).insert().name
+		)
 		with self.assertRaises(frappe.ValidationError) as error:
 			station.save()
-		self.assertEqual(error.exception.vuna_error_code, "STATION_CONTEXT_MISMATCH")
+		self.assertEqual(error.exception.vuna_error_code, "RESTAURANT_BRANCH_COMPANY_MISMATCH")
 
 	def test_shared_ingredients_are_aggregated_across_dishes(self):
 		other = self._item("Shared")
@@ -647,7 +647,12 @@ class TestKitchenService(IntegrationTestCase):
 		other = ensure_test_restaurant(f"Other Kitchen {self.token}")
 		label = frappe.get_cached_value("Kitchen Station", self.station, "station_name")
 		second = frappe.get_doc(
-			{"doctype": "Kitchen Station", "station_name": label, "restaurant": other}
+			{
+				"doctype": "Kitchen Station",
+				"station_name": label,
+				"restaurant": other,
+				"branch": f"{other} Branch",
+			}
 		).insert()
 		self.assertNotEqual(second.name, self.station)
 		with self.assertRaises(frappe.ValidationError):
@@ -655,6 +660,7 @@ class TestKitchenService(IntegrationTestCase):
 				{
 					"doctype": "Kitchen Station",
 					"station_name": label,
+					"branch": self.profile.vunapos_branch,
 					"restaurant": self.profile.vunapos_restaurant,
 				}
 			).insert()
@@ -667,6 +673,7 @@ class TestKitchenService(IntegrationTestCase):
 			{
 				"doctype": "Kitchen Station",
 				"station_name": f"Setup {self.token}",
+				"branch": self.profile.vunapos_branch,
 				"restaurant": self.profile.vunapos_restaurant,
 			}
 		).insert()

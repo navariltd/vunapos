@@ -126,6 +126,8 @@ def invoice_to_dict(doc):
 		"customer_name": _value(doc, "customer_name"),
 		"tax_id": _value(doc, "tax_id"),
 		"shipping_address_name": _value(doc, "shipping_address_name"),
+		"restaurant": _value(doc, "vunapos_restaurant"),
+		"branch": _value(doc, "vunapos_branch"),
 		"selling_price_list": _value(doc, "selling_price_list"),
 		"price_list_currency": _value(doc, "price_list_currency"),
 		"redeem_loyalty_points": bool(_value(doc, "redeem_loyalty_points", 0)),

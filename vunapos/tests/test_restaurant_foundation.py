@@ -48,11 +48,12 @@ class TestRestaurantFoundation(IntegrationTestCase):
 		ensure_vunapos_roles()
 		profile_name = ensure_test_restaurant_profile()
 		profile = frappe.get_doc("POS Profile", profile_name)
-		branch = frappe.db.get_value("Restaurant", profile.vunapos_restaurant, "branch")
+		branch = profile.vunapos_branch
 		other_restaurant = ensure_test_restaurant("_Test Restricted Restaurant")
 		other = frappe.copy_doc(profile)
 		other.set("__newname", "_Test Restricted Restaurant Profile")
 		other.vunapos_restaurant = other_restaurant
+		other.vunapos_branch = f"{other_restaurant} Branch"
 		if not frappe.db.exists("POS Profile", "_Test Restricted Restaurant Profile"):
 			other.insert(ignore_permissions=True)
 		user = "_test_restaurant_branch_restriction@example.com"
@@ -73,7 +74,8 @@ class TestRestaurantFoundation(IntegrationTestCase):
 			self.assertTrue(get_floor_plan(profile_name)["ok"])
 			self.assertFalse(get_floor_plan("_Test Restricted Restaurant Profile")["ok"])
 			visible = frappe.get_list("Restaurant", pluck="name")
-			self.assertNotIn(other_restaurant, visible)
+			# Restaurant is a shared Company-level master, not a Branch record.
+			self.assertIn(other_restaurant, visible)
 		finally:
 			frappe.set_user("Administrator")
 
@@ -124,7 +126,7 @@ class TestRestaurantFoundation(IntegrationTestCase):
 		doc.is_new.return_value = False
 		doc.has_value_changed.return_value = True
 		doc.get.return_value = "Company B"
-		with patch("frappe.get_all", return_value=["Restaurant A"]):
+		with patch("frappe.get_all", side_effect=[["Profile A"], [], [], []]):
 			with self.assertRaises(frappe.ValidationError):
 				validate_branch_doc(doc)
 
@@ -140,7 +142,7 @@ class TestRestaurantFoundation(IntegrationTestCase):
 			patch("frappe.db.get_value", return_value="Company A"),
 		):
 			with self.assertRaises(frappe.PermissionError):
-				require_restaurant_context("Restaurant A", "Company A")
+				require_restaurant_context("Restaurant A", "Company A", "Branch A")
 			branch.check_permission.assert_called_once_with("read")
 
 	def test_caught_write_failure_rolls_back(self):

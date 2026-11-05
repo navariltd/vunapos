@@ -4,13 +4,8 @@ import frappe
 
 
 def query_conditions(user=None):
-	if (user or frappe.session.user) == "Administrator":
-		return ""
-	branches = frappe.get_list("Branch", pluck="name", user=user or frappe.session.user, limit_page_length=0)
-	if not branches:
-		return "1=0"
-	values = ", ".join(frappe.db.escape(branch) for branch in branches)
-	return f"`tabRestaurant`.`branch` in ({values})"
+	# Restaurant is Company-level. Native Company User Permissions still apply.
+	return ""
 
 
 def _related_conditions(doctype, fieldname, user=None, allow_retail=False):
@@ -22,6 +17,12 @@ def _related_conditions(doctype, fieldname, user=None, allow_retail=False):
 	if restaurants:
 		values = ", ".join(frappe.db.escape(name) for name in restaurants)
 		condition = f"{column} in ({values})"
+	branch_column = f"`tab{doctype}`.`branch`"
+	if doctype == "Sales Order":
+		branch_column = "`tabSales Order`.`vunapos_branch`"
+	branches = frappe.get_list("Branch", pluck="name", user=user or frappe.session.user, limit_page_length=0)
+	values = ", ".join(frappe.db.escape(name) for name in branches) or "NULL"
+	condition = f"({condition}) and {branch_column} in ({values})"
 	if allow_retail:
 		condition = f"({column} is null or {column} = '' or ({condition}))"
 	return condition
@@ -69,6 +70,11 @@ def order_conditions(user=None):
 
 
 def related_has_permission(doc, user=None, permission_type=None):
+	branch = doc.get("branch")
+	if doc.doctype == "Sales Order" and doc.get("vunapos_restaurant"):
+		branch = doc.get("vunapos_branch")
+	if branch and not frappe.has_permission("Branch", "read", doc=branch, user=user or frappe.session.user):
+		return False
 	if (
 		doc.doctype in ("Kitchen Order Ticket", "Kitchen Ticket Action")
 		and doc.get("kitchen_station")
@@ -86,9 +92,5 @@ def related_has_permission(doc, user=None, permission_type=None):
 
 
 def has_permission(doc, user=None, permission_type=None):
-	if not doc.get("branch"):
-		# Legacy records can still be configured by users with normal document rights.
-		return True
-	if not frappe.has_permission("Branch", "read", doc=doc.branch, user=user or frappe.session.user):
-		return False
+	# Ignore the retired Branch column: Restaurant is Company-level now.
 	return True

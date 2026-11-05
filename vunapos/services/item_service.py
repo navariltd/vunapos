@@ -1007,7 +1007,7 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 	if profile.get("vunapos_pos_mode") == "Restaurant" and profile.get("vunapos_restaurant"):
 		from vunapos.services.kitchen_service import classify_items
 
-		classify_items(profile.vunapos_restaurant, variant_items)
+		classify_items(profile.vunapos_restaurant, variant_items, branch=profile.vunapos_branch)
 	return {
 		"template": {
 			"item_code": template.name,

@@ -17,7 +17,7 @@ def _restaurant_settings(profile):
 	return {
 		"restaurant": restaurant.name if restaurant else None,
 		"restaurant_name": restaurant.restaurant_name if restaurant else None,
-		"branch": restaurant.branch if restaurant else None,
+		"branch": profile.get("vunapos_branch") if restaurant else None,
 		"service_types": get_profile_service_types(profile),
 		"allow_multiple_orders_per_table": bool(
 			cint(restaurant and restaurant.allow_multiple_orders_per_table)
@@ -25,6 +25,7 @@ def _restaurant_settings(profile):
 		"require_manager_pin_order_cancel": bool(
 			cint(profile.get("vunapos_require_manager_pin_order_cancel"))
 		),
+		"complete_preparation_on_billing": bool(cint(profile.get("vunapos_complete_preparation_on_billing"))),
 	}
 
 

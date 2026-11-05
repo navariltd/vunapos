@@ -3,7 +3,7 @@
  "allow_rename": 1,
  "autoname": "field:restaurant_name",
  "creation": "2026-11-03 09:00:00.000000",
- "description": "A restaurant or outlet: its floors and tables, service types and order rules. Every POS Profile in Restaurant mode belongs to one restaurant, so several tills share it.",
+ "description": "A restaurant business within a Company, shared across its Branch locations. Select the operating Branch on POS Profiles, Floors and Kitchen Stations.",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -11,7 +11,6 @@
   "enabled",
   "column_break_main",
   "company",
-  "branch",
   "menu_section",
   "default_menu",
   "service_section",
@@ -46,14 +45,6 @@
    "in_standard_filter": 1,
    "label": "Company",
    "options": "Company",
-   "reqd": 1
-  },
-  {
-   "fieldname": "branch",
-   "fieldtype": "Link",
-   "in_standard_filter": 1,
-   "label": "Branch",
-   "options": "Branch",
    "reqd": 1
   },
   {

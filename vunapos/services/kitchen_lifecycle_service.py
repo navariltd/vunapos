@@ -42,7 +42,7 @@ def can_cancel():
 
 def _ticket(name, lock=False):
 	doc = frappe.get_doc(TICKET, name)
-	require_restaurant_access(doc.restaurant)
+	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	if lock:
@@ -338,7 +338,7 @@ def transition(ticket, action, request_key, expected_status):
 	if _replay(doc, action, key):
 		return ticket_detail(doc.name)
 	_order(doc, serving=action == "Serve")
-	source, target = TRANSITIONS[action]
+	source, _target = TRANSITIONS[action]
 	if doc.status != expected_status or doc.status != source:
 		fail(
 			"KITCHEN_STALE_STATE",
@@ -348,9 +348,7 @@ def transition(ticket, action, request_key, expected_status):
 	savepoint = "kitchen_action_" + uuid4().hex
 	frappe.db.savepoint(savepoint)
 	try:
-		entries = _produce(doc, ready=action == "Ready") if action in ("Start", "Ready") else []
-		doc.db_set("status", target)
-		_record(doc, action, key, source, entries=entries)
+		_apply_transition(doc, action, key)
 	except Exception as exc:
 		_rollback_command(savepoint)
 		doc.reload()
@@ -358,6 +356,57 @@ def transition(ticket, action, request_key, expected_status):
 		raise
 	_publish(doc)
 	return ticket_detail(doc.name)
+
+
+def _apply_transition(doc, action, key, reason=None):
+	source, target = TRANSITIONS[action]
+	if doc.status != source:
+		fail("KITCHEN_STALE_STATE", _("Refresh this preparation ticket before proceeding."))
+	entries = _produce(doc, ready=action == "Ready") if action in ("Start", "Ready") else []
+	doc.db_set("status", target)
+	_record(doc, action, key, source, entries=entries, reason=reason)
+
+
+def complete_for_billing(ticket, profile):
+	"""Private opt-in cashier path. The outer billing transaction owns rollback.
+
+	Does not grant the cashier general KDS preparation rights or bypass station
+	permissions. Each successful step retains its actor and native stock entries.
+	"""
+	if (
+		not cint(profile.get("vunapos_complete_preparation_on_billing"))
+		or CASHIER_ROLE not in frappe.get_roles()
+	):
+		frappe.throw(
+			_("This POS Profile does not allow the cashier to complete preparation during billing."),
+			frappe.PermissionError,
+		)
+	doc = _ticket(ticket, lock=True)
+	if (
+		profile.get("vunapos_restaurant") != doc.restaurant
+		or profile.company != doc.company
+		or profile.vunapos_branch != doc.branch
+	):
+		fail(
+			"KITCHEN_CONTEXT_MISMATCH", _("The billing profile does not belong to this ticket's Restaurant.")
+		)
+	_order(doc)
+	if doc.status in ("Ready", "Served"):
+		return
+	if doc.status not in ("Sent", "Accepted", "Preparing"):
+		fail("KITCHEN_STALE_STATE", _("This ticket cannot be completed during billing."))
+	for action, (source, _target) in TRANSITIONS.items():
+		if action == "Serve":
+			break
+		if doc.status == source:
+			key = "billing-" + hashlib.sha256(f"{doc.name}:{action}".encode()).hexdigest()
+			_apply_transition(
+				doc,
+				action,
+				key,
+				reason=_("Completed during billing using POS Profile {0}.").format(profile.name),
+			)
+	_publish(doc)
 
 
 def cancel_order(ticket, request_key, expected_status, reason, manager_pin_token=None):
@@ -488,10 +537,11 @@ def list_board(pos_profile, station=None, history=False, start=0):
 	from vunapos.services.floor_plan_service import require_restaurant_profile
 
 	restaurant = require_restaurant_profile(pos_profile)
-	require_restaurant_access(restaurant)
+	branch = frappe.get_cached_value("POS Profile", pos_profile, "vunapos_branch")
+	require_restaurant_access(restaurant, branch=branch)
 	stations = frappe.get_list(
 		STATION,
-		filters={"restaurant": restaurant},
+		filters={"restaurant": restaurant, "branch": branch},
 		fields=["name", "station_name", "enabled"],
 		order_by="station_name",
 		limit_page_length=500,

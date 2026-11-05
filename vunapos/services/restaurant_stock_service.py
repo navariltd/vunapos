@@ -202,6 +202,14 @@ def preview_cart(
 	)
 
 	profile = _restaurant_profile(pos_profile)
+	from vunapos.services.service_type_service import resolve_service_type
+
+	if resolve_service_type(profile, service_type)["requires_table"] and not table:
+		fail("TABLE_REQUIRED", _("Select a table before adding dine-in items."))
+	if table:
+		from vunapos.services.menu_service import resolve_table_floor
+
+		resolve_table_floor(profile.name, table)
 	lines = prepared
 	if lines is None:
 		items = frappe.parse_json(items) if isinstance(items, str) else items
@@ -225,6 +233,7 @@ def preview_cart(
 		pos_profile=profile.name, customer=customer, price_list=price_list, service_type=service_type
 	)
 	doc.vunapos_restaurant = profile.vunapos_restaurant
+	doc.vunapos_branch = profile.vunapos_branch
 	doc.vunapos_restaurant_table = table
 	_append_cart_items(
 		doc,
@@ -252,12 +261,16 @@ def validate_cart(
 	from vunapos.services.restaurant_order_service import _new_lines, _restaurant_profile, _validate_lines
 
 	profile = _restaurant_profile(pos_profile)
+	from vunapos.services.service_type_service import resolve_service_type
+
+	if resolve_service_type(profile, service_type)["requires_table"] and not table:
+		fail("TABLE_REQUIRED", _("Select a table before adding dine-in items."))
 	items = frappe.parse_json(items) if isinstance(items, str) else items
 	if not isinstance(items, list) or len(items) > 500 or any(not isinstance(item, dict) for item in items):
 		fail("INVALID_RESTAURANT_CART", _("Provide a list of no more than 500 cart items."))
 	lines = _new_lines(items)
 	_validate_lines(profile, service_type, table, lines, price_list=price_list, customer=customer)
-	route_lines(profile.vunapos_restaurant, lines, kitchen_routing)
+	route_lines(profile.vunapos_restaurant, lines, kitchen_routing, branch=profile.vunapos_branch)
 	plan = plan_stock(profile, lines)
 	check_stock(plan)
 	return {

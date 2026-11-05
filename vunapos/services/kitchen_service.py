@@ -8,7 +8,11 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, now_datetime
 
-from vunapos.services.restaurant_service import require_restaurant_access, require_restaurant_context
+from vunapos.services.restaurant_service import (
+	require_restaurant_access,
+	require_restaurant_context,
+	validate_branch_company,
+)
 
 TICKET = "Kitchen Order Ticket"
 STATION = "Kitchen Station"
@@ -23,16 +27,22 @@ def fail(code, message, meta=None):
 
 
 def validate_station(doc):
-	context = require_restaurant_context(doc.restaurant)
-	if (doc.company and doc.company != context.company) or (doc.branch and doc.branch != context.branch):
+	context = require_restaurant_context(doc.restaurant, branch=doc.branch)
+	if doc.company and doc.company != context.company:
 		fail(
 			"STATION_CONTEXT_MISMATCH",
 			_("Kitchen Station Company and Branch must match the selected Restaurant."),
 		)
-	doc.branch, doc.company = context.branch, context.company
+	doc.company = context.company
+	validate_branch_company(doc.branch, doc.company)
 	if frappe.db.exists(
 		STATION,
-		{"restaurant": doc.restaurant, "station_name": doc.station_name, "name": ["!=", doc.name or ""]},
+		{
+			"restaurant": doc.restaurant,
+			"branch": doc.branch,
+			"station_name": doc.station_name,
+			"name": ["!=", doc.name or ""],
+		},
 	):
 		fail("DUPLICATE_STATION_NAME", _("Station names must be unique within a Restaurant."))
 	seen = set()
@@ -80,7 +90,7 @@ def validate_station(doc):
 				)
 	if (
 		not doc.is_new()
-		and doc.has_value_changed("restaurant")
+		and (doc.has_value_changed("restaurant") or doc.has_value_changed("branch"))
 		and frappe.db.exists(TICKET, {"kitchen_station": doc.name})
 	):
 		fail(
@@ -88,12 +98,12 @@ def validate_station(doc):
 		)
 
 
-def allowed_stations(restaurant):
-	require_restaurant_access(restaurant)
+def allowed_stations(restaurant, branch=None):
+	require_restaurant_access(restaurant, branch=branch)
 	# get_list also respects Kitchen Station User Permissions when configured.
 	return frappe.get_list(
 		STATION,
-		filters={"restaurant": restaurant, "enabled": 1},
+		filters={"restaurant": restaurant, "enabled": 1, **({"branch": branch} if branch else {})},
 		fields=["name", "station_name"],
 		order_by="station_name asc",
 		limit_page_length=0,
@@ -120,9 +130,13 @@ def parse_overrides(value):
 	return value
 
 
-def station_matches(restaurant, item_codes):
+def station_matches(restaurant, item_codes, branch=None):
 	"""Closest mapped ancestor wins, even when that station is hidden by permissions."""
-	stations = frappe.get_all(STATION, filters={"restaurant": restaurant, "enabled": 1}, pluck="name")
+	stations = frappe.get_all(
+		STATION,
+		filters={"restaurant": restaurant, "enabled": 1, **({"branch": branch} if branch else {})},
+		pluck="name",
+	)
 	assignments = frappe.get_all(
 		"Kitchen Station Item Group",
 		filters={"parent": ["in", stations or [""]], "parenttype": STATION},
@@ -157,15 +171,15 @@ def station_matches(restaurant, item_codes):
 	return result
 
 
-def classify_items(restaurant, items):
-	require_restaurant_access(restaurant)
-	matches = station_matches(restaurant, [item["item_code"] for item in items])
+def classify_items(restaurant, items, branch=None):
+	require_restaurant_access(restaurant, branch=branch)
+	matches = station_matches(restaurant, [item["item_code"] for item in items], branch)
 	for item in items:
 		item["is_qsr"] = bool(matches.get(item["item_code"]))
 	return items
 
 
-def route_lines(restaurant, lines, overrides=None):
+def route_lines(restaurant, lines, overrides=None, branch=None):
 	"""Most-specific group first; legacy duplicate mappings require explicit routing."""
 	if len(lines) > 500:
 		fail("RESTAURANT_ROUND_TOO_LARGE", _("Send no more than 500 item/add-on lines in one round."))
@@ -174,9 +188,9 @@ def route_lines(restaurant, lines, overrides=None):
 	overrides = parse_overrides(overrides)
 	main_codes = {line.item_code for line in lines if not line.get("parent_line_id")}
 	overrides = {code: name for code, name in overrides.items() if code in main_codes}
-	stations = allowed_stations(restaurant)
+	stations = allowed_stations(restaurant, branch)
 	station_names = {row.name for row in stations}
-	matches_by_code = station_matches(restaurant, main_codes)
+	matches_by_code = station_matches(restaurant, main_codes, branch)
 	invalid = [
 		{"item_code": code, "item_group": "", "reason": "invalid", "candidates": []}
 		for code, name in overrides.items()
@@ -279,6 +293,8 @@ def generate_tickets(order, method=None):
 		or profile.get("vunapos_pos_mode") != "Restaurant"
 		or order.company != session.company
 		or profile.company != session.company
+		or profile.vunapos_branch != session.branch
+		or order.get("vunapos_branch") != session.branch
 		or (order.vunapos_restaurant, profile.vunapos_restaurant, order.customer, order.vunapos_service_type)
 		!= (session.restaurant, session.restaurant, session.customer, session.service_type)
 	):
@@ -304,7 +320,7 @@ def generate_tickets(order, method=None):
 				source=row,
 			)
 		)
-	route_lines(session.restaurant, lines, overrides)
+	route_lines(session.restaurant, lines, overrides, branch=session.branch)
 	from vunapos.services.restaurant_stock_service import reserve_round
 
 	work_orders = reserve_round(order, profile, lines) or {}
@@ -419,7 +435,7 @@ def protect_order_cancellation(order, method=None):
 
 def get_ticket(name):
 	doc = frappe.get_doc(TICKET, name)
-	require_restaurant_access(doc.restaurant)
+	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities

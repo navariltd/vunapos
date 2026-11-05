@@ -170,8 +170,9 @@ def ensure_vunapos_custom_fields():
 				"fieldtype": "Link",
 				"options": "Branch",
 				"insert_after": "vunapos_restaurant",
-				"fetch_from": "vunapos_restaurant.branch",
-				"read_only": 1,
+				"fetch_from": "",
+				"read_only": 0,
+				"mandatory_depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 			},
 			{
@@ -182,6 +183,15 @@ def ensure_vunapos_custom_fields():
 				"default": "0",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 				"description": "Require manager approval before staff can cancel a restaurant order. Independent of item removal approval.",
+			},
+			{
+				"fieldname": "vunapos_complete_preparation_on_billing",
+				"label": "Complete Preparation on Billing",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_branch",
+				"default": "0",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Allow this profile's cashier to accept pending KOTs, finish required material transfers and manufacture remaining quantities during checkout. Marks preparation Ready, not Served. Native stock, tracking, inspection and Job Card checks still apply.",
 			},
 			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
@@ -846,6 +856,7 @@ def ensure_vunapos_custom_fields():
 			"fieldtype": "Link",
 			"options": "Restaurant Session",
 			"read_only": 1,
+			"no_copy": 1,
 			"insert_after": "vunapos_restaurant",
 			"search_index": 1,
 		}
@@ -926,6 +937,15 @@ def _restaurant_order_fields():
 			"Link",
 			"vunapos_restaurant_order_section",
 			options="Restaurant",
+			allow_on_submit=0,
+			search_index=1,
+		),
+		field(
+			"vunapos_branch",
+			"Branch",
+			"Link",
+			"vunapos_restaurant",
+			options="Branch",
 			allow_on_submit=0,
 			search_index=1,
 		),
@@ -1054,6 +1074,35 @@ def _restaurant_invoice_fields():
 	The order itself is linked through the invoice lines (`sales_order`/`so_detail`).
 	"""
 	return [
+		{
+			"fieldname": "vunapos_restaurant",
+			"label": "Restaurant",
+			"fieldtype": "Link",
+			"options": "Restaurant",
+			"insert_after": "vunapos_restaurant_section",
+			"read_only": 1,
+			"no_copy": 1,
+			"search_index": 1,
+		},
+		{
+			"fieldname": "vunapos_branch",
+			"label": "Branch",
+			"fieldtype": "Link",
+			"options": "Branch",
+			"insert_after": "vunapos_restaurant",
+			"read_only": 1,
+			"no_copy": 1,
+			"search_index": 1,
+		},
+		{
+			"fieldname": "vunapos_restaurant_session",
+			"label": "Restaurant Session",
+			"fieldtype": "Link",
+			"options": "Restaurant Session",
+			"insert_after": "vunapos_restaurant_section",
+			"read_only": 1,
+			"no_copy": 1,
+		},
 		{
 			"fieldname": "vunapos_restaurant_section",
 			"label": "Restaurant",
