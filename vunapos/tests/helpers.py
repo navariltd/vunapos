@@ -328,6 +328,29 @@ def ensure_test_restaurant_profile():
 		RESTAURANT_TEST_PROFILE,
 		{"vunapos_pos_mode": "Restaurant", "vunapos_restaurant": restaurant},
 	)
+	# Generic order fixtures are direct-sale items. QSR tests explicitly opt
+	# into station groups, recipes and ingredient stock.
+	station = f"{restaurant} Test Kitchen"
+	if frappe.db.exists("DocType", "Kitchen Station") and not frappe.db.exists(
+		"Kitchen Station", {"restaurant": restaurant, "station_name": station}
+	):
+		frappe.get_doc(
+			{
+				"doctype": "Kitchen Station",
+				"station_name": station,
+				"restaurant": restaurant,
+				"enabled": 1,
+				"item_groups": [],
+			}
+		).insert(ignore_permissions=True)
+	# Reset older test fixtures that mapped the entire catalogue to preparation.
+	station_name = (
+		frappe.db.get_value("Kitchen Station", {"restaurant": restaurant, "station_name": station}, "name")
+		if frappe.db.exists("DocType", "Kitchen Station")
+		else None
+	)
+	if station_name:
+		frappe.db.delete("Kitchen Station Item Group", {"parent": station_name})
 	return RESTAURANT_TEST_PROFILE
 
 
