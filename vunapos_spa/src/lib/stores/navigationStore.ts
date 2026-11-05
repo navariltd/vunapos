@@ -10,9 +10,10 @@ export type POSPage =
 	| "Floor"
 	| "Floor Editor"
 	| "Orders"
+	| "Kitchen"
 	| "Order";
 
-export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor", "Orders", "Order"];
+export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor", "Orders", "Order", "Kitchen"];
 
 const PAGE_PATHS: Record<POSPage, string> = {
 	Home: "/vunapos",
@@ -24,6 +25,7 @@ const PAGE_PATHS: Record<POSPage, string> = {
 	Floor: "/vunapos/floor",
 	"Floor Editor": "/vunapos/floor/edit",
 	Orders: "/vunapos/orders",
+	Kitchen: "/vunapos/kitchen",
 	// A new, unsaved order. A saved one is /vunapos/order/<name> (navigateToOrder).
 	Order: "/vunapos/order",
 };
@@ -124,6 +126,19 @@ export function navigateToOrder(order?: string | null, { replace = false } = {})
 
 export function getOrderFromPath(pathname = window.location.pathname): string | null {
 	const match = pathname.match(/^\/vunapos\/order\/([^/]+)\/?$/);
+	return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function navigateToRestaurantSession(session: string, { replace = false } = {}) {
+	if (!replace && navigationGuard && !navigationGuard("Order")) return;
+	const path = `/vunapos/order/session/${encodeURIComponent(session)}`;
+	if (replace) window.history.replaceState({ vunaposPage: "Order", session }, "", path);
+	else window.history.pushState({ vunaposPage: "Order", session }, "", path);
+	useNavigationStore.getState().setActivePage("Order");
+}
+
+export function getRestaurantSessionFromPath(pathname: string): string | null {
+	const match = pathname.match(/^\/vunapos\/order\/session\/([^/]+)\/?$/);
 	return match ? decodeURIComponent(match[1]) : null;
 }
 

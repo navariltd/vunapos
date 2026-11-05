@@ -124,6 +124,7 @@ export type CachedRestaurantSettings = {
 	service_types: CachedServiceType[];
 	allow_multiple_orders_per_table: boolean;
 	require_manager_pin_order_cancel: boolean;
+	complete_preparation_on_billing?: boolean;
 };
 
 export type CachedProfile = {
@@ -199,6 +200,7 @@ export type CachedProfile = {
 	restaurant?: CachedRestaurantSettings | null;
 	// User-level, sent with the profile: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
+	can_manage_restaurant?: boolean;
 	restaurant_roles?: string[];
 };
 

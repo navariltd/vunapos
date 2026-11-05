@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Pause, Trash2 } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
@@ -12,6 +12,7 @@ import type {
   ItemBatchesDTO,
   PricingOverrideDTO,
   SerialAllocationDTO,
+  InvoiceDTO,
 } from "../types";
 import { formatCurrency, getInvoiceTotal } from "../utils";
 import { CartItemRow } from "./CartItemRow";
@@ -19,6 +20,19 @@ import { CustomerSelector } from "./CustomerSelector";
 import { CustomerLoyaltyCard } from "./CustomerLoyaltyCard";
 
 type CartPanelProps = {
+  presentation?: {
+    invoice: InvoiceDTO;
+    customer: CustomerDTO | null;
+    isMutating: boolean;
+  };
+  beforeCustomer?: ReactNode;
+  afterItems?: ReactNode;
+  renderItemFooter?: (rowName: string) => ReactNode;
+  customerDisabled?: boolean;
+  primaryActionLabel?: string;
+  hideHold?: boolean;
+  totalsNote?: string;
+  estimated?: boolean;
   allowCustomerCreation?: boolean;
   allowPriceListSwitching?: boolean;
   allowedPriceLists?: Array<{ name: string; currency?: string }>;
@@ -41,7 +55,7 @@ type CartPanelProps = {
   onLoadBatches: (
     itemCode: string,
     warehouse: string,
-    isOnline: boolean,
+    isOnline: boolean
   ) => Promise<ItemBatchesDTO>;
   onRemoveItem: (rowName: string) => void;
   onSelectCustomer: (customer: CustomerDTO) => void;
@@ -49,21 +63,21 @@ type CartPanelProps = {
   onUpdateQty: (rowName: string, qty: number) => Promise<void>;
   onUpdatePricing: (
     rowName: string,
-    pricingOverride?: PricingOverrideDTO,
+    pricingOverride?: PricingOverrideDTO
   ) => Promise<void>;
   onUpdateNote: (rowName: string, note: string) => Promise<void>;
   onUpdateBatchAllocations: (
     rowName: string,
-    allocations: BatchAllocationDTO[],
+    allocations: BatchAllocationDTO[]
   ) => Promise<void>;
   onUpdateUom: (
     rowName: string,
     uom: string,
-    conversionFactor: number,
+    conversionFactor: number
   ) => Promise<void>;
   onUpdateSerialAllocations: (
     rowName: string,
-    allocations: SerialAllocationDTO[],
+    allocations: SerialAllocationDTO[]
   ) => Promise<void>;
   isOnline: boolean;
   posProfile?: string;
@@ -72,6 +86,15 @@ type CartPanelProps = {
 };
 
 export function CartPanel({
+  renderItemFooter,
+  presentation,
+  beforeCustomer,
+  afterItems,
+  customerDisabled,
+  primaryActionLabel,
+  hideHold,
+  totalsNote,
+  estimated,
   allowDiscountChange,
   allowCustomerCreation,
   allowRateChange,
@@ -106,9 +129,14 @@ export function CartPanel({
   warehouse,
   selectedPriceList,
 }: CartPanelProps) {
-  const invoice = useCartStore((s) => s.invoice);
-  const isMutating = useCartStore((s) => s.isMutating);
-  const selectedCustomer = useCartStore(getActiveCustomer);
+  const storedInvoice = useCartStore((s) => s.invoice);
+  const storedMutating = useCartStore((s) => s.isMutating);
+  const storedCustomer = useCartStore(getActiveCustomer);
+  const invoice = presentation ? presentation.invoice : storedInvoice;
+  const isMutating = presentation ? presentation.isMutating : storedMutating;
+  const selectedCustomer = presentation
+    ? presentation.customer
+    : storedCustomer;
   const items = invoice?.items || [];
   const total = getInvoiceTotal(invoice);
   const taxes = invoice?.taxes || [];
@@ -118,17 +146,24 @@ export function CartPanel({
     <aside
       className={cn(
         "flex min-h-0 flex-col border-t border-outline-variant bg-surface p-4 xl:border-l xl:border-t-0",
-        className,
+        className
       )}
     >
       <div className="shrink-0">
-        <CustomerSelector
-          allowCreate={allowCustomerCreation !== false}
-          posProfile={posProfile}
-          selectedCustomer={selectedCustomer}
-          onClear={onClearCustomer}
-          onSelect={onSelectCustomer}
-        />
+        {beforeCustomer}
+        <div
+          className={customerDisabled ? "pointer-events-none opacity-60" : ""}
+          aria-disabled={customerDisabled}
+          inert={customerDisabled}
+        >
+          <CustomerSelector
+            allowCreate={allowCustomerCreation !== false}
+            posProfile={posProfile}
+            selectedCustomer={selectedCustomer}
+            onClear={onClearCustomer}
+            onSelect={onSelectCustomer}
+          />
+        </div>
         <CustomerLoyaltyCard
           currency={currency}
           data={customerLoyalty}
@@ -164,7 +199,7 @@ export function CartPanel({
               onSelectPriceList(
                 event.target.value === defaultPriceList
                   ? undefined
-                  : event.target.value || undefined,
+                  : event.target.value || undefined
               )
             }
           >
@@ -187,32 +222,36 @@ export function CartPanel({
       <div className="mt-5 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
         {items?.length ? (
           items?.map((item, index) => {
-            const rowIdentity = `${item.row_name}-${item.uom || item.stock_uom || ""}-${Number(item.conversion_factor || 1)}-${index}`;
+            const rowIdentity = `${item.row_name}-${
+              item.uom || item.stock_uom || ""
+            }-${Number(item.conversion_factor || 1)}-${index}`;
             return (
-              <CartItemRow
-                key={rowIdentity}
-                currency={currency}
-                allowDiscountChange={allowDiscountChange}
-                allowRateChange={allowRateChange}
-                disabled={isMutating}
-                expanded={expandedRow === rowIdentity}
-                isOnline={isOnline}
-                item={item}
-                onLoadBatches={onLoadBatches}
-                onRemove={onRemoveItem}
-                onToggle={() =>
-                  setExpandedRow((current) =>
-                    current === rowIdentity ? null : rowIdentity,
-                  )
-                }
-                onUpdateQty={onUpdateQty}
-                onUpdatePricing={onUpdatePricing}
-                onUpdateNote={onUpdateNote}
-                onUpdateBatchAllocations={onUpdateBatchAllocations}
-                onUpdateUom={onUpdateUom}
-                onUpdateSerialAllocations={onUpdateSerialAllocations}
-                warehouse={warehouse}
-              />
+              <div key={rowIdentity}>
+                <CartItemRow
+                  currency={currency}
+                  allowDiscountChange={allowDiscountChange}
+                  allowRateChange={allowRateChange}
+                  disabled={isMutating}
+                  expanded={expandedRow === rowIdentity}
+                  isOnline={isOnline}
+                  item={item}
+                  onLoadBatches={onLoadBatches}
+                  onRemove={onRemoveItem}
+                  onToggle={() =>
+                    setExpandedRow((current) =>
+                      current === rowIdentity ? null : rowIdentity
+                    )
+                  }
+                  onUpdateQty={onUpdateQty}
+                  onUpdatePricing={onUpdatePricing}
+                  onUpdateNote={onUpdateNote}
+                  onUpdateBatchAllocations={onUpdateBatchAllocations}
+                  onUpdateUom={onUpdateUom}
+                  onUpdateSerialAllocations={onUpdateSerialAllocations}
+                  warehouse={warehouse}
+                />
+                {renderItemFooter?.(item.row_name || "")}
+              </div>
             );
           })
         ) : (
@@ -226,6 +265,10 @@ export function CartPanel({
       </div>
 
       <div className="mt-4 shrink-0 border-t border-outline-variant bg-surface pt-4">
+        {afterItems}
+        {totalsNote ? (
+          <p className="mb-2 text-xs text-on-surface-variant">{totalsNote}</p>
+        ) : null}
         <div className="space-y-1.5 text-xs">
           <div className="flex justify-between">
             <span className="text-on-surface-variant">Subtotal</span>
@@ -233,18 +276,25 @@ export function CartPanel({
               {formatCurrency(invoice?.totals?.net_total, currency)}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-on-surface-variant">Taxes</span>
-            <span className="font-medium">
-              {formatCurrency(
-                invoice?.totals?.total_taxes_and_charges ??
-                  taxes.reduce((sum, tax) => sum + Number(tax.tax_amount || 0), 0),
-                currency,
-              )}
-            </span>
-          </div>
+          {!estimated ? (
+            <div className="flex justify-between">
+              <span className="text-on-surface-variant">Taxes</span>
+              <span className="font-medium">
+                {formatCurrency(
+                  invoice?.totals?.total_taxes_and_charges ??
+                    taxes.reduce(
+                      (sum, tax) => sum + Number(tax.tax_amount || 0),
+                      0
+                    ),
+                  currency
+                )}
+              </span>
+            </div>
+          ) : null}
           <div className="flex justify-between text-sm">
-            <span className="font-semibold text-on-surface">Grand total</span>
+            <span className="font-semibold text-on-surface">
+              {estimated ? "Estimated total" : "Grand total"}
+            </span>
             <span className="font-semibold text-on-surface">
               {formatCurrency(total, currency)}
             </span>
@@ -252,15 +302,17 @@ export function CartPanel({
         </div>
 
         <div className="mt-5 grid grid-cols-2 gap-2">
-          <Button
-            variant="ghost"
-            className="gap-2 bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container"
-            disabled={isMutating || !items.length}
-            onClick={onHold}
-          >
-            <Pause className="size-4" />
-            Hold
-          </Button>
+          {!hideHold ? (
+            <Button
+              variant="ghost"
+              className="gap-2 bg-tertiary text-on-tertiary hover:bg-tertiary-container hover:text-on-tertiary-container"
+              disabled={isMutating || !items.length}
+              onClick={onHold}
+            >
+              <Pause className="size-4" />
+              Hold
+            </Button>
+          ) : null}
           <Button
             variant="danger"
             className="gap-2"
@@ -278,7 +330,8 @@ export function CartPanel({
               }
               onClick={onCheckout}
             >
-              {invoice?.is_local ? "Checkout" : "Continue Checkout"}
+              {primaryActionLabel ||
+                (invoice?.is_local ? "Checkout" : "Continue Checkout")}
             </Button>
           </div>
         </div>

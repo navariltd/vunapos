@@ -1,0 +1,136 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "KS-.#####",
+ "creation": "2026-11-04 23:32:52.847929",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "station_name",
+  "restaurant",
+  "branch",
+  "company",
+  "column_break_yenl",
+  "enabled",
+  "routing_section",
+  "item_groups",
+  "warehouses_section",
+  "raw_material_warehouse",
+  "column_break_wasd",
+  "wip_warehouse"
+ ],
+ "fields": [
+  {
+   "fieldname": "station_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Station Name",
+   "reqd": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "routing_section",
+   "fieldtype": "Section Break",
+   "label": "Routing"
+  },
+  {
+   "fieldname": "item_groups",
+   "fieldtype": "Table",
+   "label": "Item Groups",
+   "options": "Kitchen Station Item Group"
+  },
+  {
+   "fieldname": "warehouses_section",
+   "fieldtype": "Section Break",
+   "label": "Preparation Warehouses"
+  },
+  {
+   "fieldname": "raw_material_warehouse",
+   "fieldtype": "Link",
+   "label": "Raw Material Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "wip_warehouse",
+   "fieldtype": "Link",
+   "label": "Work-in-Progress Warehouse",
+   "options": "Warehouse"
+  },
+  {
+   "fieldname": "column_break_yenl",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_wasd",
+   "fieldtype": "Column Break"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-05 07:12:14.326130",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "Kitchen Station",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "station_name",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "station_name"
+}

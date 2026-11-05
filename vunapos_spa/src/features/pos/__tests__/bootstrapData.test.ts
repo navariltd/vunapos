@@ -66,6 +66,7 @@ const cached: Required<CachedProfile> = {
 		require_manager_pin_order_cancel: true,
 	},
 	can_take_payment: true,
+	can_manage_restaurant: true,
 	restaurant_roles: ["VunaPOS Cashier", "VunaPOS Restaurant Manager"],
 };
 
@@ -76,6 +77,7 @@ describe("toBootstrapData", () => {
 	it("carries the restaurant rights and settings through to the screens", () => {
 		const data = toBootstrapData(cached, "cashier.grace@goldenecho.test");
 		expect(data.can_take_payment).toBe(true);
+		expect(data.can_manage_restaurant).toBe(true);
 		expect(data.restaurant_roles).toEqual(["VunaPOS Cashier", "VunaPOS Restaurant Manager"]);
 		expect(data.restaurant).toEqual(cached.restaurant);
 		expect(data.current_user).toBe("cashier.grace@goldenecho.test");
@@ -91,10 +93,12 @@ describe("toBootstrapData", () => {
 	it("leaves the rights unset for an older cached profile without them", () => {
 		const older: CachedProfile = { ...cached };
 		delete older.can_take_payment;
+		delete older.can_manage_restaurant;
 		delete older.restaurant_roles;
 		delete older.restaurant;
 		const data = toBootstrapData(older, null);
 		expect(data.can_take_payment).toBeUndefined();
+		expect(data.can_manage_restaurant).toBeUndefined();
 		expect(data.restaurant_roles).toBeUndefined();
 		expect(data.current_user).toBeUndefined();
 	});

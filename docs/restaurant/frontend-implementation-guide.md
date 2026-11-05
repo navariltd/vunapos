@@ -1,5 +1,9 @@
 # Restaurant mode: frontend implementation guide
 
+Historical guide: Phase 5 now requires personal opening shifts for waiters as well
+as cashiers, with payment permissions remaining separate. See
+[Phase 5](phase-5-kitchen-display.md) for the current setup and preparation lifecycle.
+
 **For:** the VunaPOS SPA team (`vunapos_spa/`).
 **Backend status:** built and tested on branch `feature/restraunt-pos`. Everything below is live
 on the demo site `restraunt-pos`.

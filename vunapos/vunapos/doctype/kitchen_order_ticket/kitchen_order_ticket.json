@@ -1,0 +1,196 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Order Ticket",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": [
+  "kitchen_station",
+  "station_label",
+  "restaurant",
+  "branch",
+  "company",
+  "restaurant_session",
+  "sales_order",
+  "pos_profile",
+  "service_type",
+  "table_labels",
+  "waiter",
+  "sent_by",
+  "sent_at",
+  "status",
+  "order_note",
+  "items_section",
+  "items",
+  "event_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "kitchen_station",
+   "label": "Kitchen Station",
+   "fieldtype": "Link",
+   "options": "Kitchen Station",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "station_label",
+   "label": "Station Name Snapshot",
+   "fieldtype": "Data",
+   "read_only": 1
+  },
+  {
+   "fieldname": "restaurant",
+   "label": "Restaurant",
+   "fieldtype": "Link",
+   "options": "Restaurant",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "label": "Branch",
+   "fieldtype": "Link",
+   "options": "Branch",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "label": "Company",
+   "fieldtype": "Link",
+   "options": "Company",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "restaurant_session",
+   "label": "Restaurant Session",
+   "fieldtype": "Link",
+   "options": "Restaurant Session",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "sales_order",
+   "label": "Sales Order",
+   "fieldtype": "Link",
+   "options": "Sales Order",
+   "read_only": 1,
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "pos_profile",
+   "label": "POS Profile",
+   "fieldtype": "Link",
+   "options": "POS Profile",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "service_type",
+   "label": "Service Type",
+   "fieldtype": "Link",
+   "options": "Restaurant Service Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "table_labels",
+   "label": "Tables at Send",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "waiter",
+   "label": "Waiter",
+   "fieldtype": "Link",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sent_by",
+   "label": "Sent By",
+   "fieldtype": "Link",
+   "options": "User",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "sent_at",
+   "label": "Sent At",
+   "fieldtype": "Datetime",
+   "read_only": 1,
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "label": "Preparation Status",
+   "fieldtype": "Select",
+   "options": "Sent\nAccepted\nPreparing\nReady\nServed\nCancelled",
+   "default": "Sent",
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "order_note",
+   "label": "Order Note",
+   "fieldtype": "Small Text",
+   "read_only": 1
+  },
+  {
+   "fieldname": "items_section",
+   "label": "Preparation Items",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "items",
+   "label": "Items",
+   "fieldtype": "Table",
+   "options": "Kitchen Order Ticket Item",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "event_key",
+   "label": "Event Key",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "reqd": 1,
+   "unique": 1,
+   "hidden": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
+  }
+ ],
+ "autoname": "KOT-.YYYY.-.#####",
+ "is_submittable": 1,
+ "track_changes": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

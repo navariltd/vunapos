@@ -28,6 +28,11 @@ const FREE: TableStatusView = { kind: "free", orders: [], guests: 0, openedAt: n
 export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableStatusView> {
 	const result = new Map<string, TableStatusView>();
 	for (const row of rows) {
+		if (row.session) {
+			result.set(row.table, { kind: "occupied", orders: row.orders, guests: row.session.guest_count,
+				openedAt: row.session.opened_at, waiters: [row.session.waiter_name || row.session.waiter] });
+			continue;
+		}
 		if (row.status !== "Occupied" || !row.orders.length) {
 			result.set(row.table, FREE);
 			continue;

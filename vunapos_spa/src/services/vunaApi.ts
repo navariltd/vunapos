@@ -23,6 +23,8 @@ import type {
 	OrderLineInput,
 	OrderPreviewDTO,
 	RestaurantOrderDTO,
+	RestaurantSessionDTO,
+	RestaurantSessionSummaryDTO,
 	RestaurantOrderSummaryDTO,
 	SaveFloorPlanPayload,
 	SaveFloorPlanResultDTO,
@@ -121,6 +123,20 @@ export const vunaMethods = {
 	refreshSalespersonPin: "vunapos.api.pin.refresh_salesperson",
 	verifyManagerPin: "vunapos.api.pin.verify_manager",
 	getFloorPlan: "vunapos.api.restaurant.get_floor_plan",
+	openRestaurantSession: "vunapos.api.restaurant.open_session",
+	getRestaurantSession: "vunapos.api.restaurant.get_session",
+	getKitchenTicket: "vunapos.api.restaurant.get_kitchen_ticket",
+	getKitchenBoard: "vunapos.api.restaurant.get_kitchen_board",
+	kitchenAction: "vunapos.api.restaurant.kitchen_action",
+	cancelKitchenOrder: "vunapos.api.restaurant.cancel_kitchen_order",
+	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
+	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
+	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
+	updateRestaurantSession: "vunapos.api.restaurant.update_session",
+	cancelEmptyRestaurantSession: "vunapos.api.restaurant.cancel_empty_session",
+	createSessionRound: "vunapos.api.restaurant.create_session_round",
+	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
+	checkoutSession: "vunapos.api.restaurant.checkout_session",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 	getMenu: "vunapos.api.restaurant.get_menu",
 	getTableStatus: "vunapos.api.restaurant.get_table_status",
@@ -639,13 +655,82 @@ export function saveFloorPlan(
 
 export function getMenu(
 	call: FrappeCall,
-	params: { pos_profile: string; service_type: string; table?: string | null },
+	params: { pos_profile: string; service_type: string; table?: string | null; customer?: string | null; price_list?: string | null },
 ) {
 	return callAndUnwrap<MenuDTO>(call, { ...params, table: params.table || undefined });
 }
 
 export function getTableStatus(call: FrappeCall, posProfile: string) {
 	return callAndUnwrap<TableStatusDTO[]>(call, { pos_profile: posProfile });
+}
+
+export function openRestaurantSession(call: FrappeCall, params: {
+	pos_profile: string; idempotency_key: string; tables: string[]; service_type: string;
+	customer: string | null; guest_count: number;
+}) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, { ...params, tables: JSON.stringify(params.tables) });
+}
+
+export function getRestaurantSession(call: FrappeCall, session: string) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, { session });
+}
+
+export function cancelEmptyRestaurantSession(call: FrappeCall, session: string) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, { session });
+}
+
+export function previewSessionBill(call: FrappeCall, params: { session: string; pos_profile: string; loyalty_points?: number }) {
+  return callAndUnwrap<import("../features/restaurant/types").SessionBillDTO>(call, params);
+}
+
+export function checkoutSession(call: FrappeCall, params: {
+  session: string; pos_profile: string; fingerprint: string; payments: PaymentInput[];
+  is_credit_sale?: boolean; due_date?: string; loyalty_points?: number; tax_id?: string;
+  shipping_address_name?: string; checkout_fields?: Record<string, string | number | boolean | null>;
+}) {
+  return callAndUnwrap<import("../features/restaurant/types").SessionSettlementDTO>(call, params);
+}
+
+export function listRestaurantSessions(call: FrappeCall, pos_profile: string) {
+	return callAndUnwrap<RestaurantSessionSummaryDTO[]>(call, { pos_profile });
+}
+
+export function updateRestaurantSession(call: FrappeCall, params: {
+	session: string; tables?: string[]; guest_count?: number; customer?: string; waiter?: string;
+}) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, {
+		...params, ...(params.tables ? { tables: JSON.stringify(params.tables) } : {}),
+	});
+}
+
+export function createSessionRound(call: FrappeCall, params: {
+	session: string; items: OrderLineInput[]; idempotency_key: string; order_note?: string | null; pos_profile?: string; kitchen_routing?: Record<string, string>;
+}) {
+	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function validateRestaurantCart(call: FrappeCall, params: {
+	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; kitchen_routing?: Record<string, string>; price_list?: string | null;
+}) {
+	return callAndUnwrap<{ valid: boolean; qsr_items: string[]; invoice: InvoiceDTO }>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string; station?: string; history?: number; start?: number }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params);
+}
+
+export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
+}
+
+export function cancelKitchenOrder(call: FrappeCall, params: { ticket: string; request_key: string; expected_status: string; reason: string; manager_pin_token?: string }) {
+	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
+}
+
+export function previewRestaurantCart(call: FrappeCall, params: {
+	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; price_list?: string | null;
+}) {
+	return callAndUnwrap<InvoiceDTO>(call, { ...params, items: JSON.stringify(params.items) });
 }
 
 export function listRestaurantOrders(

@@ -707,7 +707,14 @@ def resolve_scanned_barcode(barcode, pos_profile=None, customer=None, price_list
 
 
 def _search_items_uncached(
-	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None, item_groups=None
+	query=None,
+	pos_profile=None,
+	customer=None,
+	price_list=None,
+	limit=None,
+	since=None,
+	item_groups=None,
+	item_codes=None,
 ):
 	profile = resolve_pos_profile(pos_profile)
 	customer = customer or profile.customer
@@ -788,6 +795,9 @@ def _search_items_uncached(
 				)
 			)
 		query_filters["name"] = ["in", list(changed_item_codes) or [""]]
+	if item_codes is not None:
+		query_filters["name"] = ["in", list(item_codes) or [""]]
+		query_filters.pop("variant_of", None)
 	get_all_args = {
 		"doctype": "Item",
 		"filters": query_filters,
@@ -890,11 +900,20 @@ def _search_items_uncached(
 
 
 def search_items(
-	query=None, pos_profile=None, customer=None, price_list=None, limit=None, since=None, item_groups=None
+	query=None,
+	pos_profile=None,
+	customer=None,
+	price_list=None,
+	limit=None,
+	since=None,
+	item_groups=None,
+	item_codes=None,
 ):
 	"""Search the POS catalogue, using a short-lived Redis snapshot for stable reads."""
 	if since or frappe.flags.in_test:
-		return _search_items_uncached(query, pos_profile, customer, price_list, limit, since, item_groups)
+		return _search_items_uncached(
+			query, pos_profile, customer, price_list, limit, since, item_groups, item_codes
+		)
 	profile = resolve_pos_profile(pos_profile)
 	resolved_customer = customer or profile.customer
 	resolved_price_list = resolve_price_list(
@@ -908,12 +927,13 @@ def search_items(
 		resolved_price_list,
 		cint(limit),
 		item_groups,
+		item_codes,
 	)
 	cached = get_catalogue_cache(key)
 	if cached is not None:
 		return cached
 	result = _search_items_uncached(
-		query, profile.name, resolved_customer, resolved_price_list, limit, None, item_groups
+		query, profile.name, resolved_customer, resolved_price_list, limit, None, item_groups, item_codes
 	)
 	set_catalogue_cache(key, result)
 	return result
@@ -977,6 +997,17 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 		attributes.setdefault(row.parent, []).append(
 			{"attribute": row.attribute, "value": row.attribute_value}
 		)
+	variant_items = [
+		{
+			**_to_item_payload(row.name, profile, price_list=price_list),
+			"attributes": attributes.get(row.name, []),
+		}
+		for row in variants
+	]
+	if profile.get("vunapos_pos_mode") == "Restaurant" and profile.get("vunapos_restaurant"):
+		from vunapos.services.kitchen_service import classify_items
+
+		classify_items(profile.vunapos_restaurant, variant_items, branch=profile.vunapos_branch)
 	return {
 		"template": {
 			"item_code": template.name,
@@ -984,11 +1015,5 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 			"description": template.description,
 			"variant_based_on": template.variant_based_on,
 		},
-		"variants": [
-			{
-				**_to_item_payload(row.name, profile, price_list=price_list),
-				"attributes": attributes.get(row.name, []),
-			}
-			for row in variants
-		],
+		"variants": variant_items,
 	}

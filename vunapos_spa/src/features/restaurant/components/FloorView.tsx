@@ -3,7 +3,7 @@ import { Pencil } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { navigateToOrder, navigateToPosPage } from "../../../lib/stores/navigationStore";
+import { navigateToOrder, navigateToPosPage, navigateToRestaurantSession } from "../../../lib/stores/navigationStore";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import { useFloorPlan } from "../hooks/useFloorPlan";
@@ -53,6 +53,8 @@ export function FloorView({ posProfile }: FloorViewProps) {
     statuses && activeFloor ? legendStatuses(activeFloor.tables.map((table) => statusFor(statuses, table.name))) : [];
 
   const activateTable = (table: RestaurantTableDTO) => {
+    const session = status.data?.find((row) => row.table === table.name)?.session;
+    if (session) { setPickingTableFor(null); navigateToRestaurantSession(session.name); return; }
     if (!statuses) {
       showToast({ type: "info", message: "Loading table status. Try again in a moment." });
       return;

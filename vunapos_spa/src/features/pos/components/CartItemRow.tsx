@@ -191,6 +191,11 @@ export function CartItemRow({
                     Bundle
                   </span>
                 ) : null}
+                {item.is_qsr ? (
+                  <span title="Made to order from recipe ingredients" className="rounded-full bg-primary-container px-2 py-0.5 text-[10px] font-semibold text-on-primary-container">
+                    QSR
+                  </span>
+                ) : null}
               </span>
               <span className="block text-xs text-on-surface-variant">
                 {item.item_code}

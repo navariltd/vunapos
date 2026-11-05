@@ -1,0 +1,24 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Station Item Group",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": [
+  "item_group"
+ ],
+ "fields": [
+  {
+   "fieldname": "item_group",
+   "label": "Item Group",
+   "fieldtype": "Link",
+   "options": "Item Group",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "editable_grid": 1,
+ "sort_field": "idx",
+ "sort_order": "ASC"
+}

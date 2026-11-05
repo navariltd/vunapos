@@ -5,6 +5,7 @@ const ROLE_LABELS: Record<string, string> = {
   "VunaPOS Waiter": "Waiter",
   "VunaPOS Cashier": "Cashier",
   "VunaPOS Restaurant Manager": "Manager",
+  "VunaPOS Kitchen User": "Kitchen",
 };
 
 export function restaurantRoleLabel(roles?: string[] | null) {
@@ -12,9 +13,50 @@ export function restaurantRoleLabel(roles?: string[] | null) {
   return labels.length ? labels.join(" · ") : "VunaPOS user";
 }
 
-// Restaurant pages a user may open. Close Shift is for cashiers only; any
-// other page (including retail URLs) falls back to the floor.
-export function isRestaurantPageAllowed(page: POSPage, canTakePayment: boolean) {
-  if (page === "Close Shift") return canTakePayment;
-  return ["Floor", "Floor Editor", "Orders", "Order", "Profile"].includes(page);
+export function isKitchenOnlyUser(roles: string[], canManage = false) {
+  return (
+    !canManage &&
+    roles.includes("VunaPOS Kitchen User") &&
+    !roles.some((role) =>
+      [
+        "VunaPOS Waiter",
+        "VunaPOS Cashier",
+        "VunaPOS Restaurant Manager",
+      ].includes(role)
+    )
+  );
+}
+
+export function needsRestaurantShift(roles: string[] = [], canTakePayment = false, canManage = false) {
+  // Fail closed for legacy/ordinary POS roles and incomplete cached role data.
+  // Only a positively identified kitchen-only operator bypasses the selling gate.
+  return canTakePayment || !isKitchenOnlyUser(roles, canManage);
+}
+
+// Shared pages remain available in restaurant mode, subject to profile feature
+// switches. Waiters and cashiers close their own shifts; document permissions still apply.
+export function isRestaurantPageAllowed(
+  page: POSPage,
+  canTakePayment: boolean,
+  features?: {
+    allowCustomerPayments?: boolean;
+    allowCustomerManagement?: boolean;
+    kitchenOnly?: boolean;
+    canManageShift?: boolean;
+  }
+) {
+  if (features?.kitchenOnly) return page === "Kitchen" || page === "Profile";
+  if (page === "Close Shift") return features?.canManageShift ?? canTakePayment;
+  if (page === "Payments") return features?.allowCustomerPayments !== false;
+  if (page === "Customers") return features?.allowCustomerManagement !== false;
+  return [
+    "Home",
+    "Floor",
+    "Floor Editor",
+    "Orders",
+    "Order",
+    "Profile",
+    "Invoices",
+    "Kitchen",
+  ].includes(page);
 }

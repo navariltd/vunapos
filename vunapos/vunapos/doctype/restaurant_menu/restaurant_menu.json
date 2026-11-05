@@ -1,0 +1,178 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:menu_name",
+ "creation": "2026-11-04 09:00:00.000000",
+ "description": "Restaurant sales items organized into independent Menu Sections / Courses with availability controls. Configure modifiers and add-ons on Item. Prices stay in Item Price and Pricing Rules.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "menu_name",
+  "enabled",
+  "column_break_main",
+  "company",
+  "restaurant",
+  "branch",
+  "floor_wise_menu",
+  "floors",
+  "groups_section",
+  "item_groups",
+  "items_section",
+  "items",
+  "modifiers_section",
+  "modifier_assignments"
+ ],
+ "fields": [
+  {
+   "fieldname": "menu_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Menu Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "description": "Required for branch-specific menus; leave blank for a shared default menu."
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Branch",
+   "options": "Branch",
+   "description": "Optional. Restrict this menu to one branch."
+  },
+  {
+   "fieldname": "floor_wise_menu",
+   "fieldtype": "Check",
+   "label": "Floor-wise Menu",
+   "default": "0"
+  },
+  {
+   "fieldname": "floors",
+   "fieldtype": "Table",
+   "label": "Floors",
+   "options": "Restaurant Menu Floor",
+   "depends_on": "eval:doc.floor_wise_menu",
+   "mandatory_depends_on": "eval:doc.floor_wise_menu"
+  },
+  {
+   "fieldname": "groups_section",
+   "fieldtype": "Section Break",
+   "label": "Legacy Item Groups",
+   "hidden": 1
+  },
+  {
+   "fieldname": "item_groups",
+   "fieldtype": "Table",
+   "label": "Item Groups",
+   "hidden": 1,
+   "options": "Restaurant Menu Item Group"
+  },
+  {
+   "fieldname": "items_section",
+   "fieldtype": "Section Break",
+   "label": "Menu Items"
+  },
+  {
+   "description": "Link items or variant templates to a Section / Course. Clear Available to temporarily stop ordering an item.",
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Items",
+   "options": "Restaurant Menu Item"
+  },
+  {
+   "fieldname": "modifiers_section",
+   "fieldtype": "Section Break",
+   "label": "Legacy Modifier Assignments",
+   "hidden": 1
+  },
+  {
+   "fieldname": "modifier_assignments",
+   "fieldtype": "Table",
+   "label": "Legacy Modifier Assignments",
+   "hidden": 1,
+   "read_only": 1,
+   "options": "Restaurant Menu Modifier",
+   "description": "Retained as migration history. Configure current modifier groups on Item."
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [
+  {
+   "link_doctype": "Restaurant",
+   "link_fieldname": "default_menu"
+  }
+ ],
+ "modified": "2026-11-04 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "VunaPOS",
+ "name": "Restaurant Menu",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "VunaPOS Restaurant Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Waiter"
+  },
+  {
+   "read": 1,
+   "role": "VunaPOS Cashier"
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "menu_name",
+ "sort_order": "ASC",
+ "states": []
+}

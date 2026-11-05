@@ -9,8 +9,9 @@ DEFAULT_POS_MODE = "Retail"
 RESTAURANT_MANAGER_ROLE = "VunaPOS Restaurant Manager"
 CASHIER_ROLE = "VunaPOS Cashier"
 WAITER_ROLE = "VunaPOS Waiter"
+KITCHEN_ROLE = "VunaPOS Kitchen User"
 # Display order: the Profile page lists a user's roles in this order.
-RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, RESTAURANT_MANAGER_ROLE)
+RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE)
 
 _READ = {"read": 1}
 # Catalogue pricing (ERPNext's apply_pricing_rule) needs doctype-level read on
@@ -24,6 +25,7 @@ _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
 _MENU_READS = {
+	"Branch": _READ,
 	"POS Profile": _READ,
 	"Item": _READ,
 	"Customer": _READ,
@@ -35,14 +37,27 @@ _MENU_READS = {
 # Grants on Frappe/ERPNext doctypes, so each role works without Sales User or
 # Accounts User. Permissions on VunaPOS doctypes live in their DocType JSON.
 ROLE_PERMISSIONS = {
+	KITCHEN_ROLE: {
+		**_MENU_READS,
+		"Sales Invoice": _OWN_INVOICE_READ,
+		"POS Invoice": _OWN_INVOICE_READ,
+	},
+	"Sales User": {"Branch": _READ},
 	WAITER_ROLE: {
 		**_MENU_READS,
+		"POS Opening Entry": _SHIFT,
+		"POS Closing Entry": _SHIFT,
+		"Payment Entry": {"read": 1, "if_owner": 1},
 		"Sales Order": _ORDERS,
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
 	},
 	RESTAURANT_MANAGER_ROLE: {
 		**_MENU_READS,
+		"POS Opening Entry": _SHIFT,
+		"POS Closing Entry": _SHIFT,
+		"Payment Entry": {"read": 1, "if_owner": 1},
+		"Branch": {"read": 1, "create": 1, "write": 1},
 		"Sales Order": {**_ORDERS, "cancel": 1},
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
@@ -108,6 +123,15 @@ def ensure_vunapos_custom_fields():
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
 	ensure_vunapos_roles()
 	custom_fields = {
+		"Branch": [
+			{
+				"fieldname": "vunapos_company",
+				"label": "Company",
+				"fieldtype": "Link",
+				"options": "Company",
+				"insert_after": "branch",
+			},
+		],
 		"POS Profile": [
 			{
 				"fieldname": "vunapos_pos_mode_section",
@@ -136,9 +160,38 @@ def ensure_vunapos_custom_fields():
 				"fieldname": "vunapos_restaurant",
 				"label": "Restaurant",
 				"fieldtype": "Link",
-				"options": "VunaPOS Restaurant",
+				"options": "Restaurant",
 				"insert_after": "vunapos_restaurant_section",
 				"mandatory_depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_branch",
+				"label": "Restaurant Branch",
+				"fieldtype": "Link",
+				"options": "Branch",
+				"insert_after": "vunapos_restaurant",
+				"fetch_from": "",
+				"read_only": 0,
+				"mandatory_depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_require_manager_pin_order_cancel",
+				"label": "Require Manager PIN to Cancel Orders",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_require_manager_pin_item_removal",
+				"default": "0",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Require manager approval before staff can cancel a restaurant order. Independent of item removal approval.",
+			},
+			{
+				"fieldname": "vunapos_complete_preparation_on_billing",
+				"label": "Complete Preparation on Billing",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_branch",
+				"default": "0",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Allow this profile's cashier to accept pending KOTs, finish required material transfers and manufacture remaining quantities during checkout. Marks preparation Ready, not Served. Native stock, tracking, inspection and Job Card checks still apply.",
 			},
 			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
@@ -796,8 +849,57 @@ def ensure_vunapos_custom_fields():
 	for invoice_doctype in ("Sales Invoice", "POS Invoice"):
 		custom_fields[invoice_doctype].extend(_restaurant_invoice_fields())
 	custom_fields["Sales Order"].extend(_restaurant_order_fields())
+	custom_fields["Sales Order"].append(
+		{
+			"fieldname": "vunapos_restaurant_session",
+			"label": "Restaurant Session",
+			"fieldtype": "Link",
+			"options": "Restaurant Session",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "vunapos_restaurant",
+			"search_index": 1,
+		}
+	)
 	custom_fields["Sales Order Item"] = _restaurant_order_item_fields()
+	custom_fields["Item"] = [
+		{"fieldname": "vunapos_restaurant_tab", "fieldtype": "Tab Break", "label": "Restaurant"},
+		{
+			"fieldname": "vunapos_restaurant_options_override",
+			"fieldtype": "Check",
+			"label": "Override Template Restaurant Options",
+			"default": "0",
+			"depends_on": "eval:doc.variant_of",
+			"insert_after": "vunapos_restaurant_tab",
+			"description": "Use only this variant's settings, even if both tables below are empty.",
+		},
+		{
+			"fieldname": "vunapos_restaurant_modifiers",
+			"fieldtype": "Table",
+			"label": "Modifier Groups",
+			"options": "Restaurant Item Modifier",
+			"insert_after": "vunapos_restaurant_options_override",
+			"description": "Reusable preparation choices, such as sugar preference or milk choice. Variants inherit template settings unless configured here or overridden.",
+		},
+		{
+			"fieldname": "vunapos_restaurant_addons_section",
+			"fieldtype": "Section Break",
+			"label": "Add-ons",
+			"insert_after": "vunapos_restaurant_modifiers",
+		},
+		{
+			"fieldname": "vunapos_restaurant_addons",
+			"fieldtype": "Table",
+			"label": "Optional Add-ons",
+			"options": "Restaurant Item Addon",
+			"insert_after": "vunapos_restaurant_addons_section",
+			"description": "Extras linked to ERPNext Items, priced using the transaction's selling price list. These choices are optional and apply per main selling unit.",
+		},
+	]
 	create_custom_fields(custom_fields, ignore_validate=True)
+	from vunapos.services.restaurant_service import backfill_branch_companies
+
+	backfill_branch_companies()
 	ensure_sales_invoice_stock_reservation_option()
 	ensure_default_service_types()
 
@@ -834,7 +936,16 @@ def _restaurant_order_fields():
 			"Restaurant",
 			"Link",
 			"vunapos_restaurant_order_section",
-			options="VunaPOS Restaurant",
+			options="Restaurant",
+			allow_on_submit=0,
+			search_index=1,
+		),
+		field(
+			"vunapos_branch",
+			"Branch",
+			"Link",
+			"vunapos_restaurant",
+			options="Branch",
 			allow_on_submit=0,
 			search_index=1,
 		),
@@ -843,14 +954,14 @@ def _restaurant_order_fields():
 			"Service Type",
 			"Link",
 			"vunapos_restaurant",
-			options="VunaPOS Service Type",
+			options="Restaurant Service Type",
 		),
 		field(
 			"vunapos_restaurant_table",
 			"Table",
 			"Link",
 			"vunapos_service_type",
-			options="VunaPOS Restaurant Table",
+			options="Restaurant Table",
 			search_index=1,
 		),
 		field("vunapos_pax", "Guests", "Int", "vunapos_restaurant_table", read_only=0),
@@ -889,8 +1000,39 @@ def _restaurant_order_item_fields():
 	"""Restaurant order lines. `vunapos_item_note` has the same name as on invoice lines."""
 	return [
 		{
+			"fieldname": "vunapos_kitchen_station",
+			"label": "Kitchen Station",
+			"fieldtype": "Link",
+			"options": "Kitchen Station",
+			"read_only": 1,
+			"insert_after": "vunapos_parent_line_id",
+		},
+		{
+			"fieldname": "vunapos_temporary_kitchen_routing",
+			"label": "Temporary Kitchen Routing",
+			"fieldtype": "Check",
+			"read_only": 1,
+			"insert_after": "vunapos_kitchen_station",
+		},
+		{
+			"fieldname": "vunapos_modifiers",
+			"label": "Modifier Selections",
+			"fieldtype": "Long Text",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "vunapos_item_note",
+		},
+		{
+			"fieldname": "vunapos_parent_line_id",
+			"label": "Add-on Parent Line",
+			"fieldtype": "Data",
+			"read_only": 1,
+			"no_copy": 1,
+			"insert_after": "vunapos_modifiers",
+		},
+		{
 			"fieldname": "vunapos_line_id",
-			"label": "VunaPOS Line ID",
+			"label": "Line ID",
 			"fieldtype": "Data",
 			"insert_after": "item_name",
 			"read_only": 1,
@@ -933,6 +1075,35 @@ def _restaurant_invoice_fields():
 	"""
 	return [
 		{
+			"fieldname": "vunapos_restaurant",
+			"label": "Restaurant",
+			"fieldtype": "Link",
+			"options": "Restaurant",
+			"insert_after": "vunapos_restaurant_section",
+			"read_only": 1,
+			"no_copy": 1,
+			"search_index": 1,
+		},
+		{
+			"fieldname": "vunapos_branch",
+			"label": "Branch",
+			"fieldtype": "Link",
+			"options": "Branch",
+			"insert_after": "vunapos_restaurant",
+			"read_only": 1,
+			"no_copy": 1,
+			"search_index": 1,
+		},
+		{
+			"fieldname": "vunapos_restaurant_session",
+			"label": "Restaurant Session",
+			"fieldtype": "Link",
+			"options": "Restaurant Session",
+			"insert_after": "vunapos_restaurant_section",
+			"read_only": 1,
+			"no_copy": 1,
+		},
+		{
 			"fieldname": "vunapos_restaurant_section",
 			"label": "Restaurant",
 			"fieldtype": "Section Break",
@@ -941,9 +1112,9 @@ def _restaurant_invoice_fields():
 		},
 		{
 			"fieldname": "vunapos_service_type",
-			"label": "VunaPOS Service Type",
+			"label": "Restaurant Service Type",
 			"fieldtype": "Link",
-			"options": "VunaPOS Service Type",
+			"options": "Restaurant Service Type",
 			"insert_after": "vunapos_restaurant_section",
 			"read_only": 1,
 			"allow_on_submit": 1,
@@ -951,9 +1122,9 @@ def _restaurant_invoice_fields():
 		},
 		{
 			"fieldname": "vunapos_restaurant_table",
-			"label": "VunaPOS Restaurant Table",
+			"label": "Restaurant Table",
 			"fieldtype": "Link",
-			"options": "VunaPOS Restaurant Table",
+			"options": "Restaurant Table",
 			"insert_after": "vunapos_service_type",
 			"read_only": 1,
 			"allow_on_submit": 1,
@@ -970,10 +1141,10 @@ DEFAULT_SERVICE_TYPES = (
 
 
 def ensure_default_service_types():
-	if not frappe.db.table_exists("VunaPOS Service Type") or frappe.db.count("VunaPOS Service Type"):
+	if not frappe.db.table_exists("Restaurant Service Type") or frappe.db.count("Restaurant Service Type"):
 		return
 	for values in DEFAULT_SERVICE_TYPES:
-		frappe.get_doc({"doctype": "VunaPOS Service Type", "enabled": 1, **values}).insert(
+		frappe.get_doc({"doctype": "Restaurant Service Type", "enabled": 1, **values}).insert(
 			ignore_permissions=True
 		)
 

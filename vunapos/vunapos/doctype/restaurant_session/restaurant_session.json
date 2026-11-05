@@ -1,0 +1,164 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Session",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "istable": 0,
+ "autoname": "RS-.YYYY.-.#####",
+ "track_changes": 1,
+ "field_order": [
+  "restaurant",
+  "branch",
+  "company",
+  "pos_profile",
+  "service_type",
+  "selling_price_list",
+  "currency",
+  "customer",
+  "waiter",
+  "guest_count",
+  "status",
+  "opened_at",
+  "closed_at",
+  "billing_doctype",
+  "billing_invoice",
+  "billing_profile",
+  "billing_fingerprint",
+  "tables",
+  "idempotency_key"
+ ],
+ "fields": [
+  {"fieldname": "billing_doctype", "label": "Billing Document Type", "fieldtype": "Link", "options": "DocType", "read_only": 1},
+  {"fieldname": "billing_invoice", "label": "Bill", "fieldtype": "Dynamic Link", "options": "billing_doctype", "read_only": 1},
+  {"fieldname": "billing_profile", "label": "Billing POS Profile", "fieldtype": "Link", "options": "POS Profile", "read_only": 1},
+  {"fieldname": "billing_fingerprint", "label": "Bill Fingerprint", "fieldtype": "Data", "read_only": 1, "hidden": 1},
+  {
+   "fieldname": "selling_price_list", "label": "Price List", "fieldtype": "Link", "options": "Price List", "read_only": 1
+  },
+  {
+   "fieldname": "currency", "label": "Currency", "fieldtype": "Link", "options": "Currency", "read_only": 1
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "reqd": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "reqd": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "label": "Pos Profile",
+   "options": "POS Profile",
+   "reqd": 1
+  },
+  {
+   "fieldname": "service_type",
+   "fieldtype": "Link",
+   "label": "Service Type",
+   "options": "Restaurant Service Type",
+   "reqd": 1
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "fieldname": "waiter",
+   "fieldtype": "Link",
+   "label": "Waiter",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "guest_count",
+   "fieldtype": "Int",
+   "label": "Guest Count",
+   "reqd": 0
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Open\nSettling\nSettled\nClosed - Unpaid\nCancelled",
+   "reqd": 1,
+   "default": "Open",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opened_at",
+   "fieldtype": "Datetime",
+   "label": "Opened At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "closed_at",
+   "fieldtype": "Datetime",
+   "label": "Closed At",
+   "reqd": 0
+  },
+  {
+   "fieldname": "tables",
+   "fieldtype": "Table",
+   "label": "Tables",
+   "options": "Restaurant Session Table",
+   "reqd": 0
+  },
+  {
+   "fieldname": "idempotency_key",
+   "fieldtype": "Data",
+   "label": "Idempotency Key",
+   "reqd": 1,
+   "unique": 1,
+   "no_copy": 1,
+   "hidden": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "create": 1,
+   "write": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1,
+   "create": 1,
+   "write": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1,
+   "create": 1,
+   "write": 1,
+   "print": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1,
+   "create": 1,
+   "write": 1,
+   "print": 1
+  }
+ ]
+}

@@ -64,6 +64,7 @@ export function TableShape({ table, scale, status, now, selected, muted, onActiv
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={label}
+      aria-pressed={interactive ? selected : undefined}
       className={interactive ? "cursor-pointer" : undefined}
       opacity={muted ? 0.45 : 1}
       onClick={onActivate}

@@ -259,8 +259,8 @@ def ensure_test_pos_profile():
 	return profile.name
 
 
-RESTAURANT_TEST_PROFILE = "_Test VunaPOS Restaurant Profile"
-RESTAURANT_TEST = "_Test VunaPOS Restaurant"
+RESTAURANT_TEST_PROFILE = "_Test Restaurant Profile"
+RESTAURANT_TEST = "_Test Restaurant"
 # Plain test service types, so a site's configured Dine In / Takeaway (prices,
 # service charges) never change what the tests see.
 TEST_TABLE_SERVICE = "_Test VunaPOS Table Service"
@@ -271,10 +271,10 @@ TEST_SERVICE_TYPES = ((TEST_TABLE_SERVICE, 1), (TEST_COUNTER_SERVICE, 0), (TEST_
 
 def ensure_test_service_types():
 	for index, (name, requires_table) in enumerate(TEST_SERVICE_TYPES):
-		if not frappe.db.exists("VunaPOS Service Type", name):
+		if not frappe.db.exists("Restaurant Service Type", name):
 			frappe.get_doc(
 				{
-					"doctype": "VunaPOS Service Type",
+					"doctype": "Restaurant Service Type",
 					"service_type_name": name,
 					"requires_table": requires_table,
 					# After the seeded types, so their display order is unchanged.
@@ -282,7 +282,7 @@ def ensure_test_service_types():
 				}
 			).insert(ignore_permissions=True)
 		frappe.db.set_value(
-			"VunaPOS Service Type",
+			"Restaurant Service Type",
 			name,
 			{"enabled": 1, "requires_table": requires_table, "price_list": None, "taxes_and_charges": None},
 		)
@@ -292,10 +292,15 @@ def ensure_test_service_types():
 def ensure_test_restaurant(name=RESTAURANT_TEST):
 	"""A restaurant offering only the plain test service types (table service by default)."""
 	service_types = ensure_test_service_types()
-	if not frappe.db.exists("VunaPOS Restaurant", name):
+	branch = f"{name} Branch"
+	if not frappe.db.exists("Branch", branch):
+		frappe.get_doc({"doctype": "Branch", "branch": branch, "vunapos_company": _company()}).insert(
+			ignore_permissions=True
+		)
+	if not frappe.db.exists("Restaurant", name):
 		frappe.get_doc(
 			{
-				"doctype": "VunaPOS Restaurant",
+				"doctype": "Restaurant",
 				"restaurant_name": name,
 				"company": _company(),
 				"service_types": [
@@ -314,12 +319,41 @@ def ensure_test_restaurant_profile():
 		profile.set("__newname", RESTAURANT_TEST_PROFILE)
 		profile.vunapos_pos_mode = "Restaurant"
 		profile.vunapos_restaurant = restaurant
+		profile.vunapos_branch = f"{restaurant} Branch"
 		profile.insert(ignore_permissions=True)
 	frappe.db.set_value(
 		"POS Profile",
 		RESTAURANT_TEST_PROFILE,
-		{"vunapos_pos_mode": "Restaurant", "vunapos_restaurant": restaurant},
+		{
+			"vunapos_pos_mode": "Restaurant",
+			"vunapos_restaurant": restaurant,
+			"vunapos_branch": f"{restaurant} Branch",
+		},
 	)
+	# Generic order fixtures are direct-sale items. QSR tests explicitly opt
+	# into station groups, recipes and ingredient stock.
+	station = f"{restaurant} Test Kitchen"
+	if frappe.db.exists("DocType", "Kitchen Station") and not frappe.db.exists(
+		"Kitchen Station", {"restaurant": restaurant, "station_name": station}
+	):
+		frappe.get_doc(
+			{
+				"doctype": "Kitchen Station",
+				"station_name": station,
+				"branch": f"{restaurant} Branch",
+				"restaurant": restaurant,
+				"enabled": 1,
+				"item_groups": [],
+			}
+		).insert(ignore_permissions=True)
+	# Reset older test fixtures that mapped the entire catalogue to preparation.
+	station_name = (
+		frappe.db.get_value("Kitchen Station", {"restaurant": restaurant, "station_name": station}, "name")
+		if frappe.db.exists("DocType", "Kitchen Station")
+		else None
+	)
+	if station_name:
+		frappe.db.delete("Kitchen Station Item Group", {"parent": station_name})
 	return RESTAURANT_TEST_PROFILE
 
 

@@ -7,14 +7,14 @@ from frappe.utils import cint, cstr, flt
 
 from vunapos.dto.restaurant import ORDER_STATUS_FIELDS, ORDER_STATUS_OPEN, floor_to_dict, order_status
 from vunapos.services.profile_service import require_pos_profile_assignment
-from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE
+from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE, require_restaurant_context
 from vunapos.setup.utils import DEFAULT_POS_MODE, RESTAURANT_MANAGER_ROLE
 
 CANVAS_WIDTH = 1000
 CANVAS_HEIGHT = 700
-FLOOR_DOCTYPE = "VunaPOS Restaurant Floor"
-TABLE_DOCTYPE = "VunaPOS Restaurant Table"
-ELEMENT_DOCTYPE = "VunaPOS Floor Element"
+FLOOR_DOCTYPE = "Restaurant Floor"
+TABLE_DOCTYPE = "Restaurant Table"
+ELEMENT_DOCTYPE = "Restaurant Floor Element"
 ORDER_DOCTYPE = "Sales Order"
 MANAGER_ROLES = (RESTAURANT_MANAGER_ROLE, "System Manager")
 ELEMENT_TYPES = ("Wall", "Door", "Window", "Bar Counter", "Plant", "Label")
@@ -24,6 +24,7 @@ FLOOR_FIELDS = (
 	"name",
 	"floor_name",
 	"restaurant",
+	"branch",
 	"display_order",
 	"is_active",
 	"background_color",
@@ -34,6 +35,7 @@ TABLE_FIELDS = (
 	"name",
 	"floor",
 	"restaurant",
+	"branch",
 	"table_label",
 	"seats",
 	"shape",
@@ -95,6 +97,12 @@ def require_restaurant_profile(pos_profile):
 			_("POS Profile {0} is not linked to a restaurant").format(pos_profile),
 			{"pos_profile": pos_profile},
 		)
+	_require_floor_plan_reader(pos_profile)
+	profile = frappe.get_cached_doc("POS Profile", pos_profile)
+	from vunapos.services.restaurant_service import validate_branch_company
+
+	validate_branch_company(profile.get("vunapos_branch"), profile.company)
+	require_restaurant_context(restaurant, profile.company, profile.vunapos_branch)
 	return restaurant
 
 
@@ -169,7 +177,7 @@ def _throw_duplicate_floor_name(floor_name):
 def _throw_duplicate_table_label(table_label):
 	_throw(
 		"DUPLICATE_TABLE_LABEL",
-		_("Table label {0} is already used in this POS Profile").format(table_label),
+		_("Table label {0} is already used on this floor").format(table_label),
 		{"table_label": table_label},
 	)
 
@@ -182,9 +190,15 @@ def validate_floor_doc(doc):
 	if not doc.floor_name:
 		_throw("INVALID_FLOOR_PLAN", _("Floor name is required"))
 	_require_restaurant(doc.restaurant)
+	from vunapos.services.restaurant_service import validate_branch_company
+
+	validate_branch_company(
+		doc.get("branch"), frappe.get_cached_value("Restaurant", doc.restaurant, "company")
+	)
+	require_restaurant_context(doc.restaurant, branch=doc.branch)
 	if (
 		not doc.is_new()
-		and doc.has_value_changed("restaurant")
+		and (doc.has_value_changed("restaurant") or doc.has_value_changed("branch"))
 		and frappe.db.exists(TABLE_DOCTYPE, {"floor": doc.name})
 	):
 		_throw(
@@ -202,7 +216,7 @@ def validate_floor_doc(doc):
 	key = _label_key(doc.floor_name)
 	for row in frappe.get_all(
 		FLOOR_DOCTYPE,
-		filters={"restaurant": doc.restaurant, "name": ["!=", doc.name or ""]},
+		filters={"restaurant": doc.restaurant, "branch": doc.branch, "name": ["!=", doc.name or ""]},
 		fields=["floor_name"],
 	):
 		if _label_key(row.floor_name) == key:
@@ -223,6 +237,7 @@ def validate_table_doc(doc):
 	# Set explicitly rather than relying on fetch_from, which only refreshes
 	# when the table itself is re-saved.
 	doc.restaurant = floor_restaurant
+	doc.branch = frappe.db.get_value(FLOOR_DOCTYPE, doc.floor, "branch")
 	_require_restaurant(doc.restaurant)
 	doc.shape = doc.shape or DEFAULT_TABLE_SHAPE
 	_validate_table_shape(doc.shape, doc.table_label)
@@ -234,7 +249,7 @@ def validate_table_doc(doc):
 	key = _label_key(doc.table_label)
 	for row in frappe.get_all(
 		TABLE_DOCTYPE,
-		filters={"restaurant": doc.restaurant, "name": ["!=", doc.name or ""]},
+		filters={"restaurant": doc.restaurant, "floor": doc.floor, "name": ["!=", doc.name or ""]},
 		fields=["table_label"],
 	):
 		if _label_key(row.table_label) == key:
@@ -244,16 +259,16 @@ def validate_table_doc(doc):
 # ---- reading ----
 
 
-def _get_restaurant_rows(restaurant):
+def _get_restaurant_rows(restaurant, branch):
 	floors = frappe.get_all(
 		FLOOR_DOCTYPE,
-		filters={"restaurant": restaurant},
+		filters={"restaurant": restaurant, "branch": branch},
 		fields=list(FLOOR_FIELDS),
 		order_by="display_order asc, floor_name asc",
 	)
 	tables = frappe.get_all(
 		TABLE_DOCTYPE,
-		filters={"restaurant": restaurant},
+		filters={"restaurant": restaurant, "branch": branch},
 		fields=list(TABLE_FIELDS),
 		order_by="table_label asc",
 	)
@@ -271,7 +286,12 @@ def _plan_version(floors, tables):
 
 
 def get_floor_plan_version(pos_profile):
-	return _plan_version(*_get_restaurant_rows(require_restaurant_profile(pos_profile)))
+	return _plan_version(
+		*_get_restaurant_rows(
+			require_restaurant_profile(pos_profile),
+			frappe.get_cached_value("POS Profile", pos_profile, "vunapos_branch"),
+		)
+	)
 
 
 def get_floor_plan(pos_profile):
@@ -279,7 +299,9 @@ def get_floor_plan(pos_profile):
 	restaurant = require_restaurant_profile(pos_profile)
 	_require_floor_plan_reader(pos_profile)
 	can_edit = is_floor_plan_manager()
-	floors, tables = _get_restaurant_rows(restaurant)
+	floors, tables = _get_restaurant_rows(
+		restaurant, frappe.get_cached_value("POS Profile", pos_profile, "vunapos_branch")
+	)
 	version = _plan_version(floors, tables)
 	# Managers receive inactive rows too. save_floor_plan deletes anything left
 	# out of its payload, so the editor must always see the complete layout.
@@ -403,9 +425,9 @@ def _validate_payload(payload, restaurant, existing_floors, existing_tables):
 	"""Validate the complete layout before any write happens."""
 	floors = []
 	floor_names = set()
-	table_labels = set()
 	seen = {"floor_names": set(), "floor_ids": set(), "table_names": set(), "table_ids": set()}
 	for floor_row in payload.get("floors") or []:
+		table_labels = set()
 		if not isinstance(floor_row, dict):
 			_throw("INVALID_FLOOR_PLAN", _("Each floor must be an object"))
 		name, client_id = _row_identity(
@@ -481,12 +503,13 @@ def _retire_table(table_name):
 	frappe.delete_doc(TABLE_DOCTYPE, table_name, ignore_permissions=True)
 
 
-def _upsert_floor(floor, restaurant):
+def _upsert_floor(floor, restaurant, branch):
 	if floor["name"]:
 		doc = frappe.get_doc(FLOOR_DOCTYPE, floor["name"])
 	else:
 		doc = frappe.new_doc(FLOOR_DOCTYPE)
 		doc.restaurant = restaurant
+	doc.branch = branch
 	doc.update(floor["values"])
 	doc.set("elements", floor["elements"])
 	doc.flags[VALIDATED_FLAG] = True
@@ -517,7 +540,8 @@ def save_floor_plan(pos_profile, payload):
 		# Lock the restaurant row so concurrent saves from any of its tills run one
 		# at a time and the version check below cannot race.
 		frappe.db.get_value(RESTAURANT_DOCTYPE, restaurant, "name", for_update=True)
-		existing_floors, existing_tables = _get_restaurant_rows(restaurant)
+		branch = frappe.get_cached_value("POS Profile", pos_profile, "vunapos_branch")
+		existing_floors, existing_tables = _get_restaurant_rows(restaurant, branch)
 		version = _plan_version(existing_floors, existing_tables)
 		if cstr(payload.get("version")) != version:
 			_throw(
@@ -540,7 +564,7 @@ def save_floor_plan(pos_profile, payload):
 
 		id_map = {"floors": {}, "tables": {}}
 		for floor in floors:
-			floor_name = _upsert_floor(floor, restaurant)
+			floor_name = _upsert_floor(floor, restaurant, branch)
 			if floor["client_id"]:
 				id_map["floors"][floor["client_id"]] = floor_name
 			for table in floor["tables"]:

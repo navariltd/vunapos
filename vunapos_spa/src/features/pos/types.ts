@@ -193,6 +193,7 @@ export type POSClosingPreviewDTO = {
 
 
 export type BootstrapData = {
+	can_manage_restaurant?: boolean;
 	user?: unknown;
 	current_user?: string;
 	pos_profile?: string;
@@ -262,6 +263,7 @@ export type BootstrapData = {
 };
 
 export type ItemDTO = {
+	is_qsr?: boolean;
 	item_code: string;
 	item_name: string;
 	modified?: string;
@@ -366,6 +368,8 @@ export type BatchAllocationResultDTO = {
 };
 
 export type InvoiceItemDTO = {
+	restaurant_parent_line_id?: string | null;
+	is_qsr?: boolean;
 	row_name: string;
 	item_code: string;
 	item_name: string;
@@ -437,6 +441,8 @@ export type InvoiceDTO = {
 	customer_name?: string;
 	tax_id?: string | null;
 	shipping_address_name?: string | null;
+	restaurant?: string | null;
+	branch?: string | null;
 	selling_price_list?: string;
 	price_list_currency?: string;
 	redeem_loyalty_points?: boolean;

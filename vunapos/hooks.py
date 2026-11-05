@@ -55,6 +55,7 @@ fixtures = [
 
 # include js in doctype views
 doctype_js = {
+	"Item": "public/js/item_restaurant.js",
 	"POS Profile": "public/js/pos_profile.js",
 	"POS Settings": "public/js/pos_profile.js",
 }
@@ -148,6 +149,26 @@ after_migrate = "vunapos.setup.utils.ensure_vunapos_custom_fields"
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+permission_query_conditions = {
+	"Restaurant": "vunapos.restaurant_permissions.query_conditions",
+	"Restaurant Floor": "vunapos.restaurant_permissions.floor_conditions",
+	"Restaurant Table": "vunapos.restaurant_permissions.table_conditions",
+	"Restaurant Session": "vunapos.restaurant_permissions.session_conditions",
+	"Kitchen Station": "vunapos.restaurant_permissions.station_conditions",
+	"Kitchen Order Ticket": "vunapos.restaurant_permissions.ticket_conditions",
+	"Kitchen Ticket Action": "vunapos.restaurant_permissions.ticket_action_conditions",
+	"Sales Order": "vunapos.restaurant_permissions.order_conditions",
+}
+has_permission = {
+	"Restaurant": "vunapos.restaurant_permissions.has_permission",
+	"Restaurant Floor": "vunapos.restaurant_permissions.related_has_permission",
+	"Restaurant Table": "vunapos.restaurant_permissions.related_has_permission",
+	"Restaurant Session": "vunapos.restaurant_permissions.related_has_permission",
+	"Kitchen Station": "vunapos.restaurant_permissions.related_has_permission",
+	"Kitchen Order Ticket": "vunapos.restaurant_permissions.related_has_permission",
+	"Kitchen Ticket Action": "vunapos.restaurant_permissions.related_has_permission",
+	"Sales Order": "vunapos.restaurant_permissions.related_has_permission",
+}
 
 # Document Events
 # ---------------
@@ -169,7 +190,11 @@ doc_events = {
 		"Price List",
 		"Pricing Rule",
 		"Mode of Payment",
-		"VunaPOS Restaurant",
+		"Restaurant",
+		"Restaurant Menu",
+		"Menu Section",
+		"Restaurant Modifier Group",
+		"Kitchen Station",
 	)
 }
 doc_events["POS Settings"] = {
@@ -185,6 +210,20 @@ doc_events["POS Profile"] = {
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
 	"on_trash": "vunapos.realtime.publish_configuration_change",
+}
+doc_events["Branch"] = {
+	"validate": "vunapos.services.restaurant_service.validate_branch_doc",
+}
+doc_events["Item"]["validate"] = "vunapos.services.modifier_service.validate_item_options"
+doc_events["Sales Order"] = {
+	"validate": "vunapos.services.restaurant_location_service.validate_location_snapshot",
+	"on_cancel": "vunapos.services.kitchen_lifecycle_service.allow_cancelled_order_audit_links",
+	"on_submit": "vunapos.services.kitchen_service.generate_tickets",
+	"before_cancel": "vunapos.services.kitchen_service.protect_order_cancellation",
+	"before_update_after_submit": [
+		"vunapos.services.restaurant_location_service.validate_location_snapshot",
+		"vunapos.services.restaurant_session_service.protect_committed_round",
+	],
 }
 # Stock and tracking changes do not publish POS configuration events, but they
 # must invalidate cached catalogue balances immediately.
@@ -210,6 +249,19 @@ doc_events.update(
 
 # Scheduled Tasks
 # ---------------
+
+for _billing_doctype in ("Sales Invoice", "POS Invoice"):
+	doc_events.setdefault(_billing_doctype, {}).update(
+		{
+			"validate": [
+				"vunapos.services.restaurant_location_service.validate_location_snapshot",
+				"vunapos.services.restaurant_billing_service.validate_billing_invoice",
+			],
+			"before_update_after_submit": "vunapos.services.restaurant_location_service.validate_location_snapshot",
+			"on_submit": "vunapos.services.restaurant_billing_service.on_submit",
+			"before_submit": "vunapos.services.restaurant_billing_service.before_submit",
+		}
+	)
 
 scheduler_events = {
 	"cron": {

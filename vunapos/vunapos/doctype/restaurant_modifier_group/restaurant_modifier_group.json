@@ -1,0 +1,82 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Modifier Group",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": [
+  "group_name",
+  "enabled",
+  "min_selections",
+  "max_selections",
+  "options_section",
+  "options"
+ ],
+ "fields": [
+  {
+   "fieldname": "group_name",
+   "fieldtype": "Data",
+   "label": "Group Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1"
+  },
+  {
+   "fieldname": "min_selections",
+   "fieldtype": "Int",
+   "label": "Minimum Selections",
+   "default": "0",
+   "description": "Use 1 or more to require a choice."
+  },
+  {
+   "fieldname": "max_selections",
+   "fieldtype": "Int",
+   "label": "Maximum Selections",
+   "default": "1"
+  },
+  {
+   "fieldname": "options_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "options",
+   "fieldtype": "Table",
+   "label": "Choices",
+   "options": "Restaurant Modifier Option",
+   "reqd": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1
+  }
+ ],
+ "autoname": "field:group_name",
+ "allow_rename": 1,
+ "title_field": "group_name",
+ "sort_field": "group_name",
+ "sort_order": "ASC"
+}

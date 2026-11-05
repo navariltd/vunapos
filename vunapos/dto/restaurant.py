@@ -59,7 +59,7 @@ def service_type_to_dict(row, is_default=False):
 
 
 def _table_label(table):
-	return frappe.db.get_value("VunaPOS Restaurant Table", table, "table_label") if table else None
+	return frappe.db.get_value("Restaurant Table", table, "table_label") if table else None
 
 
 def waiter_name(user):
@@ -97,6 +97,9 @@ def line_id(row):
 
 def order_summary_to_dict(row):
 	return {
+		"restaurant": row.get("vunapos_restaurant"),
+		"branch": row.get("vunapos_branch"),
+		"restaurant_session": row.get("vunapos_restaurant_session"),
 		"name": row.name,
 		"status": order_status(row),
 		"service_type": row.vunapos_service_type,
@@ -116,11 +119,13 @@ def order_summary_to_dict(row):
 
 def order_to_dict(doc):
 	return {
+		"restaurant_session": doc.get("vunapos_restaurant_session"),
 		"name": doc.name,
 		"status": order_status(doc),
 		"sales_order_status": doc.status,
 		"pos_profile": doc.vunapos_pos_profile,
 		"restaurant": doc.vunapos_restaurant,
+		"branch": doc.get("vunapos_branch"),
 		"service_type": doc.vunapos_service_type,
 		"table": doc.vunapos_restaurant_table,
 		"table_label": _table_label(doc.vunapos_restaurant_table),
@@ -141,6 +146,8 @@ def order_to_dict(doc):
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),
 				"note": row.vunapos_item_note,
+				"modifiers": frappe.parse_json(row.get("vunapos_modifiers") or "[]"),
+				"parent_line_id": row.get("vunapos_parent_line_id"),
 				"added_by": row.vunapos_added_by or doc.owner,
 				"added_at": row.vunapos_added_at or row.creation,
 			}

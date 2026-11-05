@@ -16,8 +16,16 @@ type ItemCardProps = {
   onAdd: (item: ItemDTO) => void;
 };
 
-export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock, item, onAdd, pending }: ItemCardProps) {
+export const ItemCard = memo(function ItemCard({
+  currency,
+  disabled,
+  ignoreStock,
+  item,
+  onAdd,
+  pending,
+}: ItemCardProps) {
   const outOfStock =
+    !item.is_qsr &&
     !item.has_variants &&
     !item.is_product_bundle &&
     Boolean(item.is_stock_item ?? true) &&
@@ -27,14 +35,20 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
   const isDisabled = disabled || (outOfStock && !ignoreStock);
 
   return (
-    <div className={`relative flex min-h-40 flex-col overflow-visible rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}>
+    <div
+      className={`relative flex min-h-40 flex-col overflow-visible rounded-md border bg-surface-container-low transition-colors hover:bg-surface-container sm:min-h-44 ${
+        pending ? "border-primary bg-primary/5" : "border-outline-variant"
+      }`}
+    >
       {item.is_product_bundle ? (
         <span className="pointer-events-none absolute left-[-29px] top-3 z-10 w-24 -rotate-45 bg-secondary-container py-1 text-center text-[9px] font-semibold uppercase tracking-wide text-on-secondary-container shadow-sm">
           Bundle
         </span>
       ) : null}
       <div
-        className={`flex flex-1 flex-col text-left ${isDisabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+        className={`flex flex-1 flex-col text-left ${
+          isDisabled ? "cursor-not-allowed" : "cursor-pointer"
+        }`}
         role="button"
         tabIndex={isDisabled ? -1 : 0}
         aria-disabled={isDisabled}
@@ -74,7 +88,14 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
             <div className="min-w-0 flex-1">
               <ItemTaxLabel item={item} />
               <ItemTaxPrice currency={currency} item={item} />
-              {item.actual_qty !== undefined ? (
+              {item.is_qsr ? (
+                <span
+                  title="Made to order. Ingredient availability is checked when adding and sending."
+                  className="inline-flex rounded bg-primary-container px-2 py-0.5 text-xs font-semibold text-on-primary-container"
+                >
+                  QSR
+                </span>
+              ) : item.actual_qty !== undefined ? (
                 <div
                   className={
                     outOfStock
@@ -82,14 +103,18 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
                       : "flex items-center gap-1 text-xs text-on-surface-variant"
                   }
                 >
-                  <span>{outOfStock ? "Out of stock" : formatAvailableStock(item)}</span>
+                  <span>
+                    {outOfStock ? "Out of stock" : formatAvailableStock(item)}
+                  </span>
                   <StockBalanceInfo item={item} />
                 </div>
               ) : null}
             </div>
             <Button
               size="sm"
-              className={`size-9 shrink-0 p-0 ${pending ? "bg-primary-container text-on-primary-container" : ""}`}
+              className={`size-9 shrink-0 p-0 ${
+                pending ? "bg-primary-container text-on-primary-container" : ""
+              }`}
               disabled={isDisabled}
               title={`Add ${item.item_name}`}
               aria-label={`Add ${item.item_name}`}
@@ -98,7 +123,11 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
                 onAdd(item);
               }}
             >
-              {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              {pending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Plus className="size-4" />
+              )}
             </Button>
           </div>
         </div>

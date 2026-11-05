@@ -25,6 +25,7 @@ export const ItemListRow = memo(function ItemListRow({
   pending,
 }: ItemListRowProps) {
   const outOfStock =
+    !item.is_qsr &&
     !item.has_variants &&
     !item.is_product_bundle &&
     Boolean(item.is_stock_item ?? true) &&
@@ -35,7 +36,9 @@ export const ItemListRow = memo(function ItemListRow({
 
   return (
     <div
-      className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-3 py-3 transition-colors hover:bg-surface-container sm:grid-cols-[minmax(0,1fr)_12rem_8rem_5rem] sm:px-4 md:grid-cols-[20rem_12rem_minmax(7rem,1fr)_5rem] ${pending ? "border-primary bg-primary/5" : "border-outline-variant"}`}
+      className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-b px-3 py-3 transition-colors hover:bg-surface-container sm:grid-cols-[minmax(0,1fr)_12rem_8rem_5rem] sm:px-4 md:grid-cols-[20rem_12rem_minmax(7rem,1fr)_5rem] ${
+        pending ? "border-primary bg-primary/5" : "border-outline-variant"
+      }`}
       onClick={() => {
         if (!isDisabled) onAdd(item);
       }}
@@ -73,8 +76,18 @@ export const ItemListRow = memo(function ItemListRow({
               : "flex items-center justify-end gap-1 text-xs text-on-surface-variant sm:hidden"
           }
         >
-          <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "" : formatAvailableStock(item)}</span>
-          {item.actual_qty !== undefined ? <StockBalanceInfo item={item} /> : null}
+          <span>
+            {item.is_qsr
+              ? "QSR · Made to order"
+              : outOfStock
+              ? "Out of stock"
+              : item.actual_qty === undefined
+              ? ""
+              : formatAvailableStock(item)}
+          </span>
+          {!item.is_qsr && item.actual_qty !== undefined ? (
+            <StockBalanceInfo item={item} />
+          ) : null}
         </div>
       </div>
       <div
@@ -84,12 +97,24 @@ export const ItemListRow = memo(function ItemListRow({
             : "hidden items-center gap-1 pl-6 text-left text-sm text-on-surface-variant sm:flex"
         }
       >
-        <span>{outOfStock ? "Out of stock" : item.actual_qty === undefined ? "—" : formatAvailableStock(item)}</span>
-        {item.actual_qty !== undefined ? <StockBalanceInfo item={item} /> : null}
+        <span>
+          {item.is_qsr
+            ? "QSR · Made to order"
+            : outOfStock
+            ? "Out of stock"
+            : item.actual_qty === undefined
+            ? "—"
+            : formatAvailableStock(item)}
+        </span>
+        {!item.is_qsr && item.actual_qty !== undefined ? (
+          <StockBalanceInfo item={item} />
+        ) : null}
       </div>
       <Button
         size="sm"
-        className={`flex size-9 shrink-0 gap-1 p-0 sm:h-9 sm:w-auto sm:px-2 ${pending ? "bg-primary-container text-on-primary-container" : ""}`}
+        className={`flex size-9 shrink-0 gap-1 p-0 sm:h-9 sm:w-auto sm:px-2 ${
+          pending ? "bg-primary-container text-on-primary-container" : ""
+        }`}
         disabled={isDisabled}
         onClick={(event) => {
           event.stopPropagation();
@@ -97,7 +122,11 @@ export const ItemListRow = memo(function ItemListRow({
         }}
         aria-label={`Add ${item.item_name}`}
       >
-        {pending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}{" "}
+        {pending ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <Plus className="size-4" />
+        )}{" "}
         <span className="hidden sm:inline">{pending ? "Adding" : "Add"}</span>
       </Button>
     </div>

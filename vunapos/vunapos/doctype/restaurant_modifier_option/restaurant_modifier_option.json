@@ -1,0 +1,50 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Modifier Option",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": ["option_label", "enabled", "addon_item", "addon_qty", "uom"],
+ "fields": [
+  {
+   "fieldname": "option_label",
+   "fieldtype": "Data",
+   "label": "Choice",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "addon_item",
+   "fieldtype": "Link",
+   "label": "Add-on Item",
+   "options": "Item",
+   "in_list_view": 1,
+   "description": "Optional ERPNext sales item. Its Item Price and taxes determine the additional charge."
+  },
+  {
+   "fieldname": "addon_qty",
+   "fieldtype": "Float",
+   "label": "Quantity per Main Item",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "Add-on UOM",
+   "options": "UOM",
+   "description": "Defaults to the add-on item's stock UOM."
+  }
+ ],
+ "permissions": [],
+ "istable": 1,
+ "editable_grid": 1,
+ "sort_field": "idx",
+ "sort_order": "ASC"
+}

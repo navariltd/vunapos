@@ -1,4 +1,15 @@
 const VUNAPOS_CHECKOUT_DOCTYPES = ["Sales Invoice", "POS Invoice", "Sales Order"];
+
+frappe.ui.form.on("POS Profile", {
+	setup(frm) {
+		frm.set_query("vunapos_branch", () => ({
+			filters: { vunapos_company: frm.doc.company || "" },
+		}));
+		frm.set_query("vunapos_restaurant", () => ({
+			filters: { company: frm.doc.company || "", enabled: 1 },
+		}));
+	},
+});
 const VUNAPOS_CHECKOUT_FIELD_TYPES = new Set([
 	"Data",
 	"Small Text",

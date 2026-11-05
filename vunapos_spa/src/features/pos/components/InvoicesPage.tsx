@@ -15,9 +15,10 @@ type Props = {
   paymentModes: ModeOfPaymentDTO[];
   heldInvoices?: HeldInvoiceDTO[];
   heldLoading: boolean;
+  currentShiftAvailable?: boolean;
   onBack: () => void;
-  onRestoreHeld: (invoice: HeldInvoiceDTO) => void;
-  onCheckoutHeld: (invoice: HeldInvoiceDTO) => void;
+  onRestoreHeld?: (invoice: HeldInvoiceDTO) => void;
+  onCheckoutHeld?: (invoice: HeldInvoiceDTO) => void;
 };
 type Filters = {
   invoice: string;
@@ -97,6 +98,7 @@ export function InvoicesPage({
   paymentModes,
   heldInvoices,
   heldLoading,
+  currentShiftAvailable = true,
   onBack,
   onRestoreHeld,
   onCheckoutHeld,
@@ -123,11 +125,12 @@ export function InvoicesPage({
       pos_profile: posProfile,
       document_type: tab === "orders" ? "Order" : tab === "draft-orders" ? "Draft Order" : "Invoice",
       ...filters,
+      current_shift: currentShiftAvailable ? filters.current_shift : "0",
       start,
       page_length: 50,
     },
     posProfile && (tab === "history" || tab === "orders" || tab === "draft-orders")
-      ? ["vunapos_invoice_history", posProfile, tab, filters, start]
+      ? ["vunapos_invoice_history", posProfile, tab, filters, start, currentShiftAvailable]
       : null,
   );
   let history: History | null = null;
@@ -181,7 +184,7 @@ export function InvoicesPage({
                 ? "Review submitted and cancelled Sales Orders."
                 : tab === "draft-orders"
                   ? "Review Sales Orders awaiting workflow approval."
-                : "Review completed sales and restore draft invoices."}
+                : onRestoreHeld ? "Review completed sales and restore draft invoices." : "Review completed sales and draft invoices."}
             </p>
           </div>
           <Button onClick={onBack}>Back to POS</Button>
@@ -290,7 +293,7 @@ export function InvoicesPage({
                 <option>Cash Sale</option>
                 <option>Credit Sale</option>
               </select>
-              <label className="flex items-center gap-2 text-sm">
+              {currentShiftAvailable ? <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={filters.current_shift === "1"}
@@ -299,7 +302,7 @@ export function InvoicesPage({
                   }
                 />
                 Current shift only
-              </label>
+              </label> : null}
               <Button variant="ghost" onClick={clearFilters}>
                 Clear filters
               </Button>

@@ -1,0 +1,58 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Session Table",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "istable": 1,
+ "track_changes": 0,
+ "field_order": [
+  "table",
+  "assigned_at",
+  "assigned_by",
+  "released_at",
+  "released_by",
+  "release_reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "table",
+   "fieldtype": "Link",
+   "label": "Table",
+   "options": "Restaurant Table",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assigned_at",
+   "fieldtype": "Datetime",
+   "label": "Assigned At",
+   "reqd": 1
+  },
+  {
+   "fieldname": "assigned_by",
+   "fieldtype": "Link",
+   "label": "Assigned By",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "released_at",
+   "fieldtype": "Datetime",
+   "label": "Released At",
+   "reqd": 0
+  },
+  {
+   "fieldname": "released_by",
+   "fieldtype": "Link",
+   "label": "Released By",
+   "options": "User",
+   "reqd": 0
+  },
+  {
+   "fieldname": "release_reason",
+   "fieldtype": "Small Text",
+   "label": "Release Reason",
+   "reqd": 0
+  }
+ ],
+ "permissions": []
+}

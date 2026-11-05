@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 
-import { navigateToOrder, navigateToPosPage } from "../../../lib/stores/navigationStore";
+import { navigateToOrder } from "../../../lib/stores/navigationStore";
 import type { CachedServiceType } from "../../../lib/types";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import type { BootstrapData } from "../../pos/types";
@@ -26,11 +26,6 @@ export function useStartOrder() {
   return useCallback(
     (serviceType: CachedServiceType, table?: { name: string; table_label: string } | null) => {
       if (!posProfile) return;
-      if (serviceType.requires_table && !table) {
-        setPickingTableFor(serviceType);
-        navigateToPosPage("Floor");
-        return;
-      }
       setPickingTableFor(null);
       setDraft(
         newOrderDraft({

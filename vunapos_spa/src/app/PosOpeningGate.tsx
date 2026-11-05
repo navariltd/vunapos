@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
 
 import { Button } from "../components/ui/Button";
@@ -18,16 +18,7 @@ type PosOpeningGateProps = {
 export function PosOpeningGate({ children }: PosOpeningGateProps) {
   const bootstrap = useBootstrapData();
   const posProfile = bootstrap.data?.pos_profile;
-  const { session, isLoading, error, reload } = usePosSessionStatus(posProfile);
-  // Keep the last confirmed session state while the status request is being
-  // retried. A transient network failure must not replace an active workspace
-  // with a full-screen connection gate; checkout APIs still perform their own
-  // server-side session validation.
-  const lastReadyProfile = useRef<string | undefined>(undefined);
-  if (session?.ready && posProfile) {
-    lastReadyProfile.current = posProfile;
-  }
-  const hadReadySession = lastReadyProfile.current === posProfile;
+  const { session, isLoading, error, reload } = usePosSessionStatus(posProfile, bootstrap.data?.current_user);
   const profilesCall = useFrappeGetCall<unknown>(
     vunaMethods.getPosProfilesForUser,
     {},
@@ -45,11 +36,9 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
   const [pendingProfile, setPendingProfile] = useState<string>();
   const selectedProfile = pendingProfile || posProfile;
 
-  useEffect(() => {
-    if (pendingProfile && pendingProfile === posProfile) {
-      setPendingProfile(undefined);
-    }
-  }, [pendingProfile, posProfile]);
+  if (pendingProfile && pendingProfile === posProfile) {
+    setPendingProfile(undefined);
+  }
 
   async function selectProfile(profile: string) {
     if (!profile) return;
@@ -113,7 +102,7 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
     );
   }
 
-  if (error && !hadReadySession) {
+  if (error && !session?.ready) {
     return (
       <SessionMessage
         title="Connection required"
@@ -123,10 +112,18 @@ export function PosOpeningGate({ children }: PosOpeningGateProps) {
     );
   }
 
-  // Once this profile has been confirmed as ready, preserve the current POS
-  // screen during an intermittent status request failure. The next status
-  // refresh will reconcile the opening entry without discarding the cart or
-  // forcing the cashier to reload the application.
+  if (!session?.ready) {
+    return (
+      <SessionMessage
+        title="POS session not verified"
+        message="An open session for this user and POS Profile must be verified before entering POS."
+        retry
+      />
+    );
+  }
+
+  // SWR retains verified data for this exact user/profile during transient
+  // refresh failures. Never reuse readiness from a different profile or user.
   return <>{children}</>;
 }
 

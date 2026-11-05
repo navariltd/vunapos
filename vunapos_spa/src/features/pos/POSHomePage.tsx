@@ -40,8 +40,8 @@ import { CheckoutDialog } from "./components/CheckoutDialog";
 import { CloseShiftPage } from "./components/CloseShiftPage";
 import { InvoicesPage } from "./components/InvoicesPage";
 import { InvoiceDetailsPage } from "./components/InvoiceDetailsPage";
-import { ItemGrid } from "./components/ItemGrid";
-import { ItemSearch, type CatalogueView } from "./components/ItemSearch";
+import { SellingWorkspace } from "./components/SellingWorkspace";
+import type { CatalogueView } from "./components/ItemSearch";
 import { UserProfilePage } from "./components/UserProfilePage";
 import { BarcodeScannerDialog } from "./components/BarcodeScannerDialog";
 import {
@@ -1131,30 +1131,11 @@ export function POSHomePage({
       ) : activePage === "Profile" ? (
         <UserProfilePage bootstrap={bootstrap.data} />
       ) : (
-        <div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_clamp(32rem,32vw,38rem)]">
-          <section className="flex min-w-0 min-h-0 flex-col p-4">
-            <ItemSearch
-              isLoading={items.isLoading}
-              value={itemSearchQuery}
-              onChange={setItemSearchQuery}
-              onScan={handleScanBarcode}
-              onOpenCamera={() => setIsBarcodeScannerOpen(true)}
-              view={catalogueView}
-              onViewChange={setCatalogueView}
-            />
-            <div data-pos-scroll className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-              <ItemGrid
-                currency={bootstrap.data?.currency}
-                hideImages={bootstrap.data?.hide_images}
-                ignoreStock={effectiveOrderType === "Sales Order"}
-                isLoading={items.isLoading}
-                items={items.items}
-                pendingItemCode={pendingItemCode}
-                onAddItem={handleAddItem}
-                view={catalogueView}
-              />
-            </div>
-          </section>
+        <SellingWorkspace query={itemSearchQuery} onQueryChange={setItemSearchQuery}
+          onScan={handleScanBarcode} onOpenCamera={() => setIsBarcodeScannerOpen(true)}
+          view={catalogueView} onViewChange={setCatalogueView} isLoading={items.isLoading}
+          items={items.items} currency={bootstrap.data?.currency} hideImages={bootstrap.data?.hide_images}
+          ignoreStock={effectiveOrderType === "Sales Order"} pendingItemCode={pendingItemCode} onAddItem={handleAddItem}>
           <CartPanel
             allowCustomerCreation={allowCustomerCreation}
             allowPriceListSwitching={bootstrap.data?.allow_price_list_switching}
@@ -1206,7 +1187,7 @@ export function POSHomePage({
               cartActions.updateCartItemSerialAllocations
             }
           />
-        </div>
+        </SellingWorkspace>
       )}
 
       {activePage === "Home" ? (

@@ -1,0 +1,50 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Item Addon",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "istable": 1,
+ "editable_grid": 1,
+ "field_order": ["addon_item", "label", "enabled", "addon_qty", "uom"],
+ "fields": [
+  {
+   "fieldname": "addon_item",
+   "fieldtype": "Link",
+   "label": "Add-on Item",
+   "options": "Item",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Display Label",
+   "in_list_view": 1,
+   "description": "Optional; defaults to the add-on item's name."
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "addon_qty",
+   "fieldtype": "Float",
+   "label": "Quantity per Selling Unit",
+   "default": "1",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "uom",
+   "fieldtype": "Link",
+   "label": "UOM",
+   "options": "UOM",
+   "in_list_view": 1,
+   "description": "Defaults to the add-on item's stock UOM."
+  }
+ ],
+ "permissions": []
+}

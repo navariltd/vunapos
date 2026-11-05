@@ -1768,15 +1768,29 @@ def _prepare_invoice_for_checkout(
 	held_before_checkout = bool(doc.get(HELD_FIELD))
 	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
 	opening_entry = require_open_pos_session(profile.name)
-	validate_cart_items(
-		[{"item_code": item.item_code, "qty": item.qty, "uom": item.uom} for item in doc.get("items", [])],
-		profile,
-		validate_stock=doc.doctype != "Sales Order",
-	)
-	_validate_existing_pricing_permissions(doc, profile)
-	_recalculate(doc, profile, doc.get("selling_price_list"))
+	if doc.get("vunapos_restaurant_session"):
+		from vunapos.services.restaurant_billing_service import (
+			recalculate_bill,
+			validate_billing_invoice,
+			validate_billing_stock,
+		)
+
+		validate_billing_invoice(doc)
+		validate_billing_stock(doc)
+		recalculate_bill(doc)
+	else:
+		validate_cart_items(
+			[
+				{"item_code": item.item_code, "qty": item.qty, "uom": item.uom}
+				for item in doc.get("items", [])
+			],
+			profile,
+			validate_stock=doc.doctype != "Sales Order",
+		)
+		_validate_existing_pricing_permissions(doc, profile)
+		_recalculate(doc, profile, doc.get("selling_price_list"))
 	_apply_loyalty_redemption(doc, loyalty_points)
-	if doc.doctype != "Sales Order":
+	if doc.doctype != "Sales Order" and not doc.get("vunapos_restaurant_session"):
 		validate_invoice_batch_allocations(doc)
 	payment_rows = validate_payment_rows(
 		doc,

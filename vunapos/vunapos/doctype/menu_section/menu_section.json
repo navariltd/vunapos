@@ -1,0 +1,57 @@
+{
+ "doctype": "DocType",
+ "name": "Menu Section",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "field_order": ["section_name", "enabled", "display_order"],
+ "fields": [
+  {
+   "fieldname": "section_name",
+   "fieldtype": "Data",
+   "label": "Section / Course Name",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled",
+   "default": "1"
+  },
+  {
+   "fieldname": "display_order",
+   "fieldtype": "Int",
+   "label": "Display Order",
+   "default": "0"
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1
+  }
+ ],
+ "autoname": "field:section_name",
+ "allow_rename": 1,
+ "title_field": "section_name",
+ "sort_field": "section_name",
+ "sort_order": "ASC"
+}
