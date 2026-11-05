@@ -156,6 +156,7 @@ permission_query_conditions = {
 	"Restaurant Session": "vunapos.restaurant_permissions.session_conditions",
 	"Kitchen Station": "vunapos.restaurant_permissions.station_conditions",
 	"Kitchen Order Ticket": "vunapos.restaurant_permissions.ticket_conditions",
+	"Kitchen Ticket Action": "vunapos.restaurant_permissions.ticket_action_conditions",
 	"Sales Order": "vunapos.restaurant_permissions.order_conditions",
 }
 has_permission = {
@@ -165,6 +166,7 @@ has_permission = {
 	"Restaurant Session": "vunapos.restaurant_permissions.related_has_permission",
 	"Kitchen Station": "vunapos.restaurant_permissions.related_has_permission",
 	"Kitchen Order Ticket": "vunapos.restaurant_permissions.related_has_permission",
+	"Kitchen Ticket Action": "vunapos.restaurant_permissions.related_has_permission",
 	"Sales Order": "vunapos.restaurant_permissions.related_has_permission",
 }
 
@@ -214,6 +216,7 @@ doc_events["Branch"] = {
 }
 doc_events["Item"]["validate"] = "vunapos.services.modifier_service.validate_item_options"
 doc_events["Sales Order"] = {
+	"on_cancel": "vunapos.services.kitchen_lifecycle_service.allow_cancelled_order_audit_links",
 	"on_submit": "vunapos.services.kitchen_service.generate_tickets",
 	"before_cancel": "vunapos.services.kitchen_service.protect_order_cancellation",
 	"before_update_after_submit": "vunapos.services.restaurant_session_service.protect_committed_round",

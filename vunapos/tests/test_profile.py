@@ -8,13 +8,35 @@ from vunapos.services.checkout_field_service import (
 	get_global_checkout_fields,
 	validate_global_checkout_fields,
 )
-from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 from vunapos.setup.utils import ensure_vunapos_custom_fields
 from vunapos.tests.helpers import ensure_test_pos_profile, set_invoice_mode
 
 
 class TestVunaPOSProfile(IntegrationTestCase):
+	def test_restaurant_selling_shift_is_not_limited_to_restaurant_roles(self):
+		for roles in (
+			["Sales User"],
+			[],
+			["VunaPOS Waiter"],
+			["VunaPOS Cashier"],
+			["VunaPOS Restaurant Manager"],
+			["System Manager", "VunaPOS Kitchen User"],
+		):
+			with (
+				patch("vunapos.services.profile_service.frappe.get_roles", return_value=roles),
+				patch("vunapos.services.profile_service.require_open_pos_session") as opening,
+			):
+				require_restaurant_staff_shift("Counter 1")
+				opening.assert_called_once_with("Counter 1")
+		with (
+			patch("vunapos.services.profile_service.frappe.get_roles", return_value=["VunaPOS Kitchen User"]),
+			patch("vunapos.services.profile_service.require_open_pos_session") as opening,
+		):
+			require_restaurant_staff_shift("Counter 1")
+			opening.assert_not_called()
+
 	def test_unconfigured_checkout_and_workflow_tables_are_empty(self):
 		"""A newly introduced child table may be NULL on an existing POS site."""
 		settings = frappe._dict(vunapos_checkout_fields=None)

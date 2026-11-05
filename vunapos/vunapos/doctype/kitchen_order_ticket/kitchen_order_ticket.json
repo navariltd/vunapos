@@ -182,6 +182,10 @@
    "role": "VunaPOS Cashier",
    "read": 1,
    "print": 1
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
   }
  ],
  "autoname": "KOT-.YYYY.-.#####",

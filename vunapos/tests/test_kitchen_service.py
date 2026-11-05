@@ -8,6 +8,7 @@ from vunapos.api import restaurant
 from vunapos.services.kitchen_service import generate_tickets, get_ticket, route_lines
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.tests.helpers import (
+	ensure_open_pos_opening_entry,
 	ensure_test_item,
 	ensure_test_restaurant,
 	ensure_test_restaurant_profile,
@@ -19,6 +20,7 @@ class TestKitchenService(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.profile = frappe.get_doc("POS Profile", ensure_test_restaurant_profile())
+		ensure_open_pos_opening_entry(self.profile.name)
 		self.token = uuid4().hex[:8]
 		frappe.db.set_single_value("Stock Settings", "enable_stock_reservation", 1)
 		frappe.db.set_single_value("Stock Settings", "auto_reserve_stock", 0)
@@ -77,14 +79,14 @@ class TestKitchenService(IntegrationTestCase):
 		make_stock_entry(item_code=item.name, to_warehouse=self.profile.warehouse, qty=1000, rate=10)
 		return item.name
 
-	def _station(self, suffix, groups, restaurant_name=None):
+	def _station(self, suffix, groups, restaurant_name=None, enabled=1):
 		return (
 			frappe.get_doc(
 				{
 					"doctype": "Kitchen Station",
 					"station_name": f"Kitchen {suffix} {self.token}",
 					"restaurant": restaurant_name or self.profile.vunapos_restaurant,
-					"enabled": 1,
+					"enabled": enabled,
 					"raw_material_warehouse": self.profile.warehouse,
 					"item_groups": [{"item_group": name} for name in groups],
 				}
@@ -159,19 +161,49 @@ class TestKitchenService(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("Sales Order", {"vunapos_restaurant_session": self.session}))
 		self.assertEqual(self._tickets(), [])
 
-	def test_descendants_route_but_overlaps_have_no_precedence(self):
+	def test_most_specific_group_routes_before_parent(self):
 		doc = frappe.get_doc("Kitchen Station", self.station)
 		doc.set("item_groups", [{"item_group": self.root}])
 		doc.save()
 		self.assertTrue(self._send()["ok"])
-		self._station("Overlap", [self.group])
+		child_station = self._station("Specific", [self.group])
 		result = self._send()
-		self.assertFalse(result["ok"], result)
-		self.assertEqual(result["meta"]["items"][0]["reason"], "ambiguous")
+		self.assertTrue(result["ok"], result)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Kitchen Order Ticket", self._tickets(result["data"]["name"])[0], "kitchen_station"
+			),
+			child_station,
+		)
+
+	def test_duplicate_group_is_rejected_in_same_location(self):
+		with self.assertRaises(frappe.ValidationError) as error:
+			self._station("Duplicate", [self.group])
+		self.assertEqual(error.exception.vuna_error_code, "KITCHEN_GROUP_ALREADY_ASSIGNED")
+		disabled = self._station("Disabled", [self.group], enabled=0)
+		doc = frappe.get_doc("Kitchen Station", disabled)
+		doc.enabled = 1
+		with self.assertRaises(frappe.ValidationError):
+			doc.save()
+
+	def test_hidden_specific_station_does_not_fall_back_to_parent(self):
+		doc = frappe.get_doc("Kitchen Station", self.station)
+		doc.set("item_groups", [{"item_group": self.root}])
+		doc.save()
+		self._station("Specific Hidden", [self.group])
+		line = frappe._dict(item_code=self.item, line_id="main", parent_line_id=None)
+		with patch(
+			"vunapos.services.kitchen_service.allowed_stations",
+			return_value=[frappe._dict(name=self.station, station_name="Parent")],
+		):
+			with self.assertRaises(frappe.PermissionError):
+				route_lines(self.profile.vunapos_restaurant, [line])
 
 	def test_temporary_routing_does_not_change_station_groups(self):
 		doc = frappe.get_doc("Kitchen Station", self.station)
-		self._station("Overlap", [self.group])
+		# Legacy duplicate data must not silently pick a station at runtime.
+		overlap = self._station("Overlap", [self.group], enabled=0)
+		frappe.db.set_value("Kitchen Station", overlap, "enabled", 1)
 		result = self._send(routing={self.item: self.station})
 		self.assertTrue(result["ok"], result)
 		ticket = frappe.get_doc("Kitchen Order Ticket", self._tickets()[0])
@@ -455,6 +487,13 @@ class TestKitchenService(IntegrationTestCase):
 		user = f"qsr-{self.token}@example.com"
 		ensure_test_user(user, roles=("VunaPOS Waiter",), pos_profile=self.profile.name)
 		frappe.set_user(user)
+		from vunapos.services.pos_entry import create_pos_opening_entry
+
+		create_pos_opening_entry(
+			self.profile.name,
+			[{"mode_of_payment": row.mode_of_payment, "opening_amount": 0} for row in self.profile.payments],
+			user,
+		)
 		self.assertFalse(frappe.has_permission("Work Order", "create"))
 		response = self._send()
 		self.assertTrue(response["ok"], response)

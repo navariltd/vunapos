@@ -1,0 +1,190 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Ticket Action",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "autoname": "KACT-.YYYY.-.#####",
+ "field_order": [
+  "kitchen_ticket",
+  "kitchen_station",
+  "restaurant",
+  "branch",
+  "company",
+  "sales_order",
+  "action",
+  "outcome",
+  "from_status",
+  "to_status",
+  "actor",
+  "occurred_at",
+  "reason",
+  "approved_by",
+  "request_key",
+  "success_key",
+  "stock_entries",
+  "error_code",
+  "error_message"
+ ],
+ "fields": [
+  {
+   "fieldname": "kitchen_ticket",
+   "fieldtype": "Link",
+   "label": "Kitchen Ticket",
+   "read_only": 1,
+   "options": "Kitchen Order Ticket",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kitchen_station",
+   "fieldtype": "Link",
+   "label": "Kitchen Station",
+   "read_only": 1,
+   "options": "Kitchen Station"
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "label": "Restaurant",
+   "read_only": 1,
+   "options": "Restaurant"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "read_only": 1,
+   "options": "Branch"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "read_only": 1,
+   "options": "Company"
+  },
+  {
+   "fieldname": "sales_order",
+   "fieldtype": "Link",
+   "label": "Sales Order",
+   "read_only": 1,
+   "options": "Sales Order"
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "label": "Action",
+   "read_only": 1,
+   "options": "Accept\nStart\nReady\nServe\nCancel Order",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "outcome",
+   "fieldtype": "Select",
+   "label": "Outcome",
+   "read_only": 1,
+   "options": "Succeeded\nFailed",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "from_status",
+   "fieldtype": "Data",
+   "label": "From Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "to_status",
+   "fieldtype": "Data",
+   "label": "To Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "actor",
+   "fieldtype": "Link",
+   "label": "Actor",
+   "read_only": 1,
+   "options": "User",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "occurred_at",
+   "fieldtype": "Datetime",
+   "label": "Occurred At",
+   "read_only": 1,
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "read_only": 1
+  },
+  {
+   "fieldname": "approved_by",
+   "fieldtype": "Data",
+   "label": "Approved By",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_key",
+   "fieldtype": "Data",
+   "label": "Request Key",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "success_key",
+   "fieldtype": "Data",
+   "label": "Success Key",
+   "read_only": 1,
+   "unique": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "stock_entries",
+   "fieldtype": "Long Text",
+   "label": "Stock Entries",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_code",
+   "fieldtype": "Data",
+   "label": "Error Code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error_message",
+   "fieldtype": "Small Text",
+   "label": "Error Message",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

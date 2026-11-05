@@ -122,6 +122,10 @@
   {
    "read": 1,
    "role": "VunaPOS Cashier"
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
   }
  ],
  "row_format": "Dynamic",

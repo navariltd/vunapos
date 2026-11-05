@@ -8,13 +8,18 @@ from vunapos.api import restaurant
 from vunapos.services.menu_service import get_menu, get_menu_definition
 from vunapos.services.modifier_service import assigned_groups, resolve_selections
 from vunapos.services.service_type_service import get_profile_service_types
-from vunapos.tests.helpers import ensure_test_item, ensure_test_restaurant_profile
+from vunapos.tests.helpers import (
+	ensure_open_pos_opening_entry,
+	ensure_test_item,
+	ensure_test_restaurant_profile,
+)
 
 
 class TestRestaurantMenu(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.profile = frappe.get_doc("POS Profile", ensure_test_restaurant_profile())
+		ensure_open_pos_opening_entry(self.profile.name)
 		self.token = uuid4().hex[:8]
 		self.section = frappe.get_doc(
 			{"doctype": "Menu Section", "section_name": f"Drinks {self.token}"}

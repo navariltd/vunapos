@@ -9,8 +9,9 @@ DEFAULT_POS_MODE = "Retail"
 RESTAURANT_MANAGER_ROLE = "VunaPOS Restaurant Manager"
 CASHIER_ROLE = "VunaPOS Cashier"
 WAITER_ROLE = "VunaPOS Waiter"
+KITCHEN_ROLE = "VunaPOS Kitchen User"
 # Display order: the Profile page lists a user's roles in this order.
-RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, RESTAURANT_MANAGER_ROLE)
+RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE)
 
 _READ = {"read": 1}
 # Catalogue pricing (ERPNext's apply_pricing_rule) needs doctype-level read on
@@ -36,15 +37,26 @@ _MENU_READS = {
 # Grants on Frappe/ERPNext doctypes, so each role works without Sales User or
 # Accounts User. Permissions on VunaPOS doctypes live in their DocType JSON.
 ROLE_PERMISSIONS = {
+	KITCHEN_ROLE: {
+		**_MENU_READS,
+		"Sales Invoice": _OWN_INVOICE_READ,
+		"POS Invoice": _OWN_INVOICE_READ,
+	},
 	"Sales User": {"Branch": _READ},
 	WAITER_ROLE: {
 		**_MENU_READS,
+		"POS Opening Entry": _SHIFT,
+		"POS Closing Entry": _SHIFT,
+		"Payment Entry": {"read": 1, "if_owner": 1},
 		"Sales Order": _ORDERS,
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
 	},
 	RESTAURANT_MANAGER_ROLE: {
 		**_MENU_READS,
+		"POS Opening Entry": _SHIFT,
+		"POS Closing Entry": _SHIFT,
+		"Payment Entry": {"read": 1, "if_owner": 1},
 		"Branch": {"read": 1, "create": 1, "write": 1},
 		"Sales Order": {**_ORDERS, "cancel": 1},
 		"Sales Invoice": _OWN_INVOICE_READ,

@@ -222,11 +222,26 @@ def get_restaurant_user_context():
 	"""The current user's restaurant rights, sent with every bootstrap payload."""
 	roles = set(frappe.get_roles())
 	return {
-		# Restaurant mode only: taking payment (and so a shift on entry) is the
-		# VunaPOS Cashier role alone; other roles, managers included, don't count.
+		# Payment rights remain cashier-only, independent of waiter shift ownership.
 		"can_take_payment": CASHIER_ROLE in roles,
+		"can_manage_restaurant": bool(roles & {"System Manager", "VunaPOS Restaurant Manager"}),
 		"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
 	}
+
+
+def require_restaurant_staff_shift(pos_profile):
+	"""Match Retail's shift gate for selling users; exempt only kitchen-only staff."""
+	from vunapos.setup.utils import KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE, WAITER_ROLE
+
+	roles = set(frappe.get_roles())
+	kitchen_only = KITCHEN_ROLE in roles and not roles & {
+		CASHIER_ROLE,
+		WAITER_ROLE,
+		RESTAURANT_MANAGER_ROLE,
+		"System Manager",
+	}
+	if not kitchen_only:
+		return require_open_pos_session(pos_profile)
 
 
 def get_bootstrap_data(pos_profile=None):

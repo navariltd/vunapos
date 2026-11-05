@@ -40,6 +40,32 @@ def validate_station(doc):
 		if row.item_group in seen:
 			fail("DUPLICATE_STATION_GROUP", _("An Item Group can only be listed once per station."))
 		seen.add(row.item_group)
+	# Lock the shared location so two station saves cannot claim a group together.
+	frappe.db.get_value("Restaurant", doc.restaurant, "name", for_update=True)
+	if doc.enabled and seen:
+		stations = frappe.get_all(
+			STATION,
+			filters={
+				"restaurant": doc.restaurant,
+				"branch": doc.branch,
+				"enabled": 1,
+				"name": ["!=", doc.name or ""],
+			},
+			pluck="name",
+		)
+		duplicate = frappe.db.get_value(
+			"Kitchen Station Item Group",
+			{"parent": ["in", stations or [""]], "parenttype": STATION, "item_group": ["in", list(seen)]},
+			["item_group", "parent"],
+			as_dict=True,
+		)
+		if duplicate:
+			fail(
+				"KITCHEN_GROUP_ALREADY_ASSIGNED",
+				_(
+					"Item Group {0} is already assigned to Kitchen Station {1} in this Restaurant and Branch. Use a different group or disable its previous station."
+				).format(duplicate.item_group, duplicate.parent),
+			)
 	for warehouse in (doc.raw_material_warehouse, doc.wip_warehouse):
 		if warehouse:
 			row = frappe.db.get_value(
@@ -95,7 +121,7 @@ def parse_overrides(value):
 
 
 def station_matches(restaurant, item_codes):
-	"""Classify against all enabled mappings, including stations hidden by permissions."""
+	"""Closest mapped ancestor wins, even when that station is hidden by permissions."""
 	stations = frappe.get_all(STATION, filters={"restaurant": restaurant, "enabled": 1}, pluck="name")
 	assignments = frappe.get_all(
 		"Kitchen Station Item Group",
@@ -112,16 +138,23 @@ def station_matches(restaurant, item_codes):
 			"Item Group", filters={"name": ["in", list(groups) or [""]]}, fields=["name", "lft", "rgt"]
 		)
 	}
-	return {
-		item.name: {
-			row.parent
+	result = {}
+	for item in items:
+		matches = [
+			row
 			for row in assignments
 			if bounds.get(item.item_group)
 			and bounds.get(row.item_group)
 			and bounds[row.item_group].lft <= bounds[item.item_group].lft <= bounds[row.item_group].rgt
+		]
+		# In a nested set, the narrowest ancestor interval is the most specific.
+		width = min(
+			(bounds[row.item_group].rgt - bounds[row.item_group].lft for row in matches), default=None
+		)
+		result[item.name] = {
+			row.parent for row in matches if bounds[row.item_group].rgt - bounds[row.item_group].lft == width
 		}
-		for item in items
-	}
+	return result
 
 
 def classify_items(restaurant, items):
@@ -133,7 +166,7 @@ def classify_items(restaurant, items):
 
 
 def route_lines(restaurant, lines, overrides=None):
-	"""No precedence: exactly one matching station, or an explicit temporary choice."""
+	"""Most-specific group first; legacy duplicate mappings require explicit routing."""
 	if len(lines) > 500:
 		fail("RESTAURANT_ROUND_TOO_LARGE", _("Send no more than 500 item/add-on lines in one round."))
 	if len({line.line_id for line in lines}) != len(lines):
@@ -371,6 +404,8 @@ def session_tickets(session):
 
 
 def protect_order_cancellation(order, method=None):
+	if frappe.flags.get("vunapos_cancelling_kitchen_order") == order.name:
+		return
 	if order.get("vunapos_restaurant_session") and frappe.db.exists(
 		TICKET, {"sales_order": order.name, "docstatus": 1}
 	):
@@ -386,7 +421,21 @@ def get_ticket(name):
 	doc = frappe.get_doc(TICKET, name)
 	require_restaurant_access(doc.restaurant)
 	doc.check_permission("read")
+	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
+	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities
+
 	return {
+		"modified": doc.modified,
+		"pos_profile": doc.pos_profile,
+		"available_actions": capabilities(doc.status),
+		"can_cancel_order": can_cancel() and doc.status not in ("Served", "Cancelled"),
+		"requires_cancel_pin": bool(
+			frappe.get_cached_value(
+				"POS Profile", doc.pos_profile, "vunapos_require_manager_pin_order_cancel"
+			)
+		)
+		and not bool(set(frappe.get_roles()) & MANAGERS),
+		"actions": action_history(doc),
 		"name": doc.name,
 		"sales_order": doc.sales_order,
 		"restaurant_session": doc.restaurant_session,

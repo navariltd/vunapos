@@ -109,6 +109,17 @@ class TestRestaurantRoles(IntegrationTestCase):
 		return response["data"]
 
 	def _create_order(self):
+		from vunapos.services.profile_service import get_pos_session
+
+		if (
+			set(frappe.get_roles()) & {WAITER_ROLE, CASHIER_ROLE}
+			and not get_pos_session(frappe.session.user, self.profile)["ready"]
+		):
+			create_pos_opening_entry(
+				self.profile,
+				[{"mode_of_payment": mode, "opening_amount": 0} for mode in self._payment_modes()],
+				frappe.session.user,
+			)
 		return self._ok(
 			restaurant.create_order(
 				pos_profile=self.profile,
@@ -200,8 +211,8 @@ class TestRestaurantRoles(IntegrationTestCase):
 			self.assertTrue(can(doctype, "read"), doctype)
 		self.assertFalse(can(FLOOR_DOCTYPE, "write"))
 		self.assertFalse(can("Sales Invoice", "create"))
-		self.assertFalse(can("POS Opening Entry", "create"))
-		self.assertFalse(can("POS Closing Entry", "create"))
+		self.assertTrue(can("POS Opening Entry", "create"))
+		self.assertTrue(can("POS Closing Entry", "create"))
 
 	def test_invoice_read_for_waiter_and_manager_is_only_if_creator(self):
 		# Doctype-level read passes ERPNext's pricing check, but invoices created
@@ -229,8 +240,8 @@ class TestRestaurantRoles(IntegrationTestCase):
 		self.assertTrue(can(ORDER_DOCTYPE, "create"))
 		self.assertFalse(can(FLOOR_DOCTYPE, "write"))
 
-	def test_manager_without_cashier_cannot_open_a_shift_or_bill(self):
-		self.assertFalse(frappe.has_permission("POS Opening Entry", "create", user=MANAGER))
+	def test_manager_can_open_a_shift_without_payment_rights(self):
+		self.assertTrue(frappe.has_permission("POS Opening Entry", "create", user=MANAGER))
 		self.assertFalse(frappe.has_permission("Sales Invoice", "create", user=MANAGER))
 
 	# ---- bootstrap ----
@@ -285,12 +296,25 @@ class TestRestaurantRoles(IntegrationTestCase):
 		[open_order] = status[self.table]["orders"]
 		self.assertEqual((open_order["waiter"], open_order["waiter_name"]), (WAITER, expected))
 
-	def test_waiter_takes_orders_without_a_shift_but_cannot_bill(self):
-		frappe.set_user(WAITER)
+	def test_waiter_requires_own_shift_and_still_cannot_bill(self):
+		from vunapos.tests.helpers import ensure_open_pos_opening_entry
+
+		ensure_open_pos_opening_entry(self.profile)
+		user = f"shift-waiter-{frappe.generate_hash(length=8)}@example.com"
+		ensure_test_user(user, roles=(WAITER_ROLE,), pos_profile=self.profile)
+		frappe.set_user(user)
 		self.assertTrue(get_bootstrap_data(self.profile)["pos_profile"])
 		self._ok(restaurant.get_floor_plan(self.profile))
 		menu = self._ok(restaurant.get_menu(self.profile, service_type=SERVICE_TYPE, table=self.table))
 		self.assertIn(self.item, [item["item_code"] for item in menu["items"]])
+		blocked = restaurant.create_order(
+			self.profile,
+			service_type=SERVICE_TYPE,
+			table=self.table,
+			items=[{"item_code": self.item, "qty": 1}],
+		)
+		self.assertFalse(blocked["ok"], blocked)
+		self.assertEqual(blocked["errors"][0]["code"], "POS_OPENING_REQUIRED")
 
 		order = self._create_order()
 		self._ok(restaurant.add_order_items(order["name"], json.dumps([{"item_code": self.item}])))
@@ -307,6 +331,15 @@ class TestRestaurantRoles(IntegrationTestCase):
 		self.assertEqual(response["errors"][0]["code"], "PermissionError", response)
 		self.assertEqual(frappe.db.get_value(ORDER_DOCTYPE, order["name"], "docstatus"), 1)
 		self.assertEqual(frappe.db.get_value(ORDER_DOCTYPE, order["name"], "per_billed"), 0)
+		preview = get_closing_preview(self.profile)
+		closing = close_pos_session(
+			self.profile,
+			[
+				{"mode_of_payment": row["mode_of_payment"], "closing_amount": row["expected_amount"]}
+				for row in preview["payments"]
+			],
+		)
+		self.assertTrue(closing["name"])
 
 	def test_cashier_opens_a_shift_bills_an_order_and_closes_the_shift(self):
 		frappe.set_user(CASHIER)

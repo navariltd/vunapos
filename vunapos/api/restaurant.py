@@ -31,11 +31,48 @@ def _atomic_write(fn):
 
 
 def _failure_from_exception(exc):
+	message = frappe.utils.strip_html(str(exc)).strip()
+	if not message and isinstance(exc, frappe.PermissionError):
+		message = "You do not have permission for this restaurant action. Ask a manager to check your role, Restaurant, Branch and Kitchen Station access."
 	return failure(
-		frappe.utils.strip_html(str(exc)),
+		message or "The restaurant action could not be completed.",
 		code=getattr(exc, "vuna_error_code", exc.__class__.__name__),
 		meta=getattr(exc, "vuna_error_meta", None),
 	)
+
+
+@frappe.whitelist()
+def get_kitchen_board(pos_profile: str, station: str | None = None, history: int = 0, start: int = 0):
+	from vunapos.services.kitchen_lifecycle_service import list_board
+
+	try:
+		return success(list_board(pos_profile, station, history, start))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def kitchen_action(ticket: str, action: str, request_key: str, expected_status: str):
+	from vunapos.services.kitchen_lifecycle_service import transition
+
+	# The command owns its rollback. A failure audit must survive an HTTP-200
+	# structured error, unlike the _atomic_write endpoints used for placement.
+	try:
+		return success(transition(ticket, action, request_key, expected_status))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+def cancel_kitchen_order(
+	ticket: str, request_key: str, expected_status: str, reason: str, manager_pin_token: str | None = None
+):
+	from vunapos.services.kitchen_lifecycle_service import cancel_order
+
+	try:
+		return success(cancel_order(ticket, request_key, expected_status, reason, manager_pin_token))
+	except Exception as exc:
+		return _failure_from_exception(exc)
 
 
 @frappe.whitelist(methods=["POST"])

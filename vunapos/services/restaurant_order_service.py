@@ -58,7 +58,7 @@ from vunapos.services.menu_service import (
 	validate_service_type_price,
 )
 from vunapos.services.pin_service import consume_pin_token
-from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
 from vunapos.services.restaurant_service import get_profile_restaurant, require_restaurant_access
 from vunapos.services.service_type_service import (
 	get_default_service_type,
@@ -554,6 +554,7 @@ def create_order(
 				_throw("IDEMPOTENCY_CONFLICT", _("This order key belongs to a different session."))
 			return order_to_dict(doc)
 	profile = _restaurant_profile(pos_profile)
+	require_restaurant_staff_shift(profile.name)
 	if not service_type:
 		default = get_default_service_type(profile)
 		service_type = default["name"] if default else None
@@ -788,7 +789,7 @@ def cancel_order(order, reason=None, manager_pin_token=None):
 		_throw("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
 	approved_by = None
 	if cint(profile.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():
-		approved_by = consume_pin_token(manager_pin_token, profile, "manager").get("subject")
+		approved_by = consume_pin_token(manager_pin_token, profile, "manager_order_cancel").get("subject")
 	doc.update(
 		{
 			"vunapos_cancel_reason": reason,

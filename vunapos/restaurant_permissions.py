@@ -44,7 +44,21 @@ def station_conditions(user=None):
 
 
 def ticket_conditions(user=None):
-	return _related_conditions("Kitchen Order Ticket", "restaurant", user)
+	return _station_scoped_conditions("Kitchen Order Ticket", user)
+
+
+def ticket_action_conditions(user=None):
+	return _station_scoped_conditions("Kitchen Ticket Action", user)
+
+
+def _station_scoped_conditions(doctype, user=None):
+	stations = frappe.get_list(
+		"Kitchen Station", pluck="name", user=user or frappe.session.user, limit_page_length=0
+	)
+	if not stations:
+		return "1=0"
+	values = ", ".join(frappe.db.escape(station) for station in stations)
+	return f"({_related_conditions(doctype, 'restaurant', user)}) and `tab{doctype}`.`kitchen_station` in ({values})"
 
 
 def order_conditions(user=None):
@@ -55,6 +69,14 @@ def order_conditions(user=None):
 
 
 def related_has_permission(doc, user=None, permission_type=None):
+	if (
+		doc.doctype in ("Kitchen Order Ticket", "Kitchen Ticket Action")
+		and doc.get("kitchen_station")
+		and not frappe.has_permission(
+			"Kitchen Station", "read", doc=doc.kitchen_station, user=user or frappe.session.user
+		)
+	):
+		return False
 	restaurant = doc.get("restaurant") or doc.get("vunapos_restaurant")
 	if restaurant and not frappe.has_permission(
 		"Restaurant", "read", doc=restaurant, user=user or frappe.session.user

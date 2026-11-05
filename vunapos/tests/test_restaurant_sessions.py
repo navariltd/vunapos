@@ -6,13 +6,18 @@ from frappe.tests import IntegrationTestCase
 from vunapos.api import restaurant
 from vunapos.services.floor_plan_service import get_floor_plan_version, save_floor_plan
 from vunapos.services.restaurant_order_service import _require_editable_round
-from vunapos.tests.helpers import ensure_test_item, ensure_test_restaurant_profile
+from vunapos.tests.helpers import (
+	ensure_open_pos_opening_entry,
+	ensure_test_item,
+	ensure_test_restaurant_profile,
+)
 
 
 class TestRestaurantSessions(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
 		self.profile = ensure_test_restaurant_profile()
+		ensure_open_pos_opening_entry(self.profile)
 		self.item = ensure_test_item()
 		# Use a fresh floor/table so existing fixture sessions cannot affect occupancy.
 		from vunapos.services.floor_plan_service import get_floor_plan
@@ -165,6 +170,13 @@ class TestRestaurantSessions(IntegrationTestCase):
 		ensure_test_user(user, roles=(WAITER_ROLE,), pos_profile=profile.name)
 		try:
 			frappe.set_user(user)
+			from vunapos.services.pos_entry import create_pos_opening_entry
+
+			create_pos_opening_entry(
+				profile.name,
+				[{"mode_of_payment": row.mode_of_payment, "opening_amount": 0} for row in profile.payments],
+				user,
+			)
 			response = restaurant.create_session_round(
 				session["name"], [{"item_code": self.item, "qty": 1}], str(uuid4()), pos_profile=profile.name
 			)

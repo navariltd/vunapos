@@ -165,6 +165,8 @@ def refresh_salesperson_pin(pos_profile: str, token: str) -> dict:
 
 
 def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal") -> dict:
+	if action not in ("item_removal", "order_cancel"):
+		_failure("INVALID_PIN_ACTION", _("Unsupported manager approval action."))
 	profile = resolve_pos_profile(pos_profile)
 	require_pos_profile_assignment(profile.name)
 	if action == "item_removal" and not profile.get("vunapos_require_manager_pin_item_removal"):
@@ -189,7 +191,11 @@ def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal")
 		_failure("INVALID_MANAGER_PIN", _("The manager PIN is incorrect."))
 	_clear_failures(profile, "manager")
 	return {
-		"token": _issue_token(profile, "manager", valid_manager.get("sales_person")),
+		"token": _issue_token(
+			profile,
+			"manager_order_cancel" if action == "order_cancel" else "manager",
+			valid_manager.get("sales_person"),
+		),
 		"manager": valid_manager.get("sales_person"),
 		"sales_person": valid_manager.get("sales_person"),
 		"display_name": valid_manager.get("display_name") or valid_manager.get("sales_person"),

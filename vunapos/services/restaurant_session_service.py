@@ -5,7 +5,7 @@ from frappe import _
 from frappe.utils import cint, now_datetime
 
 from vunapos.services.floor_plan_service import require_restaurant_profile
-from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
 from vunapos.services.restaurant_service import require_restaurant_access, require_restaurant_context
 from vunapos.services.service_type_service import get_default_service_type, resolve_service_type
 
@@ -98,6 +98,7 @@ def _load(session, for_update=False):
 def session_to_dict(doc):
 	from vunapos.dto.restaurant import order_to_dict, waiter_name
 	from vunapos.services.floor_plan_service import is_floor_plan_manager
+	from vunapos.services.kitchen_lifecycle_service import preparation_summary
 	from vunapos.services.kitchen_service import session_tickets
 
 	available_waiters = []
@@ -118,6 +119,7 @@ def session_to_dict(doc):
 				order_by="full_name asc",
 			)
 
+	tickets = session_tickets(doc)
 	return {
 		"name": doc.name,
 		"restaurant": doc.restaurant,
@@ -134,7 +136,8 @@ def session_to_dict(doc):
 		"waiter_name": waiter_name(doc.waiter),
 		"guest_count": cint(doc.guest_count),
 		"status": doc.status,
-		"kitchen_tickets": session_tickets(doc),
+		"kitchen_tickets": tickets,
+		"preparation_status": preparation_summary(tickets),
 		"opened_at": doc.opened_at,
 		"modified": doc.modified,
 		"tables": [
@@ -158,6 +161,8 @@ def session_to_dict(doc):
 
 
 def list_sessions(pos_profile):
+	from vunapos.services.kitchen_lifecycle_service import preparation_summary
+
 	profile = resolve_pos_profile(pos_profile)
 	restaurant = require_restaurant_profile(profile.name)
 	require_restaurant_access(restaurant)
@@ -201,6 +206,16 @@ def list_sessions(pos_profile):
 	for row in rows:
 		row["tables"] = grouped.get(row.name, [])
 		row["waiter_name"] = waiters.get(row.waiter) or row.waiter
+	tickets = frappe.get_list(
+		"Kitchen Order Ticket",
+		filters={"restaurant_session": ["in", [row.name for row in rows]]},
+		fields=["restaurant_session", "status"],
+		limit_page_length=0,
+	)
+	for row in rows:
+		row["preparation_status"] = preparation_summary(
+			[ticket for ticket in tickets if ticket.restaurant_session == row.name]
+		)
 	return rows
 
 
@@ -265,6 +280,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 	if not idempotency_key or not str(idempotency_key).strip():
 		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required to open a session."))
 	profile = resolve_pos_profile(pos_profile)
+	require_restaurant_staff_shift(profile.name)
 	restaurant = require_restaurant_profile(profile.name)
 	require_restaurant_access(restaurant)
 	# Serialize retries on the profile even for takeaway sessions without tables.
@@ -358,7 +374,9 @@ def cancel_empty_session(session):
 	doc.check_permission("write")
 	if doc.status == "Cancelled":
 		return session_to_dict(doc)
-	if doc.status != "Open" or frappe.db.exists("Sales Order", {"vunapos_restaurant_session": doc.name}):
+	if doc.status != "Open" or frappe.db.exists(
+		"Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": ["!=", 2]}
+	):
 		_fail(
 			"SESSION_HAS_ROUNDS",
 			_("A session with ordering rounds must use the order cancellation or settlement workflow."),
