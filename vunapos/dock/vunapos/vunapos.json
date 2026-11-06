@@ -1,0 +1,24 @@
+{
+ "app": "vunapos",
+ "creation": "2026-11-06 08:20:00",
+ "docstatus": 0,
+ "doctype": "Dock",
+ "idx": 0,
+ "items": [
+  {
+   "added": 0,
+   "hidden": 0,
+   "icon": "vunapos-duotone",
+   "link_to": "VunaPOS",
+   "link_type": "Sidebar",
+   "title": "VunaPOS"
+  }
+ ],
+ "modified": "2026-11-06 08:20:00.000000",
+ "modified_by": "Administrator",
+ "mount_on": "",
+ "name": "vunapos",
+ "owner": "Administrator",
+ "standard": 1,
+ "user": ""
+}

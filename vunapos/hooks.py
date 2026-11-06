@@ -66,7 +66,7 @@ doctype_js = {
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "vunapos/public/icons.svg"
+app_include_icons = ["/assets/vunapos/icons/vunapos-icons.svg"]
 
 # Home Pages
 # ----------
