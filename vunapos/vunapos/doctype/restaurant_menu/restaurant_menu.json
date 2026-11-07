@@ -13,12 +13,13 @@
   "company",
   "restaurant",
   "branch",
+  "applicability_section",
   "floor_wise_menu",
   "floors",
-  "groups_section",
-  "item_groups",
   "items_section",
   "items",
+  "groups_section",
+  "item_groups",
   "modifiers_section",
   "modifier_assignments"
  ],
@@ -55,7 +56,8 @@
    "in_standard_filter": 1,
    "label": "Restaurant",
    "options": "Restaurant",
-   "description": "Required for branch-specific menus; leave blank for a shared default menu."
+   "description": "Required for branch-specific menus; leave blank for a shared default menu.",
+   "in_list_view": 1
   },
   {
    "fieldname": "branch",
@@ -63,7 +65,7 @@
    "in_standard_filter": 1,
    "label": "Branch",
    "options": "Branch",
-   "description": "Optional. Restrict this menu to one branch."
+   "in_list_view": 1
   },
   {
    "fieldname": "floor_wise_menu",
@@ -98,7 +100,7 @@
    "label": "Menu Items"
   },
   {
-   "description": "Link items or variant templates to a Section / Course. Clear Available to temporarily stop ordering an item.",
+   "description": "Variant templates are supported; clear Available to temporarily stop ordering an item.",
    "fieldname": "items",
    "fieldtype": "Table",
    "label": "Items",
@@ -118,6 +120,11 @@
    "read_only": 1,
    "options": "Restaurant Menu Modifier",
    "description": "Retained as migration history. Configure current modifier groups on Item."
+  },
+  {
+   "fieldname": "applicability_section",
+   "fieldtype": "Section Break",
+   "label": "Floor Availability"
   }
  ],
  "grid_page_length": 50,
@@ -128,7 +135,7 @@
    "link_fieldname": "default_menu"
   }
  ],
- "modified": "2026-11-04 09:00:00.000000",
+ "modified": "2026-11-07 18:13:10.732000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant Menu",

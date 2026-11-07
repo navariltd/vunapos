@@ -3,7 +3,11 @@
  "name": "Menu Section",
  "module": "VunaPOS",
  "engine": "InnoDB",
- "field_order": ["section_name", "enabled", "display_order"],
+ "field_order": [
+  "section_name",
+  "enabled",
+  "display_order"
+ ],
  "fields": [
   {
    "fieldname": "section_name",
@@ -17,13 +21,15 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled",
-   "default": "1"
+   "default": "1",
+   "in_list_view": 1
   },
   {
    "fieldname": "display_order",
    "fieldtype": "Int",
    "label": "Display Order",
-   "default": "0"
+   "default": "0",
+   "in_list_view": 1
   }
  ],
  "permissions": [
@@ -53,5 +59,6 @@
  "allow_rename": 1,
  "title_field": "section_name",
  "sort_field": "section_name",
- "sort_order": "ASC"
+ "sort_order": "ASC",
+ "modified": "2026-11-07 18:13:10.732000"
 }

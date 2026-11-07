@@ -3,21 +3,30 @@
  "name": "Restaurant Modifier Option",
  "module": "VunaPOS",
  "engine": "InnoDB",
- "field_order": ["option_label", "enabled", "addon_item", "addon_qty", "uom"],
+ "field_order": [
+  "option_label",
+  "enabled",
+  "addon_section",
+  "addon_item",
+  "addon_qty",
+  "uom"
+ ],
  "fields": [
   {
    "fieldname": "option_label",
    "fieldtype": "Data",
    "label": "Choice",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 4
   },
   {
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled",
    "default": "1",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "addon_item",
@@ -25,14 +34,16 @@
    "label": "Add-on Item",
    "options": "Item",
    "in_list_view": 1,
-   "description": "Optional ERPNext sales item. Its Item Price and taxes determine the additional charge."
+   "description": "Optional ERPNext sales item. Its Item Price and taxes determine the additional charge.",
+   "columns": 3
   },
   {
    "fieldname": "addon_qty",
    "fieldtype": "Float",
    "label": "Quantity per Main Item",
    "default": "1",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "uom",
@@ -40,11 +51,17 @@
    "label": "Add-on UOM",
    "options": "UOM",
    "description": "Defaults to the add-on item's stock UOM."
+  },
+  {
+   "fieldname": "addon_section",
+   "fieldtype": "Section Break",
+   "label": "Optional Add-on"
   }
  ],
  "permissions": [],
  "istable": 1,
  "editable_grid": 1,
  "sort_field": "idx",
- "sort_order": "ASC"
+ "sort_order": "ASC",
+ "modified": "2026-11-07 18:13:10.732000"
 }
