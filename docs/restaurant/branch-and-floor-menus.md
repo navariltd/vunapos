@@ -40,6 +40,42 @@ URY's local implementation uses a Restaurant-level Room Wise Menu checkbox and
 Menu for Room rows (`ury/ury_pos/api.py`). VunaPOS uses that explicit mapping concept,
 but places the checkbox and floor child rows on Restaurant Menu as requested.
 
+## Floor-wise kitchen stations
+
+Menu availability and kitchen routing are independent. On **Kitchen Station**,
+select Restaurant and Branch, enable **Floor-wise Station**, and list its floors.
+One station can serve several floors, but every floor must belong to that same
+Restaurant and Branch. With the checkbox off, the station remains branch-wide
+and can serve takeaway. Existing stations retain that shared behavior after migration.
+
+Routing considers only shared stations and stations assigned to the table's floor.
+It first picks the most-specific Item Group mapping, then prefers floor-specific
+over shared stations when the same group matches. Example: Ground Kitchen and
+Rooftop Kitchen can both map Prepared Food on disjoint floors; a shared kitchen
+mapping Prepared Food handles takeaway and floors without an explicit kitchen.
+
+Two enabled shared stations cannot claim the same exact group. Two enabled
+floor-wise stations cannot claim that group on overlapping floors. Shared and
+floor-wise mappings may coexist as default and override. An inaccessible preferred
+station does not silently fall back to a shared station. Temporary routing choices
+are restricted to stations permitted for the selected floor.
+
+An item mapped to a kitchen only on another floor remains a prepared/QSR item.
+Missing eligible routing prompts for a valid temporary station or setup correction;
+it never silently becomes direct-sale stock. Takeaway without a shared station is
+handled the same way. Variants and add-ons use the same routing when added/placed;
+add-ons follow their prepared parent's station and ingredient warehouse.
+
+Joined tables must share a menu and the same eligible kitchen-station scope.
+Table moves affect new rounds only: existing order rows, KOTs and Work Orders
+retain their chosen station. Changing table/service clears unsent temporary
+routing choices so the new context is re-evaluated.
+
+Migrate and rebuild before testing. Try two floors with separate Prepared Food
+stations and a shared fallback. Verify dine-in routes locally, takeaway uses the
+shared station, ingredient shortages refer to the chosen station's warehouse,
+and moving a session changes only subsequent KOTs.
+
 ## Dine-in flow
 
 Choose Dine-in → select a table from the floor plan → see its menu → add items.
