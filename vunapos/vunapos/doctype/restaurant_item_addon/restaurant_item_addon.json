@@ -5,7 +5,13 @@
  "engine": "InnoDB",
  "istable": 1,
  "editable_grid": 1,
- "field_order": ["addon_item", "label", "enabled", "addon_qty", "uom"],
+ "field_order": [
+  "addon_item",
+  "addon_qty",
+  "uom",
+  "label",
+  "enabled"
+ ],
  "fields": [
   {
    "fieldname": "addon_item",
@@ -13,21 +19,24 @@
    "label": "Add-on Item",
    "options": "Item",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 3
   },
   {
    "fieldname": "label",
    "fieldtype": "Data",
    "label": "Display Label",
    "in_list_view": 1,
-   "description": "Optional; defaults to the add-on item's name."
+   "description": "Optional; defaults to the add-on item's name.",
+   "columns": 2
   },
   {
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled",
    "default": "1",
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 1
   },
   {
    "fieldname": "addon_qty",
@@ -35,7 +44,8 @@
    "label": "Quantity per Selling Unit",
    "default": "1",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "uom",
@@ -43,8 +53,13 @@
    "label": "UOM",
    "options": "UOM",
    "in_list_view": 1,
-   "description": "Defaults to the add-on item's stock UOM."
+   "description": "Defaults to the add-on item's stock UOM.",
+   "columns": 2
   }
  ],
- "permissions": []
+ "permissions": [],
+ "modified": "2026-11-07 21:31:00.752296",
+ "creation": "2026-11-04 22:11:50.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
 }

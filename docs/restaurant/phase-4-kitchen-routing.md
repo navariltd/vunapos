@@ -9,7 +9,8 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
 
 ## What this phase includes
 
-- Kitchen Station master linked to Restaurant, with Branch/Company derived from it.
+- Kitchen Station master linked to Restaurant and explicitly selected Branch,
+  with Company derived from Restaurant and validated against Branch.
   A station name is unique within its Restaurant and Branch, not globally across branches.
 - Explicit Item Group routing, including descendant groups. Menu Sections/Courses
   organize the catalogue; they do not control kitchen routing.
@@ -46,7 +47,8 @@ interactive KDS lifecycle. It does not claim to implement that lifecycle yet.
 ## Setup
 
 1. Create Kitchen Stations in Desk, e.g. Main Kitchen and Bar, selecting their
-   Restaurant. Branch and Company are derived; no POS Profile-specific menu is added.
+   Restaurant and Branch. Company is derived. Optionally enable Floor-wise Station
+   and select one or more matching floors; leave it off for shared/takeaway stations.
 2. Add the appropriate ERPNext Item Groups on each station. Use disjoint groups for
    automatic splitting, e.g. Prepared Food → Kitchen and Beverages → Bar. If one
    station includes a parent group and another includes its child, the child mapping
@@ -121,9 +123,10 @@ dish, ingredient and BOM before creating the order, rather than exposing an opaq
 Work Order row number. Correct the recipe batch/UOM; the app does not disable Nos
 whole-number enforcement globally.
 
-Kitchen Station Restaurant choices are filtered by Company. Its Branch is the one
-linked to that Restaurant (one Restaurant has one Branch), and these relationships
-are validated server-side as well as filtered on the Desk form.
+Kitchen Station Restaurant and Branch choices are filtered by Company. Floor
+choices are filtered by Restaurant and Branch, and ownership is also validated
+server-side. See [floor-wise routing](branch-and-floor-menus.md#floor-wise-kitchen-stations)
+for shared fallback, overlap and grouped-table behavior.
 
 ## Boundaries and migration
 

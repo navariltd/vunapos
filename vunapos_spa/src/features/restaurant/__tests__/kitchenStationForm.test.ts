@@ -16,8 +16,9 @@ function form() {
     restaurant_branch: null,
     set_query: (
       field: string,
-      query: () => { filters: Record<string, unknown> }
-    ) => queries.set(field, query),
+      query: string | (() => { filters: Record<string, unknown> }),
+      childQuery?: () => { filters: Record<string, unknown> }
+    ) => queries.set(field, typeof query === "string" ? childQuery! : query),
     set_value: vi.fn(
       async (field: string | Record<string, unknown>, value?: unknown) => {
         Object.assign(
@@ -42,6 +43,22 @@ function form() {
 }
 
 describe("Kitchen Station dependent links", () => {
+  it("restricts floor assignments to the selected Restaurant and Branch", () => {
+    const { frm, queries } = form();
+    expect(queries.get("floor")!().filters).toEqual({
+      restaurant: "Cafe",
+      branch: "",
+      is_active: 1,
+    });
+    frm.doc.branch = "Town";
+    expect(queries.get("floor")!().filters).toEqual({
+      restaurant: "Cafe",
+      branch: "Town",
+      is_active: 1,
+    });
+    frm.doc.restaurant = "Other Cafe";
+    expect(queries.get("floor")!().filters.restaurant).toBe("Other Cafe");
+  });
   it("filters Branches by Company without locking Restaurant to one Branch", async () => {
     const { frm, handlers, queries } = form();
     expect(queries.get("restaurant")!().filters).toEqual({

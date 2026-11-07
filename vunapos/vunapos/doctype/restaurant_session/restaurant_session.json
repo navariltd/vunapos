@@ -7,50 +7,90 @@
  "autoname": "RS-.YYYY.-.#####",
  "track_changes": 1,
  "field_order": [
-  "restaurant",
-  "branch",
-  "company",
-  "pos_profile",
-  "service_type",
-  "selling_price_list",
-  "currency",
   "customer",
-  "waiter",
+  "service_type",
   "guest_count",
   "status",
+  "column_break_visit",
+  "pos_profile",
+  "waiter",
   "opened_at",
   "closed_at",
+  "tables_section",
+  "tables",
+  "billing_section",
   "billing_doctype",
   "billing_invoice",
   "billing_profile",
+  "column_break_billing",
+  "selling_price_list",
+  "currency",
+  "context_section",
+  "restaurant",
+  "branch",
+  "column_break_context",
+  "company",
   "billing_fingerprint",
-  "tables",
   "idempotency_key"
  ],
  "fields": [
-  {"fieldname": "billing_doctype", "label": "Billing Document Type", "fieldtype": "Link", "options": "DocType", "read_only": 1},
-  {"fieldname": "billing_invoice", "label": "Bill", "fieldtype": "Dynamic Link", "options": "billing_doctype", "read_only": 1},
-  {"fieldname": "billing_profile", "label": "Billing POS Profile", "fieldtype": "Link", "options": "POS Profile", "read_only": 1},
-  {"fieldname": "billing_fingerprint", "label": "Bill Fingerprint", "fieldtype": "Data", "read_only": 1, "hidden": 1},
   {
-   "fieldname": "selling_price_list", "label": "Price List", "fieldtype": "Link", "options": "Price List", "read_only": 1
+   "fieldname": "billing_doctype",
+   "label": "Billing Document Type",
+   "fieldtype": "Link",
+   "options": "DocType",
+   "read_only": 1
   },
   {
-   "fieldname": "currency", "label": "Currency", "fieldtype": "Link", "options": "Currency", "read_only": 1
+   "fieldname": "billing_invoice",
+   "label": "Bill",
+   "fieldtype": "Dynamic Link",
+   "options": "billing_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billing_profile",
+   "label": "Billing POS Profile",
+   "fieldtype": "Link",
+   "options": "POS Profile",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billing_fingerprint",
+   "label": "Bill Fingerprint",
+   "fieldtype": "Data",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "selling_price_list",
+   "label": "Price List",
+   "fieldtype": "Link",
+   "options": "Price List",
+   "read_only": 1
+  },
+  {
+   "fieldname": "currency",
+   "label": "Currency",
+   "fieldtype": "Link",
+   "options": "Currency",
+   "read_only": 1
   },
   {
    "fieldname": "restaurant",
    "fieldtype": "Link",
    "label": "Restaurant",
    "options": "Restaurant",
-   "reqd": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "branch",
    "fieldtype": "Link",
    "label": "Branch",
    "options": "Branch",
-   "reqd": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "company",
@@ -62,9 +102,10 @@
   {
    "fieldname": "pos_profile",
    "fieldtype": "Link",
-   "label": "Pos Profile",
+   "label": "POS Profile",
    "options": "POS Profile",
-   "reqd": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "service_type",
@@ -78,7 +119,8 @@
    "fieldtype": "Link",
    "label": "Customer",
    "options": "Customer",
-   "reqd": 1
+   "reqd": 1,
+   "in_list_view": 1
   },
   {
    "fieldname": "waiter",
@@ -100,7 +142,9 @@
    "options": "Open\nSettling\nSettled\nClosed - Unpaid\nCancelled",
    "reqd": 1,
    "default": "Open",
-   "read_only": 1
+   "read_only": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "opened_at",
@@ -129,6 +173,34 @@
    "unique": 1,
    "no_copy": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "column_break_visit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "tables_section",
+   "fieldtype": "Section Break",
+   "label": "Tables"
+  },
+  {
+   "fieldname": "billing_section",
+   "fieldtype": "Section Break",
+   "label": "Billing"
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "context_section",
+   "fieldtype": "Section Break",
+   "label": "Restaurant Context",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "column_break_context",
+   "fieldtype": "Column Break"
   }
  ],
  "permissions": [
@@ -160,5 +232,9 @@
    "write": 1,
    "print": 1
   }
- ]
+ ],
+ "modified": "2026-11-07 21:31:00.752296",
+ "creation": "2026-11-04 21:01:06.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
 }

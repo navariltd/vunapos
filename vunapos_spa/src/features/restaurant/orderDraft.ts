@@ -225,7 +225,8 @@ export function setContext(
 	context: { service_type: string; table: string | null; table_label: string | null },
 ): OrderDraft {
 	if (draft.order) return draft;
-	return { ...draft, ...context };
+	const changed = draft.table !== context.table || draft.service_type !== context.service_type;
+	return { ...draft, ...context, kitchen_routing: changed ? undefined : draft.kitchen_routing };
 }
 
 // ---- saving ----

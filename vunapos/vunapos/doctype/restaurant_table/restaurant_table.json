@@ -5,18 +5,22 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "table_label",
   "floor",
+  "seats",
+  "is_active",
+  "column_break_context",
   "restaurant",
   "branch",
-  "table_label",
-  "seats",
+  "geometry_section",
   "shape",
+  "rotation",
+  "column_break_position",
   "x",
   "y",
+  "column_break_dimensions",
   "width",
-  "height",
-  "rotation",
-  "is_active"
+  "height"
  ],
  "fields": [
   {
@@ -26,7 +30,8 @@
    "label": "Floor",
    "options": "Restaurant Floor",
    "reqd": 1,
-   "search_index": 1
+   "search_index": 1,
+   "in_standard_filter": 1
   },
   {
    "fetch_from": "floor.restaurant",
@@ -43,7 +48,8 @@
    "label": "Branch",
    "options": "Branch",
    "fetch_from": "floor.branch",
-   "read_only": 1
+   "read_only": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "table_label",
@@ -75,7 +81,7 @@
   {
    "default": "0",
    "fieldname": "y",
-   "fieldtype": "Data",
+   "fieldtype": "Float",
    "label": "Y"
   },
   {
@@ -94,19 +100,36 @@
    "default": "1",
    "fieldname": "is_active",
    "fieldtype": "Check",
-   "label": "Is Active"
+   "label": "Active"
   },
   {
    "default": "80",
    "fieldname": "width",
    "fieldtype": "Float",
    "label": "Width"
+  },
+  {
+   "fieldname": "column_break_context",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "geometry_section",
+   "fieldtype": "Section Break",
+   "label": "Floor Plan Position"
+  },
+  {
+   "fieldname": "column_break_position",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_dimensions",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-03 09:00:00.000000",
+ "modified": "2026-11-07 18:13:10.732000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant Table",

@@ -1,0 +1,27 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Station Floor",
+ "module": "VunaPOS",
+ "istable": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "floor"
+ ],
+ "fields": [
+  {
+   "fieldname": "floor",
+   "fieldtype": "Link",
+   "label": "Floor",
+   "options": "Restaurant Floor",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "creation": "2026-11-07 21:10:40.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "modified": "2026-11-07 21:31:00.752296"
+}

@@ -50,9 +50,24 @@ def validate_station(doc):
 		if row.item_group in seen:
 			fail("DUPLICATE_STATION_GROUP", _("An Item Group can only be listed once per station."))
 		seen.add(row.item_group)
-	# Lock the shared location so two station saves cannot claim a group together.
+	floors = set()
+	if cint(doc.get("floor_wise_station")):
+		if not doc.get("floors"):
+			fail("KITCHEN_STATION_FLOORS_REQUIRED", _("Select at least one floor for a floor-wise station."))
+		for row in doc.floors:
+			if not row.floor or row.floor in floors:
+				fail("DUPLICATE_STATION_FLOOR", _("Select each kitchen station floor only once."))
+			floors.add(row.floor)
+			floor = frappe.get_doc("Restaurant Floor", row.floor)
+			floor.check_permission("read")
+			if (floor.restaurant, floor.branch) != (doc.restaurant, doc.branch):
+				fail(
+					"STATION_FLOOR_CONTEXT_MISMATCH",
+					_("Floor {0} must belong to this Restaurant and Branch.").format(row.floor),
+				)
+	# Serialize overlapping floor/group claims across station saves.
 	frappe.db.get_value("Restaurant", doc.restaurant, "name", for_update=True)
-	if doc.enabled and seen:
+	if cint(doc.enabled) and seen:
 		stations = frappe.get_all(
 			STATION,
 			filters={
@@ -61,21 +76,32 @@ def validate_station(doc):
 				"enabled": 1,
 				"name": ["!=", doc.name or ""],
 			},
-			pluck="name",
+			fields=["name", "floor_wise_station"],
 		)
-		duplicate = frappe.db.get_value(
+		station_by_name = {row.name: row for row in stations}
+		station_floors = _station_floors(station_by_name)
+		duplicates = frappe.get_all(
 			"Kitchen Station Item Group",
-			{"parent": ["in", stations or [""]], "parenttype": STATION, "item_group": ["in", list(seen)]},
-			["item_group", "parent"],
-			as_dict=True,
+			filters={
+				"parent": ["in", list(station_by_name) or [""]],
+				"parenttype": STATION,
+				"item_group": ["in", list(seen)],
+			},
+			fields=["item_group", "parent"],
 		)
-		if duplicate:
-			fail(
-				"KITCHEN_GROUP_ALREADY_ASSIGNED",
-				_(
-					"Item Group {0} is already assigned to Kitchen Station {1} in this Restaurant and Branch. Use a different group or disable its previous station."
-				).format(duplicate.item_group, duplicate.parent),
-			)
+		for duplicate in duplicates:
+			other_scoped = cint(station_by_name[duplicate.parent].floor_wise_station)
+			if (not cint(doc.get("floor_wise_station")) and not other_scoped) or (
+				cint(doc.get("floor_wise_station"))
+				and other_scoped
+				and floors & station_floors.get(duplicate.parent, set())
+			):
+				fail(
+					"KITCHEN_GROUP_ALREADY_ASSIGNED",
+					_(
+						"Item Group {0} is already assigned to Kitchen Station {1} for an overlapping floor scope. Use disjoint floors, a different group, or disable the other station."
+					).format(duplicate.item_group, duplicate.parent),
+				)
 	for warehouse in (doc.raw_material_warehouse, doc.wip_warehouse):
 		if warehouse:
 			row = frappe.db.get_value(
@@ -98,16 +124,62 @@ def validate_station(doc):
 		)
 
 
-def allowed_stations(restaurant, branch=None):
+def _station_floors(names):
+	result = defaultdict(set)
+	names = list(names)
+	if names:
+		for row in frappe.get_all(
+			"Kitchen Station Floor",
+			filters={"parent": ["in", list(names)], "parenttype": STATION, "parentfield": "floors"},
+			fields=["parent", "floor"],
+		):
+			result[row.parent].add(row.floor)
+	return result
+
+
+def _eligible_stations(stations, floor):
+	floors = _station_floors(row.name for row in stations if cint(row.get("floor_wise_station")))
+	return [
+		row
+		for row in stations
+		if not cint(row.get("floor_wise_station")) or (floor and floor in floors.get(row.name, set()))
+	]
+
+
+def _validate_routing_floor(restaurant, branch, floor):
+	if not floor:
+		return
+	row = frappe.get_cached_doc("Restaurant Floor", floor)
+	if row.restaurant != restaurant or (branch and row.branch != branch) or not cint(row.is_active):
+		fail("KITCHEN_FLOOR_CONTEXT_MISMATCH", _("Select an active floor in this Restaurant and Branch."))
+
+
+def routing_scope(restaurant, branch, floor):
+	"""Compare joined tables without using the user's station visibility as fallback."""
+	_validate_routing_floor(restaurant, branch, floor)
+	rows = frappe.get_all(
+		STATION,
+		filters={"restaurant": restaurant, "branch": branch, "enabled": 1},
+		fields=["name", "floor_wise_station"],
+	)
+	return frozenset(row.name for row in _eligible_stations(rows, floor))
+
+
+def allowed_stations(restaurant, branch=None, floor=None):
 	require_restaurant_access(restaurant, branch=branch)
+	_validate_routing_floor(restaurant, branch, floor)
 	# get_list also respects Kitchen Station User Permissions when configured.
-	return frappe.get_list(
+	stations = frappe.get_list(
 		STATION,
 		filters={"restaurant": restaurant, "enabled": 1, **({"branch": branch} if branch else {})},
-		fields=["name", "station_name"],
+		fields=["name", "station_name", "floor_wise_station"],
 		order_by="station_name asc",
 		limit_page_length=0,
 	)
+	return [
+		frappe._dict(name=row.name, station_name=row.station_name)
+		for row in _eligible_stations(stations, floor)
+	]
 
 
 def parse_overrides(value):
@@ -130,16 +202,20 @@ def parse_overrides(value):
 	return value
 
 
-def station_matches(restaurant, item_codes, branch=None):
+def station_matches(restaurant, item_codes, branch=None, floor=None, *, all_floors=False):
 	"""Closest mapped ancestor wins, even when that station is hidden by permissions."""
+	_validate_routing_floor(restaurant, branch, floor)
 	stations = frappe.get_all(
 		STATION,
 		filters={"restaurant": restaurant, "enabled": 1, **({"branch": branch} if branch else {})},
-		pluck="name",
+		fields=["name", "floor_wise_station"],
 	)
+	if not all_floors:
+		stations = _eligible_stations(stations, floor)
+	scoped = {row.name for row in stations if cint(row.get("floor_wise_station"))}
 	assignments = frappe.get_all(
 		"Kitchen Station Item Group",
-		filters={"parent": ["in", stations or [""]], "parenttype": STATION},
+		filters={"parent": ["in", [row.name for row in stations] or [""]], "parenttype": STATION},
 		fields=["parent", "item_group"],
 	)
 	items = frappe.get_all(
@@ -168,18 +244,22 @@ def station_matches(restaurant, item_codes, branch=None):
 		result[item.name] = {
 			row.parent for row in matches if bounds[row.item_group].rgt - bounds[row.item_group].lft == width
 		}
+		if not all_floors and floor and result[item.name] & scoped:
+			result[item.name] &= scoped
 	return result
 
 
 def classify_items(restaurant, items, branch=None):
 	require_restaurant_access(restaurant, branch=branch)
-	matches = station_matches(restaurant, [item["item_code"] for item in items], branch)
+	# A prepared item without a station on this floor must fail routing, not
+	# silently become direct-sale stock (including table-less takeaway orders).
+	matches = station_matches(restaurant, [item["item_code"] for item in items], branch, all_floors=True)
 	for item in items:
 		item["is_qsr"] = bool(matches.get(item["item_code"]))
 	return items
 
 
-def route_lines(restaurant, lines, overrides=None, branch=None):
+def route_lines(restaurant, lines, overrides=None, branch=None, floor=None):
 	"""Most-specific group first; legacy duplicate mappings require explicit routing."""
 	if len(lines) > 500:
 		fail("RESTAURANT_ROUND_TOO_LARGE", _("Send no more than 500 item/add-on lines in one round."))
@@ -188,9 +268,10 @@ def route_lines(restaurant, lines, overrides=None, branch=None):
 	overrides = parse_overrides(overrides)
 	main_codes = {line.item_code for line in lines if not line.get("parent_line_id")}
 	overrides = {code: name for code, name in overrides.items() if code in main_codes}
-	stations = allowed_stations(restaurant, branch)
+	stations = allowed_stations(restaurant, branch, floor)
 	station_names = {row.name for row in stations}
-	matches_by_code = station_matches(restaurant, main_codes, branch)
+	matches_by_code = station_matches(restaurant, main_codes, branch, floor)
+	prepared = station_matches(restaurant, main_codes, branch, all_floors=True)
 	invalid = [
 		{"item_code": code, "item_group": "", "reason": "invalid", "candidates": []}
 		for code, name in overrides.items()
@@ -218,10 +299,10 @@ def route_lines(restaurant, lines, overrides=None, branch=None):
 		if not item:
 			fail("ITEM_NOT_FOUND", _("Preparation item {0} was not found.").format(line.item_code))
 		matches = matches_by_code.get(line.item_code, set())
-		if not matches:
+		if not matches and not prepared.get(line.item_code):
 			resolved[line.line_id] = (None, False)
 			continue
-		if not matches & station_names:
+		if matches and not matches & station_names:
 			frappe.throw(
 				_("No permitted kitchen station for {0}.").format(line.item_code), frappe.PermissionError
 			)
@@ -242,7 +323,9 @@ def route_lines(restaurant, lines, overrides=None, branch=None):
 	if unresolved:
 		fail(
 			"KITCHEN_ROUTING_REQUIRED",
-			_("Choose a kitchen station for items with ambiguous routing."),
+			_(
+				"Choose a permitted kitchen station serving this floor, or configure a shared station for takeaway."
+			),
 			{"items": list(unresolved.values()), "stations": stations},
 		)
 	for line in lines:
@@ -320,7 +403,10 @@ def generate_tickets(order, method=None):
 				source=row,
 			)
 		)
-	route_lines(session.restaurant, lines, overrides, branch=session.branch)
+	from vunapos.services.menu_service import resolve_table_floor
+
+	floor = resolve_table_floor(profile.name, order.get("vunapos_restaurant_table"))
+	route_lines(session.restaurant, lines, overrides, branch=session.branch, floor=floor)
 	from vunapos.services.restaurant_stock_service import reserve_round
 
 	work_orders = reserve_round(order, profile, lines) or {}

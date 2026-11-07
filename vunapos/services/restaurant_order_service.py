@@ -571,7 +571,7 @@ def create_order(
 		service_type = default["name"] if default else None
 	service_type_row = resolve_service_type(profile, service_type)
 	if restaurant_session:
-		from vunapos.services.restaurant_session_service import _load
+		from vunapos.services.restaurant_session_service import _load, _validate_table_kitchens
 
 		session = _load(restaurant_session, for_update=True)
 		if (
@@ -584,6 +584,7 @@ def create_order(
 			_throw("SESSION_CONTEXT_MISMATCH", _("Order does not match the open Restaurant Session."))
 		if table and table not in [row.table for row in session.tables if not row.released_at]:
 			_throw("SESSION_CONTEXT_MISMATCH", _("Table is not assigned to this session."))
+		_validate_table_kitchens(profile, [row.table for row in session.tables if not row.released_at])
 	table = _validate_table(profile, service_type_row, table or None, restaurant_session=restaurant_session)
 	# A Sales Order cannot be submitted without lines.
 	lines = _new_lines(items)
@@ -594,7 +595,13 @@ def create_order(
 		from vunapos.services.kitchen_service import route_lines
 		from vunapos.services.restaurant_stock_service import plan_stock
 
-		route_lines(profile.vunapos_restaurant, lines, kitchen_routing, branch=profile.vunapos_branch)
+		route_lines(
+			profile.vunapos_restaurant,
+			lines,
+			kitchen_routing,
+			branch=profile.vunapos_branch,
+			floor=resolve_table_floor(profile.name, table),
+		)
 		plan_stock(profile, lines)
 
 	doc, profile = _build_sales_order_doc(

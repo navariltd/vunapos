@@ -48,8 +48,10 @@ Another user's opening does not cover them. Waiters can close their own shift,
 but opening one does not grant payment or invoice-creation rights. Kitchen-only
 staff do not need an opening shift.
 
-Active stations cannot claim the same exact Item Group in the same Restaurant
-and Branch. Parent groups are supported: the closest mapped ancestor wins, so
+Active stations cannot claim the same exact Item Group on overlapping floor scopes
+in the same Restaurant and Branch. Shared and floor-specific mappings may coexist
+as fallback and override; disjoint floor assignments may reuse groups.
+Parent groups are supported: the closest eligible mapped ancestor wins, so
 a Coffee subgroup mapped to Coffee Station takes precedence over Tea mapped to
 another station. A hidden child station does not fall back to a visible parent.
 Disabled stations retain historical mappings; re-enabling validates conflicts.

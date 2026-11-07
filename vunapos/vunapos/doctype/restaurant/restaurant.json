@@ -11,11 +11,9 @@
   "enabled",
   "column_break_main",
   "company",
-  "menu_section",
   "default_menu",
   "service_section",
   "service_types",
-  "orders_section",
   "allow_multiple_orders_per_table"
  ],
  "fields": [
@@ -48,11 +46,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "menu_section",
-   "fieldtype": "Section Break",
-   "label": "Menu"
-  },
-  {
    "fieldname": "default_menu",
    "fieldtype": "Link",
    "label": "Default Menu",
@@ -68,11 +61,6 @@
    "fieldtype": "Table",
    "label": "Service Types",
    "options": "Restaurant Service Type Assignment"
-  },
-  {
-   "fieldname": "orders_section",
-   "fieldtype": "Section Break",
-   "label": "Orders"
   },
   {
    "default": "0",
@@ -98,7 +86,7 @@
    "link_fieldname": "vunapos_restaurant"
   }
  ],
- "modified": "2026-11-05 09:00:00.000000",
+ "modified": "2026-11-07 18:13:10.732000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant",

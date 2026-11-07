@@ -5,22 +5,25 @@
  "engine": "InnoDB",
  "field_order": [
   "kitchen_station",
-  "station_label",
-  "restaurant",
-  "branch",
-  "company",
-  "restaurant_session",
-  "sales_order",
-  "pos_profile",
+  "status",
   "service_type",
   "table_labels",
+  "column_break_service",
   "waiter",
-  "sent_by",
   "sent_at",
-  "status",
   "order_note",
   "items_section",
   "items",
+  "references_section",
+  "restaurant_session",
+  "sales_order",
+  "pos_profile",
+  "column_break_references",
+  "restaurant",
+  "branch",
+  "company",
+  "sent_by",
+  "station_label",
   "event_key"
  ],
  "fields": [
@@ -31,11 +34,12 @@
    "options": "Kitchen Station",
    "reqd": 1,
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "station_label",
-   "label": "Station Name Snapshot",
+   "label": "Station Name at Send",
    "fieldtype": "Data",
    "read_only": 1
   },
@@ -53,7 +57,8 @@
    "fieldtype": "Link",
    "options": "Branch",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "company",
@@ -131,7 +136,8 @@
    "options": "Sent\nAccepted\nPreparing\nReady\nServed\nCancelled",
    "default": "Sent",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "order_note",
@@ -160,6 +166,20 @@
    "reqd": 1,
    "unique": 1,
    "hidden": 1
+  },
+  {
+   "fieldname": "column_break_service",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "references_section",
+   "fieldtype": "Section Break",
+   "label": "Source and Restaurant Context",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "column_break_references",
+   "fieldtype": "Column Break"
   }
  ],
  "permissions": [
@@ -192,5 +212,9 @@
  "is_submittable": 1,
  "track_changes": 1,
  "sort_field": "creation",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "modified": "2026-11-07 21:31:00.752296",
+ "creation": "2026-11-05 07:53:35.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
 }

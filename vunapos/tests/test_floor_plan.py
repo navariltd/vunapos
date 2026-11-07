@@ -110,6 +110,13 @@ class TestVunaPOSFloorPlan(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "restaurant"), RESTAURANT_TEST)
 		self.assertEqual(frappe.db.get_value(TABLE_DOCTYPE, table_name, "shape"), "Round")
 
+	def test_table_coordinates_preserve_fractional_values(self):
+		result = self._save_ok([_floor(tables=[_table(x=100.5, y=120.25)])])
+		table = frappe.get_doc(TABLE_DOCTYPE, result["id_map"]["tables"]["t1"])
+		self.assertEqual(table.x, 100.5)
+		self.assertEqual(table.y, 120.25)
+		self.assertEqual(result["plan"]["floors"][0]["tables"][0]["y"], 120.25)
+
 	def test_tables_have_no_colour_of_their_own(self):
 		# Table colour is reserved for order status (design decision 13). A client
 		# that still sends a colour is accepted, and the colour is dropped.

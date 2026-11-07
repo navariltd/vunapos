@@ -1,5 +1,12 @@
 frappe.ui.form.on("Kitchen Station", {
 	setup(frm) {
+		frm.set_query("floor", "floors", () => ({
+			filters: {
+				restaurant: frm.doc.restaurant || "",
+				branch: frm.doc.branch || "",
+				is_active: 1,
+			},
+		}));
 		frm.set_query("restaurant", () => ({
 			filters: { enabled: 1, ...(frm.doc.company ? { company: frm.doc.company } : {}) },
 		}));

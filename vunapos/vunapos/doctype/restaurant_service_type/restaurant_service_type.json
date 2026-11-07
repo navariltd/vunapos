@@ -35,7 +35,6 @@
   },
   {
    "default": "0",
-   "description": "Orders of this type must be placed on a restaurant table, for example Dine In.",
    "fieldname": "requires_table",
    "fieldtype": "Check",
    "in_list_view": 1,
@@ -68,7 +67,7 @@
    "fieldtype": "Link",
    "label": "Price List",
    "options": "Price List",
-   "description": "Orders of this type are priced from this selling price list. Only items with a price in it are on the menu for this type. Pricing Rules and Promotional Schemes limited to this price list apply as offers."
+   "description": "Only items priced in this selling price list are available for this service type."
   },
   {
    "fieldname": "column_break_pricing",
@@ -78,14 +77,13 @@
    "fieldname": "taxes_and_charges",
    "fieldtype": "Link",
    "label": "Sales Taxes and Charges Template",
-   "options": "Sales Taxes and Charges Template",
-   "description": "Taxes and charges for this type, for example a service charge for Dine In only."
+   "options": "Sales Taxes and Charges Template"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-27 17:30:00.000000",
+ "modified": "2026-11-07 18:13:10.732000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant Service Type",

@@ -6,24 +6,29 @@
  "autoname": "KACT-.YYYY.-.#####",
  "field_order": [
   "kitchen_ticket",
+  "action",
+  "outcome",
+  "column_break_action",
+  "actor",
+  "occurred_at",
+  "from_status",
+  "to_status",
+  "approval_section",
+  "reason",
+  "approved_by",
+  "error_section",
+  "error_code",
+  "error_message",
+  "references_section",
   "kitchen_station",
+  "sales_order",
+  "column_break_context",
   "restaurant",
   "branch",
   "company",
-  "sales_order",
-  "action",
-  "outcome",
-  "from_status",
-  "to_status",
-  "actor",
-  "occurred_at",
-  "reason",
-  "approved_by",
-  "request_key",
-  "success_key",
   "stock_entries",
-  "error_code",
-  "error_message"
+  "request_key",
+  "success_key"
  ],
  "fields": [
   {
@@ -77,7 +82,8 @@
    "read_only": 1,
    "options": "Accept\nStart\nReady\nServe\nCancel Order",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "outcome",
@@ -86,7 +92,8 @@
    "read_only": 1,
    "options": "Succeeded\nFailed",
    "reqd": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "from_status",
@@ -106,8 +113,7 @@
    "label": "Actor",
    "read_only": 1,
    "options": "User",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
    "fieldname": "occurred_at",
@@ -134,7 +140,8 @@
    "fieldtype": "Data",
    "label": "Request Key",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "hidden": 1
   },
   {
    "fieldname": "success_key",
@@ -161,6 +168,32 @@
    "fieldtype": "Small Text",
    "label": "Error Message",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_action",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "approval_section",
+   "fieldtype": "Section Break",
+   "label": "Reason and Approval",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "error_section",
+   "fieldtype": "Section Break",
+   "label": "Failure Details",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "references_section",
+   "fieldtype": "Section Break",
+   "label": "Source and Stock References",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "column_break_context",
+   "fieldtype": "Column Break"
   }
  ],
  "permissions": [
@@ -186,5 +219,9 @@
   }
  ],
  "sort_field": "creation",
- "sort_order": "DESC"
+ "sort_order": "DESC",
+ "modified": "2026-11-07 21:31:00.752296",
+ "creation": "2026-11-05 10:39:27.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
 }

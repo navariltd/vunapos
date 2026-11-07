@@ -7,11 +7,14 @@
  "engine": "InnoDB",
  "field_order": [
   "station_name",
+  "enabled",
+  "column_break_yenl",
+  "company",
   "restaurant",
   "branch",
-  "company",
-  "column_break_yenl",
-  "enabled",
+  "floor_scope_section",
+  "floor_wise_station",
+  "floors",
   "routing_section",
   "item_groups",
   "warehouses_section",
@@ -40,14 +43,17 @@
    "in_list_view": 1,
    "label": "Restaurant",
    "options": "Restaurant",
-   "reqd": 1
+   "reqd": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "branch",
    "fieldtype": "Link",
    "label": "Branch",
    "options": "Branch",
-   "reqd": 1
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
   },
   {
    "fieldname": "company",
@@ -55,6 +61,21 @@
    "label": "Company",
    "options": "Company",
    "reqd": 1
+  },
+  {
+   "fieldname": "floor_wise_station",
+   "fieldtype": "Check",
+   "label": "Floor-wise Station",
+   "default": "0",
+   "description": "Restrict this station to the selected floors. Leave unchecked for a shared station, including takeaway orders."
+  },
+  {
+   "fieldname": "floors",
+   "fieldtype": "Table",
+   "label": "Floors",
+   "options": "Kitchen Station Floor",
+   "depends_on": "eval:doc.floor_wise_station",
+   "mandatory_depends_on": "eval:doc.floor_wise_station"
   },
   {
    "fieldname": "routing_section",
@@ -91,10 +112,15 @@
   {
    "fieldname": "column_break_wasd",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "floor_scope_section",
+   "fieldtype": "Section Break",
+   "label": "Floor Availability"
   }
  ],
  "links": [],
- "modified": "2026-11-05 07:12:14.326130",
+ "modified": "2026-11-07 18:13:10.732000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Kitchen Station",

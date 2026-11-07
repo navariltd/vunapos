@@ -4,20 +4,25 @@
  "module": "VunaPOS",
  "engine": "InnoDB",
  "field_order": [
-  "sales_order_item",
-  "work_order",
-  "line_id",
-  "parent_line_id",
   "item_code",
   "item_name",
+  "column_break_quantity",
   "qty",
   "uom",
-  "conversion_factor",
-  "stock_qty",
-  "stock_uom",
+  "notes_section",
   "note",
   "modifiers",
-  "temporary_routing"
+  "production_section",
+  "work_order",
+  "temporary_routing",
+  "column_break_stock",
+  "stock_qty",
+  "stock_uom",
+  "conversion_factor",
+  "source_section",
+  "sales_order_item",
+  "line_id",
+  "parent_line_id"
  ],
  "fields": [
   {
@@ -39,13 +44,15 @@
    "label": "Line ID",
    "fieldtype": "Data",
    "read_only": 1,
-   "reqd": 1
+   "reqd": 1,
+   "hidden": 1
   },
   {
    "fieldname": "parent_line_id",
    "label": "Add-on Parent Line",
    "fieldtype": "Data",
-   "read_only": 1
+   "read_only": 1,
+   "hidden": 1
   },
   {
    "fieldname": "item_code",
@@ -54,14 +61,16 @@
    "options": "Item",
    "reqd": 1,
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 3
   },
   {
    "fieldname": "item_name",
    "label": "Item Name",
    "fieldtype": "Data",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 3
   },
   {
    "fieldname": "qty",
@@ -69,7 +78,8 @@
    "fieldtype": "Float",
    "reqd": 1,
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "uom",
@@ -77,7 +87,8 @@
    "fieldtype": "Link",
    "options": "UOM",
    "read_only": 1,
-   "in_list_view": 1
+   "in_list_view": 1,
+   "columns": 2
   },
   {
    "fieldname": "conversion_factor",
@@ -115,11 +126,39 @@
    "label": "Temporary Station Selection",
    "fieldtype": "Check",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_quantity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "notes_section",
+   "fieldtype": "Section Break",
+   "label": "Preparation Instructions"
+  },
+  {
+   "fieldname": "production_section",
+   "fieldtype": "Section Break",
+   "label": "Production"
+  },
+  {
+   "fieldname": "column_break_stock",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "source_section",
+   "fieldtype": "Section Break",
+   "label": "Source References",
+   "collapsible": 1
   }
  ],
  "permissions": [],
  "istable": 1,
  "editable_grid": 1,
  "sort_field": "idx",
- "sort_order": "ASC"
+ "sort_order": "ASC",
+ "modified": "2026-11-07 21:31:00.752296",
+ "creation": "2026-11-05 07:53:35.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
 }
