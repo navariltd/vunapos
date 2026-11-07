@@ -48,6 +48,24 @@ def _fail(code, message):
 	raise exc
 
 
+def _validate_table_kitchens(profile, tables):
+	from vunapos.services.kitchen_service import routing_scope
+	from vunapos.services.menu_service import resolve_table_floor
+
+	floors = {resolve_table_floor(profile.name, table) for table in tables}
+	if (
+		len(floors) > 1
+		and len(
+			{routing_scope(profile.vunapos_restaurant, profile.vunapos_branch, floor) for floor in floors}
+		)
+		> 1
+	):
+		_fail(
+			"SESSION_KITCHEN_SCOPE_MISMATCH",
+			_("Choose tables served by the same kitchen stations for one session."),
+		)
+
+
 def validate_session(doc):
 	if not doc.flags.restaurant_session_write:
 		_fail("SESSION_MANAGED_OPERATION", _("Manage Restaurant Sessions through the restaurant actions."))
@@ -75,6 +93,8 @@ def validate_session(doc):
 	}
 	if len(menus) > 1:
 		_fail("SESSION_MENU_MISMATCH", _("Choose tables using the same menu for one session."))
+	if doc.status == "Open":
+		_validate_table_kitchens(profile, active_tables)
 
 
 def lock_tables(tables, restaurant, session=None, branch=None):

@@ -270,7 +270,15 @@ def validate_cart(
 		fail("INVALID_RESTAURANT_CART", _("Provide a list of no more than 500 cart items."))
 	lines = _new_lines(items)
 	_validate_lines(profile, service_type, table, lines, price_list=price_list, customer=customer)
-	route_lines(profile.vunapos_restaurant, lines, kitchen_routing, branch=profile.vunapos_branch)
+	from vunapos.services.menu_service import resolve_table_floor
+
+	route_lines(
+		profile.vunapos_restaurant,
+		lines,
+		kitchen_routing,
+		branch=profile.vunapos_branch,
+		floor=resolve_table_floor(profile.name, table),
+	)
 	plan = plan_stock(profile, lines)
 	check_stock(plan)
 	return {

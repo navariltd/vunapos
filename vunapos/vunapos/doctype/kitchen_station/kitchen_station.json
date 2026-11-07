@@ -12,6 +12,8 @@
   "company",
   "column_break_yenl",
   "enabled",
+  "floor_wise_station",
+  "floors",
   "routing_section",
   "item_groups",
   "warehouses_section",
@@ -57,6 +59,21 @@
    "reqd": 1
   },
   {
+   "fieldname": "floor_wise_station",
+   "fieldtype": "Check",
+   "label": "Floor-wise Station",
+   "default": "0",
+   "description": "Restrict this station to the selected floors. Leave unchecked for a shared station, including takeaway orders."
+  },
+  {
+   "fieldname": "floors",
+   "fieldtype": "Table",
+   "label": "Floors",
+   "options": "Kitchen Station Floor",
+   "depends_on": "eval:doc.floor_wise_station",
+   "mandatory_depends_on": "eval:doc.floor_wise_station"
+  },
+  {
    "fieldname": "routing_section",
    "fieldtype": "Section Break",
    "label": "Routing"
@@ -94,7 +111,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-05 07:12:14.326130",
+ "modified": "2026-11-07 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Kitchen Station",

@@ -199,11 +199,16 @@ def validate_floor_doc(doc):
 	if (
 		not doc.is_new()
 		and (doc.has_value_changed("restaurant") or doc.has_value_changed("branch"))
-		and frappe.db.exists(TABLE_DOCTYPE, {"floor": doc.name})
+		and (
+			frappe.db.exists(TABLE_DOCTYPE, {"floor": doc.name})
+			or frappe.db.exists("Kitchen Station Floor", {"floor": doc.name, "parenttype": "Kitchen Station"})
+		)
 	):
 		_throw(
 			"FLOOR_PROFILE_MISMATCH",
-			_("Floor {0} has tables and cannot be moved to another restaurant").format(doc.floor_name),
+			_(
+				"Floor {0} has tables or kitchen assignments and cannot be moved to another Restaurant or Branch."
+			).format(doc.floor_name),
 			{"floor": doc.name},
 		)
 	for row in doc.get("elements") or []:
