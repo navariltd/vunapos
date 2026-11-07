@@ -987,11 +987,13 @@ export function SessionScreen({
                     const first = floor.plan?.floors
                       .flatMap((row) => row.tables)
                       .find((row) => row.name === selectedTables[0]);
-                    updateDraft((current) => ({
-                      ...current,
-                      table: first?.name || null,
-                      table_label: first?.table_label || null,
-                    }));
+                    updateDraft((current) =>
+                      setContext(current, {
+                        service_type: current.service_type,
+                        table: first?.name || null,
+                        table_label: first?.table_label || null,
+                      })
+                    );
                     markChanged();
                     await result.refresh();
                     setTablePicker(false);

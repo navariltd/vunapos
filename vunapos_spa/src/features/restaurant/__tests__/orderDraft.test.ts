@@ -130,6 +130,17 @@ describe("first save", () => {
 		expect(setContext(saved, { service_type: "Takeaway", table: null, table_label: null }).service_type).toBe("Dine In");
 	});
 
+	it("clears temporary kitchen routing when table or service type changes", () => {
+		const draft = { ...fresh(), kitchen_routing: { "GE-BIRYANI": "Ground kitchen" } };
+		expect(setContext(draft, { service_type: draft.service_type, table: "Other table", table_label: "2" }).kitchen_routing).toBeUndefined();
+		expect(setContext(draft, { service_type: "Takeaway", table: null, table_label: null }).kitchen_routing).toBeUndefined();
+	});
+
+	it("retains routing when the table and service type are unchanged", () => {
+		const draft = { ...fresh(), kitchen_routing: { "GE-BIRYANI": "Ground kitchen" } };
+		expect(setContext(draft, { service_type: draft.service_type, table: draft.table, table_label: draft.table_label }).kitchen_routing).toEqual(draft.kitchen_routing);
+	});
+
 	it("keeps lines added while it was running and drops the ones it saved", () => {
 		let draft = addMenuItem(fresh(), biryani, nextId);
 		draft = addMenuItem(draft, tea, nextId);
