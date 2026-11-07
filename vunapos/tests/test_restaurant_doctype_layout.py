@@ -1,6 +1,7 @@
 """Source-level checks for restaurant Desk forms, without a running site."""
 
 import json
+from datetime import datetime
 from pathlib import Path
 from unittest import TestCase
 
@@ -28,6 +29,19 @@ class TestRestaurantDocTypeLayout(TestCase):
 				fields = [field["fieldname"] for field in doc["fields"]]
 				self.assertEqual(len(fields), len(set(fields)))
 				self.assertCountEqual(doc["field_order"], fields)
+
+	def test_exported_audit_metadata_uses_absolute_frappe_datetimes(self):
+		for name, doc in self.schemas.items():
+			with self.subTest(doctype=name):
+				for field in ("creation", "modified"):
+					self.assertRegex(doc[field], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$")
+				creation = datetime.strptime(doc["creation"], "%Y-%m-%d %H:%M:%S.%f")
+				modified = datetime.strptime(doc["modified"], "%Y-%m-%d %H:%M:%S.%f")
+				self.assertLessEqual(creation, modified)
+				for field in ("owner", "modified_by"):
+					self.assertIsInstance(doc[field], str)
+					self.assertTrue(doc[field].strip())
+				self.assertFalse({"creation", "modified", "owner", "modified_by"} & set(doc["field_order"]))
 
 	def test_restaurant_child_tables_link_to_child_doctypes(self):
 		for name, doc in self.schemas.items():

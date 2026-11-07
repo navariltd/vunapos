@@ -20,5 +20,9 @@
  "istable": 1,
  "editable_grid": 1,
  "sort_field": "idx",
- "sort_order": "ASC"
+ "sort_order": "ASC",
+ "creation": "2026-11-05 07:53:35.000000",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "modified": "2026-11-07 21:31:00.752296"
 }
