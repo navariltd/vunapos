@@ -245,6 +245,8 @@ def validate_profile_restaurant(profile, method=None):
 			"Sales Order", {"vunapos_pos_profile": profile.name, "vunapos_restaurant": ["is", "set"]}
 		):
 			frappe.throw(
-				_("This POS Profile has restaurant history. Create a new profile instead of changing its Restaurant or Branch."),
+				_(
+					"This POS Profile has restaurant history. Create a new profile instead of changing its Restaurant or Branch."
+				),
 				title=_("Restaurant"),
 			)
