@@ -37,7 +37,8 @@ class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 		self.assertEqual(icon["link_type"], "External")
 		self.assertEqual(sidebar["name"], "VunaPOS")
 		self.assertTrue(any(row.get("link_to") == "POS Profile" for row in sidebar["items"]))
-		self.assertTrue(any(row.get("link_to") == "Restaurant" for row in sidebar["items"]))
+		# Restaurant navigation can live in its own sidebar; this launcher opens POS setup.
+		self.assertTrue(any(row.get("link_to") == "POS Settings" for row in sidebar["items"]))
 
 	def test_desk_boot_payload_includes_setup_without_changing_terminal_route(self):
 		from frappe.boot import get_app_data

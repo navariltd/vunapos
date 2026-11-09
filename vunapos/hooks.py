@@ -21,6 +21,7 @@ add_to_apps_screen = [
 		"logo": app_logo_url,
 		"title": app_title,
 		"route": "/vunapos",
+		# "desk_route": "/desk/vunapos/pos-profile",
 		"has_permission": "vunapos.permissions.has_app_permission",
 	},
 	{

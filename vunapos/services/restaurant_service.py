@@ -257,9 +257,9 @@ def validate_profile_restaurant(profile, method=None):
 		if frappe.db.exists("Restaurant Session", {"pos_profile": profile.name}) or frappe.db.exists(
 			"Sales Order", {"vunapos_pos_profile": profile.name, "vunapos_restaurant": ["is", "set"]}
 		):
-			_throw(
-				"RESTAURANT_PROFILE_LOCATION_IN_USE",
+			frappe.throw(
 				_(
 					"This POS Profile has restaurant history. Create a new profile instead of changing its Restaurant or Branch."
 				),
+				title=_("Restaurant"),
 			)
