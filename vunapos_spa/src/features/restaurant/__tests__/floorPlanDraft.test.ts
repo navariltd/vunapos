@@ -80,7 +80,7 @@ describe("isDirty and toSavePayload", () => {
 		expect(payload.floors[0]).toMatchObject({ name: "floor-a" });
 		expect(payload.floors[0].tables[0]).toMatchObject({ name: "tbl-1", table_label: "T1" });
 		expect(payload.floors[2]).toMatchObject({ client_id: withFloor.key, floor_name: "Floor 3" });
-		expect(payload.floors[2].tables[0]).toMatchObject({ client_id: withTable.selection?.key, table_label: "T3" });
+		expect(payload.floors[2].tables[0]).toMatchObject({ client_id: withTable.selection?.key, table_label: "T1" });
 		expect(payload.floors[2]).not.toHaveProperty("name");
 	});
 
@@ -113,10 +113,44 @@ describe("floors", () => {
 });
 
 describe("tables and elements", () => {
-	it("picks the next free T label across all floors", () => {
-		expect(nextTableLabel(draft())).toBe("T3");
+	it("picks the next free T label within the selected floor", () => {
+		expect(nextTableLabel(draft(), "floor-a")).toBe("T3");
+		expect(nextTableLabel(draft(), "floor-b")).toBe("T1");
 		const renamed = updateItem(draft(), { kind: "table", floorKey: "floor-a", key: "tbl-2" }, { table_label: "t9" });
-		expect(nextTableLabel(renamed)).toBe("T10");
+		expect(nextTableLabel(renamed, "floor-a")).toBe("T10");
+		expect(nextTableLabel(renamed, "floor-b")).toBe("T1");
+	});
+
+	it("starts a new floor at T1 after another floor has five tables", () => {
+		let existing = draft();
+		for (let index = 0; index < 3; index++) existing = addTable(existing, "floor-a").draft;
+		expect(existing.floors[0].tables.at(-1)?.table_label).toBe("T5");
+		const newFloor = addFloor(existing);
+		const first = addTable(newFloor.draft, newFloor.key);
+		const second = addTable(first.draft, newFloor.key);
+		expect(findItem(first.draft, first.selection)).toMatchObject({ table_label: "T1" });
+		expect(findItem(second.draft, second.selection)).toMatchObject({ table_label: "T2" });
+		expect(second.draft.floors[0].tables.map((table) => table.table_label)).toEqual(["T1", "T2", "T3", "T4", "T5"]);
+		expect(first.selection?.key).not.toBe("tbl-1");
+	});
+
+	it("duplicates using that floor's sequence even when another floor has higher labels", () => {
+		const high = updateItem(draft(), { kind: "table", floorKey: "floor-a", key: "tbl-2" }, { table_label: "T99" });
+		const first = addTable(high, "floor-b");
+		const copy = duplicateItem(first.draft, first.selection);
+		expect(findItem(copy.draft, copy.selection)).toMatchObject({ table_label: "T2" });
+		expect(nextTableLabel(copy.draft, "floor-a")).toBe("T100");
+		expect(nextTableLabel(copy.draft, "floor-b")).toBe("T3");
+	});
+
+	it("keeps the independent sequences after saving and reloading", () => {
+		const loaded = toDraft({ floors: plan.floors.map((floor) => ({ ...floor,
+			tables: floor.name === "floor-b" ? [{ ...plan.floors[0].tables[0], name: "patio-1", floor: "floor-b" }] : floor.tables,
+		})) });
+		expect(nextTableLabel(loaded, "floor-a")).toBe("T3");
+		expect(nextTableLabel(loaded, "floor-b")).toBe("T2");
+		const added = addTable(loaded, "floor-b");
+		expect(toSavePayload(added.draft, "v2").floors[1].tables.map((table) => table.table_label)).toEqual(["T1", "T2"]);
 	});
 
 	it("adds tables and elements inside the canvas and selects them", () => {
@@ -172,7 +206,7 @@ describe("after save", () => {
 					background_color: null,
 					background_image: null,
 					elements: [],
-					tables: [{ name: "tbl-3", floor: "floor-c", table_label: "T3", seats: 4, shape: "Square", x: 460, y: 310, width: 80, height: 80, rotation: 0, is_active: true }],
+					tables: [{ name: "tbl-3", floor: "floor-c", table_label: "T1", seats: 4, shape: "Square", x: 460, y: 310, width: 80, height: 80, rotation: 0, is_active: true }],
 				},
 			],
 		});

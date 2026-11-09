@@ -191,8 +191,9 @@ export function removeUnsavedFloor(draft: FloorPlanDraft, floorKey: string): Flo
 
 // ---- tables and elements ----
 
-export function nextTableLabel(draft: FloorPlanDraft): string {
-	const labels = draft.floors.flatMap((floor) => floor.tables.map((table) => labelKey(table.table_label)));
+export function nextTableLabel(draft: FloorPlanDraft, floorKey: string): string {
+	// Labels are unique within a floor; client keys remain unique across the draft.
+	const labels = (findFloor(draft, floorKey)?.tables ?? []).map((table) => labelKey(table.table_label));
 	const taken = new Set(labels);
 	let highest = 0;
 	for (const label of labels) {
@@ -216,7 +217,7 @@ export function addTable(draft: FloorPlanDraft, floorKey: string): { draft: Floo
 	const [key, next] = withNewKey(draft, "table");
 	const table: DraftTable = clampBox({
 		key,
-		table_label: nextTableLabel(draft),
+		table_label: nextTableLabel(draft, floorKey),
 		seats: TABLE_DEFAULT.seats,
 		shape: TABLE_DEFAULT.shape,
 		width: TABLE_DEFAULT.width,
@@ -264,7 +265,7 @@ export function duplicateItem(draft: FloorPlanDraft, selection: Selection): { dr
 	if (selection.kind === "table") {
 		const source = item as DraftTable;
 		// No name: the copy is a new table and is saved with its key as client_id.
-		const copy: DraftTable = clampBox({ ...source, ...moved, key, name: undefined, table_label: nextTableLabel(draft) });
+		const copy: DraftTable = clampBox({ ...source, ...moved, key, name: undefined, table_label: nextTableLabel(draft, selection.floorKey) });
 		return {
 			draft: mapFloor(next, selection.floorKey, (floor) => ({ ...floor, tables: [...floor.tables, copy] })),
 			selection: { ...selection, key },
