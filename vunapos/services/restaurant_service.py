@@ -1,7 +1,7 @@
 """The restaurant behind a POS Profile.
 
 A POS Profile is a till in one Branch. Restaurant is the shared Company-level
-business; its service types and order rules apply across its branch locations.
+business; service types can have branch-specific overrides.
 """
 
 import frappe
@@ -60,6 +60,13 @@ def validate_branch_doc(doc, method=None):
 		):
 			if frappe.get_cached_value("Restaurant", floor.restaurant, "company") != company:
 				conflicts.append(floor.name)
+		for restaurant in frappe.get_all(
+			"Restaurant Service Type Assignment",
+			filters={"branch": doc.name, "parenttype": "Restaurant"},
+			pluck="parent",
+		):
+			if frappe.get_cached_value("Restaurant", restaurant, "company") != company:
+				conflicts.append(restaurant)
 		if conflicts:
 			_throw(
 				"RESTAURANT_BRANCH_COMPANY_MISMATCH",
@@ -144,22 +151,28 @@ def require_restaurant_access(restaurant, user=None, branch=None):
 
 def validate_restaurant_doc(doc):
 	"""Restaurant validate. Desk-only, so it uses frappe.throw."""
-	defaults = [row.service_type for row in doc.get("service_types") or [] if cint(row.is_default)]
-	if len(defaults) > 1:
-		frappe.throw(
-			_("Only one service type can be the default. Untick Default on all but one of: {0}").format(
-				", ".join(defaults)
-			),
-			title=_("Service Types"),
-		)
-	seen = set()
+	seen, defaults = set(), set()
 	for row in doc.get("service_types") or []:
-		if row.service_type in seen:
+		branch = row.get("branch") or None
+		scope = branch or _("Unspecified branches")
+		if branch:
+			validate_branch_company(branch, doc.company)
+		key = (row.service_type, branch)
+		if key in seen:
 			frappe.throw(
-				_("Service type {0} is listed more than once").format(row.service_type),
+				_("Row {0}: Service type {1} is listed more than once for {2}.").format(
+					row.idx, row.service_type, scope
+				),
 				title=_("Service Types"),
 			)
-		seen.add(row.service_type)
+		seen.add(key)
+		if cint(row.is_default):
+			if branch in defaults:
+				frappe.throw(
+					_("Only one service type can be the default for {0}.").format(scope),
+					title=_("Service Types"),
+				)
+			defaults.add(branch)
 	if doc.default_menu:
 		menu = frappe.get_cached_doc("Restaurant Menu", doc.default_menu)
 		menu_company = menu.company
