@@ -254,6 +254,21 @@ class TestRestaurantMenu(IntegrationTestCase):
 		self.menu.save()
 		self.assertEqual(get_menu(self.profile.name, self.service)["items"], [])
 
+	def test_action_migration_preserves_exclusions_and_available_can_enable_again(self):
+		from vunapos.patches.v1_0.menu_availability_replaces_action import execute
+
+		self.menu.items[0].action = "Exclude"
+		self.menu.save()
+		execute()
+		execute()
+		self.menu.reload()
+		self.assertEqual(self.menu.items[0].action, "Include")
+		self.assertEqual(self.menu.items[0].available, 0)
+		self.assertEqual(get_menu(self.profile.name, self.service)["items"], [])
+		self.menu.items[0].available = 1
+		self.menu.save()
+		self.assertTrue(get_menu(self.profile.name, self.service)["items"])
+
 	def test_template_modifiers_inherit_but_direct_assignments_override(self):
 		items = {
 			"Template": frappe._dict(
