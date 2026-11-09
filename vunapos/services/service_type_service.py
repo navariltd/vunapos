@@ -33,13 +33,17 @@ def _enabled_service_types():
 
 
 def get_profile_service_types(profile):
-	"""Return the enabled service types the profile's restaurant offers, in display order."""
+	"""Use a branch's explicit list, otherwise the Restaurant-wide list."""
 	enabled = _enabled_service_types()
 	restaurant = get_profile_restaurant(profile)
 	rows = [
 		row for row in (restaurant.get("service_types") if restaurant else None) or [] if row.service_type
 	]
-	if rows:
+	configured = bool(rows)
+	branch = profile.get("vunapos_branch") or None
+	branch_rows = [row for row in rows if branch and row.get("branch") == branch]
+	rows = branch_rows or [row for row in rows if not row.get("branch")]
+	if configured:
 		offered_names = {row.service_type for row in rows}
 		offered = [row for row in enabled if row.name in offered_names]
 		ticked = next((row.service_type for row in rows if cint(row.is_default)), None)

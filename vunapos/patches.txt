@@ -9,6 +9,7 @@ vunapos.patches.v1_0.scope_kitchen_station_names_by_branch
 vunapos.patches.v1_0.backfill_restaurant_document_locations
 vunapos.patches.v1_0.migrate_menu_sections
 vunapos.patches.v1_0.move_modifiers_to_items
+vunapos.patches.v1_0.menu_availability_replaces_action
 vunapos.patches.v1_0.move_restaurant_cancel_pin_to_profile
 # Patches added in this section will be executed after doctypes are migrated
 vunapos.patches.v1_0.remove_offline_session_ttl_field #1

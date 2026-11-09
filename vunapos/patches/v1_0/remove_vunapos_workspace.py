@@ -5,7 +5,7 @@ def execute():
 	"""Remove the legacy Desk workspace now that the app opens the POS directly."""
 	icon_names = frappe.get_all(
 		"Desktop Icon",
-		filters={"app": "vunapos", "icon_type": "App"},
+		filters={"app": "vunapos", "icon_type": "App", "label": ["!=", "VunaPOS Setup"]},
 		pluck="name",
 	)
 	if frappe.db.exists("Desktop Icon", "VunaPOS") and "VunaPOS" not in icon_names:

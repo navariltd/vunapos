@@ -19,6 +19,12 @@ def restaurant_schemas():
 
 
 class TestRestaurantDocTypeLayout(TestCase):
+	def test_service_assignment_follows_service_branch_default_order(self):
+		self.assertEqual(
+			self.schemas["Restaurant Service Type Assignment"]["field_order"],
+			["service_type", "branch", "is_default"],
+		)
+
 	@classmethod
 	def setUpClass(cls):
 		cls.schemas = restaurant_schemas()

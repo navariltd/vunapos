@@ -48,6 +48,7 @@ import { useRestaurantPricing } from "../hooks/useRestaurantPricing";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import { Sheet } from "./Sheet";
 import { TablePlanPicker } from "./TablePlanPicker";
+import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
@@ -108,6 +109,7 @@ export function SessionScreen({
   );
   const [tablePicker, setTablePicker] = useState(false);
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
+  const [tableAction, setTableAction] = useState<"join" | "transfer">("join");
   const [roundsOpen, setRoundsOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
@@ -499,9 +501,7 @@ export function SessionScreen({
     }
     if (session) {
       setSelectedTables((previous) =>
-        previous.includes(table.name)
-          ? previous.filter((name) => name !== table.name)
-          : [...previous, table.name]
+        selectVisitTable(previous, table.name, tableAction)
       );
     } else {
       try {
@@ -605,6 +605,7 @@ export function SessionScreen({
               );
               setCategory("");
               if (service.requires_table) {
+                setTableAction("join");
                 setSelectedTables(
                   session?.tables
                     .filter((row) => !row.released_at)
@@ -624,6 +625,7 @@ export function SessionScreen({
             variant="ghost"
             disabled={readOnly}
             onClick={() => {
+              setTableAction("join");
               setSelectedTables(
                 session?.tables
                   .filter((row) => !row.released_at)
@@ -641,6 +643,36 @@ export function SessionScreen({
               ? `Table ${activeDraft.table_label}`
               : "Select table"}
           </Button>
+        ) : null}
+        {type?.requires_table && session ? (
+          <>
+            <Button
+              variant="ghost"
+              disabled={readOnly || busy}
+              onClick={() => {
+                setTableAction("transfer");
+                setSelectedTables([]);
+                setTablePicker(true);
+              }}
+            >
+              Transfer table
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={readOnly || busy}
+              onClick={() => {
+                setTableAction("join");
+                setSelectedTables(
+                  session.tables
+                    .filter((row) => !row.released_at)
+                    .map((row) => row.table)
+                );
+                setTablePicker(true);
+              }}
+            >
+              Join tables
+            </Button>
+          </>
         ) : null}
         <label>
           Guests{" "}
@@ -955,6 +987,13 @@ export function SessionScreen({
           plan={floor.plan}
           statuses={status.data}
           multiple={Boolean(session)}
+          transferFrom={
+            session && tableAction === "transfer"
+              ? session.tables
+                  .filter((row) => !row.released_at)
+                  .map((row) => row.table)
+              : undefined
+          }
           selectedTables={
             session
               ? selectedTables
@@ -1010,7 +1049,9 @@ export function SessionScreen({
                   }
                 }}
               >
-                Save assigned tables ({selectedTables.length})
+                {tableAction === "transfer"
+                  ? "Confirm transfer"
+                  : "Update tables"}
               </Button>
             ) : undefined
           }

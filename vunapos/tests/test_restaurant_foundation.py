@@ -126,7 +126,10 @@ class TestRestaurantFoundation(IntegrationTestCase):
 		doc.is_new.return_value = False
 		doc.has_value_changed.return_value = True
 		doc.get.return_value = "Company B"
-		with patch("frappe.get_all", side_effect=[["Profile A"], [], [], []]):
+		with patch(
+			"frappe.get_all",
+			side_effect=lambda doctype, **kwargs: ["Profile A"] if doctype == "POS Profile" else [],
+		):
 			with self.assertRaises(frappe.ValidationError):
 				validate_branch_doc(doc)
 

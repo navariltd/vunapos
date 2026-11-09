@@ -426,13 +426,16 @@ def validate_menu_doc(doc):
 		groups.add(row.item_group)
 	items = set()
 	for row in doc.get("items") or []:
-		if row.action != EXCLUDE and not row.get("menu_section") and not doc.get("item_groups"):
+		if (
+			row.action != EXCLUDE
+			and cint(row.get("available", 1))
+			and not row.get("menu_section")
+			and not doc.get("item_groups")
+		):
 			frappe.throw(_("Select a Section / Course for item {0}").format(row.item_code))
 		if row.item_code in items:
 			frappe.throw(
-				_("Item {0} is listed more than once. Keep one row: Include or Exclude.").format(
-					row.item_code
-				),
+				_("Item {0} is listed more than once. Keep one row per item.").format(row.item_code),
 				title=_("Menu"),
 			)
 		items.add(row.item_code)

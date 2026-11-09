@@ -27,12 +27,14 @@ import type {
 import { FloorCanvas } from "./FloorCanvas";
 import { FloorTabs } from "./FloorTabs";
 import { StatusLegend } from "./StatusLegend";
+import { transferFloors } from "../tableTransfer";
 
 type Props = {
   plan: FloorPlanDTO | null;
   statuses: TableStatusDTO[] | null;
   selectedTables: string[];
   multiple?: boolean;
+  transferFrom?: string[];
   busy?: boolean;
   error?: string | null;
   loading?: boolean;
@@ -48,6 +50,7 @@ export function TablePlanPicker({
   statuses,
   selectedTables,
   multiple,
+  transferFrom,
   busy,
   error,
   loading,
@@ -67,8 +70,13 @@ export function TablePlanPicker({
   const [zoom, setZoom] = useState(1);
   const now = useNow();
   const floors = useMemo(
-    () => activeSelectionFloors(plan?.floors || []),
-    [plan]
+    () =>
+      activeSelectionFloors(
+        transferFrom
+          ? transferFloors(plan?.floors || [], statuses || [], transferFrom)
+          : plan?.floors || []
+      ),
+    [plan, statuses, transferFrom]
   );
   const floor =
     floors.find((row) => row.name === floorName) ??
@@ -147,10 +155,16 @@ export function TablePlanPicker({
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant p-4">
           <div>
             <h2 id={titleId} className="text-base font-semibold">
-              {multiple ? "Assign tables" : "Select table"}
+              {transferFrom
+                ? "Transfer table"
+                : multiple
+                ? "Join tables"
+                : "Select table"}
             </h2>
             <p id={descriptionId} className="text-xs text-on-surface-variant">
-              {multiple
+              {transferFrom
+                ? "Choose a free destination, then confirm. Your current tables will be released."
+                : multiple
                 ? "Select tables to join, then confirm. Occupied tables belonging to other sessions cannot be joined."
                 : "Select a free table to return to items, or an occupied table to reopen its session."}
             </p>

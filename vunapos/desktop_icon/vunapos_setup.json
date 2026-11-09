@@ -1,0 +1,19 @@
+{
+ "app": "vunapos",
+ "creation": "2026-11-09 10:29:31.371308",
+ "docstatus": 0,
+ "doctype": "Desktop Icon",
+ "hidden": 0,
+ "icon_type": "App",
+ "idx": 101,
+ "label": "VunaPOS Setup",
+ "link": "/desk/vunapos/pos-profile",
+ "link_type": "External",
+ "logo_url": "/assets/vunapos/logo.png",
+ "modified": "2026-11-09 10:38:21.272195",
+ "modified_by": "Administrator",
+ "name": "VunaPOS Setup",
+ "owner": "Administrator",
+ "roles": [],
+ "standard": 1
+}
