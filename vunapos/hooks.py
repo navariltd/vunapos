@@ -22,8 +22,18 @@ add_to_apps_screen = [
 		"title": app_title,
 		"route": "/vunapos",
 		"has_permission": "vunapos.permissions.has_app_permission",
-	}
+	},
+	{
+		"name": "vunapos_setup",
+		"logo": app_logo_url,
+		"title": "VunaPOS Setup",
+		"route": "/desk/vunapos/pos-profile",
+		"has_permission": "vunapos.permissions.has_app_permission",
+	},
 ]
+
+# Some Desk versions expose only the first hook entry in their desktop payload.
+boot_session = "vunapos.boot.add_setup_app_entry"
 
 fixtures = [
 	{
