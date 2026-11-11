@@ -94,7 +94,7 @@ export function PosHomeScreen({
   const toast = useToast();
   const { companyUrl } = useAppSession();
   const { connectionStatus } = useNetworkStatus();
-  const isOffline = connectionStatus !== "online";
+  const isOffline = connectionStatus === "offline";
   const isSalesOrder = orderType === "Order";
   const [searchQuery, setSearchQuery] = useState("");
   const [barcodeScannerVisible, setBarcodeScannerVisible] = useState(false);

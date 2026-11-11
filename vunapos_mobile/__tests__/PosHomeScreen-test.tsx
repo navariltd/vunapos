@@ -462,6 +462,31 @@ describe("PosHomeScreen", () => {
     expect(mockResolveBarcode).toHaveBeenCalled();
   });
 
+  it("shows server search results while device reachability is unknown", async () => {
+    const serverItem = {
+      actual_qty: 3,
+      item_code: "SERVER-001",
+      item_name: "Server-only item",
+      rate: 150,
+    };
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    mockUsePosItemSearch.mockReturnValue({
+      cachedItems: [],
+      error: null,
+      hasLoaded: true,
+      isLoading: false,
+      items: [serverItem],
+      reload: jest.fn(),
+    });
+
+    const screen = await render(
+      <PosHomeScreen cartItemCount={0} onAddToCart={onAddToCart} onOpenCart={jest.fn()} />,
+    );
+    await fireEvent.press(screen.getByLabelText("Search for one item"));
+
+    expect(screen.getByText("Card: Server-only item")).toBeTruthy();
+  });
+
   it("renders compact catalogue rows when the POS profile hides item images", async () => {
     const item = {
       actual_qty: 3,
