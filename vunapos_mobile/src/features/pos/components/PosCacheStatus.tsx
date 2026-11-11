@@ -33,7 +33,7 @@ export function PosCacheStatus({
   const label = isOffline
     ? timestamp
       ? `Offline · Updated ${timestamp}`
-      : "Offline · saved data unavailable"
+      : "Connection unavailable · reconnect to refresh"
     : isRefreshing
       ? timestamp
         ? `Refreshing · Updated ${timestamp}`

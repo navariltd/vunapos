@@ -47,7 +47,7 @@ export function usePosRefreshTriggers() {
   const probeServerReachability = useCallback(async () => {
     if (
       authState !== "signedIn" ||
-      connectionStatus !== "online" ||
+      connectionStatus === "offline" ||
       !companyUrl ||
       !sessionId
     ) {
@@ -81,8 +81,10 @@ export function usePosRefreshTriggers() {
         });
         if (expiredSessionHandled.current !== sessionId) {
           expiredSessionHandled.current = sessionId;
-          await invalidateSession();
+          await invalidateSession(sessionId, companyUrl);
         }
+      } else if (status === "permissionDenied") {
+        recordServerReachability({ status: "reachable" });
       } else {
         recordServerReachability({
           status: "unreachable",
@@ -104,7 +106,7 @@ export function usePosRefreshTriggers() {
   const probeAndRefresh = useCallback(async (source: "foreground" | "reconnect") => {
     if (
       authState !== "signedIn" ||
-      connectionStatus !== "online" ||
+      connectionStatus === "offline" ||
       !companyUrl ||
       !sessionId ||
       probeInFlight.current === scope
@@ -114,7 +116,7 @@ export function usePosRefreshTriggers() {
     probeInFlight.current = scope;
     try {
       const result = await probeServerReachability();
-      if (!result.reachable || result.repaired) return;
+      if (!result.reachable || result.repaired || currentScope.current !== scope) return;
       // Reachability is already established by validateFrappeSession above.
       // Let the cache owner perform the one configuration request so a
       // foreground/reconnect repair cannot fetch and discard an identical
@@ -170,7 +172,7 @@ export function usePosRefreshTriggers() {
   // One scheduler owns freshness for every mounted cached resource. Individual
   // resources register their loaders but never create their own intervals.
   useEffect(() => {
-    if (authState !== "signedIn" || connectionStatus !== "online") return;
+    if (authState !== "signedIn" || connectionStatus === "offline") return;
     const timer = setInterval(() => {
       void refreshRegisteredPosResources();
     }, POS_CACHE_TTL_MS);

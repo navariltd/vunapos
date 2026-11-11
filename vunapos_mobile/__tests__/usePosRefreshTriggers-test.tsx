@@ -89,6 +89,26 @@ describe("usePosRefreshTriggers", () => {
     expect(mockRecoverPosResources).toHaveBeenCalledWith("foreground");
   });
 
+  it("revalidates after foregrounding when Android reachability is still unknown", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    await renderHook(() => usePosRefreshTriggers());
+    appStateCallback?.("background");
+    appStateCallback?.("active");
+
+    await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
+    await waitFor(() => expect(mockRecoverPosResources).toHaveBeenCalledWith("foreground"));
+  });
+
+  it("treats a permission denial as a reachable server without expiring the SID", async () => {
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
+    mockValidateFrappeSession.mockResolvedValue("permissionDenied");
+    await renderHook(() => usePosRefreshTriggers());
+
+    await waitFor(() => expect(mockValidateFrappeSession).toHaveBeenCalled());
+    expect(mockInvalidateSession).not.toHaveBeenCalled();
+    expect(getServerReachabilityDiagnostics().status).toBe("reachable");
+  });
+
   it("runs the app-level resource scheduler at the 60-second boundary", async () => {
     jest.useFakeTimers();
     mockUseNetworkStatus.mockReturnValue({ connectionStatus: "online" });
@@ -97,6 +117,16 @@ describe("usePosRefreshTriggers", () => {
     await act(async () => {
       jest.advanceTimersByTime(60_000);
     });
+
+    expect(mockRefreshRegisteredPosResources).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps scheduled revalidation available when device reachability is unknown", async () => {
+    jest.useFakeTimers();
+    mockUseNetworkStatus.mockReturnValue({ connectionStatus: "unknown" });
+    await renderHook(() => usePosRefreshTriggers());
+
+    await act(async () => { jest.advanceTimersByTime(60_000); });
 
     expect(mockRefreshRegisteredPosResources).toHaveBeenCalledTimes(1);
   });

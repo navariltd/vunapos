@@ -286,7 +286,8 @@ function PaymentHistoryContext({
     { cashier, customer, fromDate, modeOfPayment, reference, status, toDate },
     !hasInvalidDateRange,
   );
-  const isOffline = connectionStatus !== "online";
+  const isOffline = connectionStatus === "offline";
+  const hasHistoryRecords = Boolean(history.data?.payments.length);
   const toast = useToast();
 
   useEffect(() => {
@@ -573,7 +574,7 @@ function PaymentHistoryContext({
           The end date cannot be before the start date.
         </Text>
       ) : null}
-      {isOffline ? (
+      {isOffline && !hasHistoryRecords ? (
         <Text style={[styles.stateText, { color: palette.onSurfaceMuted }]}>
           Reconnect to load payment history.
         </Text>
@@ -610,7 +611,7 @@ function PaymentHistoryContext({
         )
       ) : null}
       <PosCacheStatus
-        isOffline={isOffline}
+        isOffline={isOffline && hasHistoryRecords}
         isRefreshing={history.isRefreshing}
         isStale={history.isStale}
         lastUpdated={history.lastUpdated}

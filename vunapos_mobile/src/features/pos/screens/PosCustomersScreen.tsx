@@ -278,7 +278,7 @@ export function PosCustomersScreen({
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
           <PosCacheStatus
-            isOffline={connectionStatus !== "online"}
+            isOffline={connectionStatus === "offline"}
             isRefreshing={directory.isRefreshing}
             isStale={directory.isStale}
             lastUpdated={directory.lastUpdated}
@@ -298,7 +298,7 @@ export function PosCustomersScreen({
             onPrevious={() => updatePage(Math.max(0, start - directory.data!.limit))}
           />
           <PosCacheStatus
-            isOffline={connectionStatus !== "online"}
+            isOffline={connectionStatus === "offline"}
             isRefreshing={directory.isRefreshing}
             isStale={directory.isStale}
             lastUpdated={directory.lastUpdated}
