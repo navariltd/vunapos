@@ -1794,17 +1794,20 @@ describe("PosCheckoutScreen", () => {
       ),
     );
 
-    screen.rerender(
-      <PosCheckoutScreen
-        currency="KES"
-        items={[]}
-        onBack={jest.fn()}
-        onComplete={onComplete}
-        orderType="Invoice"
-        saleCustomer={{ customer: "CUST-002", customerName: "Other Corp" }}
-        subtotal={100}
-      />,
-    );
+    await act(async () => {
+      screen.rerender(
+        <PosCheckoutScreen
+          currency="KES"
+          items={[]}
+          onBack={jest.fn()}
+          onComplete={onComplete}
+          orderType="Invoice"
+          saleCustomer={{ customer: "CUST-002", customerName: "Other Corp" }}
+          subtotal={100}
+        />,
+      );
+      await Promise.resolve();
+    });
 
     await waitFor(() =>
       expect(resolveCustomerPhone).toHaveBeenCalledWith({

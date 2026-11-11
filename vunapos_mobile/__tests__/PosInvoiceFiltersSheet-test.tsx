@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 jest.mock("react-native-paper", () => ({
   Text: require("react-native").Text,
@@ -28,8 +28,6 @@ const filters: PosInvoiceHistoryFilters = {
 };
 
 describe("PosInvoiceFiltersSheet", () => {
-  afterEach(async () => cleanup());
-
   it("labels the current-shift choice Yes and No without changing its boolean filter", async () => {
     const onChange = jest.fn();
     const props = {
@@ -44,7 +42,7 @@ describe("PosInvoiceFiltersSheet", () => {
     const screen = await render(<PosInvoiceFiltersSheet {...props} />);
 
     expect(screen.getByText("Yes")).toBeTruthy();
-    fireEvent(screen.getByLabelText("Current shift only"), "valueChange", false);
+    await fireEvent(screen.getByLabelText("Current shift only"), "valueChange", false);
     expect(onChange).toHaveBeenCalledWith("currentShift", false);
 
     await screen.rerender(
@@ -53,7 +51,7 @@ describe("PosInvoiceFiltersSheet", () => {
         filters={{ ...filters, currentShift: false }}
       />,
     );
-    await waitFor(() => expect(screen.getByText("No")).toBeTruthy());
+    expect(screen.getByText("No")).toBeTruthy();
     expect(screen.queryByText("On")).toBeNull();
     expect(screen.queryByText("Off")).toBeNull();
   });
