@@ -202,6 +202,7 @@ describe("usePosRealtimeCoordinator", () => {
       await oldRequest;
     });
     expect(hook.result.current.isScopeInvalidated).toBe(true);
+    expect(mockClearResource).not.toHaveBeenCalled();
     await act(async () => {
       finishNewRead?.(null);
       await newRequest;

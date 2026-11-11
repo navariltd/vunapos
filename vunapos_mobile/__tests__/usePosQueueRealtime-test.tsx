@@ -15,7 +15,8 @@ jest.mock("@/sync/realtimeInvalidation", () => ({
 
 const mockTake = jest.fn();
 jest.mock("@/sync/queuedCheckoutRegistry", () => ({
-  takeQueuedCheckout: (name: string) => mockTake(name),
+  clearQueuedCheckouts: jest.fn(),
+  takeQueuedCheckout: (...args: unknown[]) => mockTake(...args),
 }));
 
 const mockInvalidateHeld = jest.fn();
@@ -72,7 +73,7 @@ describe("usePosQueueRealtime", () => {
       });
     });
 
-    expect(mockTake).toHaveBeenCalledWith("SINV-QUEUE-001");
+    expect(mockTake).toHaveBeenCalledWith("https://vuna.example.com", "sid-1", "SINV-QUEUE-001");
     expect(mockInvalidateHeld).toHaveBeenCalledWith({
       companyUrl: "https://vuna.example.com",
       posProfile: "POS-1",
@@ -110,6 +111,31 @@ describe("usePosQueueRealtime", () => {
     });
 
     expect(mockInvalidateHeld).toHaveBeenCalled();
+    expect(mockInvalidateSale).not.toHaveBeenCalled();
+    expect(mockRefreshStock).not.toHaveBeenCalled();
+  });
+
+  it("stops an old session's queued refresh after a new session takes ownership", async () => {
+    mockTake.mockReturnValue({ items: [{ item_code: "ITEM-A", qty: 1 }], posProfile: "POS-1" });
+    let finishInvalidation!: () => void;
+    mockInvalidateHeld.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishInvalidation = resolve;
+    }));
+    const hook = await renderHook(() => usePosQueueRealtime());
+    await waitFor(() => expect(mockRegister).toHaveBeenCalled());
+    const oldHandler = mockRegister.mock.calls[0][1] as (payload: unknown) => Promise<void>;
+    let pending!: Promise<void>;
+    await act(async () => {
+      pending = oldHandler({ invoice_name: "QUEUE-1", pos_profile: "POS-1", status: "Submitted" });
+      await Promise.resolve();
+    });
+
+    mockUseAppSession.mockReturnValue({
+      authState: "signedIn", companyUrl: "https://other.example.com", sessionId: "sid-2",
+    } as unknown as ReturnType<typeof useAppSession>);
+    await hook.rerender(undefined);
+    await act(async () => { finishInvalidation(); await pending; });
+
     expect(mockInvalidateSale).not.toHaveBeenCalled();
     expect(mockRefreshStock).not.toHaveBeenCalled();
   });

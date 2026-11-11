@@ -135,6 +135,14 @@ describe("frappeClient", () => {
       ).rejects.toMatchObject({ code: "login" });
     });
 
+    it("does not accept an earlier SID replaced by a Guest cookie", async () => {
+      fetchMock.mockResolvedValue(mockResponse({
+        setCookies: ["sid=authenticated; Path=/", "sid=Guest; Path=/"],
+      }));
+      await expect(signInToFrappe("https://vuna.example.com", "cashier", "secret"))
+        .rejects.toMatchObject({ code: "login" });
+    });
+
     it("rejects missing sessions, failed logins, and invalid company URLs", async () => {
       fetchMock.mockResolvedValueOnce(mockResponse());
       fetchMock.mockResolvedValueOnce(mockResponse({ ok: false, status: 401 }));
@@ -295,6 +303,15 @@ describe("frappeClient", () => {
         .resolves.toBe("expired");
     });
 
+    it("distinguishes ordinary 403 permission denial from session expiry", async () => {
+      fetchMock.mockResolvedValue(mockResponse({
+        json: { exc_type: "PermissionError", exception: "Not permitted to read this document" },
+        ok: false, status: 403,
+      }));
+      await expect(validateFrappeSession("https://vuna.example.com", "sid"))
+        .resolves.toBe("permissionDenied");
+    });
+
     it.each([
       mockResponse({ json: "<html>Proxy authentication failed</html>", ok: false, status: 403 }),
       mockResponse({ json: "<html>Gateway error</html>", ok: false, status: 502 }),
@@ -414,6 +431,14 @@ describe("frappeClient", () => {
         },
         ok: false,
         status: 403,
+      }));
+      await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
+        .rejects.toMatchObject({ code: "session" });
+    });
+
+    it("recognizes an authentication denial inside a successful Frappe envelope", async () => {
+      fetchMock.mockResolvedValue(mockResponse({
+        json: { message: { ok: false, errors: [{ code: "SessionExpired", message: "Sign in again" }] } },
       }));
       await expect(getVunaMethod("https://vuna.example.com", "sid", "method"))
         .rejects.toMatchObject({ code: "session" });

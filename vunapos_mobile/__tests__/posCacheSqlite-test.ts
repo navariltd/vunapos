@@ -78,4 +78,46 @@ describe("SQLite cache retention query", () => {
     const restartedProcess = freshProcessCache();
     await expect(restartedProcess.read(key)).resolves.toBeNull();
   });
+
+  it("durably invalidates a departing SID even when SQLite deletion fails", async () => {
+    const rows = new Map<string, { cache_key: string; namespace: string; resource: string;
+      schema_version: number; payload: string; fetched_at: number; expires_at: number; accessed_at: number }>();
+    const database = {
+      getFirstAsync: jest.fn(async (_query: string, cacheKey: string) => rows.get(cacheKey) ?? null),
+      runAsync: jest.fn(async (query: string, ...args: unknown[]) => {
+        if (query.includes("INSERT OR REPLACE INTO pos_cache_entries")) {
+          const [cache_key, namespace, resource, schema_version, payload,
+            fetched_at, expires_at, accessed_at] = args as [string, string, string, number, string, number, number, number];
+          rows.set(cache_key, { cache_key, namespace, resource, schema_version,
+            payload, fetched_at, expires_at, accessed_at });
+        } else if (query.includes("SET schema_version = 0")) {
+          const [companyUrl, userId] = args;
+          for (const row of rows.values()) {
+            const scope = JSON.parse(row.namespace) as { companyUrl: string; userId: string };
+            if (scope.companyUrl === companyUrl && scope.userId === userId) row.schema_version = 0;
+          }
+        } else if (query.includes("DELETE FROM pos_cache_entries WHERE json_extract")) {
+          throw new Error("SQLite delete failed after tombstone");
+        }
+      }),
+      withTransactionAsync: jest.fn(async (callback: () => Promise<void>) => callback()),
+    };
+    const processCache = () => {
+      jest.resetModules();
+      const { openPosDatabase: open } = require("@/services/posDatabase") as typeof import("@/services/posDatabase");
+      jest.mocked(open).mockResolvedValue(database as never);
+      return (require("@/services/posCache") as typeof import("@/services/posCache")).posCache;
+    };
+    const key = { resource: "active-cart", scope: {
+      companyUrl: "https://pos.example.test", posProfile: "POS-1", userId: "sid-old",
+      company: "Company A", warehouse: "Main",
+    } };
+    const first = processCache();
+    await first.write(key, { items: ["old sale"] }, 60_000);
+    await first.clearSession(key.scope.companyUrl, key.scope.userId);
+    expect(rows.size).toBe(1);
+
+    const restarted = processCache();
+    await expect(restarted.read(key)).resolves.toBeNull();
+  });
 });

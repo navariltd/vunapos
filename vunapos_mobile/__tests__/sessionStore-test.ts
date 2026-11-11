@@ -11,6 +11,9 @@ import {
   clearStoredSession,
   loadStoredCompanyUrl,
   loadStoredSessionId,
+  loadStoredRevokedSession,
+  markStoredSessionRevoked,
+  clearStoredRevokedSession,
   persistCompanyUrl,
   persistSessionId,
 } from '@/services/sessionStore';
@@ -40,6 +43,18 @@ describe('sessionStore', () => {
 
     expect(secureStore.setItemAsync).toHaveBeenCalledWith('vunapos_session_id', 'session-id');
     expect(secureStore.getItemAsync).toHaveBeenCalledWith('vunapos_session_id');
+  });
+
+  it('records revoked credentials with their site so a failed delete cannot restore them', async () => {
+    secureStore.getItemAsync.mockResolvedValue(JSON.stringify({ companyUrl: 'https://vuna.example.com', sessionId: 'old-sid' }));
+    await markStoredSessionRevoked('https://vuna.example.com', 'old-sid');
+    await expect(loadStoredRevokedSession()).resolves.toEqual({
+      companyUrl: 'https://vuna.example.com', sessionId: 'old-sid',
+    });
+    await clearStoredRevokedSession();
+    expect(secureStore.setItemAsync).toHaveBeenCalledWith('vunapos_revoked_session',
+      JSON.stringify({ companyUrl: 'https://vuna.example.com', sessionId: 'old-sid' }));
+    expect(secureStore.deleteItemAsync).toHaveBeenCalledWith('vunapos_revoked_session');
   });
 
   it('clears only the session when signing out', async () => {

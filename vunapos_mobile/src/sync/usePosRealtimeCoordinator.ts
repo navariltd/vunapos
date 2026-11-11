@@ -63,6 +63,7 @@ export function usePosRealtimeCoordinator() {
 
   useEffect(() => {
     if (!enabled) return;
+    let current = true;
     const revalidationScope = JSON.stringify([companyUrl, sessionId]);
     const workspaceScope = companyUrl && sessionId
       ? { companyUrl, userId: sessionId, posProfile: "workspace" }
@@ -71,8 +72,9 @@ export function usePosRealtimeCoordinator() {
       ? { scope: workspaceScope, resource: POS_WORKSPACE_RESOURCE }
       : null;
     const unregisterOperationalRecovery = registerOperationalCacheRecovery(async () => {
-      if (!workspaceKey || !companyUrl || !sessionId) return;
+      if (!current || !workspaceKey || !companyUrl || !sessionId) return;
       const snapshot = await posCache.read<PosBootstrapData>(workspaceKey);
+      if (!current) return;
       const posProfile = snapshot?.data.pos_profile?.name ?? activeProfile.current;
       if (!posProfile) return;
       await invalidateOperationalPosCache({ companyUrl, posProfile, sessionId });
@@ -80,6 +82,7 @@ export function usePosRealtimeCoordinator() {
     const unregisterReference = registerRealtimeControlRefresh(
       POS_REFERENCE_DATA_RESOURCE,
       (payload) => {
+        if (!current) return Promise.resolve();
         const full = isFullRefreshSignal(payload);
         return Promise.resolve(reloadCatalogue.current({ full })).then(() => undefined);
       },
@@ -87,6 +90,7 @@ export function usePosRealtimeCoordinator() {
     const unregisterProfile = registerRealtimeControlRefresh(
       POS_PROFILE_CHANGED_RESOURCE,
       async () => {
+        if (!current) return;
         setPendingProfileRevalidation((current) => ({
           scope: revalidationScope,
           count: current?.scope === revalidationScope ? current.count + 1 : 1,
@@ -94,6 +98,7 @@ export function usePosRealtimeCoordinator() {
         try {
           if (workspaceKey && workspaceScope) {
             const previous = await posCache.read<PosBootstrapData>(workspaceKey);
+            if (!current) return;
             const previousProfile = previous?.data.pos_profile?.name ?? activeProfile.current;
             if (previousProfile) {
               const clearedOperational = await clearOperationalPosCache({
@@ -101,6 +106,7 @@ export function usePosRealtimeCoordinator() {
                 sessionId: workspaceScope.userId,
                 posProfile: previousProfile,
               });
+              if (!current) return;
               if (clearedOperational === false) {
                 await invalidateSession();
                 return;
@@ -109,6 +115,7 @@ export function usePosRealtimeCoordinator() {
             const clearedWorkspace = await posCache.clearResource(
               workspaceScope, POS_WORKSPACE_RESOURCE,
             );
+            if (!current) return;
             if (clearedWorkspace === false) {
               await invalidateSession();
               return;
@@ -125,6 +132,7 @@ export function usePosRealtimeCoordinator() {
       },
     );
     return () => {
+      current = false;
       unregisterReference();
       unregisterProfile();
       unregisterOperationalRecovery();

@@ -16,6 +16,7 @@ type FrappeErrorResponse = {
   message?: unknown;
   exception?: string;
   exc_type?: string;
+  session_expired?: number | boolean;
 };
 
 type VunaEnvelope<T> = {
@@ -203,23 +204,21 @@ function getSessionId(response: Response): string | undefined {
   const headers = response.headers as Headers & {
     getSetCookie?: () => string[];
   };
-  const setCookies = headers.getSetCookie?.() ?? [
-    headers.get("set-cookie") ?? "",
-  ];
-
+  const separateCookies = headers.getSetCookie?.();
+  const setCookies = separateCookies?.length ? separateCookies : [headers.get("set-cookie") ?? ""];
+  let sessionId: string | undefined;
   for (const setCookie of setCookies) {
-    const match = /(?:^|,\s*)sid=([^;,\s]+)/.exec(setCookie);
-    if (match?.[1]) {
+    for (const match of setCookie.matchAll(/(?:^|,\s*)sid=([^;,\s]*)/g)) {
       try {
         const sid = decodeURIComponent(match[1]);
-        if (!/[\r\n]/.test(sid)) {
-          return sid;
-        }
+        // A later Guest/empty cookie cancels an earlier authenticated SID.
+        sessionId = sid && sid !== "Guest" && !/[\r\n]/.test(sid) ? sid : undefined;
       } catch {
-        // Ignore a malformed cookie value rather than putting it in a request header.
+        sessionId = undefined;
       }
     }
   }
+  return sessionId;
 }
 
 function getResetKey(redirectTo: unknown): string | undefined {
@@ -308,12 +307,40 @@ function getFrappeErrorMessage(payload: FrappeErrorResponse | undefined) {
 }
 
 function isSessionDenial(payload: FrappeErrorResponse): boolean {
-  if (payload.exc_type === "AuthenticationError" || payload.exc_type === "SessionExpired") {
+  const envelope = payload.message && typeof payload.message === "object"
+    ? payload.message as { errors?: { code?: string; message?: string }[] }
+    : undefined;
+  const errors = Array.isArray(envelope?.errors) ? envelope.errors : [];
+  if (errors.some((error) => error?.code === "AuthenticationError" || error?.code === "SessionExpired")) {
     return true;
   }
-  return payload.exc_type === "PermissionError" &&
-    typeof payload.exception === "string" &&
-    /login to access/i.test(payload.exception);
+  if (payload.session_expired === 1 || payload.session_expired === true ||
+    payload.exc_type === "AuthenticationError" || payload.exc_type === "SessionExpired") return true;
+  const details = [
+    payload.exception,
+    messageFromValue(payload.message),
+    getFrappeErrorMessage({ _server_messages: payload._server_messages }),
+    ...errors.map((error) => error?.message),
+  ];
+  return details.some((detail) =>
+    /login to access\s*function\b.*\bis not whitelisted\b/i.test(detail ?? ""),
+  );
+}
+
+type SessionExpiryListener = (companyUrl: string, sessionId: string) => void;
+const sessionExpiryListeners = new Set<SessionExpiryListener>();
+
+/** Reports a confirmed protected-request denial even when a feature handles its own error. */
+export function subscribeToFrappeSessionExpiry(listener: SessionExpiryListener) {
+  sessionExpiryListeners.add(listener);
+  return () => { sessionExpiryListeners.delete(listener); };
+}
+
+function sessionError(companyUrl: string, sessionId: string, status: number): FrappeClientError {
+  for (const listener of sessionExpiryListeners) listener(companyUrl, sessionId);
+  return new FrappeClientError(
+    "Your session has expired. Sign in again to continue.", "session", status,
+  );
 }
 
 function serverError(status: number) {
@@ -324,7 +351,9 @@ function serverError(status: number) {
   );
 }
 
-async function readMethodResponse<T>(response: Response, method: string): Promise<T> {
+async function readMethodResponse<T>(
+  response: Response, method: string, companyUrl: string, sessionId: string,
+): Promise<T> {
   if (response.status >= 500) throw serverError(response.status);
   const payload = await readJson<T & FrappeErrorResponse>(response, `/api/method/${method}`);
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -334,12 +363,8 @@ async function readMethodResponse<T>(response: Response, method: string): Promis
       response.status,
     );
   }
-  if ((response.status === 401 || response.status === 403) && isSessionDenial(payload)) {
-    throw new FrappeClientError(
-      "Your session has expired. Sign in again to continue.",
-      "session",
-      response.status,
-    );
+  if ((response.status === 401 || response.status === 403 || response.ok) && isSessionDenial(payload)) {
+    throw sessionError(companyUrl, sessionId, response.status);
   }
   return payload;
 }
@@ -482,6 +507,7 @@ export async function requestFrappePasswordReset(
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
+    if (response.status >= 500) throw serverError(response.status);
     if (!response.ok) {
       throw new FrappeClientError(
         "Could not request a password reset. Check your connection and try again.",
@@ -530,6 +556,7 @@ export async function updateFrappePassword(
       },
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
+    if (response.status >= 500) throw serverError(response.status);
     const payload = await readJson<FrappeErrorResponse>(
       response,
       "/api/method/frappe.core.doctype.user.user.update_password",
@@ -564,7 +591,7 @@ export async function updateFrappePassword(
 export async function validateFrappeSession(
   companyUrl: string,
   sessionId: string,
-): Promise<"valid" | "expired" | "unavailable"> {
+): Promise<"valid" | "expired" | "permissionDenied" | "unavailable"> {
   try {
     const result = await getVunaMethod<{ csrf_token: string }>(
       companyUrl, sessionId, "vunapos.api.auth.get_csrf_token",
@@ -573,9 +600,11 @@ export async function validateFrappeSession(
       ? "valid"
       : "unavailable";
   } catch (error) {
-    return error instanceof FrappeClientError && error.code === "session"
-      ? "expired"
-      : "unavailable";
+    if (error instanceof FrappeClientError) {
+      if (error.code === "session") return "expired";
+      if (error.code === "api" && error.status === 403) return "permissionDenied";
+    }
+    return "unavailable";
   }
 }
 
@@ -605,7 +634,7 @@ export async function getVunaMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.read,
     );
 
-    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method);
+    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method, companyUrl, sessionId);
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -706,6 +735,9 @@ async function postVunaEnvelopeMethod<T>(
     {},
     signal,
   );
+  if (typeof csrf?.csrf_token !== "string" || !csrf.csrf_token) {
+    throw new FrappeClientError("Could not verify this session before submitting.", "INVALID_SERVER_RESPONSE");
+  }
 
   try {
     const response = await fetchWithTimeout(
@@ -724,7 +756,7 @@ async function postVunaEnvelopeMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
-    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method);
+    const payload = await readMethodResponse<{ message?: VunaEnvelope<T> }>(response, method, companyUrl, sessionId);
 
     if (!response.ok) {
       throw new FrappeClientError(
@@ -784,6 +816,9 @@ export async function postFrappeJsonMethod<T>(
     {},
     signal,
   );
+  if (typeof csrf?.csrf_token !== "string" || !csrf.csrf_token) {
+    throw new FrappeClientError("Could not verify this session before submitting.", "INVALID_SERVER_RESPONSE");
+  }
 
   try {
     const response = await fetchWithTimeout(
@@ -802,7 +837,7 @@ export async function postFrappeJsonMethod<T>(
       FRAPPE_REQUEST_TIMEOUT_MS.mutation,
     );
 
-    const payload = await readMethodResponse<{ message?: T }>(response, method);
+    const payload = await readMethodResponse<{ message?: T }>(response, method, companyUrl, sessionId);
 
     if (!response.ok) {
       throw new FrappeClientError(

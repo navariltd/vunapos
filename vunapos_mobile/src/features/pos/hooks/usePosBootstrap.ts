@@ -47,7 +47,6 @@ const PROFILE_ACCESS_DENIAL_CODES = new Set([
   "POS_PROFILE_NOT_ENABLED",
   "POS_PROFILE_READ_DENIED",
   "POS_PROFILE_DISABLED",
-  "PermissionError",
 ]);
 
 function isProfileAccessDenied(error: unknown): error is FrappeClientError {

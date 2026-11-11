@@ -416,7 +416,7 @@ export function useSubmitPosCheckout() {
         sourceInvoice: input.sourceInvoice,
       });
       if (result.queue_status === "Queued" || result.queue_status === "Processing") {
-        registerQueuedCheckout(result.name, {
+        registerQueuedCheckout(companyUrl, sessionId, result.name, {
           customer: input.customer,
           items: input.items,
           posProfile: input.posProfile,

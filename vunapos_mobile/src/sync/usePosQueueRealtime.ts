@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { useAppSession } from "@/features/auth/AppSessionProvider";
 import {
@@ -7,7 +7,7 @@ import {
 } from "@/services/posCacheInvalidation";
 import { refreshSoldItemStock } from "@/services/posInventoryRefresh";
 import { registerRealtimeRefresh } from "@/sync/realtimeInvalidation";
-import { takeQueuedCheckout } from "@/sync/queuedCheckoutRegistry";
+import { clearQueuedCheckouts, takeQueuedCheckout } from "@/sync/queuedCheckoutRegistry";
 
 type QueueEvent = {
   invoice_name?: unknown;
@@ -26,6 +26,13 @@ function text(value: unknown) {
  */
 export function usePosQueueRealtime() {
   const { authState, companyUrl, sessionId } = useAppSession();
+  const owner = `${authState}:${companyUrl}:${sessionId}`;
+  const currentOwner = useRef(owner);
+
+  useEffect(() => {
+    currentOwner.current = owner;
+    clearQueuedCheckouts();
+  }, [owner]);
 
   const handleQueueEvent = useCallback(
     async (rawPayload?: unknown) => {
@@ -43,7 +50,8 @@ export function usePosQueueRealtime() {
       const invoiceName = text(payload.invoice_name);
       if (!invoiceName) return;
 
-      const queued = takeQueuedCheckout(invoiceName);
+      const requestOwner = owner;
+      const queued = takeQueuedCheckout(companyUrl, sessionId, invoiceName);
       const posProfile = text(payload.pos_profile) ?? queued?.posProfile;
 
       // Queue screens and invoice history should reflect every transition,
@@ -51,6 +59,7 @@ export function usePosQueueRealtime() {
       if (posProfile) {
         await invalidateHeldInvoiceCache({ companyUrl, posProfile, sessionId });
       }
+      if (currentOwner.current !== requestOwner) return;
 
       if (text(payload.status) !== "Submitted" || !posProfile) {
         return;
@@ -60,6 +69,7 @@ export function usePosQueueRealtime() {
       // affected resources stale so the normal timestamp delta repairs them;
       // never invent a second item-details request without cart context.
       await invalidateSaleCache({ companyUrl, posProfile, sessionId });
+      if (currentOwner.current !== requestOwner) return;
       if (!queued) return;
 
       await refreshSoldItemStock({
@@ -69,7 +79,7 @@ export function usePosQueueRealtime() {
         sessionId,
       });
     },
-    [authState, companyUrl, sessionId],
+    [authState, companyUrl, owner, sessionId],
   );
 
   useEffect(

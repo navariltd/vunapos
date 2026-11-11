@@ -9,13 +9,20 @@ export type QueuedCheckout = {
 
 const queuedCheckouts = new Map<string, QueuedCheckout>();
 
-export function registerQueuedCheckout(name: string, checkout: QueuedCheckout) {
-  queuedCheckouts.set(name, checkout);
+function key(companyUrl: string, sessionId: string, name: string) {
+  return JSON.stringify([companyUrl, sessionId, name]);
 }
 
-export function takeQueuedCheckout(name: string) {
-  const checkout = queuedCheckouts.get(name);
-  queuedCheckouts.delete(name);
+export function registerQueuedCheckout(
+  companyUrl: string, sessionId: string, name: string, checkout: QueuedCheckout,
+) {
+  queuedCheckouts.set(key(companyUrl, sessionId, name), checkout);
+}
+
+export function takeQueuedCheckout(companyUrl: string, sessionId: string, name: string) {
+  const checkoutKey = key(companyUrl, sessionId, name);
+  const checkout = queuedCheckouts.get(checkoutKey);
+  queuedCheckouts.delete(checkoutKey);
   return checkout;
 }
 

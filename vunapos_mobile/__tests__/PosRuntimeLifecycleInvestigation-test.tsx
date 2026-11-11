@@ -48,6 +48,12 @@ class InvestigativeStorage {
   failReads = false;
 
   async clearAll() { this.rows.clear(); }
+  async clearSession(companyUrl: string, userId: string) {
+    for (const [key, row] of this.rows) {
+      const namespace = JSON.parse(row.namespace) as { companyUrl: string; userId: string };
+      if (namespace.companyUrl === companyUrl && namespace.userId === userId) this.rows.delete(key);
+    }
+  }
   async clearNamespace(namespace: string) {
     for (const [key, row] of this.rows) if (row.namespace === namespace) this.rows.delete(key);
   }

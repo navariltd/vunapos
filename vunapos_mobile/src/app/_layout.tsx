@@ -92,7 +92,9 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="index" />
               <Stack.Screen name="(auth)" />
-              <Stack.Screen name="(app)" />
+              <Stack.Protected guard={authState === "signedIn"}>
+                <Stack.Screen name="(app)" />
+              </Stack.Protected>
             </Stack>
           </PosBootstrapSnapshotBoundary>
         ) : null}

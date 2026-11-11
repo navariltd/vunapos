@@ -398,6 +398,8 @@ describe("POS checkout hooks", () => {
     });
 
     expect(mockRegisterQueuedCheckout).toHaveBeenCalledWith(
+      "https://vuna.example.com",
+      "sid-1",
       "SAL-ORD-QUEUE-001",
       expect.objectContaining({
         customer: "CUST-001",

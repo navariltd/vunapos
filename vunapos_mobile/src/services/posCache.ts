@@ -42,6 +42,7 @@ type StoredCacheEntry = {
 
 type CacheStorage = {
   clearAll(): Promise<void>;
+  clearSession(companyUrl: string, userId: string): Promise<void>;
   clearNamespace(namespace: string): Promise<void>;
   clearResource(namespace: string, resource: string): Promise<void>;
   delete(cacheKey: string): Promise<void>;
@@ -263,6 +264,24 @@ class ExpoSqliteCacheStorage implements CacheStorage {
     await database.execAsync("DELETE FROM pos_cache_entries");
   }
 
+  async clearSession(companyUrl: string, userId: string) {
+    const database = await this.database();
+    const predicate = "json_extract(namespace, '$.companyUrl') = ? AND json_extract(namespace, '$.userId') = ?";
+    // A successful tombstone is durable even if physical deletion fails.
+    await database.runAsync(
+      `UPDATE pos_cache_entries SET schema_version = 0 WHERE ${predicate}`,
+      companyUrl, userId,
+    );
+    try {
+      await database.runAsync(
+        `DELETE FROM pos_cache_entries WHERE ${predicate}`,
+        companyUrl, userId,
+      );
+    } catch {
+      // Incompatible rows remain unreadable and are bounded by normal pruning.
+    }
+  }
+
   async clearResource(namespace: string, resource: string) {
     const database = await this.database();
     // Make the rows unreadable durably before attempting physical deletion.
@@ -336,6 +355,12 @@ export class PosCache {
   private readonly listeners = new Map<string, Set<(event: "write" | "clear") => void>>();
   private readonly memory = new Map<string, StoredCacheEntry>();
   private clearGeneration = 0;
+  private allClearGeneration = 0;
+  private readonly revokedSessions = new Set<string>();
+  private readonly sessionGenerations = new Map<string, number>();
+  private readonly resourceGenerations = new Map<string, number>();
+  private readonly clearingSessions = new Map<string, Promise<void>>();
+  private readonly writeQueues = new Map<string, Promise<void>>();
   /** Failed explicit clears hide old durable rows until each key is replaced by a live write. */
   private readonly blockedResourceRows = new Map<string, Set<string>>();
   private readonly maximumBytesPerNamespace: number;
@@ -360,6 +385,7 @@ export class PosCache {
   }
 
   async read<T>(key: PosCacheKey): Promise<PosCacheEntry<T> | null> {
+    if (this.revokedSessions.has(JSON.stringify([key.scope.companyUrl, key.scope.userId]))) return null;
     const startedAt = Date.now();
     const cacheKey = posCacheKey(key);
     const blockedRows = this.blockedResourceRows.get(
@@ -443,7 +469,41 @@ export class PosCache {
     ttlMs: number,
     isCurrent: () => boolean = () => true,
   ) {
-    if (!isCurrent()) return;
+    const cacheKey = posCacheKey(key);
+    const sessionKey = JSON.stringify([key.scope.companyUrl, key.scope.userId]);
+    const sessionGeneration = this.sessionGenerations.get(sessionKey) ?? 0;
+    const resourceKey = resourceScopeKey(posCacheNamespace(key.scope), key.resource);
+    const resourceGeneration = this.resourceGenerations.get(resourceKey) ?? 0;
+    const allClearGeneration = this.allClearGeneration;
+    const previous = this.writeQueues.get(cacheKey);
+    const task = (async () => {
+      if (previous) await previous.catch(() => undefined);
+      await this.writeEntry(key, data, ttlMs, isCurrent, sessionGeneration, resourceGeneration, allClearGeneration);
+    })();
+    this.writeQueues.set(cacheKey, task);
+    try { await task; } finally {
+      if (this.writeQueues.get(cacheKey) === task) this.writeQueues.delete(cacheKey);
+    }
+  }
+
+  private async writeEntry<T>(
+    key: PosCacheKey,
+    data: T,
+    ttlMs: number,
+    isCurrent: () => boolean,
+    sessionGeneration: number,
+    resourceGeneration: number,
+    allClearGeneration: number,
+  ) {
+    const sessionKey = JSON.stringify([key.scope.companyUrl, key.scope.userId]);
+    const clearing = this.clearingSessions.get(sessionKey);
+    if (clearing) await clearing;
+    const resourceKey = resourceScopeKey(posCacheNamespace(key.scope), key.resource);
+    const stillCurrent = () => isCurrent() && !this.revokedSessions.has(sessionKey) &&
+      this.allClearGeneration === allClearGeneration &&
+      (this.sessionGenerations.get(sessionKey) ?? 0) === sessionGeneration &&
+      (this.resourceGenerations.get(resourceKey) ?? 0) === resourceGeneration;
+    if (!stillCurrent()) return;
     const clearGeneration = this.clearGeneration;
     const now = this.now();
     const payload = JSON.stringify(data);
@@ -486,7 +546,7 @@ export class PosCache {
         );
       }
     } catch {
-      if (!isCurrent()) {
+      if (!stillCurrent()) {
         await this.delete(entry.cacheKey);
         return;
       }
@@ -515,7 +575,7 @@ export class PosCache {
       });
       return;
     }
-    if (!isCurrent()) {
+    if (!stillCurrent()) {
       // A profile/session may have been cleared while SQLite was committing.
       // Do not publish that obsolete snapshot to mounted readers.
       await this.delete(entry.cacheKey);
@@ -559,6 +619,9 @@ export class PosCache {
     options?: { afterCurrent?: boolean },
   ): Promise<T> {
     const startedAt = Date.now();
+    if (this.revokedSessions.has(JSON.stringify([key.scope.companyUrl, key.scope.userId]))) {
+      throw new SupersededCacheRequestError();
+    }
     const cacheKey = posCacheKey(key);
     const existing = this.inFlight.get(cacheKey);
     if (existing) {
@@ -649,6 +712,7 @@ export class PosCache {
   /** Used when the active account changes, so no POS data outlives its owner. */
   async clearAll() {
     this.clearGeneration += 1;
+    this.allClearGeneration += 1;
     for (const entry of this.inFlight.values()) entry.invalidated = true;
     this.memory.clear();
     try {
@@ -664,10 +728,80 @@ export class PosCache {
     recordCacheDiagnostic({ operation: "clear", outcome: "success", resource: "all" });
   }
 
+  /** Revoke only the departing site's session, including its persisted cart. */
+  async clearSession(companyUrl: string, userId: string) {
+    const sessionKey = JSON.stringify([companyUrl, userId]);
+    this.revokedSessions.add(sessionKey);
+    this.sessionGenerations.set(sessionKey, (this.sessionGenerations.get(sessionKey) ?? 0) + 1);
+    this.clearGeneration += 1;
+    const belongs = (namespace: string) => {
+      try {
+        const scope = JSON.parse(namespace) as Pick<PosCacheScope, "companyUrl" | "userId">;
+        return scope.companyUrl === companyUrl && scope.userId === userId;
+      } catch { return false; }
+    };
+    for (const entry of this.inFlight.values()) {
+      if (belongs(entry.namespace)) entry.invalidated = true;
+    }
+    for (const [cacheKey, entry] of this.memory) {
+      if (belongs(entry.namespace)) this.memory.delete(cacheKey);
+    }
+    const clearing = this.storage.clearSession(companyUrl, userId);
+    this.clearingSessions.set(sessionKey, clearing);
+    try {
+      await clearing;
+    } catch {
+      // An in-process block remains; SecureStore revocation guards restart.
+    } finally {
+      if (this.clearingSessions.get(sessionKey) === clearing) this.clearingSessions.delete(sessionKey);
+    }
+    for (const [cacheKey, listeners] of this.listeners) {
+      const namespace = (JSON.parse(cacheKey) as { namespace: string }).namespace;
+      if (belongs(namespace)) {
+        for (const listener of listeners) listener("clear");
+        this.listeners.delete(cacheKey);
+      }
+    }
+  }
+
+  allowSession(companyUrl: string, userId: string) {
+    this.revokedSessions.delete(JSON.stringify([companyUrl, userId]));
+  }
+
+  /** Local-data reset retains the authenticated SID but clears its POS rows. */
+  async clearAccountData(companyUrl: string, userId: string) {
+    const sessionKey = JSON.stringify([companyUrl, userId]);
+    this.sessionGenerations.set(sessionKey, (this.sessionGenerations.get(sessionKey) ?? 0) + 1);
+    this.clearGeneration += 1;
+    const belongs = (namespace: string) => {
+      try {
+        const scope = JSON.parse(namespace) as Pick<PosCacheScope, "companyUrl" | "userId">;
+        return scope.companyUrl === companyUrl && scope.userId === userId;
+      } catch { return false; }
+    };
+    for (const entry of this.inFlight.values()) {
+      if (belongs(entry.namespace)) entry.invalidated = true;
+    }
+    for (const [cacheKey, entry] of this.memory) {
+      if (belongs(entry.namespace)) this.memory.delete(cacheKey);
+    }
+    const clearing = this.storage.clearSession(companyUrl, userId);
+    this.clearingSessions.set(sessionKey, clearing);
+    try { await clearing; } finally {
+      if (this.clearingSessions.get(sessionKey) === clearing) this.clearingSessions.delete(sessionKey);
+    }
+    for (const [cacheKey, listeners] of this.listeners) {
+      if (belongs((JSON.parse(cacheKey) as { namespace: string }).namespace)) {
+        for (const listener of listeners) listener("clear");
+      }
+    }
+  }
+
   async clearResource(scope: PosCacheScope, resource: string) {
     this.clearGeneration += 1;
     const namespace = posCacheNamespace(scope);
     const blockedKey = resourceScopeKey(namespace, resource);
+    this.resourceGenerations.set(blockedKey, (this.resourceGenerations.get(blockedKey) ?? 0) + 1);
     this.blockedResourceRows.set(blockedKey, new Set());
     for (const entry of this.inFlight.values()) {
       if (entry.namespace === namespace && entry.resource === resource) {

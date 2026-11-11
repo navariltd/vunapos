@@ -24,6 +24,13 @@ class MemoryStorage {
     this.entries.clear();
   }
 
+  async clearSession(companyUrl: string, userId: string) {
+    for (const [key, entry] of this.entries) {
+      const namespace = JSON.parse(entry.namespace) as { companyUrl: string; userId: string };
+      if (namespace.companyUrl === companyUrl && namespace.userId === userId) this.entries.delete(key);
+    }
+  }
+
   async clearNamespace(namespace: string) {
     for (const [key, entry] of this.entries) {
       if (entry.namespace === namespace) this.entries.delete(key);
@@ -164,6 +171,83 @@ describe("PosCache", () => {
     await expect(cache.read(otherUser)).resolves.toBeNull();
     await expect(cache.read(otherCompany)).resolves.toBeNull();
     await expect(cache.read(otherProfile)).resolves.toBeNull();
+  });
+
+  it("clears only the departing site's SID, including its cart", async () => {
+    const oldCart = { resource: "active-cart", scope: { ...scope, userId: "old-sid", company: "A", warehouse: "Main" } };
+    const otherSite = { ...oldCart, scope: { ...oldCart.scope, companyUrl: "https://other.example.com" } };
+    const otherSid = { ...oldCart, scope: { ...oldCart.scope, userId: "new-sid" } };
+    await cache.write(oldCart, { items: ["old"] }, 1_000);
+    await cache.write(otherSite, { items: ["other site"] }, 1_000);
+    await cache.write(otherSid, { items: ["new sid"] }, 1_000);
+
+    await cache.clearSession(scope.companyUrl, "old-sid");
+
+    await expect(cache.read(oldCart)).resolves.toBeNull();
+    await expect(cache.read(otherSite)).resolves.toMatchObject({ data: { items: ["other site"] } });
+    await expect(cache.read(otherSid)).resolves.toMatchObject({ data: { items: ["new sid"] } });
+    const restarted = new PosCache(storage, { now: () => now });
+    await expect(restarted.read(oldCart)).resolves.toBeNull();
+  });
+
+  it("does not let a delayed SQLite write resurrect a revoked session", async () => {
+    class DelayedWriteStorage extends MemoryStorage {
+      releaseWrite: (() => void) | undefined;
+      override async write(entry: StoredEntry) {
+        await new Promise<void>((resolve) => { this.releaseWrite = resolve; });
+        await super.write(entry);
+      }
+    }
+    const durable = new DelayedWriteStorage();
+    const guardedCache = new PosCache(durable, { now: () => now });
+    const pending = guardedCache.write(key, { items: ["obsolete"] }, 1_000);
+    await Promise.resolve();
+    await guardedCache.clearSession(scope.companyUrl, scope.userId);
+    durable.releaseWrite?.();
+    await pending;
+
+    await expect(guardedCache.read(key)).resolves.toBeNull();
+    expect(durable.entries.has(posCacheKey(key))).toBe(false);
+  });
+
+  it("does not recreate a resource cleared while its write was pending", async () => {
+    class DelayedWriteStorage extends MemoryStorage {
+      releaseWrite: (() => void) | undefined;
+      override async write(entry: StoredEntry) {
+        await new Promise<void>((resolve) => { this.releaseWrite = resolve; });
+        await super.write(entry);
+      }
+    }
+    const durable = new DelayedWriteStorage();
+    const guardedCache = new PosCache(durable, { now: () => now });
+    const pending = guardedCache.write(key, { items: ["obsolete"] }, 1_000);
+    await Promise.resolve();
+    await guardedCache.clearResource(scope, key.resource);
+    durable.releaseWrite?.();
+    await pending;
+
+    await expect(guardedCache.read(key)).resolves.toBeNull();
+    expect(durable.entries.has(posCacheKey(key))).toBe(false);
+  });
+
+  it("does not recreate old-site rows after a full cache clear races a write", async () => {
+    class DelayedWriteStorage extends MemoryStorage {
+      releaseWrite: (() => void) | undefined;
+      override async write(entry: StoredEntry) {
+        await new Promise<void>((resolve) => { this.releaseWrite = resolve; });
+        await super.write(entry);
+      }
+    }
+    const durable = new DelayedWriteStorage();
+    const guardedCache = new PosCache(durable, { now: () => now });
+    const pending = guardedCache.write(key, { items: ["old site"] }, 1_000);
+    await Promise.resolve();
+    await guardedCache.clearAll();
+    durable.releaseWrite?.();
+    await pending;
+
+    expect(durable.entries.has(posCacheKey(key))).toBe(false);
+    await expect(guardedCache.read(key)).resolves.toBeNull();
   });
 
   it("does not restore an old warehouse cart after restart even if its SQLite clear fails", async () => {
