@@ -314,6 +314,7 @@ export function PosInvoiceDetailsScreen({
           <PosInvoiceReceiptActions
             invoiceDoctype={invoice.doctype}
             invoiceName={invoice.name}
+            printFormat={bootstrap.data?.pos_profile.print_format}
           />
           <PosErpNextRecordLink doctype={invoice.doctype} name={invoice.name} />
         </View>

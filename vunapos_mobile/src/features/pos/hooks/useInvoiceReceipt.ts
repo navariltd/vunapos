@@ -15,6 +15,7 @@ type InvoiceReceipt = {
 type ReceiptRequest = {
   invoiceDoctype: string;
   invoiceName: string;
+  printFormat?: string | null;
 };
 
 type UseInvoiceReceiptResult = {
@@ -34,7 +35,7 @@ export function useInvoiceReceipt(): UseInvoiceReceiptResult {
   const [error, setError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
 
-  async function renderReceipt({ invoiceDoctype, invoiceName }: ReceiptRequest) {
+  async function renderReceipt({ invoiceDoctype, invoiceName, printFormat }: ReceiptRequest) {
     if (!companyUrl || !sessionId) {
       throw new Error('Your session has expired. Sign in again to continue.');
     }
@@ -42,6 +43,7 @@ export function useInvoiceReceipt(): UseInvoiceReceiptResult {
     const receipt = await getVunaMethod<InvoiceReceipt>(companyUrl, sessionId, 'vunapos.api.print.render_invoice', {
       invoice_doctype: invoiceDoctype,
       invoice_name: invoiceName,
+      ...(printFormat?.trim() ? { print_format: printFormat.trim() } : {}),
     });
     if (!receipt.html?.trim()) {
       throw new Error('The server did not return a receipt for this invoice.');

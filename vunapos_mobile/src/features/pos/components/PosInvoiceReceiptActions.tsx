@@ -9,13 +9,14 @@ import { AppPalette, radii, spacing, typography } from '@/theme/tokens';
 type PosInvoiceReceiptActionsProps = {
   invoiceDoctype: string;
   invoiceName: string;
+  printFormat?: string | null;
 };
 
-export function PosInvoiceReceiptActions({ invoiceDoctype, invoiceName }: PosInvoiceReceiptActionsProps) {
+export function PosInvoiceReceiptActions({ invoiceDoctype, invoiceName, printFormat }: PosInvoiceReceiptActionsProps) {
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const { error, isWorking, printReceipt, shareReceipt } = useInvoiceReceipt();
-  const request = { invoiceDoctype, invoiceName };
+  const request = { invoiceDoctype, invoiceName, printFormat };
 
   return (
     <View style={styles.content}>

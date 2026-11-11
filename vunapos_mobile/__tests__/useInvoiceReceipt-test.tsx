@@ -72,6 +72,21 @@ describe('useInvoiceReceipt', () => {
     expect(hook.result.current).toMatchObject({ error: null, isWorking: false });
   });
 
+  it('sends the POS Profile print format when rendering a receipt', async () => {
+    const hook = await renderHook(() => useInvoiceReceipt());
+
+    await act(async () => {
+      await hook.result.current.printReceipt({ ...request, printFormat: 'Thermal Receipt 58mm' });
+    });
+
+    expect(mockGetVunaMethod).toHaveBeenCalledWith('https://vuna.example.com', 'sid-1', 'vunapos.api.print.render_invoice', {
+      invoice_doctype: 'POS Invoice',
+      invoice_name: 'POS-INV-0001',
+      print_format: 'Thermal Receipt 58mm',
+    });
+    expect(mockPrintAsync).toHaveBeenCalledWith({ html: '<html><body>Receipt</body></html>' });
+  });
+
   it('creates a PDF and opens the native share sheet', async () => {
     mockIsAvailableAsync.mockResolvedValue(true);
     mockPrintToFileAsync.mockResolvedValue({ numberOfPages: 1, uri: 'file:///cache/receipt.pdf' });

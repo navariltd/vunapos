@@ -192,6 +192,53 @@ describe("PosInvoiceDetailsScreen", () => {
     expect(onStartReturn).toHaveBeenCalledWith("POS-INV-0001");
   });
 
+  it("uses the current POS Profile format for print and share actions", async () => {
+    const bootstrap = mockUsePosBootstrap();
+    mockUsePosBootstrap.mockReturnValue({
+      ...bootstrap,
+      data: {
+        ...bootstrap.data!,
+        pos_profile: {
+          ...bootstrap.data!.pos_profile,
+          print_format: "Thermal Receipt 58mm",
+        },
+      },
+    });
+    const printReceipt = jest.fn();
+    const shareReceipt = jest.fn();
+    mockUseInvoiceReceipt.mockReturnValue({
+      error: null,
+      isWorking: false,
+      printReceipt,
+      shareReceipt,
+    });
+    const screen = await render(
+      <PosInvoiceDetailsScreen
+        invoiceName="POS-INV-0001"
+        onBack={onBack}
+        onOpenCustomer={onOpenCustomer}
+        onOpenPaymentEntry={onOpenPaymentEntry}
+        onOpenReturn={onOpenReturn}
+        onStartReturn={onStartReturn}
+        onStartSale={onStartSale}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText("Print receipt"));
+    await fireEvent.press(screen.getByLabelText("Share receipt"));
+
+    expect(printReceipt).toHaveBeenCalledWith({
+      invoiceDoctype: "POS Invoice",
+      invoiceName: "POS-INV-0001",
+      printFormat: "Thermal Receipt 58mm",
+    });
+    expect(shareReceipt).toHaveBeenCalledWith({
+      invoiceDoctype: "POS Invoice",
+      invoiceName: "POS-INV-0001",
+      printFormat: "Thermal Receipt 58mm",
+    });
+  });
+
   it("keeps loaded invoice details visible when background configuration refresh fails", async () => {
     const bootstrap = mockUsePosBootstrap();
     mockUsePosBootstrap.mockReturnValue({
