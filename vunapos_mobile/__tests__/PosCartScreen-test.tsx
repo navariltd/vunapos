@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, within } from "@testing-library/react-native";
-import { StyleSheet } from "react-native";
+import { act, cleanup, fireEvent, render, within } from "@testing-library/react-native";
+import { Keyboard, StyleSheet } from "react-native";
 
 const mockDismissCartCustomerOptions = jest.fn();
 
@@ -137,6 +137,51 @@ describe("PosCartScreen", () => {
 
   afterEach(async () => {
     await cleanup();
+  });
+
+  it("commits a typed quantity when Android hides the keyboard without blur", async () => {
+    let keyboardDidHide: (() => void) | undefined;
+    const listener = jest.spyOn(Keyboard, "addListener").mockImplementation(
+      ((eventName: string, callback: () => void) => {
+        if (eventName === "keyboardDidHide") keyboardDidHide = callback;
+        return { remove: jest.fn() };
+      }) as unknown as typeof Keyboard.addListener,
+    );
+    try {
+      const screen = await render(
+        <PosCartScreen
+          allowCustomerCreation={false}
+          currency="KES"
+          error={null}
+          isUpdating={false}
+          items={[{ allow_negative_stock: false, available_qty: 10, is_stock_item: true,
+            item_code: "ITEM-001", item_name: "Stock item", qty: 2, rate: 125, uom: "Nos" }]}
+          onBack={onBack}
+          onCheckout={onCheckout}
+          onClear={onClear}
+          onRemove={onRemove}
+          onRetry={onRetry}
+          onSelectSaleCustomer={onSelectSaleCustomer}
+          onUpdateQuantity={onUpdateQuantity}
+          orderType="Invoice"
+          requiresCustomer={false}
+          saleCustomer={null}
+          subtotal={250}
+          taxes={[]}
+          totals={{ grand_total: 250, net_total: 250 }}
+        />,
+      );
+      const quantity = screen.getByLabelText("Quantity for Stock item");
+      await fireEvent(quantity, "focus");
+      await fireEvent.changeText(quantity, "3.5");
+      await act(async () => { keyboardDidHide?.(); });
+
+      expect(onUpdateQuantity).toHaveBeenCalledWith("ITEM-001", 3.5);
+      await fireEvent(quantity, "blur");
+      expect(onUpdateQuantity).toHaveBeenCalledTimes(1);
+    } finally {
+      listener.mockRestore();
+    }
   });
 
   it("shows editable cart lines, totals, and item removal controls", async () => {

@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Text } from "react-native-paper";
 
@@ -723,6 +723,9 @@ function CartLine({
   const { palette } = useAppearance();
   const styles = createStyles(palette);
   const [draftQuantity, setDraftQuantity] = useState(String(item.qty));
+  const draftQuantityRef = useRef(String(item.qty));
+  const quantityInputFocusedRef = useRef(false);
+  const quantityDraftDirtyRef = useRef(false);
   const [draftNote, setDraftNote] = useState(item.item_note || "");
   const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [batchExpanded, setBatchExpanded] = useState(false);
@@ -769,22 +772,43 @@ function CartLine({
 
   useEffect(() => {
     if (disabled) return;
-    const sync = setTimeout(() => setDraftQuantity(String(item.qty)), 0);
+    const sync = setTimeout(() => {
+      const nextQuantity = String(item.qty);
+      draftQuantityRef.current = nextQuantity;
+      quantityDraftDirtyRef.current = false;
+      setDraftQuantity(nextQuantity);
+    }, 0);
     return () => clearTimeout(sync);
   }, [disabled, item.qty]);
 
   function changeQuantity(value: string) {
-    if (/^\d*\.?\d*$/.test(value)) setDraftQuantity(value);
+    if (!/^\d*\.?\d*$/.test(value)) return;
+    draftQuantityRef.current = value;
+    quantityDraftDirtyRef.current = true;
+    setDraftQuantity(value);
   }
 
-  function commitQuantity() {
-    const quantity = Number(draftQuantity);
+  const commitQuantity = useCallback(() => {
+    if (!quantityDraftDirtyRef.current) return;
+    const quantity = Number(draftQuantityRef.current);
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      setDraftQuantity(String(item.qty));
+      const restoredQuantity = String(item.qty);
+      draftQuantityRef.current = restoredQuantity;
+      quantityDraftDirtyRef.current = false;
+      setDraftQuantity(restoredQuantity);
       return;
     }
+    quantityDraftDirtyRef.current = false;
+    if (quantity === item.qty) return;
     onUpdateQuantity(quantity);
-  }
+  }, [item.qty, onUpdateQuantity]);
+
+  useEffect(() => {
+    const subscription = Keyboard.addListener("keyboardDidHide", () => {
+      if (quantityInputFocusedRef.current) commitQuantity();
+    });
+    return () => subscription.remove();
+  }, [commitQuantity]);
 
   function saveNote() {
     const note = draftNote.trim();
@@ -1054,8 +1078,12 @@ function CartLine({
             inputMode="decimal"
             keyboardType="decimal-pad"
             editable={!itemDisabled}
-            onBlur={commitQuantity}
+            onBlur={() => {
+              quantityInputFocusedRef.current = false;
+              commitQuantity();
+            }}
             onChangeText={changeQuantity}
+            onFocus={() => { quantityInputFocusedRef.current = true; }}
             onSubmitEditing={commitQuantity}
             selectTextOnFocus
             style={styles.quantityInput}
