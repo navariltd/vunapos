@@ -519,8 +519,8 @@ def protect_order_cancellation(order, method=None):
 		)
 
 
-def get_ticket(name):
-	doc = frappe.get_doc(TICKET, name)
+def get_ticket(name, for_update=False):
+	doc = frappe.get_doc(TICKET, name, for_update=for_update)
 	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
@@ -537,7 +537,7 @@ def get_ticket(name):
 			)
 		)
 		and not bool(set(frappe.get_roles()) & MANAGERS),
-		"actions": action_history(doc),
+		"actions": action_history(doc, for_update=for_update),
 		"name": doc.name,
 		"sales_order": doc.sales_order,
 		"restaurant_session": doc.restaurant_session,

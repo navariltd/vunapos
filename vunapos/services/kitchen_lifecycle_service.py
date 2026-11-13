@@ -54,8 +54,10 @@ def _ticket(name, lock=False):
 
 
 def _order(doc, serving=False):
-	order = frappe.get_doc("Sales Order", doc.sales_order)
-	session = frappe.get_doc("Restaurant Session", doc.restaurant_session)
+	# These locks are already owned by _ticket. Re-read current values: a
+	# concurrent billing/cancellation may have completed while it was waiting.
+	session = frappe.get_doc("Restaurant Session", doc.restaurant_session, for_update=True)
+	order = frappe.get_doc("Sales Order", doc.sales_order, for_update=True)
 	if (
 		doc.docstatus != 1
 		or order.docstatus != 1
@@ -80,22 +82,28 @@ def _request_key(key):
 
 
 def _replay(doc, action, key, reason=None):
-	existing = frappe.get_all(
+	row = frappe.db.get_value(
 		ACTION,
-		filters={"request_key": key, "outcome": "Succeeded"},
-		fields=["kitchen_ticket", "sales_order", "action", "actor", "reason"],
+		{
+			"success_key": hashlib.sha256(json.dumps(["request", key]).encode()).hexdigest(),
+			"outcome": "Succeeded",
+		},
+		["kitchen_ticket", "sales_order", "action", "actor", "reason"],
+		as_dict=True,
+		# The ticket lock may have waited for another request to commit. Use a
+		# current read, not the snapshot taken during the initial permission check.
+		for_update=True,
 	)
-	if not existing:
+	if not row:
 		return False
-	for row in existing:
-		if (
-			row.action != action
-			or row.actor != frappe.session.user
-			or row.sales_order != doc.sales_order
-			or (action != "Cancel Order" and row.kitchen_ticket != doc.name)
-			or (row.reason or "") != (reason or "")
-		):
-			fail("IDEMPOTENCY_CONFLICT", _("This kitchen request key belongs to a different action."))
+	if (
+		row.action != action
+		or row.actor != frappe.session.user
+		or row.sales_order != doc.sales_order
+		or (action != "Cancel Order" and row.kitchen_ticket != doc.name)
+		or (row.reason or "") != (reason or "")
+	):
+		fail("IDEMPOTENCY_CONFLICT", _("This kitchen request key belongs to a different action."))
 	return True
 
 
@@ -503,7 +511,9 @@ def cancel_order(ticket, request_key, expected_status, reason, manager_pin_token
 def ticket_detail(name):
 	from vunapos.services.kitchen_service import get_ticket
 
-	return get_ticket(name)
+	# Commands already own the ticket lock. A plain read here could return the
+	# pre-wait snapshot and tell the second terminal an older status succeeded.
+	return get_ticket(name, for_update=True)
 
 
 def allow_cancelled_order_audit_links(doc, method=None):
@@ -511,8 +521,8 @@ def allow_cancelled_order_audit_links(doc, method=None):
 		doc.ignore_linked_doctypes = [*(doc.get("ignore_linked_doctypes") or []), TICKET, ACTION]
 
 
-def action_history(doc):
-	return frappe.get_list(
+def action_history(doc, for_update=False):
+	return frappe.qb.get_query(
 		ACTION,
 		filters={"kitchen_ticket": doc.name},
 		fields=[
@@ -529,8 +539,10 @@ def action_history(doc):
 			"error_message",
 		],
 		order_by="creation desc",
-		limit_page_length=100,
-	)
+		limit=100,
+		ignore_permissions=False,
+		for_update=for_update,
+	).run(as_dict=True)
 
 
 def list_board(pos_profile, station=None, history=False, start=0):
