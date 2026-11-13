@@ -187,6 +187,24 @@ def get_session(session: str):
 		return _failure_from_exception(exc)
 
 
+@frappe.whitelist(methods=["POST"])
+def recover_session_round(
+	pos_profile: str,
+	idempotency_key: str,
+	items: list | str,
+	order_note: str | None = None,
+	kitchen_routing: dict | str | None = None,
+	session: str | None = None,
+):
+	try:
+		result = restaurant_session_service.recover_round(
+			pos_profile, idempotency_key, items, order_note, kitchen_routing, session
+		)
+		return success(result or {"session": None, "order": None})
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
 @frappe.whitelist()
 def get_kitchen_ticket(ticket: str):
 	from vunapos.services.kitchen_service import get_ticket
@@ -213,10 +231,13 @@ def update_session(
 	guest_count: int | None = None,
 	customer: str | None = None,
 	waiter: str | None = None,
+	expected_modified: str | None = None,
 ):
 	try:
 		return success(
-			restaurant_session_service.update_session(session, tables, guest_count, customer, waiter)
+			restaurant_session_service.update_session(
+				session, tables, guest_count, customer, waiter, expected_modified
+			)
 		)
 	except Exception as exc:
 		return _failure_from_exception(exc)

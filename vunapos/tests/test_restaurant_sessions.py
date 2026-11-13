@@ -65,6 +65,105 @@ class TestRestaurantSessions(IntegrationTestCase):
 		self.assertFalse(response["ok"])
 		self.assertEqual(response["errors"][0]["code"], "TABLE_OCCUPIED")
 
+	def test_session_key_cannot_be_reused_with_a_different_payload(self):
+		key = str(uuid4())
+		self._open(key)
+		response = restaurant.open_session(self.profile, key, tables=[self.table], guest_count=3)
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
+
+	def test_round_payload_conflict_and_recovery_after_visit_changes(self):
+		session = self._open()
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 1, "line_id": "original-line"}]
+		first = restaurant.create_session_round(session["name"], items, key)
+		self.assertTrue(first["ok"], first)
+		changed = restaurant.create_session_round(session["name"], [{**items[0], "qty": 2}], key)
+		self.assertFalse(changed["ok"], changed)
+		self.assertEqual(changed["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
+		# Recovery is about the original request, not the visit's current state.
+		frappe.db.set_value("Restaurant Session", session["name"], "status", "Settling")
+		retry = restaurant.create_session_round(session["name"], frappe.as_json(items), key)
+		self.assertTrue(retry["ok"], retry)
+		self.assertEqual(retry["data"]["name"], first["data"]["name"])
+		recovered = restaurant.recover_session_round(self.profile, key, items)
+		self.assertTrue(recovered["ok"], recovered)
+		self.assertEqual(recovered["data"]["order"]["name"], first["data"]["name"])
+		self.assertEqual(recovered["data"]["session"]["status"], "Settling")
+		self.assertEqual(frappe.db.count("Sales Order", {"vunapos_idempotency_key": key}), 1)
+
+	def test_recovery_checks_payload_and_returns_none_for_an_unknown_request(self):
+		unknown = restaurant.recover_session_round(self.profile, str(uuid4()), [])
+		self.assertTrue(unknown["ok"], unknown)
+		self.assertEqual(unknown["data"], {"session": None, "order": None})
+		session = self._open()
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 1}]
+		self.assertTrue(restaurant.create_session_round(session["name"], items, key)["ok"])
+		response = restaurant.recover_session_round(self.profile, key, [{"item_code": self.item, "qty": 2}])
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
+
+	def test_receipt_failure_rolls_back_order_and_can_be_retried(self):
+		from unittest.mock import patch
+
+		session = self._open()
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 1}]
+		with patch(
+			"vunapos.services.restaurant_request_service.record",
+			side_effect=RuntimeError("Receipt unavailable"),
+		):
+			response = restaurant.create_session_round(session["name"], items, key)
+		self.assertFalse(response["ok"], response)
+		self.assertFalse(frappe.db.exists("Sales Order", {"vunapos_idempotency_key": key}))
+		self.assertTrue(restaurant.create_session_round(session["name"], items, key)["ok"])
+
+	def test_legacy_order_retries_also_check_the_original_payload(self):
+		from vunapos.services.service_type_service import get_profile_service_types
+
+		profile = frappe.get_doc("POS Profile", self.profile)
+		service = next(row["name"] for row in get_profile_service_types(profile) if not row["requires_table"])
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 1}]
+		first = restaurant.create_order(self.profile, service_type=service, items=items, idempotency_key=key)
+		self.assertTrue(first["ok"], first)
+		retry = restaurant.create_order(
+			self.profile, service_type=service, items=frappe.as_json(items), idempotency_key=key
+		)
+		self.assertTrue(retry["ok"], retry)
+		self.assertEqual(first["data"]["name"], retry["data"]["name"])
+		conflict = restaurant.create_order(
+			self.profile,
+			service_type=service,
+			items=[{"item_code": self.item, "qty": 2}],
+			idempotency_key=key,
+		)
+		self.assertFalse(conflict["ok"], conflict)
+		self.assertEqual(conflict["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
+
+	def test_receipts_are_immutable_and_not_exposed_to_another_user(self):
+		from vunapos.services.restaurant_request_service import receipt_name
+		from vunapos.tests.helpers import ensure_test_user
+
+		session = self._open()
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 1}]
+		self.assertTrue(restaurant.create_session_round(session["name"], items, key)["ok"])
+		receipt = frappe.get_doc("Restaurant Request", receipt_name("Place Order", key))
+		receipt.fingerprint = "changed"
+		with self.assertRaises(frappe.PermissionError):
+			receipt.save()
+		user = f"receipt-{uuid4().hex[:8]}@example.com"
+		ensure_test_user(user, roles=("VunaPOS Waiter",), pos_profile=self.profile)
+		frappe.set_user(user)
+		try:
+			result = restaurant.recover_session_round(self.profile, key, items)
+			self.assertFalse(result["ok"], result)
+			self.assertEqual(result["errors"][0]["code"], "PermissionError")
+		finally:
+			frappe.set_user("Administrator")
+
 	def test_rounds_are_distinct_sales_orders_and_retry_is_safe(self):
 		session = self._open()
 		key = str(uuid4())
@@ -121,6 +220,19 @@ class TestRestaurantSessions(IntegrationTestCase):
 		self.assertEqual(updated["data"]["guest_count"], 5)
 		response = restaurant.update_session(session["name"], tables=[self.table, self.table])
 		self.assertFalse(response["ok"])
+
+	def test_stale_visit_edits_do_not_overwrite_another_terminal(self):
+		session = self._open()
+		first = restaurant.update_session(
+			session["name"], guest_count=5, expected_modified=session["modified"]
+		)
+		self.assertTrue(first["ok"], first)
+		stale = restaurant.update_session(
+			session["name"], guest_count=3, expected_modified=session["modified"]
+		)
+		self.assertFalse(stale["ok"], stale)
+		self.assertEqual(stale["errors"][0]["code"], "SESSION_CHANGED")
+		self.assertEqual(frappe.db.get_value("Restaurant Session", session["name"], "guest_count"), 5)
 
 	def test_join_and_move_tables_preserve_history(self):
 		session = self._open()

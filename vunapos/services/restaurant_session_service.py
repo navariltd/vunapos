@@ -2,8 +2,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, get_datetime, now_datetime
 
+from vunapos.services import restaurant_request_service as requests
 from vunapos.services.floor_plan_service import require_restaurant_profile
 from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
 from vunapos.services.restaurant_service import require_restaurant_access, require_restaurant_context
@@ -271,9 +272,16 @@ def list_sessions(pos_profile):
 	return rows
 
 
-def update_session(session, tables=None, guest_count=None, customer=None, waiter=None):
+def update_session(
+	session, tables=None, guest_count=None, customer=None, waiter=None, expected_modified=None
+):
 	doc = _load(session, for_update=True)
 	doc.check_permission("write")
+	if expected_modified and get_datetime(expected_modified) != get_datetime(doc.modified):
+		_fail(
+			"SESSION_CHANGED",
+			_("This visit changed on another terminal. Review the refreshed visit before trying again."),
+		)
 	if doc.status != "Open":
 		_fail("SESSION_NOT_OPEN", _("Only open sessions can be updated."))
 	if customer is not None and customer != doc.customer:
@@ -330,21 +338,32 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 
 
 def open_session(pos_profile, idempotency_key, tables=None, service_type=None, customer=None, guest_count=0):
-	idempotency_key = str(idempotency_key or "").strip()
-	if not idempotency_key or not str(idempotency_key).strip():
-		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required to open a session."))
+	idempotency_key = requests.request_key(idempotency_key)
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_staff_shift(profile.name)
 	restaurant = require_restaurant_profile(profile.name)
 	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
 	# Serialize retries on the profile even for takeaway sessions without tables.
 	frappe.db.get_value("POS Profile", profile.name, "name", for_update=True)
+	payload = {
+		"pos_profile": profile.name,
+		"tables": sorted(requests.parsed(tables) or []),
+		"service_type": service_type or "",
+		"customer": customer or "",
+		"guest_count": cint(guest_count),
+	}
+	previous = requests.replay("Open Session", idempotency_key, profile.name, payload)
+	if previous:
+		return session_to_dict(_load(previous, for_update=True))
 	existing = frappe.db.get_value(SESSION, {"idempotency_key": idempotency_key}, "name", for_update=True)
 	if existing:
 		doc = _load(existing)
 		if doc.pos_profile != profile.name:
 			_fail("IDEMPOTENCY_CONFLICT", _("This key belongs to a different POS Profile."))
-		return session_to_dict(doc)
+		_fail(
+			"REQUEST_REVIEW_REQUIRED",
+			_("Open the existing visit to review this older request before continuing."),
+		)
 	if isinstance(tables, str):
 		tables = frappe.parse_json(tables)
 	if not isinstance(tables or [], list):
@@ -386,6 +405,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 	)
 	doc.flags.restaurant_session_write = True
 	doc.insert()
+	requests.record("Open Session", idempotency_key, profile.name, payload, SESSION, doc.name)
 	return session_to_dict(doc)
 
 
@@ -397,17 +417,23 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 	from vunapos.services.restaurant_order_service import create_order
 
 	doc = _load(session, for_update=True)
+	idempotency_key = requests.request_key(idempotency_key)
+	profile = resolve_pos_profile(pos_profile or doc.pos_profile)
+	payload = requests.round_payload(doc.name, profile.name, items, order_note, kitchen_routing)
+	previous = requests.replay("Place Order", idempotency_key, profile.name, payload)
+	if previous:
+		from vunapos.services.restaurant_order_service import get_order
+
+		return get_order(previous, for_update=True)
+	if frappe.db.exists("Sales Order", {"vunapos_idempotency_key": idempotency_key}):
+		_fail("REQUEST_REVIEW_REQUIRED", _("Review the existing order before retrying this older request."))
 	if doc.status != "Open":
 		_fail("SESSION_NOT_OPEN", _("Only an open session can receive new orders."))
-	idempotency_key = str(idempotency_key or "").strip()
-	if not idempotency_key:
-		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required for each round."))
 	tables = [row.table for row in doc.tables if not row.released_at]
 	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
-	profile = resolve_pos_profile(pos_profile or doc.pos_profile)
 	if require_restaurant_profile(profile.name) != doc.restaurant or profile.vunapos_branch != doc.branch:
 		_fail("SESSION_CONTEXT_MISMATCH", _("Choose a POS Profile belonging to this session's restaurant."))
-	return create_order(
+	result = create_order(
 		pos_profile=profile.name,
 		service_type=doc.service_type,
 		customer=doc.customer,
@@ -420,6 +446,30 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 		price_list=doc.get("selling_price_list"),
 		kitchen_routing=kitchen_routing,
 	)
+	requests.record("Place Order", idempotency_key, profile.name, payload, "Sales Order", result["name"])
+	return result
+
+
+def recover_round(pos_profile, idempotency_key, items, order_note=None, kitchen_routing=None, session=None):
+	"""Read a committed result before retrying an uncertain placement."""
+	from vunapos.services.restaurant_order_service import get_order
+
+	profile = resolve_pos_profile(pos_profile)
+	require_restaurant_profile(profile.name)
+	# A read-only recovery check uses one consistent snapshot. If placement
+	# has not committed yet, the subsequent idempotent command will wait for it.
+	receipt = requests.find("Place Order", idempotency_key, for_update=False)
+	if not receipt:
+		return None
+	if receipt.owner != frappe.session.user or receipt.pos_profile != profile.name:
+		frappe.throw(
+			_("This restaurant request belongs to another user or POS Profile."), frappe.PermissionError
+		)
+	order = get_order(receipt.reference_name)
+	visit = order["restaurant_session"]
+	payload = requests.round_payload(session or visit, profile.name, items, order_note, kitchen_routing)
+	requests.replay("Place Order", idempotency_key, profile.name, payload, for_update=False)
+	return {"session": get_session(visit), "order": order}
 
 
 def cancel_empty_session(session):

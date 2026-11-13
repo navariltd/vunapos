@@ -34,6 +34,7 @@ from vunapos.dto.restaurant import (
 	order_to_dict,
 	waiter_name,
 )
+from vunapos.services import restaurant_request_service as requests
 from vunapos.services.floor_plan_service import (
 	TABLE_DOCTYPE,
 	is_floor_plan_manager,
@@ -336,7 +337,9 @@ def _validate_lines(profile, service_type, table, lines, existing_rows=(), price
 
 
 def _load_order(order, for_update=False):
-	restaurant = order and frappe.db.get_value(ORDER_DOCTYPE, order, "vunapos_restaurant")
+	restaurant = order and frappe.db.get_value(
+		ORDER_DOCTYPE, order, "vunapos_restaurant", for_update=for_update
+	)
 	if not restaurant:
 		_throw("ORDER_NOT_FOUND", _("Order {0} was not found").format(order), {"order": order})
 	# Orders belong to the restaurant, so staff of any of its tills can open them.
@@ -553,6 +556,25 @@ def create_order(
 	kitchen_routing=None,
 ):
 	idempotency_key = cstr(idempotency_key).strip() or None
+	profile = _restaurant_profile(pos_profile)
+	legacy_payload = None
+	if idempotency_key and not restaurant_session:
+		idempotency_key = requests.request_key(idempotency_key)
+		frappe.db.get_value("POS Profile", profile.name, "name", for_update=True)
+		legacy_payload = {
+			"pos_profile": profile.name,
+			"service_type": service_type or "",
+			"table": table or "",
+			"customer": customer or "",
+			"pax": _clean_pax(pax),
+			"order_note": order_note or "",
+			"items": requests.parsed(items),
+			"price_list": price_list or "",
+			"kitchen_routing": requests.parsed(kitchen_routing) or {},
+		}
+		previous = requests.replay("Create Order", idempotency_key, profile.name, legacy_payload)
+		if previous:
+			return get_order(previous, for_update=True)
 	if idempotency_key:
 		existing = frappe.db.get_value(
 			ORDER_DOCTYPE,
@@ -563,8 +585,12 @@ def create_order(
 			doc, _profile = _load_order(existing)
 			if doc.get("vunapos_restaurant_session") != restaurant_session:
 				_throw("IDEMPOTENCY_CONFLICT", _("This order key belongs to a different session."))
+			if legacy_payload is not None:
+				_throw(
+					"REQUEST_REVIEW_REQUIRED",
+					_("Review the existing order before retrying this older request."),
+				)
 			return order_to_dict(doc)
-	profile = _restaurant_profile(pos_profile)
 	require_restaurant_staff_shift(profile.name)
 	if not service_type:
 		default = get_default_service_type(profile)
@@ -666,11 +692,15 @@ def create_order(
 		doc.submit()
 	finally:
 		frappe.flags.vunapos_kitchen_routing = previous_routing
+	if legacy_payload is not None:
+		requests.record(
+			"Create Order", idempotency_key, profile.name, legacy_payload, ORDER_DOCTYPE, doc.name
+		)
 	return order_to_dict(doc)
 
 
-def get_order(order):
-	doc, _profile = _load_order(order)
+def get_order(order, for_update=False):
+	doc, _profile = _load_order(order, for_update=for_update)
 	return order_to_dict(doc)
 
 

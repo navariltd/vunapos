@@ -1,0 +1,66 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Request",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "autoname": "prompt",
+ "field_order": [
+  "action",
+  "pos_profile",
+  "reference_doctype",
+  "reference_name",
+  "fingerprint"
+ ],
+ "fields": [
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "label": "Action",
+   "options": "Open Session\nPlace Order\nCreate Order",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "pos_profile",
+   "fieldtype": "Link",
+   "label": "POS Profile",
+   "options": "POS Profile",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Document Type",
+   "options": "DocType",
+   "reqd": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Document",
+   "options": "reference_doctype",
+   "reqd": 1,
+   "read_only": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "fingerprint",
+   "fieldtype": "Data",
+   "label": "Request Fingerprint",
+   "reqd": 1,
+   "read_only": 1,
+   "hidden": 1
+  }
+ ],
+ "permissions": [{ "role": "System Manager", "read": 1 }],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "creation": "2026-11-13 07:22:45.934528",
+ "modified": "2026-11-13 07:40:49.742436",
+ "owner": "Administrator",
+ "modified_by": "Administrator"
+}
