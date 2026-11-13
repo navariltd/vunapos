@@ -48,6 +48,8 @@ type VunaEnvelope<T> = {
 export type FrappeCall<T = unknown> = (params: Record<string, unknown>) => Promise<T>;
 
 export class VunaApiError extends Error {
+	// An application error envelope, rather than an uncertain transport failure.
+	serverRejected = false;
 	code?: string;
 	field?: string;
 	// The envelope's meta, e.g. which floor or table label failed validation.
@@ -135,6 +137,7 @@ export const vunaMethods = {
 	updateRestaurantSession: "vunapos.api.restaurant.update_session",
 	cancelEmptyRestaurantSession: "vunapos.api.restaurant.cancel_empty_session",
 	createSessionRound: "vunapos.api.restaurant.create_session_round",
+	recoverSessionRound: "vunapos.api.restaurant.recover_session_round",
 	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
 	checkoutSession: "vunapos.api.restaurant.checkout_session",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
@@ -167,12 +170,14 @@ export function unwrapVunaResponse<T>(response: unknown): T {
 			return envelope.data;
 		}
 		const error = envelope.errors?.[0];
-		throw new VunaApiError(
+		const rejected = new VunaApiError(
 			error?.message || error?.code || "VunaPOS request failed",
 			error?.code,
 			error?.field,
 			envelope.meta,
 		);
+		rejected.serverRejected = true;
+		throw rejected;
 	}
 
 	return payload as T;
@@ -696,7 +701,7 @@ export function listRestaurantSessions(call: FrappeCall, pos_profile: string) {
 }
 
 export function updateRestaurantSession(call: FrappeCall, params: {
-	session: string; tables?: string[]; guest_count?: number; customer?: string; waiter?: string;
+	session: string; tables?: string[]; guest_count?: number; customer?: string; waiter?: string; expected_modified?: string;
 }) {
 	return callAndUnwrap<RestaurantSessionDTO>(call, {
 		...params, ...(params.tables ? { tables: JSON.stringify(params.tables) } : {}),
@@ -707,6 +712,16 @@ export function createSessionRound(call: FrappeCall, params: {
 	session: string; items: OrderLineInput[]; idempotency_key: string; order_note?: string | null; pos_profile?: string; kitchen_routing?: Record<string, string>;
 }) {
 	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function recoverSessionRound(call: FrappeCall, params: {
+  pos_profile: string; idempotency_key: string; session?: string;
+  items: OrderLineInput[]; order_note?: string | null; kitchen_routing?: Record<string, string>;
+}) {
+  return callAndUnwrap<{ session: RestaurantSessionDTO | null; order: RestaurantOrderDTO | null }>(call, {
+    ...params, items: JSON.stringify(params.items),
+    ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}),
+  });
 }
 
 export function validateRestaurantCart(call: FrappeCall, params: {
