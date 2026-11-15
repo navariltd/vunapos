@@ -53,6 +53,7 @@ import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { CancelOrderItems } from "./CancelOrderItems";
 import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
@@ -1286,6 +1287,7 @@ export function SessionScreen({
               ))}
             </ul>
             <div className="mt-3 flex flex-wrap gap-2">
+              <CancelOrderItems order={round.name} allowed={Boolean(round.can_cancel_items) && session.status === "Open"} onChanged={() => void result.refresh()} />
               {(session.kitchen_tickets || [])
                 .filter((ticket) => ticket.sales_order === round.name)
                 .map((ticket) => (
@@ -1302,6 +1304,7 @@ export function SessionScreen({
                   </Button>
                 ))}
             </div>
+            {round.cancellations?.length ? <details className="mt-3 text-sm"><summary className="cursor-pointer text-on-surface-variant">Cancellation history</summary><ul className="mt-2 space-y-2">{round.cancellations.map((event, eventIndex) => <li key={eventIndex}><p>{event.items.map((item) => `${item.qty} ${item.uom} × ${item.item_name}`).join(" · ")} cancelled</p><p className="text-xs text-on-surface-variant">{event.reason} · {event.actor} · {event.occurred_at}</p></li>)}</ul></details> : null}
           </details>
         ))}
       </Sheet>

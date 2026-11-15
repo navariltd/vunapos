@@ -12,6 +12,7 @@ export function KitchenLineProgress({
     [line.preparing_qty, "preparing"],
     [line.ready_to_serve_qty, "ready to serve"],
     [line.served_qty, "served"],
+    [line.cancelled_qty, "cancelled"],
   ] as const;
   return (
     <p

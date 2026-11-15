@@ -9,6 +9,7 @@ import { useFrappePostCall } from "frappe-react-sdk";
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { ManagerPinDialog } from "../../pos/components/ManagerPinDialog";
+import { CancelOrderItems } from "./CancelOrderItems";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import {
   cancelKitchenOrder,
@@ -331,6 +332,15 @@ export function KitchenActions({
       }}
     >
       {children}
+      {showCancel ? (
+        <div className="mt-2">
+          <CancelOrderItems
+            order={ticket.sales_order}
+            allowed={Boolean(ticket.can_cancel_order)}
+            onChanged={onChanged}
+          />
+        </div>
+      ) : null}
       {saved.error ? (
         <p role="alert" className="mb-2 text-sm text-error">
           {saved.error}

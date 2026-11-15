@@ -131,6 +131,8 @@ export const vunaMethods = {
 	getKitchenBoard: "vunapos.api.restaurant.get_kitchen_board",
 	kitchenAction: "vunapos.api.restaurant.kitchen_action",
 	cancelKitchenOrder: "vunapos.api.restaurant.cancel_kitchen_order",
+  previewItemCancellation: "vunapos.api.restaurant.preview_item_cancellation",
+  cancelOrderItems: "vunapos.api.restaurant.cancel_order_items",
 	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
 	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
 	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
@@ -740,6 +742,14 @@ export function kitchenAction(call: FrappeCall, params: { ticket: string; action
 
 export function cancelKitchenOrder(call: FrappeCall, params: { ticket: string; request_key: string; expected_status: string; reason: string; manager_pin_token?: string }) {
 	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
+}
+
+export function previewItemCancellation(call: FrappeCall, order: string) {
+  return callAndUnwrap<import("../features/restaurant/cancellationCommand").CancellationQuote>(call, { order });
+}
+
+export function cancelOrderItems(call: FrappeCall, params: import("../features/restaurant/cancellationCommand").CancellationCommand & { manager_pin_token?: string }) {
+  return callAndUnwrap<RestaurantOrderDTO>(call, params);
 }
 
 export function previewRestaurantCart(call: FrappeCall, params: {

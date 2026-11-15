@@ -150,6 +150,8 @@ export type RestaurantOrderLineDTO = {
 export type RestaurantOrderStatus = "Open" | "Billed" | "Cancelled";
 
 export type RestaurantOrderDTO = {
+  can_cancel_items?: boolean;
+  cancellations?: Array<{ reason: string; actor: string; occurred_at: string; approved_by?: string | null; items: Array<{ item_name: string; qty: number; uom: string }> }>;
 	restaurant?: string | null;
 	branch?: string | null;
 	restaurant_session?: string | null;
@@ -249,6 +251,7 @@ export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
 };
 
 export type KitchenLineProgress = {
+  cancelled_qty?: number;
   accepted_qty: number;
   started_qty: number;
   ready_qty: number;
