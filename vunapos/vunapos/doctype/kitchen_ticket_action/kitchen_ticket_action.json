@@ -13,6 +13,7 @@
   "occurred_at",
   "from_status",
   "to_status",
+  "item_quantities",
   "approval_section",
   "reason",
   "approved_by",
@@ -28,9 +29,24 @@
   "company",
   "stock_entries",
   "request_key",
-  "success_key"
+  "success_key",
+  "request_fingerprint"
  ],
  "fields": [
+  {
+   "fieldname": "item_quantities",
+   "fieldtype": "JSON",
+   "label": "Preparation Quantities",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "request_fingerprint",
+   "fieldtype": "Data",
+   "label": "Request Fingerprint",
+   "read_only": 1,
+   "hidden": 1
+  },
   {
    "fieldname": "kitchen_ticket",
    "fieldtype": "Link",
@@ -80,7 +96,7 @@
    "fieldtype": "Select",
    "label": "Action",
    "read_only": 1,
-   "options": "Accept\nStart\nReady\nServe\nCancel Order",
+   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Order",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
@@ -220,7 +236,7 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-13 09:19:33.586766",
  "creation": "2026-11-05 10:39:27.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

@@ -249,6 +249,44 @@ class TestRestaurantConcurrency(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Sales Invoice", {"vunapos_restaurant_session": self.session}), 1)
 		self.assertEqual(frappe.db.get_value("Restaurant Session", self.session, "status"), "Settled")
 
+	def _partial_ready_race(self, same_key):
+		placed = self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		ticket = self._tickets(placed["data"]["name"])[0]
+		for action, expected in (("Accept", "Sent"), ("Start", "Accepted")):
+			response = restaurant.kitchen_action(ticket, action, str(uuid4()), expected)
+			self.assertTrue(response["ok"], response)
+		version = str(restaurant.get_kitchen_ticket(ticket)["data"]["modified"])
+		key = str(uuid4())
+
+		def command():
+			return restaurant.kitchen_action(
+				ticket,
+				"Ready",
+				key if same_key else str(uuid4()),
+				"Preparing",
+				quantities={"meal": 1},
+				expected_modified=version,
+			)
+
+		results = self._race(command, command)
+		self.assertEqual(sum(response["ok"] for response in results), 2 if same_key else 1, results)
+		if not same_key:
+			failure = next(response for response in results if not response["ok"])
+			self.assertEqual(failure["errors"][0]["code"], "KITCHEN_STALE_STATE")
+		current = restaurant.get_kitchen_ticket(ticket)["data"]
+		self.assertEqual(current["status"], "Preparing")
+		self.assertEqual(current["items"][0]["ready_qty"], 1)
+		self.assertEqual(
+			frappe.db.get_value("Work Order", current["items"][0]["work_order"], "produced_qty"), 1
+		)
+
+	def test_same_partial_ready_retry_produces_once_across_transactions(self):
+		self._partial_ready_race(same_key=True)
+
+	def test_competing_partial_ready_commands_reject_unchanged_status_with_stale_version(self):
+		self._partial_ready_race(same_key=False)
+
 	def test_competing_ready_actions_reject_stale_state_without_extra_production(self):
 		placed = self._send()
 		self.assertTrue(placed["ok"], placed)

@@ -19,6 +19,18 @@ STATION = "Kitchen Station"
 KITCHEN_EVENT = "vunapos_kitchen_ticket_created"
 
 
+def ticket_user_names(tickets):
+	users = {doc.get(field) for doc in tickets for field in ("waiter", "sent_by") if doc.get(field)}
+	if not users:
+		return {}
+	return {
+		row.name: row.full_name or row.name
+		for row in frappe.get_all(
+			"User", filters={"name": ["in", sorted(users)]}, fields=["name", "full_name"]
+		)
+	}
+
+
 def fail(code, message, meta=None):
 	exc = frappe.ValidationError(message)
 	exc.vuna_error_code = code
@@ -525,11 +537,15 @@ def get_ticket(name, for_update=False):
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities
+	from vunapos.services.kitchen_progress_service import load
+
+	progress = load([doc], for_update=for_update)[doc.name]
+	user_names = ticket_user_names([doc])
 
 	return {
 		"modified": doc.modified,
 		"pos_profile": doc.pos_profile,
-		"available_actions": capabilities(doc.status),
+		"available_actions": capabilities(doc.status, progress),
 		"can_cancel_order": can_cancel() and doc.status not in ("Served", "Cancelled"),
 		"requires_cancel_pin": bool(
 			frappe.get_cached_value(
@@ -548,7 +564,9 @@ def get_ticket(name, for_update=False):
 		"status": doc.status,
 		"sent_at": doc.sent_at,
 		"sent_by": doc.sent_by,
+		"sent_by_name": user_names.get(doc.sent_by) or doc.sent_by,
 		"waiter": doc.waiter,
+		"waiter_name": user_names.get(doc.waiter) or doc.waiter,
 		"order_note": doc.order_note,
 		"items": [
 			{
@@ -564,6 +582,7 @@ def get_ticket(name, for_update=False):
 				"note": row.note,
 				"modifiers": frappe.parse_json(row.modifiers or "[]"),
 				"temporary_routing": bool(row.temporary_routing),
+				**progress[row.line_id],
 			}
 			for row in doc.items
 		],

@@ -99,13 +99,23 @@ def checkout_session(
 
 
 @frappe.whitelist(methods=["POST"])
-def kitchen_action(ticket: str, action: str, request_key: str, expected_status: str):
+def kitchen_action(
+	ticket: str,
+	action: str,
+	request_key: str,
+	expected_status: str,
+	quantities: dict | str | None = None,
+	expected_modified: str | None = None,
+	reason: str | None = None,
+):
 	from vunapos.services.kitchen_lifecycle_service import transition
 
 	# The command owns its rollback. A failure audit must survive an HTTP-200
 	# structured error, unlike the _atomic_write endpoints used for placement.
 	try:
-		return success(transition(ticket, action, request_key, expected_status))
+		return success(
+			transition(ticket, action, request_key, expected_status, quantities, expected_modified, reason)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

@@ -10,7 +10,7 @@ from uuid import uuid4
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, now_datetime, strip_html
+from frappe.utils import cint, flt, get_datetime, now_datetime, strip_html
 
 from vunapos.services.kitchen_service import STATION, TICKET, fail
 from vunapos.services.restaurant_service import require_restaurant_access
@@ -22,16 +22,26 @@ TRANSITIONS = {
 	"Start": ("Accepted", "Preparing"),
 	"Ready": ("Preparing", "Ready"),
 	"Serve": ("Ready", "Served"),
+	"Undo Serve": ("Served", "Ready"),
 }
 MANAGERS = {"System Manager", RESTAURANT_MANAGER_ROLE}
 
 
-def capabilities(status):
+def capabilities(status, progress=None):
 	roles = set(frappe.get_roles())
 	result = []
 	for action, (source, _target) in TRANSITIONS.items():
-		allowed = MANAGERS | ({WAITER_ROLE, CASHIER_ROLE} if action == "Serve" else {KITCHEN_ROLE})
-		if status == source and roles & allowed:
+		allowed = (
+			MANAGERS
+			if action == "Undo Serve"
+			else MANAGERS | ({WAITER_ROLE, CASHIER_ROLE} if action == "Serve" else {KITCHEN_ROLE})
+		)
+		eligible = status == source
+		if progress is not None:
+			eligible = status != "Cancelled" and any(
+				row.get("available_quantities", {}).get(action, 0) > 0.000001 for row in progress.values()
+			)
+		if eligible and roles & allowed:
 			result.append(action)
 	return result
 
@@ -81,14 +91,14 @@ def _request_key(key):
 	return key.strip()
 
 
-def _replay(doc, action, key, reason=None):
+def _replay(doc, action, key, reason=None, request_fingerprint=None, quantified=False):
 	row = frappe.db.get_value(
 		ACTION,
 		{
 			"success_key": hashlib.sha256(json.dumps(["request", key]).encode()).hexdigest(),
 			"outcome": "Succeeded",
 		},
-		["kitchen_ticket", "sales_order", "action", "actor", "reason"],
+		["kitchen_ticket", "sales_order", "action", "actor", "reason", "request_fingerprint"],
 		as_dict=True,
 		# The ticket lock may have waited for another request to commit. Use a
 		# current read, not the snapshot taken during the initial permission check.
@@ -102,6 +112,8 @@ def _replay(doc, action, key, reason=None):
 		or row.sales_order != doc.sales_order
 		or (action != "Cancel Order" and row.kitchen_ticket != doc.name)
 		or (row.reason or "") != (reason or "")
+		or (row.request_fingerprint and request_fingerprint != row.request_fingerprint)
+		or (quantified and not row.request_fingerprint)
 	):
 		fail("IDEMPOTENCY_CONFLICT", _("This kitchen request key belongs to a different action."))
 	return True
@@ -118,6 +130,8 @@ def _record(
 	approved_by=None,
 	error=None,
 	claim=True,
+	quantities=None,
+	request_fingerprint=None,
 ):
 	old = frappe.flags.get("vunapos_recording_kitchen_action")
 	try:
@@ -146,6 +160,8 @@ def _record(
 				if outcome == "Succeeded"
 				else None,
 				"stock_entries": json.dumps(entries or []),
+				"item_quantities": quantities,
+				"request_fingerprint": request_fingerprint,
 				"error_code": getattr(error, "vuna_error_code", type(error).__name__) if error else None,
 				"error_message": strip_html(str(error))[:2000] if error else None,
 			}
@@ -178,10 +194,10 @@ def _publish(doc):
 	frappe.db.after_commit.add(after_commit)
 
 
-def _work_orders(doc):
+def _work_orders(doc, line_ids=None):
 	result = []
 	for row in sorted(doc.items, key=lambda item: item.work_order or ""):
-		if row.parent_line_id:
+		if row.parent_line_id or (line_ids is not None and row.line_id not in line_ids):
 			continue
 		if not row.work_order:
 			fail(
@@ -271,34 +287,38 @@ def _native_stock_entry(wo, purpose, qty):
 	return entry.name
 
 
-def _produce(doc, ready=False):
+def _produce(doc, targets, ready=False):
 	entries = []
-	work_orders = _work_orders(doc)
+	work_orders = _work_orders(doc, targets)
+	by_order = {row.work_order: row for row in doc.items if row.line_id in targets}
 	_lock_stock_bins(work_orders)
 	for wo in work_orders:
+		row = by_order[wo.name]
+		target = flt(targets[row.line_id] * flt(row.conversion_factor or (row.stock_qty / row.qty)), 6)
 		if not wo.skip_transfer:
-			remaining = flt(wo.qty) - flt(wo.material_transferred_for_manufacturing)
+			remaining = target - flt(wo.material_transferred_for_manufacturing)
 			if remaining > 0.000001:
 				entries.append(_stock_entry(wo, "Material Transfer for Manufacture", remaining))
 				wo.reload()
 		if ready:
-			remaining = flt(wo.qty) - flt(wo.produced_qty)
+			remaining = target - flt(wo.produced_qty)
 			if remaining > 0.000001:
 				entries.append(_stock_entry(wo, "Manufacture", remaining))
 				wo.reload()
-			if flt(wo.produced_qty) + 0.000001 < flt(wo.qty):
+			if flt(wo.produced_qty) + 0.000001 < target:
 				fail(
 					"KITCHEN_MANUFACTURE_INCOMPLETE",
 					_("Work Order {0} is not fully manufactured.").format(wo.name),
 				)
 	if ready:
 		for row in doc.items:
-			if row.parent_line_id:
+			if row.parent_line_id or row.line_id not in targets:
 				continue
 			reserved = flt(
 				frappe.db.get_value("Sales Order Item", row.sales_order_item, "stock_reserved_qty")
 			)
-			if reserved + 0.000001 < flt(row.stock_qty):
+			target = flt(targets[row.line_id] * flt(row.conversion_factor or (row.stock_qty / row.qty)), 6)
+			if reserved + 0.000001 < target:
 				fail(
 					"KITCHEN_OUTPUT_NOT_RESERVED",
 					_(
@@ -335,44 +355,119 @@ def _rollback_command(savepoint):
 		frappe.db.rollback()
 
 
-def transition(ticket, action, request_key, expected_status):
+def transition(
+	ticket, action, request_key, expected_status, quantities=None, expected_modified=None, reason=None
+):
+	from vunapos.services import kitchen_progress_service as progress_service
+	from vunapos.services.restaurant_request_service import fingerprint, parsed
+
 	key = _request_key(request_key)
 	if action not in TRANSITIONS:
 		fail("INVALID_KITCHEN_ACTION", _("Unsupported preparation action."))
+	if action == "Undo Serve" and (not isinstance(reason, str) or not reason.strip() or len(reason) > 500):
+		fail(
+			"CORRECTION_REASON_REQUIRED", _("Enter a reason of up to 500 characters for correcting service.")
+		)
+	reason = reason.strip() if action == "Undo Serve" else None
 	doc = _ticket(ticket, lock=True)
 	# Replayed successful requests still require the same functional role.
 	if action not in capabilities(TRANSITIONS[action][0]):
 		frappe.throw(_("Your restaurant role cannot perform this kitchen action."), frappe.PermissionError)
-	if _replay(doc, action, key):
+	request_fingerprint = fingerprint(
+		{
+			"action": action,
+			"quantities": parsed(quantities),
+			"expected_modified": expected_modified,
+			"expected_status": expected_status,
+			"reason": reason,
+		}
+	)
+	if _replay(
+		doc,
+		action,
+		key,
+		reason=reason,
+		request_fingerprint=request_fingerprint,
+		quantified=quantities is not None,
+	):
 		return ticket_detail(doc.name)
-	_order(doc, serving=action == "Serve")
-	source, _target = TRANSITIONS[action]
-	if doc.status != expected_status or doc.status != source:
+	_order(doc, serving=action in ("Serve", "Undo Serve"))
+	if doc.status != expected_status or (
+		expected_modified and get_datetime(doc.modified) != get_datetime(expected_modified)
+	):
 		fail(
 			"KITCHEN_STALE_STATE",
 			_("This ticket is now {0}. Refresh before taking another action.").format(doc.status),
 			{"status": doc.status},
 		)
+	if quantities is not None and not expected_modified:
+		fail("KITCHEN_VERSION_REQUIRED", _("Refresh this ticket before updating individual quantities."))
+	progress = progress_service.load([doc], for_update=True)[doc.name]
+	selected = progress_service.selection(doc, action, quantities, progress)
 	savepoint = "kitchen_action_" + uuid4().hex
 	frappe.db.savepoint(savepoint)
 	try:
-		_apply_transition(doc, action, key)
+		_apply_transition(
+			doc,
+			action,
+			key,
+			progress=progress,
+			quantities=selected,
+			request_fingerprint=request_fingerprint,
+			reason=reason,
+		)
 	except Exception as exc:
 		_rollback_command(savepoint)
 		doc.reload()
-		_record(doc, action, key, source, outcome="Failed", error=exc)
+		_record(
+			doc,
+			action,
+			key,
+			doc.status,
+			outcome="Failed",
+			error=exc,
+			reason=reason,
+			quantities={"deltas": selected},
+			request_fingerprint=request_fingerprint,
+		)
 		raise
 	_publish(doc)
 	return ticket_detail(doc.name)
 
 
-def _apply_transition(doc, action, key, reason=None):
-	source, target = TRANSITIONS[action]
-	if doc.status != source:
-		fail("KITCHEN_STALE_STATE", _("Refresh this preparation ticket before proceeding."))
-	entries = _produce(doc, ready=action == "Ready") if action in ("Start", "Ready") else []
+def _apply_transition(
+	doc, action, key, reason=None, progress=None, quantities=None, request_fingerprint=None
+):
+	from vunapos.services import kitchen_progress_service as progress_service
+
+	progress = progress or progress_service.load([doc], for_update=True)[doc.name]
+	quantities = quantities or progress_service.selection(doc, action, None, progress)
+	before = {
+		row.line_id: {field: progress[row.line_id][field] for field in progress_service.FIELDS.values()}
+		for row in doc.items
+		if not row.parent_line_id
+	}
+	source = doc.status
+	field = "served_qty" if action == "Undo Serve" else progress_service.FIELDS[action]
+	targets = {
+		line: flt(progress[line][field] + (-qty if action == "Undo Serve" else qty), 6)
+		for line, qty in quantities.items()
+	}
+	entries = _produce(doc, targets, ready=action == "Ready") if action in ("Start", "Ready") else []
+	for line, total in targets.items():
+		progress[line][field] = total
+	target = progress_service.status_for(doc.items, progress)
 	doc.db_set("status", target)
-	_record(doc, action, key, source, entries=entries, reason=reason)
+	_record(
+		doc,
+		action,
+		key,
+		source,
+		entries=entries,
+		reason=reason,
+		quantities={"deltas": quantities, "before": before},
+		request_fingerprint=request_fingerprint,
+	)
 
 
 def complete_for_billing(ticket, profile):
@@ -403,10 +498,13 @@ def complete_for_billing(ticket, profile):
 		return
 	if doc.status not in ("Sent", "Accepted", "Preparing"):
 		fail("KITCHEN_STALE_STATE", _("This ticket cannot be completed during billing."))
-	for action, (source, _target) in TRANSITIONS.items():
+	for action in TRANSITIONS:
 		if action == "Serve":
 			break
-		if doc.status == source:
+		from vunapos.services import kitchen_progress_service as progress_service
+
+		progress = progress_service.load([doc], for_update=True)[doc.name]
+		if any(row.get("available_quantities", {}).get(action, 0) > 0.000001 for row in progress.values()):
 			key = "billing-" + hashlib.sha256(f"{doc.name}:{action}".encode()).hexdigest()
 			_apply_transition(
 				doc,
@@ -522,7 +620,7 @@ def allow_cancelled_order_audit_links(doc, method=None):
 
 
 def action_history(doc, for_update=False):
-	return frappe.qb.get_query(
+	rows = frappe.qb.get_query(
 		ACTION,
 		filters={"kitchen_ticket": doc.name},
 		fields=[
@@ -536,6 +634,7 @@ def action_history(doc, for_update=False):
 			"reason",
 			"approved_by",
 			"stock_entries",
+			"item_quantities",
 			"error_message",
 		],
 		order_by="creation desc",
@@ -543,6 +642,9 @@ def action_history(doc, for_update=False):
 		ignore_permissions=False,
 		for_update=for_update,
 	).run(as_dict=True)
+	for row in rows:
+		row.item_quantities = frappe.parse_json(row.item_quantities)
+	return rows
 
 
 def list_board(pos_profile, station=None, history=False, start=0):
@@ -614,8 +716,19 @@ def list_board(pos_profile, station=None, history=False, start=0):
 			for item in items
 			if item.parent == row.name
 		]
-		row.available_actions = capabilities(row.status)
 		row.can_cancel_order = can_cancel() and row.status not in ("Served", "Cancelled")
+	from vunapos.services.kitchen_progress_service import load
+
+	progress = load(rows)
+	from vunapos.services.kitchen_service import ticket_user_names
+
+	user_names = ticket_user_names(rows)
+	for row in rows:
+		row.waiter_name = user_names.get(row.waiter) or row.waiter
+		row.sent_by_name = user_names.get(row.sent_by) or row.sent_by
+		for item in row.get("items"):
+			item.update(progress[row.name][item["line_id"]])
+		row.available_actions = capabilities(row.status, progress[row.name])
 	return {"stations": stations, "tickets": rows, "has_more": has_more, "start": start}
 
 
