@@ -1,7 +1,7 @@
 """Preparation quantities derived from immutable action deltas, in selling UOM.
 
-Cumulative: 0 <= served <= ready <= started <= accepted <= ordered.
-Buckets: not accepted + waiting + preparing + ready to serve + served = ordered.
+Active cumulative: 0 <= served <= ready <= started <= accepted <= ordered - cancelled.
+Buckets: not accepted + waiting + preparing + ready to serve + served + cancelled = ordered.
 Add-ons inherit their parent's completion ratio and cannot be advanced separately.
 """
 
@@ -19,9 +19,11 @@ EPSILON = 0.000001
 
 
 def remaining(row, action):
+	if action == "Cancel Items":
+		return max(0, flt(row["qty"] - row.get("cancelled_qty", 0) - row["ready_qty"], 6))
 	if action == "Undo Serve":
 		return row["served_qty"]
-	ceiling = row[PREVIOUS[action]] if PREVIOUS[action] else flt(row["qty"])
+	ceiling = row[PREVIOUS[action]] if PREVIOUS[action] else flt(row["qty"] - row.get("cancelled_qty", 0))
 	return max(0, flt(ceiling - row[FIELDS[action]], 6))
 
 
@@ -29,13 +31,13 @@ def derive(items, status, events):
 	items = [row.as_dict() if callable(getattr(row, "as_dict", None)) else row for row in items]
 	parents = {row["line_id"]: row for row in items if not row.get("parent_line_id")}
 	result = {
-		key: {"qty": flt(row["qty"]), **{field: 0.0 for field in FIELDS.values()}}
+		key: {"qty": flt(row["qty"]), "cancelled_qty": 0.0, **{field: 0.0 for field in FIELDS.values()}}
 		for key, row in parents.items()
 	}
 	quantified = False
 	for event in events:
 		action = event["action"]
-		if action not in FIELDS and action != "Undo Serve":
+		if action not in FIELDS and action not in ("Undo Serve", "Cancel Items"):
 			continue
 		payload = frappe.parse_json(event.get("item_quantities"))
 		values = None
@@ -54,8 +56,14 @@ def derive(items, status, events):
 					"KITCHEN_PROGRESS_INVALID",
 					_("Preparation history is inconsistent. Ask a manager to review this ticket."),
 				)
-			field = "served_qty" if action == "Undo Serve" else FIELDS[action]
-			row[field] = flt(row[field] + (-qty if action == "Undo Serve" else qty), 6)
+			if action == "Cancel Items":
+				row["cancelled_qty"] = flt(row["cancelled_qty"] + qty, 6)
+				active = flt(row["qty"] - row["cancelled_qty"], 6)
+				for field in ("accepted_qty", "started_qty"):
+					row[field] = min(row[field], active)
+			else:
+				field = "served_qty" if action == "Undo Serve" else FIELDS[action]
+				row[field] = flt(row[field] + (-qty if action == "Undo Serve" else qty), 6)
 	# Preserve pre-upgrade whole-ticket progress, including imported tickets.
 	if not quantified:
 		stages = {"Sent": 0, "Accepted": 1, "Preparing": 2, "Ready": 3, "Served": 4}
@@ -112,8 +120,10 @@ def load(tickets, for_update=False):
 
 def status_for(items, progress):
 	rows = [progress[row.line_id] for row in items if not row.parent_line_id]
+	if rows and all(row["qty"] - row.get("cancelled_qty", 0) <= EPSILON for row in rows):
+		return "Cancelled"
 	for field, status in (("served_qty", "Served"), ("ready_qty", "Ready")):
-		if rows and all(row["qty"] - row[field] <= EPSILON for row in rows):
+		if rows and all(row["qty"] - row.get("cancelled_qty", 0) - row[field] <= EPSILON for row in rows):
 			return status
 	if any(row["started_qty"] > EPSILON for row in rows):
 		return "Preparing"

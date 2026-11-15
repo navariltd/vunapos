@@ -2,7 +2,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, now_datetime
+from frappe.utils import cint, flt, get_datetime, now_datetime
 
 from vunapos.services import restaurant_request_service as requests
 from vunapos.services.floor_plan_service import require_restaurant_profile
@@ -131,7 +131,7 @@ def _load(session, for_update=False):
 
 
 def session_to_dict(doc):
-	from vunapos.dto.restaurant import order_to_dict, waiter_name
+	from vunapos.dto.restaurant import cancellation_histories, order_to_dict, waiter_name
 	from vunapos.services.floor_plan_service import is_floor_plan_manager
 	from vunapos.services.kitchen_lifecycle_service import preparation_summary
 	from vunapos.services.kitchen_service import session_tickets
@@ -157,6 +157,10 @@ def session_to_dict(doc):
 			)
 
 	tickets = session_tickets(doc)
+	orders = frappe.get_all(
+		"Sales Order", filters={"vunapos_restaurant_session": doc.name}, pluck="name", order_by="creation asc"
+	)
+	histories = cancellation_histories(orders)
 	return {
 		"name": doc.name,
 		"restaurant": doc.restaurant,
@@ -189,13 +193,8 @@ def session_to_dict(doc):
 			for row in doc.tables
 		],
 		"rounds": [
-			order_to_dict(frappe.get_doc("Sales Order", name))
-			for name in frappe.get_all(
-				"Sales Order",
-				filters={"vunapos_restaurant_session": doc.name},
-				pluck="name",
-				order_by="creation asc",
-			)
+			order_to_dict(frappe.get_doc("Sales Order", name), cancellations=histories[name])
+			for name in orders
 		],
 	}
 
@@ -533,6 +532,16 @@ def protect_committed_round(doc, method=None):
 	)
 	old_lines = [tuple(row.get(field) for field in line_fields) for row in before.items]
 	new_lines = [tuple(row.get(field) for field in line_fields) for row in doc.items]
+	if frappe.flags.get("vunapos_cancelling_restaurant_items") == doc.name:
+		old = {row.name: row for row in before.items}
+		valid = all(
+			row.name in old
+			and 0 < flt(row.qty) <= flt(old[row.name].qty)
+			and all(row.get(field) == old[row.name].get(field) for field in line_fields if field != "qty")
+			for row in doc.items
+		)
+		if valid and not any(doc.get(field) != before.get(field) for field in headers):
+			return
 	if old_lines != new_lines or any(doc.get(field) != before.get(field) for field in headers):
 		_fail(
 			"ROUND_ALREADY_COMMITTED",

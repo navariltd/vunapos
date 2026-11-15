@@ -127,15 +127,17 @@ def _review_fingerprint(orders, doc):
 
 
 def _pending_production(order_names):
+	active = set(frappe.get_all("Sales Order Item", filters={"parent": ["in", order_names]}, pluck="name"))
 	pending = [
 		row.name
 		for row in frappe.get_all(
 			"Work Order",
 			filters={"sales_order": ["in", order_names]},
-			fields=["name", "docstatus", "qty", "produced_qty"],
+			fields=["name", "docstatus", "qty", "produced_qty", "sales_order_item"],
 			order_by="name",
 		)
-		if row.docstatus != 1 or flt(row.produced_qty) + 0.000001 < flt(row.qty)
+		if row.sales_order_item in active
+		and (row.docstatus != 1 or flt(row.produced_qty) + 0.000001 < flt(row.qty))
 	]
 	# Do not settle a visit with Sent/Preparing tickets that could no longer
 	# advance after billing. Desk production must still be marked ready in KDS.
@@ -490,6 +492,8 @@ def validate_billing_stock(doc):
 		order_by="name",
 	):
 		wo = frappe.get_doc("Work Order", name, for_update=True)
+		if wo.sales_order_item not in {row.so_detail for row in doc.items}:
+			continue
 		if wo.docstatus != 1 or flt(wo.produced_qty) + 0.000001 < flt(wo.qty):
 			fail(
 				"SESSION_FINISHED_STOCK_REQUIRED",

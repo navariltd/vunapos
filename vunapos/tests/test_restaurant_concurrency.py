@@ -298,12 +298,76 @@ class TestRestaurantConcurrency(IntegrationTestCase):
 			lambda: restaurant.kitchen_action(ticket, "Ready", str(uuid4()), "Preparing"),
 		)
 		self.assertEqual(sum(response["ok"] for response in results), 1, results)
+
 		failure = next(response for response in results if not response["ok"])
 		self.assertEqual(failure["errors"][0]["code"], "KITCHEN_STALE_STATE")
 		wo = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": ticket}, "work_order")
 		self.assertEqual(
 			frappe.db.count("Stock Entry", {"work_order": wo, "purpose": "Manufacture", "docstatus": 1}), 1
 		)
+
+	def test_simultaneous_item_cancellation_retries_reduce_quantity_once(self):
+		placed = self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		order = placed["data"]["name"]
+		quote = restaurant.preview_item_cancellation(order)["data"]
+		key = str(uuid4())
+
+		def command():
+			return restaurant.cancel_order_items(
+				order, {"meal": 1}, key, quote["fingerprint"], "Customer changed their mind"
+			)
+
+		results = self._race(command, command)
+		for result in results:
+			self.assertTrue(result["ok"], result)
+		self.assertEqual(frappe.db.get_value("Sales Order Item", {"parent": order}, "qty"), 3)
+		self.assertEqual(
+			frappe.db.count("Restaurant Request", {"action": "Cancel Items", "reference_name": order}), 1
+		)
+
+	def test_cancellation_and_kitchen_ready_cannot_both_use_the_old_review(self):
+		placed = self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		order = placed["data"]["name"]
+		ticket = self._tickets(order)[0]
+		for action, status in (("Accept", "Sent"), ("Start", "Accepted")):
+			self.assertTrue(restaurant.kitchen_action(ticket, action, str(uuid4()), status)["ok"])
+		current = restaurant.get_kitchen_ticket(ticket)["data"]
+		quote = restaurant.preview_item_cancellation(order)["data"]
+		results = self._race(
+			lambda: restaurant.cancel_order_items(
+				order, {"meal": 1}, str(uuid4()), quote["fingerprint"], "Customer changed their mind"
+			),
+			lambda: restaurant.kitchen_action(
+				ticket, "Ready", str(uuid4()), "Preparing", {"meal": 4}, str(current["modified"])
+			),
+		)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		failure = next(result for result in results if not result["ok"])
+		self.assertIn(failure["errors"][0]["code"], ("CANCELLATION_CHANGED", "KITCHEN_STALE_STATE"))
+		qty = frappe.db.get_value("Sales Order Item", {"parent": order}, "qty")
+		produced = frappe.db.get_value("Work Order", {"sales_order": order, "docstatus": 1}, "produced_qty")
+		self.assertIn((qty, produced), ((3, 0), (4, 4)))
+
+	def test_cancellation_and_billing_cannot_both_commit_the_old_quantities(self):
+		frappe.db.set_value("POS Profile", self.profile.name, "vunapos_complete_preparation_on_billing", 1)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+		placed = self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		order = placed["data"]["name"]
+		quote = restaurant.preview_item_cancellation(order)["data"]
+		bill = self._preview()
+		results = self._race(
+			lambda: restaurant.cancel_order_items(
+				order, {"meal": 1}, str(uuid4()), quote["fingerprint"], "Customer changed their mind"
+			),
+			lambda: self._checkout(bill),
+		)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		qty = frappe.db.get_value("Sales Order Item", {"parent": order}, "qty")
+		produced = frappe.db.get_value("Work Order", {"sales_order": order, "docstatus": 1}, "produced_qty")
+		self.assertIn((qty, produced), ((3, 0), (4, 4)))
 
 	def test_billing_and_kitchen_completion_cannot_manufacture_twice(self):
 		frappe.db.set_value("POS Profile", self.profile.name, "vunapos_complete_preparation_on_billing", 1)

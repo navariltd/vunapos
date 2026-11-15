@@ -132,6 +132,34 @@ def cancel_kitchen_order(
 		return _failure_from_exception(exc)
 
 
+@frappe.whitelist()
+def preview_item_cancellation(order: str):
+	from vunapos.services.restaurant_cancellation_service import preview
+
+	try:
+		return success(preview(order))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def cancel_order_items(
+	order: str,
+	quantities: dict | str,
+	request_key: str,
+	fingerprint: str,
+	reason: str,
+	manager_pin_token: str | None = None,
+):
+	from vunapos.services.restaurant_cancellation_service import cancel
+
+	try:
+		return success(cancel(order, quantities, request_key, fingerprint, reason, manager_pin_token))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
 @frappe.whitelist(methods=["POST"])
 def validate_cart(
 	pos_profile: str,

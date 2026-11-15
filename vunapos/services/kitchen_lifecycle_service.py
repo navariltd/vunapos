@@ -195,9 +195,15 @@ def _publish(doc):
 
 
 def _work_orders(doc, line_ids=None):
+	from vunapos.services.kitchen_progress_service import load
+
+	progress = load([doc], for_update=True)[doc.name]
 	result = []
 	for row in sorted(doc.items, key=lambda item: item.work_order or ""):
 		if row.parent_line_id or (line_ids is not None and row.line_id not in line_ids):
+			continue
+		active_qty = flt(row.qty) - progress[row.line_id].get("cancelled_qty", 0)
+		if active_qty <= 0.000001:
 			continue
 		if not row.work_order:
 			fail(
@@ -214,7 +220,7 @@ def _work_orders(doc, line_ids=None):
 			or wo.sales_order_item != row.sales_order_item
 			or wo.production_item != row.item_code
 			or wo.company != doc.company
-			or abs(flt(wo.qty) - flt(row.stock_qty)) > 0.000001
+			or abs(flt(wo.qty) - flt(active_qty * row.conversion_factor)) > 0.000001
 		):
 			fail(
 				"KITCHEN_PRODUCTION_MISMATCH",

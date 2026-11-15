@@ -1,4 +1,4 @@
-"""Durable command receipts, committed atomically with restaurant placement.
+"""Durable command receipts, committed atomically with restaurant commands.
 
 Callers must hold the POS Profile lock (opening) or Session lock (rounds).
 Receipts are not a second order ledger: they only identify the native result.
@@ -76,7 +76,7 @@ def replay(action, key, profile, payload, for_update=True):
 	return receipt.reference_name
 
 
-def record(action, key, profile, payload, reference_doctype, reference_name):
+def record(action, key, profile, payload, reference_doctype, reference_name, details=None):
 	doc = frappe.get_doc(
 		{
 			"doctype": "Restaurant Request",
@@ -86,6 +86,7 @@ def record(action, key, profile, payload, reference_doctype, reference_name):
 			"fingerprint": fingerprint(payload),
 			"reference_doctype": reference_doctype,
 			"reference_name": reference_name,
+			"details": details,
 		}
 	)
 	doc.flags.restaurant_request_write = True

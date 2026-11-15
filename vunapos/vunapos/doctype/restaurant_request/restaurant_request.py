@@ -6,7 +6,7 @@ class RestaurantRequest(Document):
 	def validate(self):
 		if not self.is_new() or not self.flags.restaurant_request_write:
 			frappe.throw(
-				"Restaurant request receipts are managed by placement actions.", frappe.PermissionError
+				"Restaurant request receipts are managed by restaurant actions.", frappe.PermissionError
 			)
 
 	def on_trash(self):
