@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { KitchenTicketSheet } from "../components/KitchenTicketSheet";
 
 const sdk = vi.hoisted(() => ({ get: vi.fn() }));
-vi.mock("frappe-react-sdk", () => ({ useFrappeGetCall: sdk.get }));
+vi.mock("frappe-react-sdk", () => ({ useFrappeGetCall: sdk.get, useFrappePostCall: () => ({ call: vi.fn() }) }));
 
 describe("read-only kitchen ticket", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -21,6 +21,9 @@ describe("read-only kitchen ticket", () => {
             table_labels: "1, 2",
             sent_at: "2026-11-04 12:30:00",
             sent_by: "waiter@example.com",
+            sent_by_name: "Jane Wanjiku",
+            waiter: "waiter@example.com",
+            waiter_name: "Jane Wanjiku",
             order_note: "Allergy: nuts",
             items: [
               {
@@ -54,6 +57,8 @@ describe("read-only kitchen ticket", () => {
       <KitchenTicketSheet name="KOT-1" onClose={() => {}} />
     );
     expect(html).toContain("Main Kitchen");
+    expect(html).toContain("Waiter: Jane Wanjiku");
+    expect(html).not.toContain("waiter@example.com");
     expect(html).toContain("Tables: 1, 2");
     expect(html).toContain("No sugar");
     expect(html).toContain("Extra milk");

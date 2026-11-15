@@ -17,6 +17,52 @@ const ticket: KitchenTicketDTO = {
 };
 
 describe("kitchen display", () => {
+  it("shows the waiter's full name instead of the user email", () => {
+    const html = renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, waiter: "waiter@example.com", waiter_name: "Jane Wanjiku" }} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+    expect(html).toContain("Waiter: Jane Wanjiku");
+    expect(html).not.toContain("waiter@example.com");
+  });
+
+  it("highlights acceptance with the existing primary accent without changing other ticket actions", () => {
+    const accept = renderToStaticMarkup(<KitchenActions ticket={ticket} onChanged={() => {}} />);
+    expect(accept).toContain("bg-primary text-on-primary");
+    const start = renderToStaticMarkup(<KitchenActions ticket={{ ...ticket, available_actions: ["Start"] }} onChanged={() => {}} />);
+    expect(start).toContain("bg-surface-container text-on-surface");
+    expect(start).not.toContain("bg-primary text-on-primary");
+  });
+
+  it("accepts and starts the whole ticket without per-dish quantity inputs", () => {
+    for (const action of ["Accept", "Start"] as const) {
+      const current = { ...ticket, modified: "version", available_actions: [action], items: [
+        { ...ticket.items[0], qty: 4, available_quantities: { [action]: 4 } },
+      ] };
+      const html = renderToStaticMarkup(<KitchenTicketCard ticket={current} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+      expect(html).toContain(action === "Accept" ? "Accept ticket" : "Start preparing");
+      expect(html).not.toContain('type="number"');
+      expect(html).not.toContain(`${action} Tea`);
+    }
+  });
+
+  it("finishes accepting a legacy partially accepted ticket before offering Start", () => {
+    const current = { ...ticket, modified: "version", available_actions: ["Accept", "Start"] as KitchenTicketDTO["available_actions"], items: [
+      { ...ticket.items[0], qty: 4, available_quantities: { Accept: 2, Start: 2 } },
+    ] };
+    const html = renderToStaticMarkup(<KitchenTicketCard ticket={current} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+    expect(html).toContain("Accept ticket");
+    expect(html).not.toContain("Start preparing");
+    expect(html).not.toContain('type="number"');
+  });
+
+  it("offers partial quantities without removing one-click bulk actions", () => {
+    const partial = { ...ticket, modified: "2026-11-13 10:00:00.123456", status: "Preparing", available_actions: ["Ready", "Serve"] as const,
+      items: [{ ...ticket.items[0], accepted_qty: 2, preparing_qty: 1, ready_to_serve_qty: 1, available_quantities: { Ready: 1, Serve: 1 } }] };
+    const html = renderToStaticMarkup(<KitchenTicketCard ticket={{ ...partial, available_actions: [...partial.available_actions] }} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+    for (const text of ["Ready all", "Serve all", "Ready Tea", "Served Tea", "type=\"number\"", "max=\"1\"", "1 preparing", "1 ready to serve"]) expect(html).toContain(text);
+    expect(html).not.toContain("Choose quantities");
+    expect(html).not.toContain("<select");
+    expect(html).not.toContain("Correct served quantity");
+  });
+
   it("shows preparation context, elapsed time and controls without prices", () => {
     const html = renderToStaticMarkup(<KitchenTicketCard ticket={ticket} now={new Date("2026-11-05T10:25:00")} onOpen={() => {}} onChanged={() => {}} />);
     for (const text of ["Main Kitchen", "Table 1 + 2", "25", "No sugar", "Extra milk", "Allergy: nuts", "Accept"]) expect(html).toContain(text);
@@ -26,9 +72,30 @@ describe("kitchen display", () => {
 
   it("renders only the server-permitted action for the current state", () => {
     const html = renderToStaticMarkup(<KitchenActions ticket={{ ...ticket, status: "Ready", available_actions: ["Serve"] }} onChanged={() => {}} />);
-    expect(html).toContain("Mark served");
+    expect(html).toContain("Serve all");
     expect(html).not.toContain("Accept");
     expect(html).not.toContain("Mark ready");
+  });
+
+  it("keeps corrections off the live board and exposes them in ticket details only", () => {
+    const completed = { ...ticket, status: "Served", available_actions: ["Undo Serve"] as KitchenTicketDTO["available_actions"] };
+    const board = renderToStaticMarkup(<KitchenTicketCard ticket={completed} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+    expect(board).not.toContain("Correct served quantity");
+    const details = renderToStaticMarkup(<KitchenActions ticket={completed} onChanged={() => {}} />);
+    expect(details).toContain("Correct served quantity");
+  });
+
+  it("never gives add-ons their own quantity actions or offers quantities unavailable on that line", () => {
+    const mixed = { ...ticket, modified: "version", available_actions: ["Ready"] as KitchenTicketDTO["available_actions"], items: [
+      { ...ticket.items[0], available_quantities: { Ready: 2 } },
+      { ...ticket.items[0], line_id: "other", item_name: "Coffee", available_quantities: { Ready: 0 } },
+      { ...ticket.items[0], line_id: "addon", parent_line_id: "dish", item_name: "Milk", available_quantities: { Ready: 2 } },
+    ] };
+    const html = renderToStaticMarkup(<KitchenTicketCard ticket={mixed} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
+    expect(html).toContain("Ready Tea");
+    expect(html).not.toContain("Ready Coffee");
+    expect(html).not.toContain("Ready Milk");
+    expect(html).toContain('value="2"');
   });
 
   it("has distinct status colors and clear native-manufacture action labels", () => {

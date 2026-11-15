@@ -5,6 +5,7 @@ export const KITCHEN_ACTION_LABELS: Record<KitchenAction, string> = {
   Start: "Start preparing",
   Ready: "Mark ready",
   Serve: "Mark served",
+  "Undo Serve": "Correct served quantity",
 };
 
 export function kitchenStatusClass(status: string) {

@@ -734,7 +734,7 @@ export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string;
 	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params);
 }
 
-export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string }) {
+export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string; expected_modified?: string; quantities?: Record<string, number>; reason?: string }) {
 	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
 }
 

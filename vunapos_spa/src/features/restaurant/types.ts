@@ -240,15 +240,27 @@ export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
 	available_actions?: KitchenAction[];
 	can_cancel_order?: boolean;
 	requires_cancel_pin?: boolean;
-	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string }>;
+	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string; item_quantities?: { deltas: Record<string, number> } | null }>;
 	restaurant_session: string; table_labels?: string | null; service_type?: string | null;
-	sent_by: string; waiter?: string | null; order_note?: string | null;
+	sent_by: string; sent_by_name?: string | null; waiter?: string | null; waiter_name?: string | null; order_note?: string | null;
 	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
 		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null;
-		modifiers: Array<{ label: string }>; temporary_routing: boolean }>;
+		modifiers: Array<{ label: string }>; temporary_routing: boolean } & Partial<KitchenLineProgress>>;
 };
 
-export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve";
+export type KitchenLineProgress = {
+  accepted_qty: number;
+  started_qty: number;
+  ready_qty: number;
+  served_qty: number;
+  not_accepted_qty: number;
+  waiting_qty: number;
+  preparing_qty: number;
+  ready_to_serve_qty: number;
+  available_quantities: Partial<Record<KitchenAction, number>>;
+};
+
+export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve" | "Undo Serve";
 export type KitchenBoardDTO = {
 	stations: Array<{ name: string; station_name: string; enabled: number }>;
 	tickets: KitchenTicketDTO[];
