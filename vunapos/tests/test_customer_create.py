@@ -309,7 +309,7 @@ class TestCustomerCreate(IntegrationTestCase):
 				ignore_permissions=True
 			)
 
-		frappe.message_log = []
+		frappe.local.message_log = []
 		self._set_customer_groups(self.restaurant, [GROUP_NODE], default=f"{GROUP_NODE} Leaf")
 		self.assertEqual(self._created_group(self.restaurant), f"{GROUP_NODE} Leaf")
 		# The old "will use another group instead" warning is gone.

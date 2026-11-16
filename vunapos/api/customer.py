@@ -15,7 +15,7 @@ from vunapos.utils.response import failure, success
 
 
 @frappe.whitelist()
-def search_customers(query=None, limit=20, pos_profile=None):
+def search_customers(query: str | None = None, limit: int | str | None = 20, pos_profile: str | None = None):
 	try:
 		return success(search_customers_service(query=query, limit=limit, pos_profile=pos_profile))
 	except Exception as exc:
