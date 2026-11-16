@@ -15,7 +15,7 @@ from vunapos.patches.v1_0 import allow_restaurant_customer_creation
 from vunapos.services.catalogue_cache import customer_search_key
 from vunapos.services.catalogue_cache import get as get_catalogue_cache
 from vunapos.services.catalogue_cache import set as set_catalogue_cache
-from vunapos.services.customer_service import default_customer_group, normalise_mobile
+from vunapos.services.customer_service import normalise_mobile
 from vunapos.setup.utils import CASHIER_ROLE, KITCHEN_ROLE, WAITER_ROLE, ensure_vunapos_roles
 from vunapos.tests.helpers import (
 	ensure_test_pos_profile,
@@ -270,22 +270,58 @@ class TestCustomerCreate(IntegrationTestCase):
 			customer = frappe.get_doc("Customer", self._create(profile)["data"]["customer"])
 			self.assertEqual((customer.customer_group, customer.territory), (None, None), profile)
 
-	def test_default_group_outside_the_profile_customer_groups_falls_back_to_an_allowed_group(self):
-		profile = frappe.get_doc("POS Profile", self.retail)
-		profile.vunapos_default_customer_group = GROUP_A
-		profile.append("customer_groups", {"customer_group": GROUP_NODE})
-		profile.save(ignore_permissions=True)
+	def _created_group(self, profile):
+		response = self._create(profile)
+		self.assertTrue(response["ok"], response)
+		return frappe.db.get_value("Customer", response["data"]["customer"], "customer_group")
 
-		# The allowed entry is a group node, so its first leaf is used.
-		self.assertEqual(default_customer_group(profile), f"{GROUP_NODE} Leaf")
-		customer = self._create(self.retail)["data"]["customer"]
-		self.assertEqual(frappe.db.get_value("Customer", customer, "customer_group"), f"{GROUP_NODE} Leaf")
-		self.assertIn(GROUP_A, str(frappe.message_log))
+	def test_the_only_customer_groups_row_is_the_default_group(self):
+		frappe.db.set_single_value("Selling Settings", "customer_group", GROUP_B)
+		for profile in (self.retail, self.restaurant):
+			self._set_customer_groups(profile, [GROUP_A])
+			self.assertEqual(self._created_group(profile), GROUP_A, profile)
 
-		profile.customer_groups = []
-		profile.append("customer_groups", {"customer_group": GROUP_A})
-		profile.save(ignore_permissions=True)
-		self.assertEqual(default_customer_group(profile), GROUP_A)
+	def test_selling_settings_default_applies_only_within_customer_groups(self):
+		leaf = f"{GROUP_NODE} Leaf"
+		frappe.db.set_single_value("Selling Settings", "customer_group", leaf)
+		for profile in (self.retail, self.restaurant):
+			# Two rows: the Selling Settings default sits under one of them.
+			self._set_customer_groups(profile, [GROUP_A, GROUP_NODE])
+			self.assertEqual(self._created_group(profile), leaf, profile)
+
+			# The only row is a group node, which can't hold customers.
+			self._set_customer_groups(profile, [GROUP_NODE])
+			self.assertEqual(self._created_group(profile), leaf, profile)
+
+	def test_profile_needs_a_default_group_when_none_can_apply(self):
+		for selling_default in (None, f"{GROUP_NODE} Leaf"):
+			frappe.db.set_single_value("Selling Settings", "customer_group", selling_default)
+			with self.assertRaisesRegex(frappe.ValidationError, "Set a Default Customer Group"):
+				self._profile_with_groups(self.retail, [GROUP_A, GROUP_B]).save(ignore_permissions=True)
+
+		self._set_customer_groups(self.retail, [GROUP_A, GROUP_B], default=GROUP_B)
+		self.assertEqual(self._created_group(self.retail), GROUP_B)
+
+	def test_default_group_must_be_within_customer_groups(self):
+		with self.assertRaisesRegex(frappe.ValidationError, "is not one of this profile's Customer Groups"):
+			self._profile_with_groups(self.restaurant, [GROUP_NODE], default=GROUP_A).save(
+				ignore_permissions=True
+			)
+
+		frappe.message_log = []
+		self._set_customer_groups(self.restaurant, [GROUP_NODE], default=f"{GROUP_NODE} Leaf")
+		self.assertEqual(self._created_group(self.restaurant), f"{GROUP_NODE} Leaf")
+		# The old "will use another group instead" warning is gone.
+		self.assertNotIn("Customer Groups", str(frappe.message_log))
+
+	def test_customer_group_rules_apply_only_when_creation_is_allowed(self):
+		frappe.db.set_value(
+			"POS Profile", self.retail, "vunapos_allow_customer_creation", 0, update_modified=False
+		)
+		frappe.clear_cache(doctype="POS Profile")
+
+		self._set_customer_groups(self.retail, [GROUP_A, GROUP_B])
+		self._set_customer_groups(self.retail, [GROUP_NODE], default=GROUP_A)
 
 	def test_default_group_must_not_be_a_group_node(self):
 		profile = frappe.get_doc("POS Profile", self.retail)
@@ -336,12 +372,16 @@ class TestCustomerCreate(IntegrationTestCase):
 			self.assertTrue(self._create(profile)["ok"])
 			self.assertIsNone(get_catalogue_cache(key), profile)
 
-	def _set_customer_groups(self, profile, groups):
+	def _profile_with_groups(self, profile, groups, default=None):
 		doc = frappe.get_doc("POS Profile", profile)
+		doc.vunapos_default_customer_group = default
 		doc.customer_groups = []
 		for group in groups:
 			doc.append("customer_groups", {"customer_group": group})
-		doc.save(ignore_permissions=True)
+		return doc
+
+	def _set_customer_groups(self, profile, groups, default=None):
+		self._profile_with_groups(profile, groups, default).save(ignore_permissions=True)
 
 	def test_customer_search_follows_the_profile_customer_groups(self):
 		in_a, in_leaf, in_b = (
@@ -354,7 +394,7 @@ class TestCustomerCreate(IntegrationTestCase):
 			self.assertTrue({in_a, in_leaf, in_b} <= found, profile)
 
 			# A group node row covers its descendants.
-			self._set_customer_groups(profile, [GROUP_A, GROUP_NODE])
+			self._set_customer_groups(profile, [GROUP_A, GROUP_NODE], default=GROUP_A)
 			response = search_customers(query="_Test VunaPOS Search", limit=100, pos_profile=profile)
 			found = {row["customer"] for row in response["data"]}
 			self.assertTrue({in_a, in_leaf} <= found, profile)
@@ -378,7 +418,7 @@ class TestCustomerCreate(IntegrationTestCase):
 		data = get_pos_bootstrap(pos_profile=self.retail)["data"]
 		self.assertIsNone(data["pos_profile"]["customer_groups"])
 
-		self._set_customer_groups(self.retail, [GROUP_A, GROUP_NODE])
+		self._set_customer_groups(self.retail, [GROUP_A, GROUP_NODE], default=GROUP_A)
 		data = get_pos_bootstrap(pos_profile=self.retail)["data"]
 		self.assertEqual(
 			data["pos_profile"]["customer_groups"], sorted([GROUP_A, GROUP_NODE, f"{GROUP_NODE} Leaf"])

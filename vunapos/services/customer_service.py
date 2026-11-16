@@ -218,42 +218,25 @@ def find_similar_customers(customer_name, limit=5, customer_groups=None):
 	return [customer_to_dict(row) for row in rows]
 
 
-def _leaf_group(group):
-	if not cint(frappe.get_cached_value("Customer Group", group, "is_group")):
-		return group
-	lft, rgt = frappe.get_cached_value("Customer Group", group, ["lft", "rgt"])
-	return frappe.db.get_value(
-		"Customer Group",
-		{"lft": [">", lft], "rgt": ["<", rgt], "is_group": 0},
-		"name",
-		order_by="lft asc",
-	)
-
-
 def _usable_group(group):
 	return group if group and not cint(frappe.get_cached_value("Customer Group", group, "is_group")) else None
 
 
 def default_customer_group(profile):
-	"""POS Profile default, then Selling Settings, kept inside the profile's Customer Groups.
+	"""Group for customers created at this till.
 
-	A group outside the profile's Customer Groups falls back to the first allowed
-	group, so ERPNext's POS never hides a customer from the till that created it.
+	The profile's Default Customer Group; else its only Customer Groups row; else the
+	Selling Settings default when it is within Customer Groups (or the table is empty).
+	Blank only when the table is empty: profile validation refuses the other cases.
 	"""
-	group = _usable_group(profile.get("vunapos_default_customer_group")) or _usable_group(
-		frappe.db.get_single_value("Selling Settings", "customer_group")
-	)
+	if group := _usable_group(profile.get("vunapos_default_customer_group")):
+		return group
+	rows = [row.customer_group for row in profile.get("customer_groups") or [] if row.customer_group]
+	if len(rows) == 1 and _usable_group(rows[0]):
+		return rows[0]
+	group = _usable_group(frappe.db.get_single_value("Selling Settings", "customer_group"))
 	allowed = profile_customer_groups(profile)
-	if allowed and group not in allowed:
-		group = next(
-			(
-				leaf
-				for row in profile.customer_groups
-				if row.customer_group and (leaf := _leaf_group(row.customer_group))
-			),
-			None,
-		)
-	return group
+	return group if group and (not allowed or group in allowed) else None
 
 
 def default_customer_territory(profile):
@@ -266,22 +249,34 @@ def default_customer_territory(profile):
 
 
 def validate_profile_customer_defaults(doc, method=None):
-	"""Customers can't belong to a group node; warn when the default falls outside Customer Groups."""
+	"""Customers created at a till must land in a group it shows; a group node can't hold customers."""
 	group = doc.get("vunapos_default_customer_group")
 	if group and cint(frappe.db.get_value("Customer Group", group, "is_group")):
 		frappe.throw(_("Default Customer Group must not be a group node."))
 	territory = doc.get("vunapos_default_customer_territory")
 	if territory and cint(frappe.db.get_value("Territory", territory, "is_group")):
 		frappe.throw(_("Default Customer Territory must not be a group node."))
+
+	allow_creation = doc.get("vunapos_allow_customer_creation")
 	allowed = profile_customer_groups(doc)
-	if group and allowed and group not in allowed:
-		frappe.msgprint(
+	if (allow_creation is not None and not cint(allow_creation)) or not allowed:
+		return
+	if group and group not in allowed:
+		frappe.throw(
 			_(
-				"Default Customer Group {0} is not in this profile's Customer Groups. Customers created at "
-				"this till will use {1} instead."
-			).format(frappe.bold(group), frappe.bold(default_customer_group(doc) or _("no group"))),
-			indicator="orange",
-			alert=True,
+				"Default Customer Group {0} is not one of this profile's Customer Groups. Choose one of "
+				"them, or a group under one of them."
+			).format(frappe.bold(group)),
+			title=_("Invalid Default Customer Group"),
+		)
+	if not default_customer_group(doc):
+		frappe.throw(
+			_(
+				"Set a Default Customer Group. Customers created at this till must belong to one of its "
+				"Customer Groups, and the Selling Settings default customer group is not set or is not one "
+				"of them."
+			),
+			title=_("Default Customer Group Required"),
 		)
 
 

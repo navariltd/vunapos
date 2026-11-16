@@ -213,7 +213,11 @@ def ensure_vunapos_custom_fields():
 				"options": "Customer Group",
 				"insert_after": "vunapos_allow_customer_creation",
 				"depends_on": "eval:doc.vunapos_allow_customer_creation",
-				"description": "Group for customers created at this till. Falls back to Selling Settings, and to this profile's Customer Groups when it is outside them.",
+				"description": (
+					"Group for customers created at this till. If the Customer Groups table has rows, "
+					"it must be one of them or a group under one. If blank, the till uses the only "
+					"Customer Groups row, or else the Selling Settings default when the till shows that group."
+				),
 			},
 			{
 				"fieldname": "vunapos_default_customer_territory",
