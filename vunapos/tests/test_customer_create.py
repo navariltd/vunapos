@@ -16,6 +16,7 @@ from vunapos.services.catalogue_cache import customer_search_key
 from vunapos.services.catalogue_cache import get as get_catalogue_cache
 from vunapos.services.catalogue_cache import set as set_catalogue_cache
 from vunapos.services.customer_service import normalise_mobile
+from vunapos.services.phone_search import national_digits
 from vunapos.setup.utils import CASHIER_ROLE, KITCHEN_ROLE, WAITER_ROLE, ensure_vunapos_roles
 from vunapos.tests.helpers import (
 	ensure_test_pos_profile,
@@ -479,3 +480,37 @@ class TestCustomerCreate(IntegrationTestCase):
 				pos_profile=profile, query="_Test VunaPOS Directory", customer_group=GROUP_B, limit=100
 			)["data"]
 			self.assertEqual(data["customers"], [], profile)
+
+	def test_phone_search_reads_any_common_format(self):
+		formats = ("0790 001 011", "0790001011", "790001011", "+254790001011", "+254-790001011")
+		for value in formats:
+			self.assertEqual(national_digits(value, "254"), "790001011", value)
+		self.assertIsNone(national_digits("Wanjiru", "254"))
+
+		national = "7" + "".join(random.choices("0123456789", k=8))
+		saved = _customer(GROUP_A, "Phone")
+		frappe.db.set_value("Customer", saved, "mobile_no", f"+254-{national}")
+		spaced = f"0{national[:3]} {national[3:6]} {national[6:]}"
+		for profile in (self.retail, self.restaurant):
+			for query in (
+				spaced,
+				f"0{national}",
+				national,
+				f"+254{national}",
+				f"+254-{national}",
+				national[:4],
+			):
+				found = {
+					row["customer"] for row in search_customers(query=query, pos_profile=profile)["data"]
+				}
+				self.assertIn(saved, found, (profile, query))
+				page = get_customer_directory(pos_profile=profile, query=query, limit=100)["data"]
+				self.assertIn(saved, {row["customer"] for row in page["customers"]}, (profile, query))
+
+			# Still within the till's Customer Groups.
+			self._set_customer_groups(profile, [GROUP_B])
+			self.assertNotIn(
+				saved,
+				{row["customer"] for row in search_customers(query=spaced, pos_profile=profile)["data"]},
+			)
+			self._set_customer_groups(profile, [])

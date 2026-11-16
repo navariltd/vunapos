@@ -162,6 +162,8 @@ export type CachedProfile = {
 	allow_customer_creation?: boolean;
 	// The POS Profile's Customer Groups and their descendants; null shows every customer.
 	customer_groups?: string[] | null;
+	// The company country's dialling code digits, e.g. "254".
+	phone_isd?: string;
 	allow_customer_payments?: boolean;
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;

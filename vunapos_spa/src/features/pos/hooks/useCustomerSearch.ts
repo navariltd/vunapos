@@ -26,7 +26,7 @@ export function useCustomerSearch(query: string, posProfile?: string) {
 	useEffect(() => {
 		let cancelled = false;
 		void profileRepository.getActive().then(async (profile) => {
-			const rows = await customerRepository.search(debouncedQuery, 20, profile?.customer_groups);
+			const rows = await customerRepository.search(debouncedQuery, 20, profile?.customer_groups, profile?.phone_isd);
 			if (rows.length || !debouncedQuery.trim() || !posProfile) return rows;
 			try {
 				return await searchCustomers(

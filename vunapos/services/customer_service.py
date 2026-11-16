@@ -19,6 +19,7 @@ from vunapos.services.catalogue_cache import (
 	set as set_catalogue_cache,
 )
 from vunapos.services.customer_group_service import profile_customer_groups
+from vunapos.services.phone_search import national_digits, profile_isd
 from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
 
@@ -26,7 +27,8 @@ from vunapos.utils.permissions import require_create, require_read
 def search_customers(query=None, limit=20, since=None, pos_profile=None):
 	limit = cint(limit) or 20
 	query = (query or "").strip()
-	groups = profile_customer_groups(resolve_pos_profile(pos_profile)) if pos_profile else None
+	profile = resolve_pos_profile(pos_profile) if pos_profile else None
+	groups = profile_customer_groups(profile) if profile else None
 	if not since and not frappe.flags.in_test:
 		key = customer_search_key(frappe.session.user, query, limit, groups)
 		cached = get_catalogue_cache(key)
@@ -44,6 +46,7 @@ def search_customers(query=None, limit=20, since=None, pos_profile=None):
 			["Customer", "customer_name", "like", f"%{query}%"],
 			["Customer", "mobile_no", "like", f"%{query}%"],
 			["Customer", "email_id", "like", f"%{query}%"],
+			*_phone_filters(query, profile),
 		]
 
 	# get_list applies Customer permission query conditions; get_all would leak rows
@@ -73,6 +76,12 @@ def search_customers(query=None, limit=20, since=None, pos_profile=None):
 	if not since and not frappe.flags.in_test:
 		set_catalogue_cache(key, result)
 	return result
+
+
+def _phone_filters(query, profile):
+	"""Match a number typed in another format than the saved one, e.g. 0790 001 011."""
+	digits = national_digits(query, profile_isd(profile))
+	return [["Customer", "mobile_no", "like", f"%{digits}%"]] if digits and digits != query else []
 
 
 def customers_outside_groups(since, groups):
@@ -554,6 +563,7 @@ def get_customer_directory(
 			["Customer", "customer_name", "like", like],
 			["Customer", "mobile_no", "like", like],
 			["Customer", "email_id", "like", like],
+			*_phone_filters(query, profile),
 		]
 
 	fields = [

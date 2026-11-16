@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { nationalDigits } from "../phoneSearch";
 import type { CachedCustomer } from "../types";
 
 /** Whether a till limited to these Customer Groups shows the customer; null or empty shows all. */
@@ -15,14 +16,19 @@ export const customerRepository = {
 		return db.customers.get(customer);
 	},
 
-	async search(query: string, limit = 20, groups?: string[] | null): Promise<CachedCustomer[]> {
+	async search(query: string, limit = 20, groups?: string[] | null, isd?: string): Promise<CachedCustomer[]> {
 		const needle = query.trim().toLowerCase();
 		const rows = (await db.customers.toArray()).filter((row) => inCustomerGroups(row, groups));
 		if (!needle) {
 			return rows.slice(0, limit);
 		}
+		// A number typed in another format than the saved one still matches by digits.
+		const digits = nationalDigits(needle, isd);
 		return rows
-			.filter((row) => row.customer_name.toLowerCase().includes(needle) || (row.mobile_no ?? "").toLowerCase().includes(needle))
+			.filter((row) =>
+				row.customer_name.toLowerCase().includes(needle)
+				|| (row.mobile_no ?? "").toLowerCase().includes(needle)
+				|| Boolean(digits && nationalDigits(row.mobile_no ?? "", isd)?.includes(digits)))
 			.slice(0, limit);
 	},
 
