@@ -29,12 +29,21 @@ function storageKey(scope: string, ticket: string) {
 
 export function pendingKitchenTickets(scope: string | null): string[] {
   if (!scope) return [];
-  const prefix = `${scope}:kitchen-command:`;
+  const prefixes = [
+    `${scope}:kitchen-command:`,
+    `${scope}:remake:`,
+    `${scope}:rejection:`,
+    `${scope}:stop-preparation:`,
+    `${scope}:waste:`,
+  ];
   const tickets: string[] = [];
   for (let index = 0; index < sessionStorage.length; index++) {
     const key = sessionStorage.key(index);
-    if (key?.startsWith(prefix))
-      tickets.push(decodeURIComponent(key.slice(prefix.length)));
+    const prefix = prefixes.find((prefix) => key?.startsWith(prefix));
+    if (key && prefix) {
+      const ticket = decodeURIComponent(key.slice(prefix.length));
+      if (!tickets.includes(ticket)) tickets.push(ticket);
+    }
   }
   return tickets;
 }
@@ -50,9 +59,14 @@ export function readKitchenCommand(
   if (
     command.ticket !== ticket ||
     !command.request_key ||
-    !["Accept", "Start", "Ready", "Serve", "Undo Serve"].includes(
-      command.action
-    ) ||
+    ![
+      "Accept",
+      "Start",
+      "Ready",
+      "Serve",
+      "Undo Serve",
+      "Cancel Remake",
+    ].includes(command.action) ||
     typeof command.expected_status !== "string"
   )
     throw new Error(

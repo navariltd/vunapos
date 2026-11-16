@@ -89,6 +89,7 @@ export const vunaMethods = {
 	allocateCustomerPayments: "vunapos.api.payment.allocate_customer_payments",
 	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
 	initiateStkGatewayPayment: "vunapos.api.gateway.initiate_stk_gateway_payment",
+	handoverSessionPayment: "vunapos.api.restaurant.handover_session_payment",
 	getGatewayPaymentStatus: "vunapos.api.gateway.get_gateway_payment_status",
 	cancelGatewayPaymentLink: "vunapos.api.gateway.cancel_gateway_payment_link",
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
@@ -133,6 +134,14 @@ export const vunaMethods = {
 	cancelKitchenOrder: "vunapos.api.restaurant.cancel_kitchen_order",
   previewItemCancellation: "vunapos.api.restaurant.preview_item_cancellation",
   cancelOrderItems: "vunapos.api.restaurant.cancel_order_items",
+  previewRestaurantWaste: "vunapos.api.restaurant.preview_restaurant_waste",
+  recordRestaurantWaste: "vunapos.api.restaurant.record_restaurant_waste",
+  previewRemake: "vunapos.api.restaurant.preview_remake",
+  previewRejection: "vunapos.api.restaurant.preview_rejection",
+  previewPreparationStop: "vunapos.api.restaurant.preview_preparation_stop",
+  stopPreparation: "vunapos.api.restaurant.stop_preparation",
+  rejectPreparedItems: "vunapos.api.restaurant.reject_prepared_items",
+  requestRemake: "vunapos.api.restaurant.request_remake",
 	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
 	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
 	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
@@ -372,6 +381,9 @@ export function initiateStkGatewayPayment(
 		currency?: string;
 		idempotency_key?: string;
 		account_reference?: string;
+		restaurant_session?: string;
+		bill_fingerprint?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
@@ -395,6 +407,9 @@ export function attachC2bGatewayPayment(
 		customer?: string;
 		currency?: string;
 		idempotency_key?: string;
+		restaurant_session?: string;
+		bill_fingerprint?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);

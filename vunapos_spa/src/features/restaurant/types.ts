@@ -95,6 +95,7 @@ export type {
 // ---- orders (vunapos/dto/restaurant.py, vunapos/services/restaurant_order_service.py) ----
 
 export type MenuDTO = {
+	availability_refresh_after?: number | null;
 	pricing_context?: {
 		tax_rows: import("../../lib/invoiceEngine").TaxTemplateRow[];
 		tax_settings: import("../../lib/invoiceEngine").EngineTaxSettings;
@@ -237,12 +238,21 @@ export type KitchenTicketSummaryDTO = {
 };
 
 export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
+	can_remake?: boolean;
+	can_reject?: boolean;
+	can_stop_preparation?: boolean;
+	can_cancel_remake?: boolean;
+	replacement_stock_issues?: Array<{ name: string; docstatus: number }>;
+	remake_of?: string | null;
+	remake_reason?: string | null;
+	original_disposition?: string | null;
+	can_record_waste?: boolean;
 	modified?: string;
 	pos_profile?: string;
 	available_actions?: KitchenAction[];
 	can_cancel_order?: boolean;
 	requires_cancel_pin?: boolean;
-	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string; item_quantities?: { deltas: Record<string, number> } | null }>;
+	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string; item_quantities?: { deltas: Record<string, number>; journal_entry?: string; invoice?: string; replacement_ticket?: string; disposition?: string; charge?: string; charge_item?: string; materials?: Array<{ id: string; item_name: string; used_qty: number; max_qty: number; uom: string; kind: string }>; stock_entries?: string[] } | null }>;
 	restaurant_session: string; table_labels?: string | null; service_type?: string | null;
 	sent_by: string; sent_by_name?: string | null; waiter?: string | null; waiter_name?: string | null; order_note?: string | null;
 	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
@@ -251,6 +261,10 @@ export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
 };
 
 export type KitchenLineProgress = {
+  rejected_qty?: number;
+  rejected_served_qty?: number;
+  remade_qty?: number;
+  retired_qty?: number;
   cancelled_qty?: number;
   accepted_qty: number;
   started_qty: number;
@@ -263,9 +277,10 @@ export type KitchenLineProgress = {
   available_quantities: Partial<Record<KitchenAction, number>>;
 };
 
-export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve" | "Undo Serve";
+export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve" | "Undo Serve" | "Cancel Remake";
 export type KitchenBoardDTO = {
-	stations: Array<{ name: string; station_name: string; enabled: number }>;
+	can_manage_availability?: boolean;
+	stations: Array<{ name: string; station_name: string; enabled: number; ordering_paused?: boolean; availability_reason?: string | null; unavailable_until?: string | null }>;
 	tickets: KitchenTicketDTO[];
 	has_more: boolean;
 	start: number;

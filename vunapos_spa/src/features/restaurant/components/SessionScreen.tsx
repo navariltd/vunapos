@@ -357,6 +357,10 @@ export function SessionScreen({
   const addItem = async (item: ItemDTO, modifiers?: SelectedModifier[]) => {
     if (busy || pendingPlacement || (session && session.status !== "Open"))
       return;
+    if (item.ordering_paused) {
+      setError(item.availability_reason || "This item is temporarily unavailable.");
+      return;
+    }
     if (needsTable && !pendingPlacement) {
       setTablePicker(true);
       return;

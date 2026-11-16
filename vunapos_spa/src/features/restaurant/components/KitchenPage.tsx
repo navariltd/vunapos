@@ -52,6 +52,11 @@ export function KitchenTicketCard({
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
+        {ticket.remake_of ? (
+          <p className="mb-2 text-sm font-semibold text-primary">
+            Remake · {ticket.remake_of}
+          </p>
+        ) : null}
         <div className="flex items-start justify-between gap-2">
           <button
             type="button"
@@ -153,6 +158,16 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
         ))}
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-semibold">Kitchen</h2>
+        {result.data?.can_manage_availability ? (
+          <a
+            className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-primary hover:bg-surface-container"
+            href="/desk/restaurant-availability"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Ordering availability
+          </a>
+        ) : null}
         <label className="text-sm">
           <span className="sr-only">Kitchen station</span>
           <select
@@ -168,6 +183,7 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
               <option key={row.name} value={row.name}>
                 {row.station_name}
                 {row.enabled ? "" : " (disabled)"}
+                {row.ordering_paused ? " · Orders paused" : ""}
               </option>
             ))}
           </select>
@@ -191,6 +207,28 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
           <RefreshCw className="size-4" />
         </Button>
       </header>
+      {result.data?.stations
+        .filter(
+          (row) => row.ordering_paused && (!station || row.name === station)
+        )
+        .map((row) => (
+          <div
+            key={row.name}
+            role="status"
+            className="mb-3 rounded-md border border-outline-variant bg-surface-container p-3 text-sm"
+          >
+            <p className="font-semibold">
+              {row.station_name} · New orders paused
+            </p>
+            <p>{row.availability_reason}</p>
+            <p className="text-xs text-on-surface-variant">
+              Existing tickets can still be prepared and served.
+              {row.unavailable_until
+                ? ` Resumes ${row.unavailable_until}.`
+                : ""}
+            </p>
+          </div>
+        ))}
       <p className="mb-3 text-xs text-on-surface-variant">
         Mark meals ready as they finish, then mark them served as they leave the
         kitchen.

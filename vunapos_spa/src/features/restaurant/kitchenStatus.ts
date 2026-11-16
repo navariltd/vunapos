@@ -6,9 +6,12 @@ export const KITCHEN_ACTION_LABELS: Record<KitchenAction, string> = {
   Ready: "Mark ready",
   Serve: "Mark served",
   "Undo Serve": "Correct served quantity",
+  "Cancel Remake": "Cancel replacement",
 };
 
 export function kitchenStatusClass(status: string) {
+  if (status === "Completed")
+    return "bg-surface-container-high text-on-surface-variant";
   if (status === "Ready" || status === "Served")
     return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200";
   if (status === "Preparing")

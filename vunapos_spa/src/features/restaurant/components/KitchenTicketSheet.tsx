@@ -1,4 +1,5 @@
 import { useFrappeGetCall } from "frappe-react-sdk";
+import { useState } from "react";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
 import { Sheet } from "./Sheet";
@@ -13,10 +14,12 @@ export function KitchenTicketSheet({
   name: string;
   onClose: () => void;
 }) {
+  const [linkedName, setLinkedName] = useState<string | null>(null);
+  const activeName = linkedName || name;
   const response = useFrappeGetCall<unknown>(
     vunaMethods.getKitchenTicket,
-    { ticket: name },
-    ["kitchen-ticket", name],
+    { ticket: activeName },
+    ["kitchen-ticket", activeName],
     {
       refreshInterval: 12000,
       refreshWhenHidden: false,
@@ -41,7 +44,7 @@ export function KitchenTicketSheet({
   return (
     <Sheet
       isOpen
-      title={name}
+      title={activeName}
       description={
         ticket
           ? `${ticket.station_label} · ${ticket.status}`
@@ -65,6 +68,50 @@ export function KitchenTicketSheet({
         >
           <div className="space-y-4">
             <div className="rounded-lg bg-surface-container-low p-3 text-sm">
+              {ticket.remake_of ? (
+                <div className="mb-3 border-b border-outline-variant pb-3">
+                  <p className="font-semibold text-primary">
+                    Replacement preparation — no extra charge
+                  </p>
+                  <button
+                    className="cursor-pointer underline"
+                    onClick={() => setLinkedName(ticket.remake_of!)}
+                  >
+                    Original ticket: {ticket.remake_of}
+                  </button>
+                  <p>{ticket.remake_reason}</p>
+                  <p className="text-xs text-on-surface-variant">
+                    Original food: {ticket.original_disposition}
+                  </p>
+                  {ticket.replacement_stock_issues?.length ? (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {ticket.replacement_stock_issues.map((entry) => (
+                        <li key={entry.name}>
+                          <a
+                            className="underline"
+                            href={`/desk/stock-entry/${encodeURIComponent(
+                              entry.name
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Replacement stock issue · {entry.name}
+                          </a>
+                          {entry.docstatus === 2 ? " · Cancelled" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+              {linkedName && linkedName !== name ? (
+                <button
+                  className="mb-2 block cursor-pointer underline"
+                  onClick={() => setLinkedName(null)}
+                >
+                  Back to first ticket
+                </button>
+              ) : null}
               <span
                 className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
                   ticket.status
@@ -130,6 +177,84 @@ export function KitchenTicketSheet({
                         </ul>
                       ) : null}
                       {action.reason ? <p>{action.reason}</p> : null}
+                      {action.item_quantities?.charge ? (
+                        <p className="font-medium">
+                          Charge decision:{" "}
+                          {action.item_quantities.charge === "Remove charge"
+                            ? "Charge waived"
+                            : "Charge kept"}
+                        </p>
+                      ) : null}
+                      {action.action === "Stop Preparation" ? (
+                        <div className="space-y-1">
+                          {action.item_quantities?.charge_item ? (
+                            <p>
+                              Cancellation charge:{" "}
+                              {action.item_quantities.charge_item}
+                            </p>
+                          ) : null}
+                          {action.item_quantities?.materials?.map((part) => (
+                            <p key={part.id}>
+                              {part.item_name}: {quantity(part.used_qty)}{" "}
+                              {part.uom} used/spoiled;{" "}
+                              {quantity(part.max_qty - part.used_qty)}{" "}
+                              {part.uom}{" "}
+                              {part.kind === "WIP"
+                                ? "returned to stores"
+                                : "released unused"}
+                            </p>
+                          ))}
+                          {action.item_quantities?.stock_entries?.map(
+                            (entry) => (
+                              <a
+                                key={entry}
+                                className="block underline"
+                                href={`/desk/stock-entry/${encodeURIComponent(
+                                  entry
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Stock entry · {entry}
+                              </a>
+                            )
+                          )}
+                        </div>
+                      ) : null}
+                      {action.item_quantities?.replacement_ticket ? (
+                        <p>
+                          <button
+                            className="cursor-pointer underline"
+                            onClick={() =>
+                              setLinkedName(
+                                action.item_quantities!.replacement_ticket!
+                              )
+                            }
+                          >
+                            View replacement ·{" "}
+                            {action.item_quantities.replacement_ticket}
+                          </button>
+                          {action.item_quantities.disposition ? (
+                            <span className="block">
+                              Original food:{" "}
+                              {action.item_quantities.disposition}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      {action.item_quantities?.journal_entry ? (
+                        <a
+                          className="underline"
+                          href={`/desk/journal-entry/${encodeURIComponent(
+                            action.item_quantities.journal_entry
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Waste accounting entry ·{" "}
+                          {action.item_quantities.journal_entry}
+                        </a>
+                      ) : null}
                       {action.error_message ? (
                         <p className="text-error">{action.error_message}</p>
                       ) : null}

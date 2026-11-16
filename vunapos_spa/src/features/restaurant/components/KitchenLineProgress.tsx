@@ -11,8 +11,21 @@ export function KitchenLineProgress({
     [line.waiting_qty, "waiting"],
     [line.preparing_qty, "preparing"],
     [line.ready_to_serve_qty, "ready to serve"],
-    [line.served_qty, "served"],
+    [
+      Math.max(0, (line.served_qty || 0) - (line.rejected_served_qty || 0)),
+      "served",
+    ],
     [line.cancelled_qty, "cancelled"],
+    [
+      Math.max(
+        0,
+        (line.retired_qty || 0) -
+          (line.rejected_qty || 0) +
+          (line.rejected_served_qty || 0)
+      ),
+      "replaced before service",
+    ],
+    [line.rejected_qty, "rejected"],
   ] as const;
   return (
     <p
@@ -36,6 +49,11 @@ export function KitchenLineProgress({
             {label}
           </span>
         ))}
+      {Number(line.remade_qty) > 0 ? (
+        <span className="text-on-surface-variant">
+          {line.remade_qty} remake requested
+        </span>
+      ) : null}
     </p>
   );
 }

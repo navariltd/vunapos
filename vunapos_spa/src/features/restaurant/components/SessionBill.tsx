@@ -1,6 +1,9 @@
 import { useRef, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
 import { Button } from "../../../components/ui/Button";
+import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
+import { recoveryProblem } from "../../pos/gatewayRecovery";
+import { totalToMinorUnits } from "../../pos/paymentAllocation";
 import { CheckoutDialog } from "../../pos/components/CheckoutDialog";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useGatewayPayments } from "../../pos/hooks/useGatewayPayments";
@@ -14,6 +17,7 @@ import {
   getCustomerLoyalty,
   VunaApiError,
   vunaMethods,
+  unwrapVunaResponse,
 } from "../../../services/vunaApi";
 import { navigateToInvoice } from "../../../lib/stores/navigationStore";
 import { Sheet } from "./Sheet";
@@ -44,6 +48,9 @@ export function SessionBill({
   const addressCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const loyaltyCall = useFrappePostCall(vunaMethods.getCustomerLoyalty);
   const gateway = useGatewayPayments();
+  const handoverCall = useFrappePostCall(vunaMethods.handoverSessionPayment);
+  const [handover, setHandover] = useState<string | null>(null);
+  const [handoverReason, setHandoverReason] = useState("");
   const toast = useUiFeedbackStore((s) => s.showToast);
   const markChanged = useOrderDraftStore((s) => s.markOrdersChanged);
   const [bill, setBill] = useState<SessionBillDTO | null>(null);
@@ -89,29 +96,13 @@ export function SessionBill({
           next.invoice.totals.grand_total ||
           0
       );
-      if (
-        next.gateway_links?.some(
-          (link) => Math.abs(Number(link.amount) - total) > 0.000001
-        )
-      ) {
-        throw new Error(
-          "An earlier gateway prompt has a different amount from this bill. Ask a manager to review it before taking another payment."
-        );
-      }
-      if (
-        next.gateway_links?.some(
-          (link) =>
-            !getPaymentModes(bootstrap).some(
-              (mode) =>
-                mode.mode_of_payment === link.mode_of_payment &&
-                mode.payment_gateway
-            )
-        )
-      ) {
-        throw new Error(
-          "An active gateway payment uses a mode no longer available on this profile. Ask a manager to review it before taking another payment."
-        );
-      }
+      const problem = recoveryProblem(
+        next.gateway_links || [],
+        getPaymentModes(bootstrap),
+        totalToMinorUnits(total, bootstrap?.currency_precision || 2),
+        bootstrap?.currency_precision || 2
+      );
+      if (problem) setError(problem);
       setAddresses(loadedAddresses);
       setShippingAddress(
         loadedAddresses.find((address) => address.is_default)?.name ||
@@ -225,7 +216,7 @@ export function SessionBill({
         {busy
           ? "Preparing bill…"
           : session.status === "Settling"
-          ? "Bill awaiting approval"
+          ? "View pending bill"
           : "View bill"}
       </Button>
       <Sheet
@@ -249,7 +240,24 @@ export function SessionBill({
             </Button>
             {canPay && bill?.session.status === "Open" ? (
               <Button
-                disabled={bill.can_checkout === false || busy}
+                disabled={
+                  bill.can_checkout === false ||
+                  busy ||
+                  Boolean(
+                    recoveryProblem(
+                      bill.gateway_links || [],
+                      getPaymentModes(bootstrap),
+                      totalToMinorUnits(
+                        Number(
+                          bill.invoice.totals.rounded_total ||
+                            bill.invoice.totals.grand_total
+                        ),
+                        bootstrap?.currency_precision || 2
+                      ),
+                      bootstrap?.currency_precision || 2
+                    )
+                  )
+                }
                 onClick={() => setPaying(true)}
               >
                 Checkout
@@ -258,6 +266,67 @@ export function SessionBill({
           </div>
         }
       >
+        {bill?.session.status === "Settling" ? (
+          <div
+            role="status"
+            className="mb-4 space-y-2 rounded-md border border-outline-variant p-3 text-sm"
+          >
+            <p>
+              {bill.invoice.docstatus === 2
+                ? "This bill was cancelled. Recorded receipts are not automatically refunded or released; ask accounts to reconcile them."
+                : "This bill is saved but not yet submitted. Existing receipts remain allocated; do not collect payment again. Review the invoice workflow to continue."}
+            </p>
+            {bill.invoice.name ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  navigateToInvoice(bill.invoice.name!, bill.invoice.doctype)
+                }
+              >
+                Open invoice
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+        {bill?.gateway_links?.length ? (
+          <section
+            className="mb-4 space-y-3 border-b border-outline-variant pb-4 text-sm"
+            aria-label="Existing visit payments"
+          >
+            <h3 className="font-semibold">Existing visit payments</h3>
+            {bill.gateway_links.map((link) => (
+              <div key={link.name}>
+                <p className="font-medium">
+                  {link.mode_of_payment} ·{" "}
+                  {formatCurrency(link.amount, link.currency)} · {link.status}
+                </p>
+                <p className="text-xs text-on-surface-variant">
+                  {link.transaction_reference || link.name} · Original cashier:{" "}
+                  {link.cashier} · {link.opening_entry}
+                </p>
+                {link.remarks ? <p>{link.remarks}</p> : null}
+                {link.handover_required ? (
+                  <p className="text-error">
+                    Manager handover required. Do not take another payment.
+                  </p>
+                ) : null}
+                {link.handover_required && link.can_handover && canPay ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setHandoverReason("");
+                      setHandover(link.name);
+                    }}
+                  >
+                    Take over on this till
+                  </Button>
+                ) : null}
+              </div>
+            ))}
+          </section>
+        ) : null}
         {bill ? (
           <div className="space-y-4 text-sm">
             {bill.will_complete_preparation ? (
@@ -299,6 +368,15 @@ export function SessionBill({
                 >
                   <span>
                     {row.qty} {row.uom} × {row.item_name}
+                    {Number(row.distributed_discount_amount) > 0 ? (
+                      <span className="block text-xs text-on-surface-variant">
+                        Additional discount (excl. tax):{" "}
+                        {formatCurrency(
+                          row.distributed_discount_amount,
+                          currency
+                        )}
+                      </span>
+                    ) : null}
                   </span>
                   <span className="tabular-nums">
                     {formatCurrency(row.amount, currency)}
@@ -331,6 +409,45 @@ export function SessionBill({
           </div>
         ) : null}
       </Sheet>
+      <ConfirmDialog
+        isOpen={Boolean(handover)}
+        title="Approve payment handover"
+        description="Assign this receipt to your current till and open shift. The original cashier and shift remain recorded. This does not charge the customer or refund money."
+        confirmLabel="Approve handover"
+        loading={busy}
+        confirmDisabled={busy || !handoverReason.trim()}
+        onCancel={() => {
+          if (!busy) setHandover(null);
+        }}
+        onConfirm={() => {
+          if (!handover || busy) return;
+          setBusy(true);
+          void handoverCall
+            .call({
+              link: handover,
+              session: session.name,
+              pos_profile: posProfile,
+              reason: handoverReason.trim(),
+            })
+            .then((result) => {
+              unwrapVunaResponse(result);
+              setHandover(null);
+              return open();
+            })
+            .catch(failed)
+            .finally(() => setBusy(false));
+        }}
+      >
+        <label className="block text-sm">
+          Reason
+          <textarea
+            className="mt-1 w-full rounded-md border border-outline-variant bg-surface p-2"
+            maxLength={500}
+            value={handoverReason}
+            onChange={(event) => setHandoverReason(event.target.value)}
+          />
+        </label>
+      </ConfirmDialog>
       <CheckoutDialog
         isOpen={paying && Boolean(bill)}
         presentation={{ invoice: bill?.invoice || null, isSubmitting: busy }}
@@ -392,6 +509,9 @@ export function SessionBill({
             customer: session.customer,
             currency: currency || undefined,
             account_reference: bill?.account_reference,
+            restaurant_session: session.name,
+            bill_fingerprint: bill?.fingerprint,
+            loyalty_points: bill?.invoice.loyalty_points || undefined,
           })
         }
         onAttachC2bGatewayPayment={(params) =>
@@ -400,6 +520,9 @@ export function SessionBill({
             pos_profile: posProfile,
             customer: session.customer,
             currency: currency || undefined,
+            restaurant_session: session.name,
+            bill_fingerprint: bill?.fingerprint,
+            loyalty_points: bill?.invoice.loyalty_points || undefined,
           })
         }
         onSearchC2bGatewayPayments={(params) =>

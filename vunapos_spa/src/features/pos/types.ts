@@ -264,6 +264,8 @@ export type BootstrapData = {
 
 export type ItemDTO = {
 	is_qsr?: boolean;
+	ordering_paused?: boolean;
+	availability_reason?: string | null;
 	item_code: string;
 	item_name: string;
 	modified?: string;
@@ -368,6 +370,7 @@ export type BatchAllocationResultDTO = {
 };
 
 export type InvoiceItemDTO = {
+	distributed_discount_amount?: number;
 	restaurant_parent_line_id?: string | null;
 	is_qsr?: boolean;
 	row_name: string;
@@ -486,6 +489,12 @@ export type PaymentInput = {
 };
 
 export type GatewayPaymentLinkDTO = {
+	settlement_profile?: string | null;
+	restaurant_session?: string | null;
+	dispatch_state?: string | null;
+	remarks?: string | null;
+	handover_required?: boolean;
+	can_handover?: boolean;
 	name: string;
 	source_doctype: string;
 	source_name: string;

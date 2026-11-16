@@ -10,6 +10,10 @@ import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { ManagerPinDialog } from "../../pos/components/ManagerPinDialog";
 import { CancelOrderItems } from "./CancelOrderItems";
+import { RecordWaste } from "./RecordWaste";
+import { RemakeItems } from "./RemakeItems";
+import { RejectPreparedItems } from "./RejectPreparedItems";
+import { StopPreparation } from "./StopPreparation";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import {
   cancelKitchenOrder,
@@ -209,12 +213,14 @@ export function KitchenActions({
   const running = useRef(false);
   const keys = useRef(new Map<string, string>());
   const [confirm, setConfirm] = useState(false);
+  const [cancelRemakeOpen, setCancelRemakeOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [correctionReason, setCorrectionReason] = useState("");
   const [pinOpen, setPinOpen] = useState(false);
   const ticketActions = (ticket.available_actions || []).filter(
     (action): action is RoutineAction =>
       action !== "Undo Serve" &&
+      action !== "Cancel Remake" &&
       // Finish acknowledging pre-existing partially accepted tickets first.
       !(action === "Start" && ticket.available_actions?.includes("Accept"))
   );
@@ -257,7 +263,9 @@ export function KitchenActions({
             expected_status: snapshot.status,
             expected_modified: snapshot.modified,
             ...(quantities ? { quantities } : {}),
-            ...(action === "Undo Serve" ? { reason: correction?.trim() } : {}),
+            ...(action === "Undo Serve" || action === "Cancel Remake"
+              ? { reason: correction?.trim() }
+              : {}),
           };
         saveKitchenCommand(scope, command);
         completedAction = command.action;
@@ -268,6 +276,7 @@ export function KitchenActions({
         setPartial(null);
       }
       setConfirm(false);
+      setCancelRemakeOpen(false);
       setPinOpen(false);
       showToast({
         type: "info",
@@ -339,6 +348,30 @@ export function KitchenActions({
             allowed={Boolean(ticket.can_cancel_order)}
             onChanged={onChanged}
           />
+          <RecordWaste
+            key={`${scope}:${ticket.name}`}
+            ticket={ticket.name}
+            allowed={Boolean(ticket.can_record_waste)}
+            onChanged={onChanged}
+          />
+          <RemakeItems
+            key={`remake:${scope}:${ticket.name}`}
+            ticket={ticket.name}
+            allowed={Boolean(ticket.can_remake)}
+            onChanged={onChanged}
+          />
+          <RejectPreparedItems
+            key={`rejection:${scope}:${ticket.name}`}
+            ticket={ticket.name}
+            allowed={Boolean(ticket.can_reject)}
+            onChanged={onChanged}
+          />
+          <StopPreparation
+            key={`stop:${scope}:${ticket.name}`}
+            ticket={ticket.name}
+            allowed={Boolean(ticket.can_stop_preparation)}
+            onChanged={onChanged}
+          />
         </div>
       ) : null}
       {saved.error ? (
@@ -400,8 +433,48 @@ export function KitchenActions({
               Cancel placed order
             </Button>
           ) : null}
+          {showCancel && ticket.can_cancel_remake ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-error"
+              disabled={busy || Boolean(pending) || Boolean(saved.error)}
+              onClick={() => {
+                setReason("");
+                setCancelRemakeOpen(true);
+              }}
+            >
+              Cancel replacement
+            </Button>
+          ) : null}
         </div>
       ) : null}
+      <ConfirmDialog
+        isOpen={cancelRemakeOpen}
+        danger
+        title="Cancel replacement"
+        description="Release ingredients only if this replacement has no stock movements. The original charge and its recorded food disposition stay unchanged; the original is not returned to the service queue."
+        confirmLabel="Cancel replacement"
+        loading={busy}
+        confirmDisabled={busy || !reason.trim()}
+        onCancel={() => {
+          if (!busy) setCancelRemakeOpen(false);
+        }}
+        onConfirm={() =>
+          void perform("Cancel Remake", undefined, undefined, ticket, reason)
+        }
+      >
+        <label className="block text-sm">
+          Cancellation reason
+          <textarea
+            maxLength={500}
+            value={reason}
+            disabled={busy}
+            onChange={(event) => setReason(event.target.value)}
+            className="mt-1 block min-h-20 w-full rounded-md border border-outline-variant bg-surface p-2"
+          />
+        </label>
+      </ConfirmDialog>
       <ConfirmDialog
         isOpen={Boolean(partial)}
         title="Correct served quantity"
