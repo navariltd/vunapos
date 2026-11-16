@@ -24,6 +24,7 @@ _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 # (used to change lines) checks write and create on the order.
 _ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
+_RESERVATIONS = {"read": 1, "create": 1, "submit": 1, "cancel": 1}
 _MENU_READS = {
 	"Branch": _READ,
 	"POS Profile": _READ,
@@ -49,6 +50,7 @@ ROLE_PERMISSIONS = {
 		"POS Closing Entry": _SHIFT,
 		"Payment Entry": {"read": 1, "if_owner": 1},
 		"Sales Order": _ORDERS,
+		"Stock Reservation Entry": _RESERVATIONS,
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
 	},
@@ -59,12 +61,14 @@ ROLE_PERMISSIONS = {
 		"Payment Entry": {"read": 1, "if_owner": 1},
 		"Branch": {"read": 1, "create": 1, "write": 1},
 		"Sales Order": {**_ORDERS, "cancel": 1},
+		"Stock Reservation Entry": _RESERVATIONS,
 		"Sales Invoice": _OWN_INVOICE_READ,
 		"POS Invoice": _OWN_INVOICE_READ,
 	},
 	CASHIER_ROLE: {
 		**_MENU_READS,
 		"Sales Order": _ORDERS,
+		"Stock Reservation Entry": _RESERVATIONS,
 		"Sales Invoice": _BILLING,
 		"POS Invoice": _BILLING,
 		"POS Opening Entry": _SHIFT,
