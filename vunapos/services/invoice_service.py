@@ -571,6 +571,7 @@ def validate_payment_rows(
 				amount=storage_amount if amount is not None else None,
 				currency=doc.get("currency"),
 				precision=precision,
+				restaurant_session=doc.get("vunapos_restaurant_session"),
 			)
 			storage_amount = flt(gateway_link.amount, precision)
 			amount = Decimal(str(storage_amount))

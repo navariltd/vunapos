@@ -59,6 +59,28 @@ class TestRestaurantSessions(IntegrationTestCase):
 		first = self._open(key)
 		self.assertEqual(self._open(key)["name"], first["name"])
 
+	def test_generic_fixture_disables_stale_qsr_routes_without_deleting_their_history(self):
+		profile = frappe.get_doc("POS Profile", self.profile)
+		station = frappe.get_doc(
+			{
+				"doctype": "Kitchen Station",
+				"station_name": f"Kitchen stale {uuid4().hex[:8]}",
+				"restaurant": profile.vunapos_restaurant,
+				"branch": profile.vunapos_branch,
+				"raw_material_warehouse": profile.warehouse,
+				"enabled": 1,
+				"item_groups": [{"item_group": frappe.db.get_value("Item", self.item, "item_group")}],
+			}
+		).insert(ignore_permissions=True)
+		ensure_test_restaurant_profile()
+		self.assertEqual(frappe.db.get_value("Kitchen Station", station.name, "enabled"), 0)
+		self.assertTrue(frappe.db.exists("Kitchen Station Item Group", {"parent": station.name}))
+		session = self._open()
+		response = restaurant.create_session_round(
+			session["name"], [{"item_code": self.item, "qty": 1}], str(uuid4())
+		)
+		self.assertTrue(response["ok"], response)
+
 	def test_second_session_cannot_claim_occupied_table(self):
 		self._open()
 		response = restaurant.open_session(self.profile, str(uuid4()), tables=[self.table])

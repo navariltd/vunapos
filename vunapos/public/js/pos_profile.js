@@ -2,6 +2,17 @@ const VUNAPOS_CHECKOUT_DOCTYPES = ["Sales Invoice", "POS Invoice", "Sales Order"
 
 frappe.ui.form.on("POS Profile", {
 	setup(frm) {
+		frm.set_query("vunapos_cancellation_charge_item", () => ({
+			filters: { disabled: 0, is_stock_item: 0, is_sales_item: 1, has_variants: 0 },
+		}));
+		frm.set_query("vunapos_waste_expense_account", () => ({
+			filters: {
+				company: frm.doc.company || "",
+				root_type: "Expense",
+				is_group: 0,
+				disabled: 0,
+			},
+		}));
 		frm.set_query("vunapos_branch", () => ({
 			filters: { vunapos_company: frm.doc.company || "" },
 		}));

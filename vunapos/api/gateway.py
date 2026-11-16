@@ -36,6 +36,9 @@ def initiate_stk_gateway_payment(
 	currency: str | None = None,
 	idempotency_key: str | None = None,
 	account_reference: str | None = None,
+	restaurant_session: str | None = None,
+	bill_fingerprint: str | None = None,
+	loyalty_points: int | None = None,
 ):
 	try:
 		return success(
@@ -48,6 +51,9 @@ def initiate_stk_gateway_payment(
 				currency=currency,
 				idempotency_key=idempotency_key,
 				account_reference=account_reference,
+				restaurant_session=restaurant_session,
+				bill_fingerprint=bill_fingerprint,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -79,6 +85,9 @@ def attach_c2b_gateway_payment(
 	customer: str | None = None,
 	currency: str | None = None,
 	idempotency_key: str | None = None,
+	restaurant_session: str | None = None,
+	bill_fingerprint: str | None = None,
+	loyalty_points: int | None = None,
 ):
 	try:
 		return success(
@@ -90,6 +99,9 @@ def attach_c2b_gateway_payment(
 				customer=customer,
 				currency=currency,
 				idempotency_key=idempotency_key,
+				restaurant_session=restaurant_session,
+				bill_fingerprint=bill_fingerprint,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:

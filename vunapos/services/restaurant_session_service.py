@@ -476,6 +476,9 @@ def cancel_empty_session(session):
 	doc.check_permission("write")
 	if doc.status == "Cancelled":
 		return session_to_dict(doc)
+	from vunapos.services.restaurant_payment_service import guard_order_change
+
+	guard_order_change(doc)
 	if doc.status != "Open" or frappe.db.exists(
 		"Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": ["!=", 2]}
 	):
@@ -520,8 +523,11 @@ def protect_committed_round(doc, method=None):
 		"uom",
 		"conversion_factor",
 		"rate",
+		"price_list_rate",
 		"discount_percentage",
 		"discount_amount",
+		"is_free_item",
+		"mapped_additional_discount_amount",
 		"warehouse",
 		"item_tax_template",
 		"vunapos_item_note",
@@ -532,15 +538,40 @@ def protect_committed_round(doc, method=None):
 	)
 	old_lines = [tuple(row.get(field) for field in line_fields) for row in before.items]
 	new_lines = [tuple(row.get(field) for field in line_fields) for row in doc.items]
-	if frappe.flags.get("vunapos_cancelling_restaurant_items") == doc.name:
+	adjustment = frappe.flags.get("vunapos_restaurant_charge_adjustment") or {}
+	prices = adjustment.get("prices", {}) if adjustment.get("order") == doc.name else {}
+	cancelling = frappe.flags.get("vunapos_cancelling_restaurant_items") == doc.name
+	if cancelling or prices:
 		old = {row.name: row for row in before.items}
+		fee = frappe.flags.get("vunapos_stop_fee") or {}
+		new_fees = [row for row in doc.items if row.name not in old]
+		valid_fee = (
+			cancelling
+			and fee.get("order") == doc.name
+			and len(new_fees) == 1
+			and new_fees[0].get("vunapos_line_id") == fee.get("line_id")
+			and new_fees[0].item_code == fee.get("item")
+			and new_fees[0].qty == 1
+			and new_fees[0].rate == fee.get("rate")
+			and not frappe.get_cached_value("Item", new_fees[0].item_code, "is_stock_item")
+		)
 		valid = all(
 			row.name in old
-			and 0 < flt(row.qty) <= flt(old[row.name].qty)
-			and all(row.get(field) == old[row.name].get(field) for field in line_fields if field != "qty")
+			and (0 < flt(row.qty) <= flt(old[row.name].qty) if cancelling else row.qty == old[row.name].qty)
+			and all(
+				row.get(field) == prices.get(row.name, {}).get(field, old[row.name].get(field))
+				for field in line_fields
+				if field != "qty"
+			)
 			for row in doc.items
+			if row.name in old
 		)
-		if valid and not any(doc.get(field) != before.get(field) for field in headers):
+		if (
+			valid
+			and (not new_fees or valid_fee)
+			and (cancelling or len(doc.items) == len(before.items))
+			and not any(doc.get(field) != before.get(field) for field in headers)
+		):
 			return
 	if old_lines != new_lines or any(doc.get(field) != before.get(field) for field in headers):
 		_fail(

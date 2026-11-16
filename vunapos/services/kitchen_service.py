@@ -340,6 +340,9 @@ def route_lines(restaurant, lines, overrides=None, branch=None, floor=None):
 			),
 			{"items": list(unresolved.values()), "stations": stations},
 		)
+	from vunapos.services.restaurant_availability_service import check_stations
+
+	check_stations(restaurant, branch, {station for station, _temporary in resolved.values() if station})
 	for line in lines:
 		parent = line.get("parent_line_id") or line.line_id
 		if parent not in resolved:
@@ -366,7 +369,12 @@ def validate_ticket(doc):
 		reject_ticket_mutation()
 	if not doc.is_new() and doc.get_doc_before_save() and doc.get_doc_before_save().docstatus == 1:
 		reject_ticket_mutation()
-	if doc.event_key != event_key(doc.sales_order, doc.kitchen_station) or doc.status != "Sent":
+	expected = event_key(doc.sales_order, doc.kitchen_station)
+	if doc.get("remake_of"):
+		from vunapos.services.restaurant_remake_service import validate_replacement_ticket
+
+		expected = validate_replacement_ticket(doc)
+	if doc.event_key != expected or doc.status != "Sent":
 		fail("INVALID_KITCHEN_TICKET", _("Invalid initial kitchen ticket event."))
 	if not doc.items or any(flt(row.qty) <= 0 for row in doc.items):
 		fail("INVALID_KITCHEN_TICKET", _("Kitchen tickets require positive preparation quantities."))
@@ -518,6 +526,15 @@ def session_tickets(session):
 
 
 def protect_order_cancellation(order, method=None):
+	if order.get("vunapos_restaurant_session"):
+		from vunapos.services.kitchen_lifecycle_service import MANAGERS
+		from vunapos.services.restaurant_stop_service import charge_lines
+
+		if not set(frappe.get_roles()) & MANAGERS and charge_lines(order.name):
+			fail(
+				"STOP_CHARGE_MANAGER_REQUIRED",
+				_("A manager must review cancellation of an order with an approved cancellation charge."),
+			)
 	if frappe.flags.get("vunapos_cancelling_kitchen_order") == order.name:
 		return
 	if order.get("vunapos_restaurant_session") and frappe.db.exists(
@@ -544,9 +561,45 @@ def get_ticket(name, for_update=False):
 
 	return {
 		"modified": doc.modified,
+		"remake_of": doc.get("remake_of"),
+		"remake_reason": doc.get("remake_reason"),
+		"replacement_stock_issues": frappe.get_all(
+			"Stock Entry",
+			filters={"vunapos_remake_ticket": doc.name},
+			fields=["name", "docstatus"],
+			order_by="creation",
+		)
+		if doc.get("remake_of") and frappe.has_permission("Stock Entry", "read")
+		else [],
+		"original_disposition": doc.get("original_disposition"),
+		"can_stop_preparation": bool(set(frappe.get_roles()) & MANAGERS)
+		and not doc.get("remake_of")
+		and doc.status not in ("Cancelled", "Completed", "Served")
+		and any(row["started_qty"] > row["ready_qty"] for row in progress.values()),
+		"can_remake": bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled"
+		and any(
+			row.get("ready_qty", 0) > row.get("remade_qty", 0) + row.get("rejected_qty", 0)
+			for row in progress.values()
+		),
+		"can_reject": bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled"
+		and any(
+			row.get("ready_qty", 0) > row.get("remade_qty", 0) + row.get("rejected_qty", 0)
+			for row in progress.values()
+		)
+		and frappe.db.get_value("Restaurant Session", doc.restaurant_session, "status") == "Open",
+		"can_cancel_remake": bool(doc.get("remake_of"))
+		and bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled",
 		"pos_profile": doc.pos_profile,
 		"available_actions": capabilities(doc.status, progress),
-		"can_cancel_order": can_cancel() and doc.status not in ("Served", "Cancelled"),
+		"can_record_waste": bool(set(frappe.get_roles()) & MANAGERS)
+		and any(row.get("served_qty", 0) > 0 for row in progress.values())
+		and bool(frappe.db.get_value("Restaurant Session", doc.restaurant_session, "billing_invoice")),
+		"can_cancel_order": can_cancel()
+		and not doc.get("remake_of")
+		and doc.status not in ("Served", "Completed", "Cancelled"),
 		"requires_cancel_pin": bool(
 			frappe.get_cached_value(
 				"POS Profile", doc.pos_profile, "vunapos_require_manager_pin_order_cancel"

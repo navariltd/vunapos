@@ -19,25 +19,55 @@ EPSILON = 0.000001
 
 
 def remaining(row, action):
-	if action == "Cancel Items":
+	if action in ("Request Remake", "Reject Items"):
+		return max(0, flt(row["ready_qty"] - row.get("remade_qty", 0) - row.get("rejected_qty", 0), 6))
+	if action == "Cancel Remake":
+		return row.get("remade_qty", 0)
+	if action in ("Cancel Items", "Stop Preparation"):
 		return max(0, flt(row["qty"] - row.get("cancelled_qty", 0) - row["ready_qty"], 6))
 	if action == "Undo Serve":
-		return row["served_qty"]
+		return min(
+			row["served_qty"],
+			max(
+				0,
+				row["served_qty"]
+				- row.get("remade_qty", 0)
+				+ row.get("retired_qty", 0)
+				- row.get("rejected_qty", 0),
+			),
+		)
 	ceiling = row[PREVIOUS[action]] if PREVIOUS[action] else flt(row["qty"] - row.get("cancelled_qty", 0))
-	return max(0, flt(ceiling - row[FIELDS[action]], 6))
+	return max(
+		0, flt(ceiling - row[FIELDS[action]] - (row.get("retired_qty", 0) if action == "Serve" else 0), 6)
+	)
 
 
 def derive(items, status, events):
 	items = [row.as_dict() if callable(getattr(row, "as_dict", None)) else row for row in items]
 	parents = {row["line_id"]: row for row in items if not row.get("parent_line_id")}
 	result = {
-		key: {"qty": flt(row["qty"]), "cancelled_qty": 0.0, **{field: 0.0 for field in FIELDS.values()}}
+		key: {
+			"qty": flt(row["qty"]),
+			"cancelled_qty": 0.0,
+			"remade_qty": 0.0,
+			"rejected_qty": 0.0,
+			"rejected_served_qty": 0.0,
+			"retired_qty": 0.0,
+			**{field: 0.0 for field in FIELDS.values()},
+		}
 		for key, row in parents.items()
 	}
 	quantified = False
 	for event in events:
 		action = event["action"]
-		if action not in FIELDS and action not in ("Undo Serve", "Cancel Items"):
+		if action not in FIELDS and action not in (
+			"Undo Serve",
+			"Cancel Items",
+			"Request Remake",
+			"Cancel Remake",
+			"Reject Items",
+			"Stop Preparation",
+		):
 			continue
 		payload = frappe.parse_json(event.get("item_quantities"))
 		values = None
@@ -56,7 +86,18 @@ def derive(items, status, events):
 					"KITCHEN_PROGRESS_INVALID",
 					_("Preparation history is inconsistent. Ask a manager to review this ticket."),
 				)
-			if action == "Cancel Items":
+			if action in ("Request Remake", "Reject Items"):
+				retired = flt(payload.get("retired", {}).get(key))
+				if retired < 0 or retired > min(qty, remaining(row, "Serve")) + EPSILON:
+					fail("KITCHEN_PROGRESS_INVALID", _("Invalid replaced preparation quantity."))
+				field = "remade_qty" if action == "Request Remake" else "rejected_qty"
+				row[field] = flt(row[field] + qty, 6)
+				if action == "Reject Items":
+					row["rejected_served_qty"] = flt(row["rejected_served_qty"] + qty - retired, 6)
+				row["retired_qty"] = flt(row["retired_qty"] + retired, 6)
+			elif action == "Cancel Remake":
+				row["remade_qty"] = flt(row["remade_qty"] - qty, 6)
+			elif action in ("Cancel Items", "Stop Preparation"):
 				row["cancelled_qty"] = flt(row["cancelled_qty"] + qty, 6)
 				active = flt(row["qty"] - row["cancelled_qty"], 6)
 				for field in ("accepted_qty", "started_qty"):
@@ -122,6 +163,16 @@ def status_for(items, progress):
 	rows = [progress[row.line_id] for row in items if not row.parent_line_id]
 	if rows and all(row["qty"] - row.get("cancelled_qty", 0) <= EPSILON for row in rows):
 		return "Cancelled"
+	if (
+		rows
+		and any(row.get("retired_qty", 0) > EPSILON for row in rows)
+		and all(
+			row["qty"] - row.get("cancelled_qty", 0) - row["served_qty"] - row.get("retired_qty", 0)
+			<= EPSILON
+			for row in rows
+		)
+	):
+		return "Completed"
 	for field, status in (("served_qty", "Served"), ("ready_qty", "Ready")):
 		if rows and all(row["qty"] - row.get("cancelled_qty", 0) - row[field] <= EPSILON for row in rows):
 			return status

@@ -7,7 +7,7 @@ CI runs this module last with VUNAPOS_CONCURRENCY_TESTS=1.
 
 import os
 from concurrent.futures import ThreadPoolExecutor
-from threading import Barrier
+from threading import Barrier, Event
 from unittest import skipUnless
 from uuid import uuid4
 
@@ -26,7 +26,7 @@ from vunapos.tests.helpers import (
 
 
 @skipUnless(os.environ.get("VUNAPOS_CONCURRENCY_TESTS") == "1", "Run separately on a disposable test site")
-class TestRestaurantConcurrency(IntegrationTestCase):
+class RestaurantConcurrencyFixture(IntegrationTestCase):
 	_item = kitchen_fixtures.TestKitchenService._item
 	_raw_item = kitchen_fixtures.TestKitchenService._raw_item
 	_station = kitchen_fixtures.TestKitchenService._station
@@ -146,6 +146,148 @@ class TestRestaurantConcurrency(IntegrationTestCase):
 		frappe.db.rollback()  # start a new read view for assertions
 		return results
 
+	def _stop_review(self):
+		placed = self._send([{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		ticket = self._tickets(placed["data"]["name"])[0]
+		for action, status in (("Accept", "Sent"), ("Start", "Accepted")):
+			response = restaurant.kitchen_action(ticket, action, str(uuid4()), status)
+			self.assertTrue(response["ok"], response)
+		account = frappe.get_cached_value("Company", self.profile.company, "stock_adjustment_account")
+		frappe.db.set_value("POS Profile", self.profile.name, "vunapos_waste_expense_account", account)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+		quote = restaurant.preview_preparation_stop(ticket)
+		self.assertTrue(quote["ok"], quote)
+		return quote["data"]
+
+	def _stop_command(self, quote, key):
+		return restaurant.stop_preparation(
+			quote["ticket"],
+			[line["line_id"] for line in quote["lines"]],
+			{part["id"]: 1 for line in quote["lines"] for part in line["materials"]},
+			key,
+			quote["fingerprint"],
+			"Guest cancelled",
+			"Remove charge",
+		)
+
+
+class TestRestaurantConcurrency(RestaurantConcurrencyFixture):
+	def test_simultaneous_stop_retries_consume_ingredients_once(self):
+		quote = self._stop_review()
+		key = str(uuid4())
+		results = self._race(lambda: self._stop_command(quote, key), lambda: self._stop_command(quote, key))
+		for result in results:
+			self.assertTrue(result["ok"], results)
+		self.assertEqual(
+			frappe.db.count("Stock Entry", {"vunapos_stopped_ticket": quote["ticket"], "docstatus": 1}), 1
+		)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Bin", {"item_code": self.ingredient, "warehouse": self.profile.warehouse}, "actual_qty"
+			),
+			999,
+		)
+
+	def test_ready_and_stop_cannot_both_apply_the_same_unfinished_review(self):
+		quote = self._stop_review()
+		results = self._race(
+			lambda: self._stop_command(quote, str(uuid4())),
+			lambda: restaurant.kitchen_action(quote["ticket"], "Ready", str(uuid4()), "Preparing"),
+		)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		wo = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": quote["ticket"]}, "work_order")
+		produced = frappe.db.get_value("Work Order", wo, "produced_qty")
+		self.assertEqual(produced, 0 if results[0]["ok"] else 4)
+
+	def test_order_waiting_for_manager_pause_sees_the_committed_pause(self):
+		paused = Event()
+
+		def pause():
+			frappe.get_doc(
+				{
+					"doctype": "Restaurant Availability",
+					"restaurant": self.profile.vunapos_restaurant,
+					"branch": self.profile.vunapos_branch,
+					"target_type": "Item",
+					"item": self.item,
+					"paused": 1,
+					"reason": "Oven unavailable",
+				}
+			).insert()
+			paused.set()
+			return {"ok": True}
+
+		def place():
+			if not paused.wait(timeout=15):
+				raise RuntimeError("Pause did not reach the branch lock")
+			return self._send()
+
+		results = self._race(pause, place)
+		self.assertTrue(results[0]["ok"], results)
+		self.assertFalse(results[1]["ok"], results)
+		self.assertEqual(results[1]["errors"][0]["code"], "RESTAURANT_ITEM_PAUSED")
+		self.assertFalse(self._tickets())
+
+	def test_competing_availability_records_do_not_duplicate_one_target(self):
+		def pause():
+			try:
+				frappe.get_doc(
+					{
+						"doctype": "Restaurant Availability",
+						"restaurant": self.profile.vunapos_restaurant,
+						"branch": self.profile.vunapos_branch,
+						"target_type": "Item",
+						"item": self.item,
+						"paused": 1,
+						"reason": "Out of service",
+					}
+				).insert()
+				return {"ok": True}
+			except frappe.ValidationError:
+				return {"ok": False}
+
+		results = self._race(pause, pause)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		self.assertEqual(
+			frappe.db.count(
+				"Restaurant Availability",
+				{
+					"restaurant": self.profile.vunapos_restaurant,
+					"branch": self.profile.vunapos_branch,
+					"item": self.item,
+				},
+			),
+			1,
+		)
+
+	def test_repausing_existing_record_and_placement_use_the_same_lock_order(self):
+		pause = frappe.get_doc(
+			{
+				"doctype": "Restaurant Availability",
+				"restaurant": self.profile.vunapos_restaurant,
+				"branch": self.profile.vunapos_branch,
+				"target_type": "Item",
+				"item": self.item,
+				"paused": 0,
+				"reason": "Available",
+			}
+		).insert()
+		name = pause.name
+
+		def repause():
+			doc = frappe.get_doc("Restaurant Availability", name)
+			doc.paused = 1
+			doc.reason = "Equipment failed again"
+			doc.save()
+			return {"ok": True}
+
+		results = self._race(repause, lambda: self._send())
+		self.assertTrue(results[0]["ok"], results)
+		if not results[1]["ok"]:
+			self.assertEqual(results[1]["errors"][0]["code"], "RESTAURANT_ITEM_PAUSED")
+		self.assertEqual(len(self._tickets()), 1 if results[1]["ok"] else 0)
+
 	def test_simultaneous_placement_creates_one_order_ticket_and_work_order(self):
 		key = str(uuid4())
 		items = [{"item_code": self.item, "qty": 2, "line_id": "same-line"}]
@@ -161,6 +303,78 @@ class TestRestaurantConcurrency(IntegrationTestCase):
 		self.assertEqual(frappe.db.count("Sales Order", {"vunapos_idempotency_key": key}), 1)
 		self.assertEqual(frappe.db.count("Kitchen Order Ticket", {"sales_order": order}), 1)
 		self.assertEqual(frappe.db.count("Work Order", {"sales_order": order}), 1)
+
+	def test_simultaneous_rejection_retry_waives_charge_only_once(self):
+		order = self._ready(2)
+		ticket = self._tickets(order)[0]
+		quote = restaurant.preview_rejection(ticket)
+		self.assertTrue(quote["ok"], quote)
+		key = str(uuid4())
+		before = frappe.get_doc("Sales Order", order).grand_total
+
+		def command():
+			return restaurant.reject_prepared_items(
+				ticket,
+				{quote["data"]["lines"][0]["line_id"]: 1},
+				key,
+				quote["data"]["fingerprint"],
+				"Burnt food",
+				"Remove charge",
+			)
+
+		results = self._race(command, command)
+		for result in results:
+			self.assertTrue(result["ok"], result)
+		self.assertEqual(frappe.get_doc("Sales Order", order).grand_total, before / 2)
+		self.assertEqual(
+			frappe.db.count("Kitchen Ticket Action", {"kitchen_ticket": ticket, "action": "Reject Items"}), 1
+		)
+
+	def test_different_rejections_cannot_both_use_the_same_review(self):
+		order = self._ready(2)
+		ticket = self._tickets(order)[0]
+		quote = restaurant.preview_rejection(ticket)
+		self.assertTrue(quote["ok"], quote)
+		before = frappe.get_doc("Sales Order", order).grand_total
+
+		def command():
+			return restaurant.reject_prepared_items(
+				ticket,
+				{quote["data"]["lines"][0]["line_id"]: 1},
+				str(uuid4()),
+				quote["data"]["fingerprint"],
+				"Burnt food",
+				"Remove charge",
+			)
+
+		results = self._race(command, command)
+		self.assertEqual(sum(bool(result["ok"]) for result in results), 1)
+		failed = next(result for result in results if not result["ok"])
+		self.assertEqual(failed["errors"][0]["code"], "REJECTION_REVIEW_CHANGED")
+		self.assertEqual(frappe.get_doc("Sales Order", order).grand_total, before / 2)
+
+	def test_rejection_and_checkout_cannot_use_stale_prices(self):
+		order = self._ready(2)
+		ticket = self._tickets(order)[0]
+		quote = restaurant.preview_rejection(ticket)
+		bill = self._preview()
+
+		def rejection():
+			return restaurant.reject_prepared_items(
+				ticket,
+				{quote["data"]["lines"][0]["line_id"]: 1},
+				str(uuid4()),
+				quote["data"]["fingerprint"],
+				"Burnt food",
+				"Remove charge",
+			)
+
+		results = self._race(rejection, lambda: self._checkout(preview=bill))
+		self.assertEqual(sum(bool(result["ok"]) for result in results), 1)
+		if results[0]["ok"]:
+			self.assertEqual(results[1]["errors"][0]["code"], "SESSION_BILL_CHANGED")
+		else:
+			self.assertEqual(results[0]["errors"][0]["code"], "ORDER_NOT_EDITABLE")
 
 	def test_simultaneous_visit_opening_returns_one_visit(self):
 		key = str(uuid4())
@@ -390,3 +604,135 @@ class TestRestaurantConcurrency(IntegrationTestCase):
 			frappe.db.count("Stock Entry", {"work_order": wo, "purpose": "Manufacture", "docstatus": 1}), 1
 		)
 		self.assertEqual(frappe.db.get_value("Restaurant Session", self.session, "status"), "Settled")
+
+	def _waste_quote(self):
+		account = frappe.get_doc(
+			{
+				"doctype": "Account",
+				"account_name": f"Concurrent Waste {self.token}",
+				"company": self.profile.company,
+				"root_type": "Expense",
+				"report_type": "Profit and Loss",
+				"parent_account": frappe.db.get_value(
+					"Account",
+					{"company": self.profile.company, "root_type": "Expense", "is_group": 1},
+					"name",
+				),
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("POS Profile", self.profile.name, "vunapos_waste_expense_account", account.name)
+		order = self._ready(2)
+		ticket = self._tickets(order)[0]
+		self.assertTrue(restaurant.kitchen_action(ticket, "Serve", str(uuid4()), "Ready")["ok"])
+		self.assertTrue(self._checkout()["ok"])
+		response = restaurant.preview_restaurant_waste(ticket)
+		self.assertTrue(response["ok"], response)
+		return response["data"]
+
+	def test_simultaneous_waste_retries_create_one_journal(self):
+		quote = self._waste_quote()
+		key = str(uuid4())
+		line = quote["lines"][0]["line_id"]
+
+		def command():
+			return restaurant.record_restaurant_waste(
+				quote["ticket"], {line: 2}, key, quote["fingerprint"], "Dropped food"
+			)
+
+		results = self._race(command, command)
+		for result in results:
+			self.assertTrue(result["ok"], result)
+		self.assertEqual(
+			frappe.db.count(
+				"Kitchen Ticket Action", {"kitchen_ticket": quote["ticket"], "action": "Record Waste"}
+			),
+			1,
+		)
+
+	def test_different_waste_requests_cannot_both_consume_the_old_review(self):
+		quote = self._waste_quote()
+		line = quote["lines"][0]["line_id"]
+
+		def command():
+			return restaurant.record_restaurant_waste(
+				quote["ticket"], {line: 2}, str(uuid4()), quote["fingerprint"], "Dropped food"
+			)
+
+		results = self._race(command, command)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		failure = next(result for result in results if not result["ok"])
+		self.assertEqual(failure["errors"][0]["code"], "WASTE_REVIEW_CHANGED")
+
+	def _remake_review(self):
+		order = self._ready(1)
+		ticket = self._tickets(order)[0]
+		response = restaurant.preview_remake(ticket)
+		self.assertTrue(response["ok"], response)
+		return response["data"]
+
+	def test_simultaneous_remake_retries_create_one_replacement(self):
+		quote = self._remake_review()
+		key = str(uuid4())
+		line = quote["lines"][0]["line_id"]
+
+		def command():
+			return restaurant.request_remake(
+				quote["ticket"], {line: 1}, key, quote["fingerprint"], "Burnt", "Discard"
+			)
+
+		results = self._race(command, command)
+		for result in results:
+			self.assertTrue(result["ok"], result)
+		self.assertEqual(frappe.db.count("Kitchen Order Ticket", {"remake_of": quote["ticket"]}), 1)
+
+	def test_competing_remakes_cannot_both_use_the_same_prepared_quantity(self):
+		quote = self._remake_review()
+		line = quote["lines"][0]["line_id"]
+
+		def command():
+			return restaurant.request_remake(
+				quote["ticket"], {line: 1}, str(uuid4()), quote["fingerprint"], "Burnt", "Discard"
+			)
+
+		results = self._race(command, command)
+		self.assertEqual(sum(result["ok"] for result in results), 1, results)
+		self.assertEqual(
+			next(result for result in results if not result["ok"])["errors"][0]["code"],
+			"REMAKE_REVIEW_CHANGED",
+		)
+
+	def test_desk_manufacturing_and_kds_ready_issue_replacement_output_once(self):
+		from vunapos.services.kitchen_lifecycle_service import _stock_entry
+
+		quote = self._remake_review()
+		response = restaurant.request_remake(
+			quote["ticket"],
+			{quote["lines"][0]["line_id"]: 1},
+			str(uuid4()),
+			quote["fingerprint"],
+			"Burnt",
+			"Discard",
+		)
+		self.assertTrue(response["ok"], response)
+		ticket = response["data"]["actions"][0]["item_quantities"]["replacement_ticket"]
+		for action, status in (("Accept", "Sent"), ("Start", "Accepted")):
+			self.assertTrue(restaurant.kitchen_action(ticket, action, str(uuid4()), status)["ok"])
+		wo_name = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": ticket}, "work_order")
+
+		def desk():
+			try:
+				_stock_entry(frappe.get_doc("Work Order", wo_name), "Manufacture", 1)
+				return {"ok": True}
+			except frappe.ValidationError as exc:
+				return {"ok": False, "error": str(exc)}
+
+		results = self._race(
+			desk, lambda: restaurant.kitchen_action(ticket, "Ready", str(uuid4()), "Preparing")
+		)
+		self.assertTrue(results[1]["ok"], results)
+		self.assertEqual(frappe.db.get_value("Work Order", wo_name, "produced_qty"), 1)
+		self.assertEqual(frappe.db.count("Stock Entry", {"vunapos_remake_ticket": ticket, "docstatus": 1}), 1)
+		self.assertEqual(
+			frappe.db.count("Stock Entry", {"work_order": wo_name, "purpose": "Manufacture", "docstatus": 1}),
+			1,
+		)

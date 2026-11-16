@@ -31,9 +31,18 @@
   "column_break_context",
   "company",
   "billing_fingerprint",
+  "gateway_attempts",
   "idempotency_key"
  ],
  "fields": [
+  {
+   "fieldname": "gateway_attempts",
+   "fieldtype": "JSON",
+   "label": "Gateway Attempt References",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
   {
    "fieldname": "billing_doctype",
    "label": "Billing Document Type",
@@ -233,7 +242,7 @@
    "print": 1
   }
  ],
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-16 17:55:25.712988",
  "creation": "2026-11-04 21:01:06.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

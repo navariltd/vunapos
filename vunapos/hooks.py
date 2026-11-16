@@ -166,16 +166,19 @@ permission_query_conditions = {
 	"Restaurant Table": "vunapos.restaurant_permissions.table_conditions",
 	"Restaurant Session": "vunapos.restaurant_permissions.session_conditions",
 	"Kitchen Station": "vunapos.restaurant_permissions.station_conditions",
+	"Restaurant Availability": "vunapos.restaurant_permissions.availability_conditions",
 	"Kitchen Order Ticket": "vunapos.restaurant_permissions.ticket_conditions",
 	"Kitchen Ticket Action": "vunapos.restaurant_permissions.ticket_action_conditions",
 	"Sales Order": "vunapos.restaurant_permissions.order_conditions",
 }
 has_permission = {
+	"VunaPOS Gateway Payment Link": "vunapos.restaurant_permissions.gateway_link_has_permission",
 	"Restaurant": "vunapos.restaurant_permissions.has_permission",
 	"Restaurant Floor": "vunapos.restaurant_permissions.related_has_permission",
 	"Restaurant Table": "vunapos.restaurant_permissions.related_has_permission",
 	"Restaurant Session": "vunapos.restaurant_permissions.related_has_permission",
 	"Kitchen Station": "vunapos.restaurant_permissions.related_has_permission",
+	"Restaurant Availability": "vunapos.restaurant_permissions.related_has_permission",
 	"Kitchen Order Ticket": "vunapos.restaurant_permissions.related_has_permission",
 	"Kitchen Ticket Action": "vunapos.restaurant_permissions.related_has_permission",
 	"Sales Order": "vunapos.restaurant_permissions.related_has_permission",
@@ -206,6 +209,7 @@ doc_events = {
 		"Menu Section",
 		"Restaurant Modifier Group",
 		"Kitchen Station",
+		"Restaurant Availability",
 	)
 }
 doc_events["POS Settings"] = {
@@ -234,6 +238,26 @@ doc_events["Sales Order"] = {
 	"before_update_after_submit": [
 		"vunapos.services.restaurant_location_service.validate_location_snapshot",
 		"vunapos.services.restaurant_session_service.protect_committed_round",
+	],
+}
+doc_events["Stock Entry"] = {
+	"before_insert": [
+		"vunapos.services.restaurant_stop_service.lock_production",
+		"vunapos.services.restaurant_remake_service.lock_native_production",
+	],
+	"before_validate": [
+		"vunapos.services.restaurant_stop_service.lock_production",
+		"vunapos.services.restaurant_remake_service.lock_native_production",
+	],
+	"validate": [
+		"vunapos.services.restaurant_remake_service.protect_issue",
+		"vunapos.services.restaurant_stop_service.protect_entry",
+	],
+	"on_submit": "vunapos.services.restaurant_remake_service.consume_native_output",
+	"before_cancel": [
+		"vunapos.services.restaurant_stop_service.lock_production",
+		"vunapos.services.restaurant_remake_service.protect_issue",
+		"vunapos.services.restaurant_stop_service.protect_entry",
 	],
 }
 # Stock and tracking changes do not publish POS configuration events, but they
@@ -267,10 +291,12 @@ for _billing_doctype in ("Sales Invoice", "POS Invoice"):
 			"validate": [
 				"vunapos.services.restaurant_location_service.validate_location_snapshot",
 				"vunapos.services.restaurant_billing_service.validate_billing_invoice",
+				"vunapos.services.restaurant_waste_service.protect_waste_accounting",
 			],
 			"before_update_after_submit": "vunapos.services.restaurant_location_service.validate_location_snapshot",
 			"on_submit": "vunapos.services.restaurant_billing_service.on_submit",
 			"before_submit": "vunapos.services.restaurant_billing_service.before_submit",
+			"before_cancel": "vunapos.services.restaurant_waste_service.protect_waste_accounting",
 		}
 	)
 

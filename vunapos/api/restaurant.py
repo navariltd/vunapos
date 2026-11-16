@@ -63,6 +63,69 @@ def preview_session_bill(
 		return _failure_from_exception(exc)
 
 
+@frappe.whitelist()
+def preview_rejection(ticket: str):
+	from vunapos.services.restaurant_rejection_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def handover_session_payment(link: str, session: str, pos_profile: str, reason: str):
+	from vunapos.services.restaurant_payment_service import handover
+
+	try:
+		return success(handover(link, session, pos_profile, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def preview_preparation_stop(ticket: str):
+	from vunapos.services.restaurant_stop_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def stop_preparation(
+	ticket: str,
+	line_ids: list | str,
+	used: dict | str,
+	request_key: str,
+	fingerprint: str,
+	reason: str,
+	charge: str,
+):
+	from vunapos.services.restaurant_stop_service import stop
+
+	try:
+		return success(stop(ticket, line_ids, used, request_key, fingerprint, reason, charge))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def reject_prepared_items(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, charge: str
+):
+	from vunapos.services.restaurant_rejection_service import reject
+
+	try:
+		return success(reject(ticket, quantities, request_key, fingerprint, reason, charge))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
 @frappe.whitelist(methods=["POST"])
 @_atomic_write
 def checkout_session(
@@ -110,6 +173,9 @@ def kitchen_action(
 ):
 	from vunapos.services.kitchen_lifecycle_service import transition
 
+	if action == "Cancel Remake":
+		return cancel_remake(ticket, request_key, expected_status, expected_modified, reason)
+
 	# The command owns its rollback. A failure audit must survive an HTTP-200
 	# structured error, unlike the _atomic_write endpoints used for placement.
 	try:
@@ -138,6 +204,69 @@ def preview_item_cancellation(order: str):
 
 	try:
 		return success(preview(order))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def preview_restaurant_waste(ticket: str):
+	from vunapos.services.restaurant_waste_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+def preview_remake(ticket: str):
+	from vunapos.services.restaurant_remake_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def request_remake(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, disposition: str
+):
+	from vunapos.services.restaurant_remake_service import request
+
+	try:
+		return success(request(ticket, quantities, request_key, fingerprint, reason, disposition))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def record_restaurant_waste(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str
+):
+	from vunapos.services.restaurant_waste_service import record
+
+	try:
+		return success(record(ticket, quantities, request_key, fingerprint, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
+def cancel_remake(
+	ticket: str,
+	request_key: str,
+	expected_status: str,
+	expected_modified: str | None = None,
+	reason: str | None = None,
+):
+	from vunapos.services.restaurant_remake_service import cancel
+
+	try:
+		return success(cancel(ticket, request_key, expected_status, expected_modified, reason))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

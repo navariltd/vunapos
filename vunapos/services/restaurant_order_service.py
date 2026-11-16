@@ -297,6 +297,9 @@ def _validate_lines(profile, service_type, table, lines, existing_rows=(), price
 	from vunapos.services.modifier_service import expand_modifier_lines
 
 	lines[:] = expand_modifier_lines(lines)
+	from vunapos.services.restaurant_availability_service import check_items
+
+	check_items(profile.vunapos_restaurant, profile.vunapos_branch, [line.item_code for line in lines])
 	addon_codes = {line.item_code for line in lines if line.get("parent_line_id")}
 	priced_addons = set()
 	if addon_codes:
@@ -613,6 +616,10 @@ def create_order(
 		_validate_table_kitchens(profile, [row.table for row in session.tables if not row.released_at])
 	table = _validate_table(profile, service_type_row, table or None, restaurant_session=restaurant_session)
 	# A Sales Order cannot be submitted without lines.
+	from vunapos.services.restaurant_availability_service import lock_branch
+
+	# Serialize new-order acceptance with manager pauses, after replay checks.
+	lock_branch(profile.vunapos_branch)
 	lines = _new_lines(items)
 	if not lines:
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
@@ -765,6 +772,9 @@ def update_order(order, service_type=None, table=None, customer=None, pax=None, 
 def add_items(order, items):
 	doc, profile = _load_open_order(order)
 	_require_editable_round(doc)
+	from vunapos.services.restaurant_availability_service import lock_branch
+
+	lock_branch(profile.vunapos_branch)
 	if not _parse_list(items):
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
 	lines = _new_lines(items, {line_id(row) for row in doc.get("items")})
@@ -793,6 +803,11 @@ def update_item(order, line_id, qty=None, note=None):
 		qty = flt(qty)
 		if qty <= 0:
 			_throw("INVALID_QTY", _("Quantity must be greater than zero. Remove the line instead."))
+		if qty > flt(row.qty):
+			from vunapos.services.restaurant_availability_service import check_items, lock_branch
+
+			lock_branch(profile.vunapos_branch)
+			check_items(profile.vunapos_restaurant, profile.vunapos_branch, [row.item_code])
 		if qty != flt(row.qty):
 			# Re-priced at the new quantity, as checkout would (quantity offers).
 			rate = flt(_price_line(doc, profile, row.item_code, qty, row.uom)["rate"])

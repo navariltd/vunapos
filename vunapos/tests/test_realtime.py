@@ -484,6 +484,27 @@ class TestGatewayPaymentRealtime(IntegrationTestCase):
 			after_commit=True,
 		)
 
+	def test_restaurant_payment_handover_notifies_only_original_and_receiving_cashier(self):
+		doc = frappe._dict(
+			name="TEST-HANDOVER",
+			cashier="original@example.com",
+			settlement_cashier="receiver@example.com",
+			settlement_profile="Receiving Till",
+			restaurant_session="TEST-VISIT",
+			dispatch_state="Submitted",
+			status="Paid",
+		)
+		with patch("frappe.publish_realtime") as publish:
+			publish_gateway_payment_change(doc)
+		self.assertCountEqual(
+			[c.kwargs["user"] for c in publish.call_args_list],
+			["original@example.com", "receiver@example.com"],
+		)
+		for event in publish.call_args_list:
+			self.assertTrue(event.kwargs["after_commit"])
+			self.assertEqual(event.args[1]["settlement_profile"], "Receiving Till")
+			self.assertEqual(event.args[1]["restaurant_session"], "TEST-VISIT")
+
 	def test_skips_gateway_event_without_an_owning_cashier(self):
 		with patch("frappe.publish_realtime") as publish_realtime:
 			publish_gateway_payment_change(

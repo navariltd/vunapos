@@ -12,6 +12,9 @@
   "waiter",
   "sent_at",
   "order_note",
+  "remake_of",
+  "remake_reason",
+  "original_disposition",
   "items_section",
   "items",
   "references_section",
@@ -24,9 +27,40 @@
   "company",
   "sent_by",
   "station_label",
-  "event_key"
+  "event_key",
+  "remake_context"
  ],
  "fields": [
+  {
+   "fieldname": "remake_of",
+   "label": "Replacement For",
+   "fieldtype": "Link",
+   "options": "Kitchen Order Ticket",
+   "read_only": 1,
+   "depends_on": "eval:!!doc.remake_of"
+  },
+  {
+   "fieldname": "remake_reason",
+   "label": "Remake Reason",
+   "fieldtype": "Small Text",
+   "read_only": 1,
+   "depends_on": "remake_of"
+  },
+  {
+   "fieldname": "original_disposition",
+   "label": "Original Food",
+   "fieldtype": "Select",
+   "options": "\nDiscard\nKeep for guest",
+   "read_only": 1,
+   "depends_on": "remake_of"
+  },
+  {
+   "fieldname": "remake_context",
+   "label": "Replacement Context",
+   "fieldtype": "JSON",
+   "read_only": 1,
+   "hidden": 1
+  },
   {
    "fieldname": "kitchen_station",
    "label": "Kitchen Station",
@@ -133,7 +167,7 @@
    "fieldname": "status",
    "label": "Preparation Status",
    "fieldtype": "Select",
-   "options": "Sent\nAccepted\nPreparing\nReady\nServed\nCancelled",
+   "options": "Sent\nAccepted\nPreparing\nReady\nServed\nCompleted\nCancelled",
    "default": "Sent",
    "read_only": 1,
    "in_list_view": 1,
@@ -213,7 +247,7 @@
  "track_changes": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-16 10:33:27.275261",
  "creation": "2026-11-05 07:53:35.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

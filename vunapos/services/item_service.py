@@ -1008,6 +1008,11 @@ def get_template_variants(template_item_code, pos_profile=None, customer=None, p
 		from vunapos.services.kitchen_service import classify_items
 
 		classify_items(profile.vunapos_restaurant, variant_items, branch=profile.vunapos_branch)
+		from vunapos.services.restaurant_availability_service import annotate
+
+		# This endpoint has no table context: apply item/template pauses here;
+		# exact floor station availability is rechecked on restaurant placement.
+		annotate(profile.vunapos_restaurant, profile.vunapos_branch, variant_items, all_floors=True)
 	return {
 		"template": {
 			"item_code": template.name,

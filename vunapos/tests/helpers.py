@@ -332,6 +332,10 @@ def ensure_test_restaurant_profile():
 	)
 	# Generic order fixtures are direct-sale items. QSR tests explicitly opt
 	# into station groups, recipes and ingredient stock.
+	# A prior test/run may leave a submitted order and its UUID-named station
+	# behind. Clearing only the old fixed-name station's groups leaves those
+	# routes active and makes ordinary fixture items unexpectedly require BOMs.
+	frappe.db.set_value("Kitchen Station", {"restaurant": restaurant}, "enabled", 0)
 	station = f"{restaurant} Test Kitchen"
 	if frappe.db.exists("DocType", "Kitchen Station") and not frappe.db.exists(
 		"Kitchen Station", {"restaurant": restaurant, "station_name": station}

@@ -237,6 +237,10 @@ def validate_profile_restaurant(profile, method=None):
 	"""POS Profile validate hook: a Restaurant-mode profile needs a restaurant of its company."""
 	if profile.get("vunapos_pos_mode") != "Restaurant":
 		return
+	if profile.get("vunapos_cancellation_charge_item"):
+		from vunapos.services.restaurant_stop_service import validate_charge_item
+
+		validate_charge_item(profile.vunapos_cancellation_charge_item)
 	if not profile.get("vunapos_restaurant"):
 		frappe.throw(
 			_("Select the Restaurant this POS Profile belongs to"),

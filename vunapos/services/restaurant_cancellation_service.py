@@ -44,6 +44,10 @@ def _context(order_name):
 def _open(session, order):
 	from frappe.model.workflow import get_workflow_name
 
+	from vunapos.services.restaurant_payment_service import guard_order_change
+
+	guard_order_change(session)
+
 	if (
 		session.status != "Open"
 		or session.billing_invoice
@@ -105,7 +109,7 @@ def _state(order):
 		kitchen._ticket(name, lock=True)
 		for name in frappe.get_all(
 			"Kitchen Order Ticket",
-			filters={"sales_order": order.name, "docstatus": 1},
+			filters={"sales_order": order.name, "docstatus": 1, "remake_of": ["is", "not set"]},
 			pluck="name",
 			order_by="name",
 		)
@@ -123,6 +127,9 @@ def _state(order):
 
 
 def _quote(order, tickets, work_orders, histories):
+	from vunapos.services.restaurant_stop_service import charge_lines
+
+	protected_fees = charge_lines(order.name) if not set(frappe.get_roles()) & kitchen.MANAGERS else set()
 	by_source = {
 		row.sales_order_item: (doc, row) for doc in tickets for row in doc.items if not row.parent_line_id
 	}
@@ -132,6 +139,8 @@ def _quote(order, tickets, work_orders, histories):
 	rows = {row.name: row for row in order.items}
 
 	def maximum(row):
+		if row.get("vunapos_line_id") in protected_fees:
+			return 0.0
 		if any(packed.parent_detail_docname == row.name for packed in order.get("packed_items", [])):
 			return 0.0
 		if flt(row.delivered_qty) or flt(row.billed_amt) or flt(row.ordered_qty):
@@ -403,6 +412,7 @@ def cancel(order_name, quantities, request_key, fingerprint, reason, manager_pin
 	remaining = [row for row in order.items if row.name not in changes or changes[row.name] > EPS]
 	old_flag = frappe.flags.get("vunapos_cancelling_restaurant_items")
 	old_cancel = frappe.flags.get("vunapos_cancelling_kitchen_order")
+	old_adjustment = frappe.flags.get("vunapos_restaurant_charge_adjustment")
 	try:
 		if not remaining:
 			frappe.flags.vunapos_cancelling_kitchen_order = order.name
@@ -421,6 +431,9 @@ def cancel(order_name, quantities, request_key, fingerprint, reason, manager_pin
 				if row.name in changes:
 					row.qty = changes[row.name]
 			order.set("items", remaining)
+			from vunapos.services.restaurant_rejection_service import reapply_waivers
+
+			frappe.flags.vunapos_restaurant_charge_adjustment = reapply_waivers(order)
 			order.flags.ignore_validate_update_after_submit = True
 			order.ignore_pricing_rule = 1
 			frappe.flags.vunapos_cancelling_restaurant_items = order.name
@@ -446,6 +459,7 @@ def cancel(order_name, quantities, request_key, fingerprint, reason, manager_pin
 	finally:
 		frappe.flags.vunapos_cancelling_restaurant_items = old_flag
 		frappe.flags.vunapos_cancelling_kitchen_order = old_cancel
+		frappe.flags.vunapos_restaurant_charge_adjustment = old_adjustment
 	for ticket in tickets:
 		deltas = {
 			line: qty for line, qty in selected.items() if any(row.line_id == line for row in ticket.items)

@@ -1,0 +1,130 @@
+{
+ "doctype": "DocType",
+ "name": "Restaurant Availability",
+ "module": "VunaPOS",
+ "engine": "InnoDB",
+ "autoname": "hash",
+ "creation": "2026-11-16 14:55:11.393182",
+ "modified": "2026-11-16 15:55:24.820733",
+ "owner": "Administrator",
+ "modified_by": "Administrator",
+ "track_changes": 1,
+ "title_field": "target_label",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "field_order": [
+  "restaurant",
+  "branch",
+  "company",
+  "availability_section",
+  "target_type",
+  "item",
+  "kitchen_station",
+  "target_label",
+  "paused",
+  "unavailable_until",
+  "reason",
+  "availability_key"
+ ],
+ "fields": [
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "label": "Restaurant",
+   "options": "Restaurant",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "options": "Branch",
+   "reqd": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company",
+   "read_only": 1
+  },
+  {
+   "fieldname": "availability_section",
+   "fieldtype": "Section Break",
+   "label": "Ordering Availability"
+  },
+  {
+   "fieldname": "target_type",
+   "fieldtype": "Select",
+   "label": "Pause Orders For",
+   "options": "Item\nKitchen Station",
+   "default": "Item",
+   "reqd": 1
+  },
+  {
+   "fieldname": "item",
+   "fieldtype": "Link",
+   "label": "Item",
+   "options": "Item",
+   "depends_on": "eval:doc.target_type === 'Item'",
+   "mandatory_depends_on": "eval:doc.target_type === 'Item'",
+   "description": "Pausing a variant template also pauses its variants in this branch."
+  },
+  {
+   "fieldname": "kitchen_station",
+   "fieldtype": "Link",
+   "label": "Kitchen Station",
+   "options": "Kitchen Station",
+   "depends_on": "eval:doc.target_type === 'Kitchen Station'",
+   "mandatory_depends_on": "eval:doc.target_type === 'Kitchen Station'"
+  },
+  {
+   "fieldname": "target_label",
+   "fieldtype": "Data",
+   "label": "Item / Station",
+   "read_only": 1,
+   "hidden": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "paused",
+   "fieldtype": "Check",
+   "label": "Temporarily Unavailable",
+   "default": "1",
+   "in_list_view": 1,
+   "description": "Blocks new orders only. Clear this checkbox to resume; existing kitchen tickets are unchanged."
+  },
+  {
+   "fieldname": "unavailable_until",
+   "fieldtype": "Datetime",
+   "label": "Unavailable Until",
+   "depends_on": "eval:doc.paused",
+   "description": "Optional. Ordering resumes automatically at this time; leave blank to resume manually."
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason",
+   "reqd": 1
+  },
+  {
+   "fieldname": "availability_key",
+   "fieldtype": "Data",
+   "label": "Availability Key",
+   "unique": 1,
+   "hidden": 1,
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  { "role": "System Manager", "read": 1, "create": 1, "write": 1 },
+  { "role": "VunaPOS Restaurant Manager", "read": 1, "create": 1, "write": 1 },
+  { "role": "VunaPOS Waiter", "read": 1 },
+  { "role": "VunaPOS Cashier", "read": 1 },
+  { "role": "VunaPOS Kitchen User", "read": 1 }
+ ]
+}

@@ -123,6 +123,40 @@ def ensure_vunapos_custom_fields():
 			frappe.delete_doc("Custom Field", custom_field, ignore_permissions=True)
 	ensure_vunapos_roles()
 	custom_fields = {
+		"Stock Entry": [
+			{
+				"fieldname": "vunapos_remake_manufacture_entry",
+				"label": "Replacement Manufacture Entry",
+				"fieldtype": "Link",
+				"options": "Stock Entry",
+				"read_only": 1,
+				"hidden": 1,
+			},
+			{
+				"fieldname": "vunapos_remake_ticket",
+				"label": "Replacement Ticket",
+				"fieldtype": "Link",
+				"options": "Kitchen Order Ticket",
+				"read_only": 1,
+				"hidden": 1,
+			},
+			{
+				"fieldname": "vunapos_stopped_ticket",
+				"label": "Stopped Preparation Ticket",
+				"fieldtype": "Link",
+				"options": "Kitchen Order Ticket",
+				"read_only": 1,
+				"hidden": 1,
+			},
+			{
+				"fieldname": "vunapos_remake_work_order",
+				"label": "Replacement Work Order",
+				"fieldtype": "Link",
+				"options": "Work Order",
+				"read_only": 1,
+				"hidden": 1,
+			},
+		],
 		"Branch": [
 			{
 				"fieldname": "vunapos_company",
@@ -192,6 +226,24 @@ def ensure_vunapos_custom_fields():
 				"default": "0",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 				"description": "Allow this profile's cashier to accept pending KOTs, finish required material transfers and manufacture remaining quantities during checkout. Marks preparation Ready, not Served. Native stock, tracking, inspection and Job Card checks still apply.",
+			},
+			{
+				"fieldname": "vunapos_waste_expense_account",
+				"label": "Waste Expense Account",
+				"fieldtype": "Link",
+				"options": "Account",
+				"insert_after": "vunapos_complete_preparation_on_billing",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Expense ledger for reviewed ingredient losses during stopped preparation and for recorded food waste.",
+			},
+			{
+				"fieldname": "vunapos_cancellation_charge_item",
+				"label": "Cancellation Charge Item",
+				"fieldtype": "Link",
+				"options": "Item",
+				"insert_after": "vunapos_waste_expense_account",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Non-stock sales item used when a manager retains the charge for unfinished food; its normal tax settings apply.",
 			},
 			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode

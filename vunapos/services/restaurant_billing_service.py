@@ -27,10 +27,60 @@ PRICE_FIELDS = (
 	"price_list_rate",
 	"discount_percentage",
 	"discount_amount",
+	"mapped_additional_discount_amount",
 	"item_tax_template",
 	"item_tax_rate",
 	"is_free_item",
 )
+
+
+def consolidated_reservation_sources(invoice):
+	"""Native POS consolidation must consume only its own restaurant SREs."""
+	result, parents = [], {}
+	for row in invoice.items:
+		if not row.get("pos_invoice") or not row.get("pos_invoice_item"):
+			continue
+		if row.pos_invoice not in parents:
+			parents[row.pos_invoice] = frappe.get_doc("POS Invoice", row.pos_invoice, for_update=True)
+		pos = parents[row.pos_invoice]
+		if not pos.get("vunapos_restaurant_session"):
+			continue
+		source = next((part for part in pos.items if part.name == row.pos_invoice_item), None)
+		if (
+			pos.docstatus != 1
+			or pos.is_return
+			or pos.company != invoice.company
+			or pos.customer != invoice.customer
+			or pos.consolidated_invoice not in (None, "", invoice.name)
+			or not source
+			or (source.item_code, source.warehouse, source.uom) != (row.item_code, row.warehouse, row.uom)
+			or abs(flt(source.stock_qty) - flt(row.stock_qty)) > 0.000001
+		):
+			fail(
+				"CONSOLIDATION_SOURCE_MISMATCH",
+				_("Consolidated stock rows must exactly match their submitted restaurant POS bills."),
+			)
+		order = frappe.db.get_value(
+			"Sales Order",
+			source.sales_order,
+			["vunapos_restaurant_session", "company"],
+			as_dict=True,
+			for_update=True,
+		)
+		if (
+			not order
+			or order.vunapos_restaurant_session != pos.vunapos_restaurant_session
+			or order.company != invoice.company
+			or not frappe.db.exists(
+				"Sales Order Item",
+				{"name": source.so_detail, "parent": source.sales_order, "item_code": source.item_code},
+			)
+		):
+			fail(
+				"CONSOLIDATION_SOURCE_MISMATCH", _("The restaurant POS bill has invalid source order links.")
+			)
+		result.append((row, source.sales_order, source.so_detail))
+	return result
 
 
 def _orders(session, lock=False, unbilled=True, billing_invoice=None):
@@ -127,6 +177,23 @@ def _review_fingerprint(orders, doc):
 
 
 def _pending_production(order_names):
+	from vunapos.services.restaurant_remake_service import validate_output_balance
+	from vunapos.services.restaurant_stop_service import resolutions
+
+	stopped = resolutions(order_names)
+
+	for name in frappe.get_all(
+		"Kitchen Order Ticket",
+		filters={
+			"sales_order": ["in", order_names],
+			"docstatus": 1,
+			"remake_of": ["is", "set"],
+			"status": ["!=", "Cancelled"],
+		},
+		pluck="name",
+		order_by="name",
+	):
+		validate_output_balance(frappe.get_doc("Kitchen Order Ticket", name, for_update=True))
 	active = set(frappe.get_all("Sales Order Item", filters={"parent": ["in", order_names]}, pluck="name"))
 	pending = [
 		row.name
@@ -137,6 +204,7 @@ def _pending_production(order_names):
 			order_by="name",
 		)
 		if row.sales_order_item in active
+		and row.name not in stopped
 		and (row.docstatus != 1 or flt(row.produced_qty) + 0.000001 < flt(row.qty))
 	]
 	# Do not settle a visit with Sent/Preparing tickets that could no longer
@@ -147,7 +215,7 @@ def _pending_production(order_names):
 			filters={
 				"sales_order": ["in", order_names],
 				"docstatus": 1,
-				"status": ["not in", ["Ready", "Served", "Cancelled"]],
+				"status": ["not in", ["Ready", "Served", "Completed", "Cancelled"]],
 			},
 			pluck="name",
 			order_by="name",
@@ -300,57 +368,9 @@ def preview(session, pos_profile=None, loyalty_points=None):
 
 
 def _recover_payments(session, profile, orders):
-	"""Recover this cashier's pending/verified STK prompt, never another visit's."""
-	from vunapos.services.gateway_payment_service import gateway_payment_link_to_dict
-	from vunapos.services.profile_service import get_pos_session
+	from vunapos.services.restaurant_payment_service import recover
 
-	opening = get_pos_session(frappe.session.user, profile.name)
-	if (
-		not opening["ready"]
-		or CASHIER_ROLE not in frappe.get_roles()
-		or not frappe.db.table_exists("KE Payment Request")
-	):
-		return []
-	# A cancelled round can still have a captured/pending prompt. Its reference
-	# remains part of this visit and must not be forgotten during bill recovery.
-	references = frappe.get_all(
-		"Sales Order", filters={"vunapos_restaurant_session": session.name}, pluck="name"
-	)
-	requests = frappe.get_all(
-		"KE Payment Request",
-		filters={"account_reference": ["in", references or [order.name for order in orders]]},
-		pluck="name",
-		limit_page_length=50,
-	)
-	if not requests:
-		return []
-	links = frappe.get_list(
-		"VunaPOS Gateway Payment Link",
-		filters={
-			"source_doctype": "KE Payment Request",
-			"source_name": ["in", requests],
-			"customer": session.customer,
-			"pos_profile": profile.name,
-			"opening_entry": opening["opening_entry"],
-			"cashier": frappe.session.user,
-			"consumed": 0,
-			"status": ["in", ["Pending", "Draft", "Authorized", "Paid"]],
-		},
-		pluck="name",
-		order_by="creation desc",
-		limit_page_length=20,
-	)
-	result = [
-		gateway_payment_link_to_dict(frappe.get_doc("VunaPOS Gateway Payment Link", name)) for name in links
-	]
-	if len(result) > 1:
-		fail(
-			"SESSION_PAYMENT_REVIEW_REQUIRED",
-			_(
-				"Several active gateway prompts exist for this visit. Review and cancel/resolve them before sending another prompt."
-			),
-		)
-	return result
+	return recover(session, profile)
 
 
 def validate_billing_invoice(doc, method=None):
@@ -386,8 +406,17 @@ def validate_billing_invoice(doc, method=None):
 			or row.warehouse != source.warehouse
 		):
 			fail("SESSION_BILL_LINES_CHANGED", _("Billing order/warehouse links cannot be changed."))
-		for field in ("qty", "rate", "conversion_factor", "discount_percentage", "discount_amount"):
-			if abs(flt(row.get(field)) - flt(source.get(field))) > 0.000001:
+		for field in (
+			"qty",
+			"rate",
+			"conversion_factor",
+			"discount_percentage",
+			"discount_amount",
+			"mapped_additional_discount_amount",
+			"is_free_item",
+		):
+			precision = 0.000000001 if field == "mapped_additional_discount_amount" else 0.000001
+			if abs(flt(row.get(field)) - flt(source.get(field))) > precision:
 				fail(
 					"SESSION_BILL_LINES_CHANGED",
 					_("Bill quantity and price for {0} must match its placed order.").format(
@@ -485,6 +514,9 @@ def validate_billing_stock(doc):
 			),
 		)
 
+	from vunapos.services.restaurant_stop_service import resolutions
+
+	stopped = resolutions(list({row.sales_order for row in doc.items}))
 	for name in frappe.get_all(
 		"Work Order",
 		filters={"sales_order": ["in", list({row.sales_order for row in doc.items})]},
@@ -493,6 +525,18 @@ def validate_billing_stock(doc):
 	):
 		wo = frappe.get_doc("Work Order", name, for_update=True)
 		if wo.sales_order_item not in {row.so_detail for row in doc.items}:
+			continue
+		if wo.name in stopped:
+			needed = sum(
+				flt(row.qty) * flt(row.conversion_factor)
+				for row in doc.items
+				if row.so_detail == wo.sales_order_item
+			)
+			if needed > flt(wo.produced_qty) + 0.000001:
+				fail(
+					"SESSION_FINISHED_STOCK_REQUIRED",
+					_("Stopped preparation did not produce enough food for this bill."),
+				)
 			continue
 		if wo.docstatus != 1 or flt(wo.produced_qty) + 0.000001 < flt(wo.qty):
 			fail(
@@ -616,6 +660,9 @@ def checkout(session, pos_profile, fingerprint, payments=None, **options):
 			_("The orders changed since this bill was reviewed. Refresh the bill before taking payment."),
 		)
 	require_create(doc.doctype)
+	from vunapos.services.restaurant_payment_service import validate_checkout
+
+	validate_checkout(session, profile, payments)
 	if cint(profile.get("vunapos_complete_preparation_on_billing")):
 		from vunapos.services.kitchen_lifecycle_service import complete_for_billing
 
