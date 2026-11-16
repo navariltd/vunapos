@@ -1106,6 +1106,7 @@ export function POSHomePage({
             <CustomersPage
               posProfile={bootstrap.data?.pos_profile}
               defaultCurrency={bootstrap.data?.currency}
+              allowCustomerCreation={allowCustomerCreation}
             />
           )
         ) : (

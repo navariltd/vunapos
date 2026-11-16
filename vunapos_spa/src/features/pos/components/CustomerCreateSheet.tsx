@@ -185,12 +185,19 @@ export function CustomerCreateFields({
 type CustomerCreateSheetProps = {
   posProfile?: string;
   initialName?: string;
+  description?: string;
   onClose: () => void;
   onSelect: (customer: CustomerDTO) => void | Promise<void>;
 };
 
 // The POS create form in both modes: a bottom sheet on phones, a dialog on larger screens.
-export function CustomerCreateSheet({ posProfile, initialName = "", onClose, onSelect }: CustomerCreateSheetProps) {
+export function CustomerCreateSheet({
+  posProfile,
+  initialName = "",
+  description = "The customer is selected once saved.",
+  onClose,
+  onSelect,
+}: CustomerCreateSheetProps) {
   const formId = useId();
   const inFlight = useRef(false);
   const [draft, setDraft] = useState<Partial<CustomerCreateForm>>({ customer_name: initialName });
@@ -223,7 +230,7 @@ export function CustomerCreateSheet({ posProfile, initialName = "", onClose, onS
     <Sheet
       isOpen
       title="New customer"
-      description="The customer is selected once saved."
+      description={description}
       onClose={onClose}
       footer={
         <div className="flex justify-end gap-2">
