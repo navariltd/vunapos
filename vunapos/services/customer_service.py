@@ -18,21 +18,25 @@ from vunapos.services.catalogue_cache import (
 from vunapos.services.catalogue_cache import (
 	set as set_catalogue_cache,
 )
+from vunapos.services.customer_group_service import profile_customer_groups
 from vunapos.services.profile_service import get_invoice_mode, resolve_pos_profile
 from vunapos.utils.permissions import require_create, require_read
 
 
-def search_customers(query=None, limit=20, since=None):
+def search_customers(query=None, limit=20, since=None, pos_profile=None):
 	limit = cint(limit) or 20
 	query = (query or "").strip()
+	groups = profile_customer_groups(resolve_pos_profile(pos_profile)) if pos_profile else None
 	if not since and not frappe.flags.in_test:
-		key = customer_search_key(frappe.session.user, query, limit)
+		key = customer_search_key(frappe.session.user, query, limit, groups)
 		cached = get_catalogue_cache(key)
 		if cached is not None:
 			return cached
 	filters = {"disabled": 0}
 	if since:
 		filters["modified"] = [">", since]
+	if groups:
+		filters["customer_group"] = ["in", groups]
 	or_filters = []
 	if query:
 		or_filters = [
@@ -69,6 +73,18 @@ def search_customers(query=None, limit=20, since=None):
 	if not since and not frappe.flags.in_test:
 		set_catalogue_cache(key, result)
 	return result
+
+
+def customers_outside_groups(since, groups):
+	"""Customers changed since a sync that a till filtered to these groups must drop."""
+	if not since or not groups:
+		return []
+	return frappe.get_list(
+		"Customer",
+		filters={"modified": [">", since], "customer_group": ["not in", groups]},
+		pluck="name",
+		limit_page_length=0,
+	)
 
 
 def _fail(code, message, field=None, meta=None, exc_type=frappe.ValidationError):
@@ -185,14 +201,16 @@ def find_customers_by_mobile(normalised, country=None):
 	return _match_rows(names)
 
 
-def find_similar_customers(customer_name, limit=5):
+def find_similar_customers(customer_name, limit=5, customer_groups=None):
 	words = [word for word in (customer_name or "").split() if len(word) >= 2][:4]
 	if not words:
 		return []
+	filters = [["Customer", "disabled", "=", 0]]
+	if customer_groups:
+		filters.append(["Customer", "customer_group", "in", customer_groups])
 	rows = frappe.get_list(
 		"Customer",
-		filters=[["Customer", "disabled", "=", 0]]
-		+ [["Customer", "customer_name", "like", f"%{word}%"] for word in words],
+		filters=filters + [["Customer", "customer_name", "like", f"%{word}%"] for word in words],
 		fields=["name", "customer_name", "mobile_no", "email_id", "customer_group", "tax_id", "modified"],
 		order_by="customer_name asc",
 		limit_page_length=limit,
@@ -212,16 +230,6 @@ def _leaf_group(group):
 	)
 
 
-def _profile_allowed_groups(profile):
-	from frappe.utils.nestedset import get_descendants_of
-
-	allowed = []
-	for row in profile.get("customer_groups") or []:
-		if row.customer_group:
-			allowed += [row.customer_group, *get_descendants_of("Customer Group", row.customer_group)]
-	return allowed
-
-
 def _usable_group(group):
 	return group if group and not cint(frappe.get_cached_value("Customer Group", group, "is_group")) else None
 
@@ -235,7 +243,7 @@ def default_customer_group(profile):
 	group = _usable_group(profile.get("vunapos_default_customer_group")) or _usable_group(
 		frappe.db.get_single_value("Selling Settings", "customer_group")
 	)
-	allowed = _profile_allowed_groups(profile)
+	allowed = profile_customer_groups(profile)
 	if allowed and group not in allowed:
 		group = next(
 			(
@@ -265,7 +273,7 @@ def validate_profile_customer_defaults(doc, method=None):
 	territory = doc.get("vunapos_default_customer_territory")
 	if territory and cint(frappe.db.get_value("Territory", territory, "is_group")):
 		frappe.throw(_("Default Customer Territory must not be a group node."))
-	allowed = _profile_allowed_groups(doc)
+	allowed = profile_customer_groups(doc)
 	if group and allowed and group not in allowed:
 		frappe.msgprint(
 			_(
@@ -298,16 +306,29 @@ def get_customer_create_options(pos_profile=None):
 
 
 def find_customer_matches(pos_profile=None, customer_name=None, mobile_no=None, mobile_country=None):
-	"""Customers the create form offers instead of creating a duplicate."""
+	"""Customers the create form warns about before creating a possible duplicate.
+
+	Customers outside this till's Customer Groups are not listed; mobile_elsewhere
+	only says that the number is already on one of them.
+	"""
 	profile = _require_customer_creation(pos_profile)
+	groups = profile_customer_groups(profile)
 	country = mobile_country or _company_country(profile)
-	result = {"mobile_no": None, "mobile_error": None, "mobile_matches": [], "similar": []}
+	result = {
+		"mobile_no": None,
+		"mobile_error": None,
+		"mobile_matches": [],
+		"mobile_elsewhere": False,
+		"similar": [],
+	}
 	try:
 		result["mobile_no"] = normalise_mobile(mobile_no, country)
 	except frappe.ValidationError as exc:
 		result["mobile_error"] = str(exc)
-	result["mobile_matches"] = find_customers_by_mobile(result["mobile_no"], country)
-	result["similar"] = find_similar_customers(customer_name)
+	matches = find_customers_by_mobile(result["mobile_no"], country)
+	result["mobile_matches"] = [row for row in matches if not groups or row["customer_group"] in groups]
+	result["mobile_elsewhere"] = len(result["mobile_matches"]) < len(matches)
+	result["similar"] = find_similar_customers(customer_name, customer_groups=groups)
 	return result
 
 
@@ -517,13 +538,17 @@ def get_customer_directory(
 		frappe.throw(_("Customer management is disabled for this POS Profile"), frappe.PermissionError)
 	start = max(cint(start), 0)
 	limit = min(max(cint(limit) or 25, 1), 100)
-	filters = {"disabled": 0}
+	groups = profile_customer_groups(profile)
+	# A list, so a chosen group and the till's Customer Groups can both apply.
+	filters = [["Customer", "disabled", "=", 0]]
+	if groups:
+		filters.append(["Customer", "customer_group", "in", groups])
 	if customer_group:
-		filters["customer_group"] = customer_group
+		filters.append(["Customer", "customer_group", "=", customer_group])
 	if customer_type:
-		filters["customer_type"] = customer_type
+		filters.append(["Customer", "customer_type", "=", customer_type])
 	if territory:
-		filters["territory"] = territory
+		filters.append(["Customer", "territory", "=", territory])
 
 	query = (query or "").strip()
 	or_filters = []
@@ -569,7 +594,7 @@ def get_customer_directory(
 	names = [row.name for row in customers]
 	filter_rows = frappe.get_list(
 		"Customer",
-		filters={"disabled": 0},
+		filters={"disabled": 0, **({"customer_group": ["in", groups]} if groups else {})},
 		fields=["customer_group", "territory"],
 		limit_page_length=10000,
 	)

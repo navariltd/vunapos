@@ -16,8 +16,9 @@ def item_search_key(user, query, profile, customer, price_list, limit, item_grou
 	return _key("items", user, query, profile, customer, price_list, limit, groups, codes)
 
 
-def customer_search_key(user, query, limit):
-	return _key("customers", user, query, limit)
+def customer_search_key(user, query, limit, customer_groups=None):
+	groups = ",".join(customer_groups) if customer_groups else ""
+	return _key("customers", user, query, limit, groups)
 
 
 def get(key):

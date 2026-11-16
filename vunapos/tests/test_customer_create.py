@@ -3,7 +3,14 @@ import random
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from vunapos.api.customer import create_customer, find_customer_matches, get_customer_create_options
+from vunapos.api.customer import (
+	create_customer,
+	find_customer_matches,
+	get_customer_create_options,
+	get_customer_directory,
+	search_customers,
+)
+from vunapos.api.pos import get_pos_bootstrap
 from vunapos.patches.v1_0 import allow_restaurant_customer_creation
 from vunapos.services.catalogue_cache import customer_search_key
 from vunapos.services.catalogue_cache import get as get_catalogue_cache
@@ -44,6 +51,14 @@ def _ensure_group(name, is_group=0, parent="All Customer Groups"):
 			}
 		).insert(ignore_permissions=True)
 	return name
+
+
+def _customer(group, prefix="Grouped"):
+	return (
+		frappe.get_doc({"doctype": "Customer", "customer_name": _name(prefix), "customer_group": group})
+		.insert(ignore_permissions=True)
+		.name
+	)
 
 
 def _ensure_territory(name):
@@ -320,3 +335,107 @@ class TestCustomerCreate(IntegrationTestCase):
 			set_catalogue_cache(key, [])
 			self.assertTrue(self._create(profile)["ok"])
 			self.assertIsNone(get_catalogue_cache(key), profile)
+
+	def _set_customer_groups(self, profile, groups):
+		doc = frappe.get_doc("POS Profile", profile)
+		doc.customer_groups = []
+		for group in groups:
+			doc.append("customer_groups", {"customer_group": group})
+		doc.save(ignore_permissions=True)
+
+	def test_customer_search_follows_the_profile_customer_groups(self):
+		in_a, in_leaf, in_b = (
+			_customer(group, "Search") for group in (GROUP_A, f"{GROUP_NODE} Leaf", GROUP_B)
+		)
+		for profile in (self.retail, self.restaurant):
+			self._set_customer_groups(profile, [])
+			response = search_customers(query="_Test VunaPOS Search", limit=100, pos_profile=profile)
+			found = {row["customer"] for row in response["data"]}
+			self.assertTrue({in_a, in_leaf, in_b} <= found, profile)
+
+			# A group node row covers its descendants.
+			self._set_customer_groups(profile, [GROUP_A, GROUP_NODE])
+			response = search_customers(query="_Test VunaPOS Search", limit=100, pos_profile=profile)
+			found = {row["customer"] for row in response["data"]}
+			self.assertTrue({in_a, in_leaf} <= found, profile)
+			self.assertNotIn(in_b, found, profile)
+
+	def test_similar_name_suggestions_follow_the_profile_customer_groups(self):
+		in_a = _customer(GROUP_A, "Lookalike")
+		in_b = _customer(GROUP_B, "Lookalike")
+		self._set_customer_groups(self.restaurant, [GROUP_A])
+
+		response = find_customer_matches(pos_profile=self.restaurant, customer_name="VunaPOS Lookalike")
+
+		similar = {row["customer"] for row in response["data"]["similar"]}
+		self.assertIn(in_a, similar)
+		self.assertNotIn(in_b, similar)
+
+	def test_bootstrap_snapshot_follows_the_profile_customer_groups(self):
+		in_a = _customer(GROUP_A, "Snapshot")
+		in_b = _customer(GROUP_B, "Snapshot")
+		self._set_customer_groups(self.retail, [])
+		data = get_pos_bootstrap(pos_profile=self.retail)["data"]
+		self.assertIsNone(data["pos_profile"]["customer_groups"])
+
+		self._set_customer_groups(self.retail, [GROUP_A, GROUP_NODE])
+		data = get_pos_bootstrap(pos_profile=self.retail)["data"]
+		self.assertEqual(
+			data["pos_profile"]["customer_groups"], sorted([GROUP_A, GROUP_NODE, f"{GROUP_NODE} Leaf"])
+		)
+		names = {row["customer"] for row in data["customers"]}
+		self.assertIn(in_a, names)
+		self.assertNotIn(in_b, names)
+		self.assertTrue(
+			all(row["customer_group"] in data["pos_profile"]["customer_groups"] for row in data["customers"])
+		)
+
+		# A customer moved out of the till's groups is removed by the next delta.
+		since = str(data["server_time"])
+		frappe.db.set_value(
+			"Customer",
+			in_a,
+			{"customer_group": GROUP_B, "modified": frappe.utils.add_to_date(since, seconds=1)},
+			update_modified=False,
+		)
+		delta = get_pos_bootstrap(pos_profile=self.retail, since=since)["data"]
+		self.assertIn(in_a, delta["deleted"]["Customer"])
+		self.assertNotIn(in_a, {row["customer"] for row in delta["customers"]})
+
+	def test_matching_mobile_outside_the_customer_groups_is_only_mentioned(self):
+		mobile = _mobile()
+		outside = _customer(GROUP_B, "Elsewhere")
+		frappe.db.set_value("Customer", outside, "mobile_no", "+254-" + mobile[1:])
+		self._set_customer_groups(self.restaurant, [GROUP_A])
+
+		data = find_customer_matches(pos_profile=self.restaurant, mobile_no=mobile)["data"]
+		self.assertEqual(data["mobile_matches"], [])
+		self.assertTrue(data["mobile_elsewhere"])
+
+		self._set_customer_groups(self.restaurant, [])
+		data = find_customer_matches(pos_profile=self.restaurant, mobile_no=mobile)["data"]
+		self.assertEqual([row["customer"] for row in data["mobile_matches"]], [outside])
+		self.assertFalse(data["mobile_elsewhere"])
+
+	def test_customers_page_follows_the_profile_customer_groups(self):
+		in_a = _customer(GROUP_A, "Directory")
+		in_b = _customer(GROUP_B, "Directory")
+		for profile in (self.retail, self.restaurant):
+			self._set_customer_groups(profile, [])
+			data = get_customer_directory(pos_profile=profile, query="_Test VunaPOS Directory", limit=100)[
+				"data"
+			]
+			self.assertTrue({in_a, in_b} <= {row["customer"] for row in data["customers"]}, profile)
+
+			self._set_customer_groups(profile, [GROUP_A])
+			data = get_customer_directory(pos_profile=profile, query="_Test VunaPOS Directory", limit=100)[
+				"data"
+			]
+			self.assertEqual({row["customer"] for row in data["customers"]} & {in_a, in_b}, {in_a}, profile)
+			self.assertEqual(data["customer_groups"], [GROUP_A], profile)
+
+			# Choosing a group outside the till's Customer Groups shows nobody.
+			data = get_customer_directory(
+				pos_profile=profile, query="_Test VunaPOS Directory", customer_group=GROUP_B, limit=100
+			)["data"]
+			self.assertEqual(data["customers"], [], profile)

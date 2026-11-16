@@ -114,6 +114,17 @@ describe("customer create form", () => {
     expect(html).toContain("create a new one anyway");
   });
 
+  it("only mentions a matching number on customers outside the till's Customer Groups", () => {
+    const matches = { ...noMatches, mobile_no: "+254-712345678", mobile_elsewhere: true };
+    const value = form({ mobile_no: "0712345678" });
+    expect(customerSuggestions(value, matches)).toEqual({ kind: "elsewhere", customers: [] });
+    expect(canSaveCustomer(value)).toBe(true);
+    expect(saveCustomerLabel(value, matches)).toBe("Create anyway");
+    const html = render(value, matches);
+    expect(html).toContain("not available at this till");
+    expect(html).not.toContain("Use this customer");
+  });
+
   it("only suggests similar names when no mobile is entered, still allowing save", () => {
     const matches = { ...noMatches, similar: [wanjiru] };
     expect(customerSuggestions(form(), matches).kind).toBe("similar");

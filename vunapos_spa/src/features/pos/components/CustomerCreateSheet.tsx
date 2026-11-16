@@ -125,7 +125,11 @@ export function CustomerCreateFields({
         />
       </label>
 
-      {suggestions.kind !== "none" ? (
+      {suggestions.kind === "elsewhere" ? (
+        <p aria-live="polite" className="rounded-md border border-tertiary/40 bg-tertiary-container/30 p-3 text-sm text-on-surface">
+          This number already belongs to a customer not available at this till. You can still create a new one.
+        </p>
+      ) : suggestions.kind !== "none" ? (
         <section
           aria-live="polite"
           className={cn(

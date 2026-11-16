@@ -70,6 +70,8 @@ export type CustomerMatchesDTO = {
 	mobile_no?: string | null;
 	mobile_error?: string | null;
 	mobile_matches: CustomerDTO[];
+	// The number is also on customers outside this till's Customer Groups.
+	mobile_elsewhere?: boolean;
 	similar: CustomerDTO[];
 };
 

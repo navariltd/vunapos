@@ -62,8 +62,10 @@ export function buildCreateCustomerParams(form: CustomerCreateForm, posProfile?:
 export function customerSuggestions(form: CustomerCreateForm, matches?: CustomerMatchesDTO | null) {
 	if (!matches) return { kind: "none" as const, customers: [] as CustomerDTO[] };
 	if (form.mobile_no.trim()) {
-		return matches.mobile_matches.length
-			? { kind: "mobile" as const, customers: matches.mobile_matches }
+		if (matches.mobile_matches.length) return { kind: "mobile" as const, customers: matches.mobile_matches };
+		// Customers this till can't show are not offered, only mentioned.
+		return matches.mobile_elsewhere
+			? { kind: "elsewhere" as const, customers: [] as CustomerDTO[] }
 			: { kind: "none" as const, customers: [] as CustomerDTO[] };
 	}
 	return matches.similar.length
@@ -77,7 +79,8 @@ export function canSaveCustomer(form: CustomerCreateForm, busy = false) {
 
 export function saveCustomerLabel(form: CustomerCreateForm, matches?: CustomerMatchesDTO | null, busy = false) {
 	if (busy) return "Saving…";
-	return customerSuggestions(form, matches).kind === "mobile" ? "Create anyway" : "Save customer";
+	const kind = customerSuggestions(form, matches).kind;
+	return kind === "mobile" || kind === "elsewhere" ? "Create anyway" : "Save customer";
 }
 
 export async function submitCustomerCreate(

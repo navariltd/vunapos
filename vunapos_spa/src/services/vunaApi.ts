@@ -313,7 +313,7 @@ export function allocateBatches(
 	return callAndUnwrap<BatchAllocationResultDTO>(call, params);
 }
 
-export function searchCustomers(call: FrappeCall, params: { query?: string; limit?: number }) {
+export function searchCustomers(call: FrappeCall, params: { query?: string; limit?: number; pos_profile?: string }) {
 	return callAndUnwrap<CustomerDTO[]>(call, params);
 }
 
