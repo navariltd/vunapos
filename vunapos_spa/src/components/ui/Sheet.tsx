@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useId, type ReactNode } from "react";
 import { X } from "lucide-react";
 
 type SheetProps = {
@@ -13,6 +13,7 @@ type SheetProps = {
 // A bottom sheet on phones and a centred dialog on larger screens. Escape, the
 // backdrop and the close button dismiss it.
 export function Sheet({ isOpen, title, description, children, footer, onClose }: SheetProps) {
+  const titleId = useId();
   useEffect(() => {
     if (!isOpen) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -34,12 +35,12 @@ export function Sheet({ isOpen, title, description, children, footer, onClose }:
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="restaurant-sheet-title"
+        aria-labelledby={titleId}
         className="flex max-h-[85dvh] w-full min-w-0 flex-col rounded-t-xl border border-outline-variant bg-surface shadow-xl sm:max-w-lg sm:rounded-xl"
       >
         <div className="flex items-start gap-3 border-b border-outline-variant px-4 py-3">
           <div className="min-w-0 flex-1">
-            <h2 id="restaurant-sheet-title" className="text-base font-semibold text-on-surface">
+            <h2 id={titleId} className="text-base font-semibold text-on-surface">
               {title}
             </h2>
             {description ? <p className="mt-0.5 text-sm text-on-surface-variant">{description}</p> : null}

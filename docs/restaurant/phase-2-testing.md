@@ -20,7 +20,9 @@ need their normal opening shift.
    quick number search. Repeated numbers across floors require explicit selection;
    Enter never guesses from a partial table number.
 2. Set customer/guest count, add items and Send round. The same selling screen
-   remains; use View rounds to inspect submitted Round 1.
+   remains; use View rounds to inspect submitted Round 1. With Allow Customer
+   Creation on the POS Profile, Create customer in the customer list opens the
+   new-customer sheet; the saved customer is selected on the order.
 3. Add another item and send: Round 2 must have a different Sales Order number.
 4. Expand submitted rounds: quantities, rates and notes are read-only. New
    quantities/notes belong to the new round only.

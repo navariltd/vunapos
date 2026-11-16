@@ -62,6 +62,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
     allowCustomerManagement:
       bootstrap.data?.allow_customer_management !== false,
     allowCustomerPayments: bootstrap.data?.allow_customer_payments !== false,
+    allowCustomerCreation: bootstrap.data?.allow_customer_creation !== false,
   };
   const isAllowedPage = isRestaurantPageAllowed(
     activePage,
@@ -123,6 +124,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
             key={sessionName || "new-sale"}
             sessionName={sessionName}
             posProfile={posProfile}
+            allowCustomerCreation={features.allowCustomerCreation}
           />
         ) : (
           <FloorView posProfile={posProfile} />

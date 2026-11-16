@@ -2,7 +2,8 @@ import frappe
 from frappe.utils import cint, now_datetime
 
 from vunapos.dto.profile import profile_to_dict
-from vunapos.services.customer_service import search_customers
+from vunapos.services.customer_group_service import profile_customer_groups
+from vunapos.services.customer_service import customers_outside_groups, search_customers
 from vunapos.services.item_service import search_items
 from vunapos.services.profile_service import (
 	get_invoice_mode,
@@ -160,7 +161,9 @@ def get_pos_bootstrap(pos_profile=None, since=None):
 			limit=0 if since else INITIAL_ITEM_LIMIT,
 			since=since,
 		),
-		"customers": search_customers(limit=0 if since else INITIAL_CUSTOMER_LIMIT, since=since),
+		"customers": search_customers(
+			limit=0 if since else INITIAL_CUSTOMER_LIMIT, since=since, pos_profile=profile.name
+		),
 		"tax_templates": _sync_tax_templates(since=since),
 		"item_tax_templates": _sync_item_tax_templates(since=since),
 		"tax_settings": _get_tax_settings(),
@@ -168,4 +171,6 @@ def get_pos_bootstrap(pos_profile=None, since=None):
 	}
 	if since:
 		result["deleted"] = _deleted_since(since)
+		# A customer moved out of this till's Customer Groups leaves its snapshot.
+		result["deleted"]["Customer"] += customers_outside_groups(since, profile_customer_groups(profile))
 	return result

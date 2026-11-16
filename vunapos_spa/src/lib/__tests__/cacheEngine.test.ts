@@ -145,4 +145,42 @@ describe("applyDelta", () => {
 		const items = await db.items.toArray();
 		expect(items.map((row) => row.item_code)).toEqual(["ITEM-9"]);
 	});
+
+	it("re-hydrates fully when the profile's Customer Groups change", async () => {
+		vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce(makeBootstrap());
+		await hydrate("Test Profile");
+
+		const regrouped = makeBootstrap({
+			pos_profile: { name: "Test Profile", company: "Test Co", customer_groups: ["Retail"] },
+			customers: [{ customer: "CUST-2", customer_name: "Retail Customer", customer_group: "Retail", modified: "2026-07-10 11:00:00" }],
+		});
+		const spy = vi.spyOn(apiClient, "fetchBootstrap")
+			.mockResolvedValueOnce({ ...regrouped, mode: "delta", customers: [] })
+			.mockResolvedValueOnce(regrouped);
+
+		await applyDelta("Test Profile");
+
+		expect(spy).toHaveBeenLastCalledWith("Test Profile");
+		expect((await db.customers.toArray()).map((row) => row.customer)).toEqual(["CUST-2"]);
+	});
+
+	it("applies a plain delta when the Customer Groups are unchanged", async () => {
+		const grouped = { name: "Test Profile", company: "Test Co", customer_groups: ["Retail"] };
+		vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce(makeBootstrap({ pos_profile: grouped }));
+		await hydrate("Test Profile");
+
+		const spy = vi.spyOn(apiClient, "fetchBootstrap").mockResolvedValueOnce({
+			...makeBootstrap({ pos_profile: grouped }),
+			mode: "delta",
+			server_time: "2026-07-10 10:00:00",
+			items: [],
+			customers: [],
+			deleted: { Item: [], Customer: ["CUST-1"] },
+		});
+
+		await applyDelta("Test Profile");
+
+		expect(spy).toHaveBeenLastCalledWith("Test Profile", "2026-07-10 08:00:00");
+		expect(await db.customers.count()).toBe(0);
+	});
 });

@@ -102,6 +102,10 @@ async function writeDelta(payload: BootstrapPayload): Promise<void> {
 	useRuntimeCacheStore.getState().markCatalogueReady();
 }
 
+function sameCustomerGroups(previous?: string[] | null, next?: string[] | null): boolean {
+	return (previous ?? []).join("\n") === (next ?? []).join("\n");
+}
+
 export async function hydrate(posProfile?: string): Promise<BootstrapPayload> {
 	const payload = await fetchBootstrap(posProfile);
 	verify(payload);
@@ -118,11 +122,16 @@ async function applyDeltaInternal(posProfile?: string): Promise<BootstrapPayload
 	}
 
 	const lastKnownVersion = await metaRepository.get<number>(META_KEYS.bootstrapVersion);
+	const lastKnownGroups = (await profileRepository.getActive())?.customer_groups;
 	const delta = await fetchBootstrap(activePosProfile, since);
 
 	if (lastKnownVersion !== undefined && delta.bootstrap_version !== lastKnownVersion) {
 		// BootstrapVersionBumped (§9.1): a delta against a superseded dependency set isn't
 		// safe to trust - re-hydrate fully instead of reconciling around the gap.
+		return hydrate(activePosProfile);
+	}
+	if (!sameCustomerGroups(lastKnownGroups, delta.pos_profile.customer_groups)) {
+		// The till's Customer Groups changed, so its customer snapshot holds the wrong set.
 		return hydrate(activePosProfile);
 	}
 

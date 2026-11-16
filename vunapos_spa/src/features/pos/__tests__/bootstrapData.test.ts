@@ -38,6 +38,8 @@ const cached: Required<CachedProfile> = {
 	allow_order_type_change: false,
 	allow_customer_management: true,
 	allow_customer_creation: true,
+	customer_groups: null,
+	phone_isd: "254",
 	allow_customer_payments: true,
 	allow_sales_order_payments: false,
 	allow_payment_reconciliation: false,
@@ -71,7 +73,8 @@ const cached: Required<CachedProfile> = {
 };
 
 // Cached but not read by the screens today. Add a field here only on purpose.
-const NOT_MAPPED = ["name", "background_submission", "taxes_and_charges"];
+// Customer search reads customer_groups and phone_isd from the cached profile directly.
+const NOT_MAPPED = ["name", "background_submission", "taxes_and_charges", "customer_groups", "phone_isd"];
 
 describe("toBootstrapData", () => {
 	it("carries the restaurant rights and settings through to the screens", () => {
