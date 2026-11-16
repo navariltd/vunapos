@@ -10,6 +10,7 @@ from frappe.utils import cint, flt, getdate, now_datetime, today
 from vunapos.dto.customer import customer_to_dict
 from vunapos.services.catalogue_cache import (
 	customer_search_key,
+	invalidate_customer_search_cache,
 )
 from vunapos.services.catalogue_cache import (
 	get as get_catalogue_cache,
@@ -70,26 +71,269 @@ def search_customers(query=None, limit=20, since=None):
 	return result
 
 
-def create_customer(customer_name, mobile_no=None, email_id=None, pos_profile=None):
-	if not customer_name:
-		frappe.throw(_("Customer name is required"))
+def _fail(code, message, field=None, meta=None, exc_type=frappe.ValidationError):
+	exc = exc_type(message)
+	exc.vuna_error_code = code
+	exc.vuna_error_field = field
+	exc.vuna_error_meta = meta
+	raise exc
 
+
+def _require_customer_creation(pos_profile):
 	profile = resolve_pos_profile(pos_profile)
 	allow_creation = profile.get("vunapos_allow_customer_creation")
 	if allow_creation is not None and not cint(allow_creation):
 		frappe.throw(_("Customer creation is disabled for this POS Profile"), frappe.PermissionError)
 	require_create("Customer")
+	return profile
+
+
+def customer_types():
+	options = frappe.get_meta("Customer").get_field("customer_type").options or ""
+	return [option for option in options.split("\n") if option]
+
+
+def _customer_type(value):
+	types = customer_types()
+	if not value:
+		return "Individual" if "Individual" in types else types[0]
+	if value not in types:
+		_fail("INVALID_CUSTOMER_TYPE", _("Choose a valid customer type."), field="customer_type")
+	return value
+
+
+def _company_country(profile):
+	return frappe.get_cached_value("Company", profile.company, "country")
+
+
+def normalise_mobile(mobile_no, country=None):
+	"""Return the number in Frappe's Phone field format, e.g. +254-712345678."""
+	import phonenumbers
+
+	raw = (mobile_no or "").strip()
+	if not raw:
+		return None
+	region = (frappe.get_cached_value("Country", country, "code") or "").upper() if country else None
+	try:
+		number = phonenumbers.parse(raw, region or None)
+	except phonenumbers.NumberParseException:
+		number = None
+	if not number or not phonenumbers.is_valid_number(number):
+		_fail(
+			"INVALID_MOBILE_NUMBER",
+			_("Enter a valid mobile number for the selected country."),
+			field="mobile_no",
+		)
+	return f"+{number.country_code}-{phonenumbers.national_significant_number(number)}"
+
+
+def _same_mobile(value, normalised, country):
+	try:
+		return normalise_mobile(value, country) == normalised
+	except frappe.ValidationError:
+		return False
+
+
+def _match_rows(names):
+	if not names:
+		return []
+	rows = frappe.get_list(
+		"Customer",
+		filters={"name": ["in", list(names)], "disabled": 0},
+		fields=["name", "customer_name", "mobile_no", "email_id", "customer_group", "tax_id", "modified"],
+		order_by="customer_name asc",
+		limit_page_length=10,
+	)
+	return [customer_to_dict(row) for row in rows]
+
+
+def find_customers_by_mobile(normalised, country=None):
+	"""Return readable, enabled customers whose own or linked Contact number is the same."""
+	if not normalised:
+		return []
+	# Stored numbers come in several formats (+254-7…, 2547…, 07…); every one of
+	# them ends with the national number, which narrows the rows to normalise.
+	like = "%" + normalised.split("-", 1)[1]
+	names = {
+		row.name
+		for row in frappe.get_all(
+			"Customer", filters={"mobile_no": ["like", like]}, fields=["name", "mobile_no"]
+		)
+		if _same_mobile(row.mobile_no, normalised, country)
+	}
+	contacts = {
+		row.parent
+		for row in frappe.get_all(
+			"Contact Phone",
+			filters={"parenttype": "Contact", "phone": ["like", like]},
+			fields=["parent", "phone"],
+		)
+		if _same_mobile(row.phone, normalised, country)
+	}
+	if contacts:
+		names.update(
+			frappe.get_all(
+				"Dynamic Link",
+				filters={
+					"parenttype": "Contact",
+					"parent": ["in", list(contacts)],
+					"link_doctype": "Customer",
+				},
+				pluck="link_name",
+			)
+		)
+	return _match_rows(names)
+
+
+def find_similar_customers(customer_name, limit=5):
+	words = [word for word in (customer_name or "").split() if len(word) >= 2][:4]
+	if not words:
+		return []
+	rows = frappe.get_list(
+		"Customer",
+		filters=[["Customer", "disabled", "=", 0]]
+		+ [["Customer", "customer_name", "like", f"%{word}%"] for word in words],
+		fields=["name", "customer_name", "mobile_no", "email_id", "customer_group", "tax_id", "modified"],
+		order_by="customer_name asc",
+		limit_page_length=limit,
+	)
+	return [customer_to_dict(row) for row in rows]
+
+
+def _leaf_group(group):
+	if not cint(frappe.get_cached_value("Customer Group", group, "is_group")):
+		return group
+	lft, rgt = frappe.get_cached_value("Customer Group", group, ["lft", "rgt"])
+	return frappe.db.get_value(
+		"Customer Group",
+		{"lft": [">", lft], "rgt": ["<", rgt], "is_group": 0},
+		"name",
+		order_by="lft asc",
+	)
+
+
+def _profile_allowed_groups(profile):
+	from frappe.utils.nestedset import get_descendants_of
+
+	allowed = []
+	for row in profile.get("customer_groups") or []:
+		if row.customer_group:
+			allowed += [row.customer_group, *get_descendants_of("Customer Group", row.customer_group)]
+	return allowed
+
+
+def _usable_group(group):
+	return group if group and not cint(frappe.get_cached_value("Customer Group", group, "is_group")) else None
+
+
+def default_customer_group(profile):
+	"""POS Profile default, then Selling Settings, kept inside the profile's Customer Groups.
+
+	A group outside the profile's Customer Groups falls back to the first allowed
+	group, so ERPNext's POS never hides a customer from the till that created it.
+	"""
+	group = _usable_group(profile.get("vunapos_default_customer_group")) or _usable_group(
+		frappe.db.get_single_value("Selling Settings", "customer_group")
+	)
+	allowed = _profile_allowed_groups(profile)
+	if allowed and group not in allowed:
+		group = next(
+			(
+				leaf
+				for row in profile.customer_groups
+				if row.customer_group and (leaf := _leaf_group(row.customer_group))
+			),
+			None,
+		)
+	return group
+
+
+def default_customer_territory(profile):
+	territory = profile.get("vunapos_default_customer_territory") or frappe.db.get_single_value(
+		"Selling Settings", "territory"
+	)
+	if not territory or cint(frappe.get_cached_value("Territory", territory, "is_group")):
+		return None
+	return territory
+
+
+def validate_profile_customer_defaults(doc, method=None):
+	"""Customers can't belong to a group node; warn when the default falls outside Customer Groups."""
+	group = doc.get("vunapos_default_customer_group")
+	if group and cint(frappe.db.get_value("Customer Group", group, "is_group")):
+		frappe.throw(_("Default Customer Group must not be a group node."))
+	territory = doc.get("vunapos_default_customer_territory")
+	if territory and cint(frappe.db.get_value("Territory", territory, "is_group")):
+		frappe.throw(_("Default Customer Territory must not be a group node."))
+	allowed = _profile_allowed_groups(doc)
+	if group and allowed and group not in allowed:
+		frappe.msgprint(
+			_(
+				"Default Customer Group {0} is not in this profile's Customer Groups. Customers created at "
+				"this till will use {1} instead."
+			).format(frappe.bold(group), frappe.bold(default_customer_group(doc) or _("no group"))),
+			indicator="orange",
+			alert=True,
+		)
+
+
+def get_customer_create_options(pos_profile=None):
+	from frappe.geo.country_info import get_all
+
+	profile = _require_customer_creation(pos_profile)
+	types = customer_types()
+	countries = [
+		{"country": name, "code": (info.get("code") or "").upper(), "isd": info.get("isd")}
+		for name, info in sorted(get_all().items())
+		if info.get("isd") and info.get("code")
+	]
+	return {
+		"customer_types": types,
+		"default_customer_type": _customer_type(None),
+		"countries": countries,
+		"default_country": _company_country(profile),
+		"customer_group": default_customer_group(profile),
+		"territory": default_customer_territory(profile),
+	}
+
+
+def find_customer_matches(pos_profile=None, customer_name=None, mobile_no=None, mobile_country=None):
+	"""Customers the create form offers instead of creating a duplicate."""
+	profile = _require_customer_creation(pos_profile)
+	country = mobile_country or _company_country(profile)
+	result = {"mobile_no": None, "mobile_error": None, "mobile_matches": [], "similar": []}
+	try:
+		result["mobile_no"] = normalise_mobile(mobile_no, country)
+	except frappe.ValidationError as exc:
+		result["mobile_error"] = str(exc)
+	result["mobile_matches"] = find_customers_by_mobile(result["mobile_no"], country)
+	result["similar"] = find_similar_customers(customer_name)
+	return result
+
+
+def create_customer(
+	customer_name, mobile_no=None, email_id=None, pos_profile=None, customer_type=None, mobile_country=None
+):
+	if not (customer_name or "").strip():
+		frappe.throw(_("Customer name is required"))
+
+	profile = _require_customer_creation(pos_profile)
+	# A number already on another customer is only a warning in the form: ERPNext keeps
+	# phone numbers on Contacts, which can link to several customers.
 	customer = frappe.get_doc(
 		{
 			"doctype": "Customer",
-			"customer_name": customer_name,
-			"customer_type": "Individual",
-			"mobile_no": mobile_no,
-			"email_id": email_id,
+			"customer_name": customer_name.strip(),
+			"customer_type": _customer_type(customer_type),
+			"mobile_no": normalise_mobile(mobile_no, mobile_country or _company_country(profile)),
+			"email_id": (email_id or "").strip() or None,
+			"customer_group": default_customer_group(profile),
+			"territory": default_customer_territory(profile),
 		}
 	)
 	customer.insert()
 	require_read("Customer", customer.name)
+	invalidate_customer_search_cache()
 	return customer_to_dict(customer)
 
 

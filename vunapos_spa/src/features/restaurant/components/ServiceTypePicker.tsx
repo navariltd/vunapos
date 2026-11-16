@@ -3,7 +3,7 @@ import { Armchair, ShoppingBag } from "lucide-react";
 import { cn } from "../../../lib/cn";
 import type { CachedServiceType } from "../../../lib/types";
 import { sortedServiceTypes } from "../tableStatus";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 
 type ServiceTypePickerProps = {
   isOpen: boolean;

@@ -69,7 +69,11 @@ Re-create the demo with
 > three ways:
 > - Edits to lines already sent are queued and sent with Save / Send. A sent quantity can go
 >   up but not down, because lowering it removes items, which is stage 2 (manager PIN).
-> - The customer selector only searches; new orders start with the profile's default customer.
+> - New orders start with the profile's default customer. When the profile allows customer
+>   creation, "Create customer" opens `CustomerCreateSheet` (name, customer type, mobile with
+>   country code, email), the same sheet Retail uses. A mobile number already on a customer is
+>   a warning: the sheet offers that customer and "Create anyway". Similar names are only
+>   suggestions. The new customer is selected on the order.
 > - Items with variants are shown disabled, marked "Variants not supported yet".
 >
 > `get_table_status`, `list_orders` and the order itself also return `waiter_name`.

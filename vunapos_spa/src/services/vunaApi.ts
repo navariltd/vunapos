@@ -4,7 +4,9 @@ import type {
 	C2BGatewayPaymentDTO,
 	CustomerContactPhoneDTO,
 	CustomerAddressDTO,
+	CustomerCreateOptionsDTO,
 	CustomerDTO,
+	CustomerMatchesDTO,
 	CustomerDirectoryDTO,
 	CustomerDetailsDTO,
 	CustomerLoyaltyDTO,
@@ -92,6 +94,8 @@ export const vunaMethods = {
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
 	searchC2bGatewayPayments: "vunapos.api.gateway.search_c2b_gateway_payments",
 	createCustomer: "vunapos.api.customer.create_customer",
+	getCustomerCreateOptions: "vunapos.api.customer.get_customer_create_options",
+	findCustomerMatches: "vunapos.api.customer.find_customer_matches",
 	getCustomerAddresses: "vunapos.api.customer.get_customer_addresses",
 	createInvoice: "vunapos.api.sales.create_invoice",
 	previewInvoice: "vunapos.api.sales.preview_invoice",
@@ -349,9 +353,27 @@ export function getCustomerLoyalty(call: FrappeCall, params: { pos_profile?: str
 
 export function createCustomer(
 	call: FrappeCall,
-	params: { customer_name: string; mobile_no?: string; email_id?: string; pos_profile?: string },
+	params: {
+		customer_name: string;
+		mobile_no?: string;
+		email_id?: string;
+		pos_profile?: string;
+		customer_type?: string;
+		mobile_country?: string;
+	},
 ) {
 	return callAndUnwrap<CustomerDTO>(call, params);
+}
+
+export function getCustomerCreateOptions(call: FrappeCall, params: { pos_profile?: string }) {
+	return callAndUnwrap<CustomerCreateOptionsDTO>(call, params);
+}
+
+export function findCustomerMatches(
+	call: FrappeCall,
+	params: { pos_profile?: string; customer_name?: string; mobile_no?: string; mobile_country?: string },
+) {
+	return callAndUnwrap<CustomerMatchesDTO>(call, params);
 }
 
 export function initiateStkGatewayPayment(

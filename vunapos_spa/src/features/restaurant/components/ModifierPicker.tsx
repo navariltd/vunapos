@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { formatCurrency } from "../../pos/utils";
 import type { ModifierGroupDTO, SelectedModifier } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { modifierSelectionError } from "../modifierSelections";
 
 export function ModifierPicker({

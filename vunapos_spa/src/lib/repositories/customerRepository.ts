@@ -20,6 +20,10 @@ export const customerRepository = {
 			.slice(0, limit);
 	},
 
+	async put(customer: CachedCustomer): Promise<void> {
+		await db.customers.put(customer);
+	},
+
 	async count(): Promise<number> {
 		return db.customers.count();
 	},

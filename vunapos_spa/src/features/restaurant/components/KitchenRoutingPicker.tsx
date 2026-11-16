@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "../../../components/ui/Button";
 import { kitchenRoutingComplete } from "../kitchenRouting";
 import type { KitchenRoutingIssue } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 
 export function KitchenRoutingPicker({
   issue,

@@ -16,7 +16,7 @@ import {
   vunaMethods,
 } from "../../../services/vunaApi";
 import { navigateToInvoice } from "../../../lib/stores/navigationStore";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import type { RestaurantSessionDTO, SessionBillDTO } from "../types";
 import type {

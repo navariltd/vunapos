@@ -57,6 +57,22 @@ export type CustomerDTO = {
 	tax_id?: string | null;
 };
 
+export type CustomerCreateOptionsDTO = {
+	customer_types: string[];
+	default_customer_type: string;
+	countries: Array<{ country: string; code: string; isd: string }>;
+	default_country?: string | null;
+	customer_group?: string | null;
+	territory?: string | null;
+};
+
+export type CustomerMatchesDTO = {
+	mobile_no?: string | null;
+	mobile_error?: string | null;
+	mobile_matches: CustomerDTO[];
+	similar: CustomerDTO[];
+};
+
 export type CustomerContactPhoneDTO = {
 	customer: string;
 	mobile_no?: string | null;

@@ -24,6 +24,8 @@ _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 # (used to change lines) checks write and create on the order.
 _ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
+# Staff add guests while taking an order; they can't edit existing customers.
+CUSTOMER_CREATE = {"read": 1, "create": 1}
 _MENU_READS = {
 	"Branch": _READ,
 	"POS Profile": _READ,
@@ -45,6 +47,7 @@ ROLE_PERMISSIONS = {
 	"Sales User": {"Branch": _READ},
 	WAITER_ROLE: {
 		**_MENU_READS,
+		"Customer": CUSTOMER_CREATE,
 		"POS Opening Entry": _SHIFT,
 		"POS Closing Entry": _SHIFT,
 		"Payment Entry": {"read": 1, "if_owner": 1},
@@ -54,6 +57,7 @@ ROLE_PERMISSIONS = {
 	},
 	RESTAURANT_MANAGER_ROLE: {
 		**_MENU_READS,
+		"Customer": CUSTOMER_CREATE,
 		"POS Opening Entry": _SHIFT,
 		"POS Closing Entry": _SHIFT,
 		"Payment Entry": {"read": 1, "if_owner": 1},
@@ -64,6 +68,7 @@ ROLE_PERMISSIONS = {
 	},
 	CASHIER_ROLE: {
 		**_MENU_READS,
+		"Customer": CUSTOMER_CREATE,
 		"Sales Order": _ORDERS,
 		"Sales Invoice": _BILLING,
 		"POS Invoice": _BILLING,
@@ -200,6 +205,31 @@ def ensure_vunapos_custom_fields():
 				"label": "Sales Settings",
 				"fieldtype": "Section Break",
 				"insert_after": "vunapos_restaurant",
+			},
+			{
+				"fieldname": "vunapos_default_customer_group",
+				"label": "Default Customer Group",
+				"fieldtype": "Link",
+				"options": "Customer Group",
+				"insert_after": "vunapos_allow_customer_creation",
+				"depends_on": "eval:doc.vunapos_allow_customer_creation",
+				"description": "Group for customers created at this till. Falls back to Selling Settings, and to this profile's Customer Groups when it is outside them.",
+			},
+			{
+				"fieldname": "vunapos_default_customer_territory",
+				"label": "Default Customer Territory",
+				"fieldtype": "Link",
+				"options": "Territory",
+				"insert_after": "vunapos_default_customer_group",
+				"depends_on": "eval:doc.vunapos_allow_customer_creation",
+				"description": "Territory for customers created at this till. Falls back to Selling Settings.",
+			},
+			{
+				# Defined in custom/pos_profile.json; re-anchored after the customer
+				# defaults so they stay in the first operations column.
+				"fieldname": "vunapos_operations_column_break",
+				"fieldtype": "Column Break",
+				"insert_after": "vunapos_default_customer_territory",
 			},
 			{
 				"fieldname": "vunapos_home_screen_section",

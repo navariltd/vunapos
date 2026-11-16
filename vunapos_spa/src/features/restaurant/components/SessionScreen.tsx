@@ -46,7 +46,7 @@ import {
 import { committedSessionTotal, newSessionRound } from "../sessionDraft";
 import { useRestaurantPricing } from "../hooks/useRestaurantPricing";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { TablePlanPicker } from "./TablePlanPicker";
 import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
@@ -56,6 +56,7 @@ import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
 import { kitchenStatusClass } from "../kitchenStatus";
+import { restaurantCustomerControls } from "../customerControls";
 import type { KitchenRoutingIssue } from "../types";
 import type {
   ModifierGroupDTO,
@@ -67,9 +68,11 @@ import type {
 export function SessionScreen({
   sessionName,
   posProfile,
+  allowCustomerCreation = false,
 }: {
   sessionName?: string | null;
   posProfile?: string;
+  allowCustomerCreation?: boolean;
 }) {
   const bootstrap = useBootstrapData();
   // Opening a visit and sending a round are separate requests. Keep a newly
@@ -753,6 +756,11 @@ export function SessionScreen({
       ) : null}
     </div>
   );
+  const customerControls = restaurantCustomerControls({
+    allowCreation: allowCustomerCreation,
+    roundCount: session?.rounds.length || 0,
+    readOnly,
+  });
   const renderCart = (className: string) => (
     <CartPanel
       className={className}
@@ -794,14 +802,14 @@ export function SessionScreen({
           </button>
         );
       }}
-      customerDisabled={Boolean(session?.rounds.length) || readOnly}
+      customerDisabled={customerControls.disabled}
       primaryActionLabel={busy ? "Placing order…" : "Place Order"}
       hideHold
       totalsNote="Current order totals. Prices and taxes are recalculated when the order is placed."
       currency={currency}
       posProfile={posProfile}
       isOnline={navigator.onLine}
-      allowCustomerCreation={false}
+      allowCustomerCreation={customerControls.allowCreate}
       allowRateChange={false}
       allowDiscountChange={false}
       onSelectCustomer={(customer) => void selectCustomer(customer)}

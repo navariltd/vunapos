@@ -217,6 +217,7 @@ doc_events["POS Profile"] = {
 	"validate": [
 		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
 		"vunapos.services.restaurant_service.validate_profile_restaurant",
+		"vunapos.services.customer_service.validate_profile_customer_defaults",
 	],
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",

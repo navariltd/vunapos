@@ -28,6 +28,18 @@ def set(key, value):
 	frappe.cache().set_value(key, value, expires_in_sec=CACHE_TTL_SECONDS, shared=True)
 
 
+def invalidate_customer_search_cache():
+	"""Drop cached customer searches so a new customer is found straight away."""
+	cache = frappe.cache()
+	# get_keys returns bytes, while shared keys are cached in-request as str;
+	# delete by str so this request's local copy goes too.
+	keys = [
+		key.decode() if isinstance(key, bytes) else key
+		for key in cache.get_keys(_key("customers"), shared=True)
+	]
+	cache.delete_value(keys, shared=True)
+
+
 def invalidate_catalogue_cache(doc=None, method=None):
 	"""Invalidate all catalogue/customer snapshots after source data changes."""
 	frappe.cache().delete_keys(CACHE_KEY_PREFIX, shared=True)

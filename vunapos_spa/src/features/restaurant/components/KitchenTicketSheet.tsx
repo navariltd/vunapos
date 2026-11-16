@@ -1,7 +1,7 @@
 import { useFrappeGetCall } from "frappe-react-sdk";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { KitchenActions } from "./KitchenActions";
 import { kitchenStatusClass } from "../kitchenStatus";
 

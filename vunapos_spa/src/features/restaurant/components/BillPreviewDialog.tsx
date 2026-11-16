@@ -1,7 +1,7 @@
 import { Button } from "../../../components/ui/Button";
 import { formatCurrency } from "../../pos/utils";
 import type { OrderPreviewDTO } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 
 type BillPreviewDialogProps = {
   preview: OrderPreviewDTO | null;
