@@ -6,11 +6,13 @@ import { RESTAURANT_PAGES, replacePosPage, useNavigationStore } from "../lib/sto
 type PosModeSwitchProps = {
   retail: ReactNode;
   restaurant: ReactNode;
+  kiosk: ReactNode;
 };
 
 // Routes to the interface for the resolved POS Profile's mode. There is no
 // mode picker: the profile decides. Anything other than Restaurant is Retail.
-export function PosModeSwitch({ retail, restaurant }: PosModeSwitchProps) {
+// A kiosk login only ever sees the kiosk screen, whatever its profile.
+export function PosModeSwitch({ retail, restaurant, kiosk }: PosModeSwitchProps) {
   const bootstrap = useBootstrapData();
   const activePage = useNavigationStore((s) => s.activePage);
   const mode = bootstrap.data ? (bootstrap.data.pos_mode === "Restaurant" ? "Restaurant" : "Retail") : null;
@@ -31,5 +33,6 @@ export function PosModeSwitch({ retail, restaurant }: PosModeSwitchProps) {
     );
   }
 
+  if (bootstrap.data?.is_kiosk_user) return <>{kiosk}</>;
   return <>{mode === "Restaurant" ? restaurant : retail}</>;
 }

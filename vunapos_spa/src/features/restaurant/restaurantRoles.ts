@@ -6,6 +6,7 @@ const ROLE_LABELS: Record<string, string> = {
   "VunaPOS Cashier": "Cashier",
   "VunaPOS Restaurant Manager": "Manager",
   "VunaPOS Kitchen User": "Kitchen",
+  "VunaPOS Kiosk": "Kiosk",
 };
 
 export function restaurantRoleLabel(roles?: string[] | null) {

@@ -62,6 +62,11 @@ describe("deriveTableStatuses", () => {
 		expect(statusFor(statuses, "t1").kind).toBe("free");
 		expect(statusFor(statuses, "new-table").kind).toBe("free");
 	});
+
+	it("shows a table a kiosk is told is taken as occupied, with no details", () => {
+		const kiosk = deriveTableStatuses([{ table: "k1", table_label: "K1", floor: "f", seats: 2, status: "Occupied", session: null, orders: [] }]);
+		expect(statusFor(kiosk, "k1")).toEqual({ kind: "occupied", orders: [], guests: 0, openedAt: null, waiters: [] });
+	});
 });
 
 describe("legendStatuses", () => {

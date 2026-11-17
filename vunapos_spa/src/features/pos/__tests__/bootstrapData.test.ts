@@ -66,10 +66,14 @@ const cached: Required<CachedProfile> = {
 		],
 		allow_multiple_orders_per_table: false,
 		require_manager_pin_order_cancel: true,
+		kiosk_mode: false,
+		kiosk_payment_timing: "Pay at the counter first",
+		kiosk_idle_seconds: 90,
 	},
 	can_take_payment: true,
 	can_manage_restaurant: true,
 	restaurant_roles: ["VunaPOS Cashier", "VunaPOS Restaurant Manager"],
+	is_kiosk_user: false,
 };
 
 // Cached but not read by the screens today. Add a field here only on purpose.

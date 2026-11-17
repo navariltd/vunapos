@@ -42,6 +42,9 @@ type Props = {
   onSelect: (table: RestaurantTableDTO) => void;
   onClose: () => void;
   footer?: ReactNode;
+  // The kiosk words the dialog for customers.
+  title?: string;
+  description?: string;
 };
 
 /** Mounted only while open: the existing floor drawing becomes a table selector. */
@@ -58,6 +61,8 @@ export function TablePlanPicker({
   onSelect,
   onClose,
   footer,
+  title,
+  description,
 }: Props) {
   const titleId = useId();
   const descriptionId = useId();
@@ -155,18 +160,20 @@ export function TablePlanPicker({
         <header className="flex shrink-0 items-center justify-between gap-3 border-b border-outline-variant p-4">
           <div>
             <h2 id={titleId} className="text-base font-semibold">
-              {transferFrom
+              {title ??
+                (transferFrom
                 ? "Transfer table"
                 : multiple
                 ? "Join tables"
-                : "Select table"}
+                : "Select table")}
             </h2>
             <p id={descriptionId} className="text-xs text-on-surface-variant">
-              {transferFrom
+              {description ??
+                (transferFrom
                 ? "Choose a free destination, then confirm. Your current tables will be released."
                 : multiple
                 ? "Select tables to join, then confirm. Occupied tables belonging to other sessions cannot be joined."
-                : "Select a free table to return to items, or an occupied table to reopen its session."}
+                : "Select a free table to return to items, or an occupied table to reopen its session.")}
             </p>
           </div>
           <button

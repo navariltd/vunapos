@@ -189,7 +189,18 @@ export type RestaurantOrderSummaryDTO = Pick<
 	| "invoice_doctype"
 	| "invoice"
 	| "modified"
-> & { preparation_status?: string; billing_pending?: boolean };
+> & {
+	preparation_status?: string;
+	billing_pending?: boolean;
+	kiosk_status?: KioskStatus | null;
+	order_number?: number | null;
+	// The session's Sales Orders, so Open Orders finds a visit by either name.
+	sales_orders?: string[];
+};
+
+// A kiosk order paid at the counter first waits as Awaiting Payment; nothing reaches the
+// kitchen until a cashier confirms. "Bill at the end" orders start as Sent to Kitchen.
+export type KioskStatus = "Awaiting Payment" | "Sent to Kitchen";
 
 export type RestaurantSessionStatus = "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
 
@@ -199,6 +210,9 @@ export type RestaurantSessionSummaryDTO = {
 	name: string; customer: string; waiter: string; waiter_name: string | null;
 	guest_count: number; opened_at: string; service_type: string; modified: string;
 	tables: Array<{ table: string; table_label: string }>;
+	kiosk_status?: KioskStatus | null;
+	order_number?: number | null;
+	sales_orders?: string[];
 };
 
 export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> & {
@@ -210,6 +224,29 @@ export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> &
 	status: RestaurantSessionStatus;
 	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
 	rounds: RestaurantOrderDTO[];
+	confirmed_by?: string | null;
+};
+
+export type KioskSetupDTO = {
+	service_types: import("../../lib/types").CachedServiceType[];
+	payment_timing: import("../../lib/types").KioskPaymentTiming;
+	floor_plan: FloorPlanDTO;
+	// Free or Occupied only: the kiosk never sees who holds a table.
+	tables: TableStatusDTO[];
+};
+
+export type KioskOrderDTO = {
+	session: string;
+	order_number: number;
+	kiosk_status: KioskStatus;
+	service_type: string;
+	table: string | null;
+	table_label: string | null;
+	sales_order: string;
+	grand_total: number;
+	rounded_total: number;
+	currency: string;
+	print_format: string;
 };
 
 export type OrderLineInput = { item_code: string; qty: number; uom?: string; note?: string; line_id: string; modifiers?: Array<{ group: string; option: string }> };

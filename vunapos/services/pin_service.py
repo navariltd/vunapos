@@ -164,8 +164,16 @@ def refresh_salesperson_pin(pos_profile: str, token: str) -> dict:
 	}
 
 
+# Manager approval actions and the token purpose each one issues.
+MANAGER_PIN_PURPOSES = {
+	"item_removal": "manager",
+	"order_cancel": "manager_order_cancel",
+	"kiosk_exit": "manager_kiosk_exit",
+}
+
+
 def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal") -> dict:
-	if action not in ("item_removal", "order_cancel"):
+	if action not in MANAGER_PIN_PURPOSES:
 		_failure("INVALID_PIN_ACTION", _("Unsupported manager approval action."))
 	profile = resolve_pos_profile(pos_profile)
 	require_pos_profile_assignment(profile.name)
@@ -173,6 +181,9 @@ def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal")
 		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for item removal."))
 	if action == "order_cancel" and not profile.get("vunapos_require_manager_pin_order_cancel"):
 		_failure("MANAGER_PIN_NOT_REQUIRED", _("Manager PIN approval is not enabled for order cancellation."))
+	# Leaving a kiosk always needs a manager; the kiosk profile must have a Manager PIN.
+	if action == "kiosk_exit" and not profile.get("vunapos_kiosk_mode"):
+		_failure("MANAGER_PIN_NOT_REQUIRED", _("This POS Profile is not a kiosk."))
 	if not isinstance(pin, str) or not PIN_PATTERN.fullmatch(pin):
 		_failure("INVALID_PIN_FORMAT", _("PIN must contain 4 to 6 digits."))
 	state = _check_lockout(profile, "manager")
@@ -191,11 +202,7 @@ def verify_manager_pin(pos_profile: str, pin: str, action: str = "item_removal")
 		_failure("INVALID_MANAGER_PIN", _("The manager PIN is incorrect."))
 	_clear_failures(profile, "manager")
 	return {
-		"token": _issue_token(
-			profile,
-			"manager_order_cancel" if action == "order_cancel" else "manager",
-			valid_manager.get("sales_person"),
-		),
+		"token": _issue_token(profile, MANAGER_PIN_PURPOSES[action], valid_manager.get("sales_person")),
 		"manager": valid_manager.get("sales_person"),
 		"sales_person": valid_manager.get("sales_person"),
 		"display_name": valid_manager.get("display_name") or valid_manager.get("sales_person"),

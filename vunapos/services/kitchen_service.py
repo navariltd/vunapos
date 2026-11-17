@@ -360,16 +360,20 @@ def validate_ticket(doc):
 		fail("INVALID_KITCHEN_TICKET", _("Kitchen tickets require positive preparation quantities."))
 
 
-def generate_tickets(order, method=None):
-	"""Runs in the Sales Order submission transaction; never backfills old rounds implicitly."""
+def generate_tickets(order, method=None, profile=None):
+	"""Runs in the Sales Order submission transaction; never backfills old rounds implicitly.
+
+	A kiosk order awaiting payment gets no tickets; confirming its payment calls this
+	again with the kiosk's `profile`, which the confirming cashier is not assigned to.
+	"""
 	if not order.get("vunapos_restaurant_session"):
 		return []
 	from vunapos.services.profile_service import resolve_pos_profile
-	from vunapos.services.restaurant_session_service import _load
+	from vunapos.services.restaurant_session_service import KIOSK_AWAITING_PAYMENT, _load
 
 	frappe.db.get_value("Sales Order", order.name, "name", for_update=True)
 	session = _load(order.vunapos_restaurant_session, for_update=True)
-	profile = resolve_pos_profile(order.vunapos_pos_profile)
+	profile = profile or resolve_pos_profile(order.vunapos_pos_profile)
 	if (
 		order.docstatus != 1
 		or session.status != "Open"
@@ -385,6 +389,8 @@ def generate_tickets(order, method=None):
 			"KITCHEN_CONTEXT_MISMATCH",
 			_("Kitchen tickets must match an open restaurant session and submitted round."),
 		)
+	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:
+		return []
 	# Repeated calls reuse the original event, even after routing configuration changes.
 	existing = frappe.get_all(TICKET, filters={"sales_order": order.name}, pluck="name")
 	if existing:

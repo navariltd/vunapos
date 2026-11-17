@@ -33,8 +33,13 @@ export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableSt
 				openedAt: row.session.opened_at, waiters: [row.session.waiter_name || row.session.waiter] });
 			continue;
 		}
-		if (row.status !== "Occupied" || !row.orders.length) {
+		if (row.status !== "Occupied") {
 			result.set(row.table, FREE);
+			continue;
+		}
+		if (!row.orders.length) {
+			// A kiosk is only told that a table is taken, not by whom.
+			result.set(row.table, { ...FREE, kind: "occupied" });
 			continue;
 		}
 		const orders = [...row.orders].sort((a, b) => a.opened_at.localeCompare(b.opened_at));

@@ -4,6 +4,10 @@ from frappe import _
 from vunapos.services.invoice_service import SUPPORTED_INVOICE_DOCTYPES, SUPPORTED_ORDER_DOCTYPES
 from vunapos.utils.permissions import require_read
 
+# Print formats VunaPOS prints only when asked for by name, never as a doctype's default.
+KIOSK_ORDER_SLIP = "Kiosk Order Slip"
+NAMED_ONLY_PRINT_FORMATS = (KIOSK_ORDER_SLIP,)
+
 
 def resolve_print_format(invoice_doctype, print_format=None):
 	if print_format:
@@ -11,7 +15,12 @@ def resolve_print_format(invoice_doctype, print_format=None):
 
 	default_format = frappe.db.get_value(
 		"Print Format",
-		{"doc_type": invoice_doctype, "disabled": 0, "standard": "Yes"},
+		{
+			"doc_type": invoice_doctype,
+			"disabled": 0,
+			"standard": "Yes",
+			"name": ["not in", NAMED_ONLY_PRINT_FORMATS],
+		},
 		"name",
 		order_by="modified desc",
 	)

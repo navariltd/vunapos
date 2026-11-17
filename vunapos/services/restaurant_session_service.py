@@ -11,6 +11,9 @@ from vunapos.services.service_type_service import get_default_service_type, reso
 
 SESSION = "Restaurant Session"
 ACTIVE_STATUSES = ("Open", "Settling")
+# A kiosk order paid at the counter first holds its kitchen tickets until a cashier confirms payment.
+KIOSK_AWAITING_PAYMENT = "Awaiting Payment"
+KIOSK_SENT_TO_KITCHEN = "Sent to Kitchen"
 
 
 def current_assignments(table):
@@ -172,6 +175,9 @@ def session_to_dict(doc):
 		"waiter_name": waiter_name(doc.waiter),
 		"guest_count": cint(doc.guest_count),
 		"status": doc.status,
+		"kiosk_status": doc.get("kiosk_status") or None,
+		"order_number": doc.get("order_number") or None,
+		"confirmed_by": doc.get("confirmed_by"),
 		"billing_doctype": doc.get("billing_doctype"),
 		"billing_invoice": doc.get("billing_invoice"),
 		"billing_profile": doc.get("billing_profile"),
@@ -221,6 +227,8 @@ def list_sessions(pos_profile):
 			"service_type",
 			"modified",
 			"status",
+			"kiosk_status",
+			"order_number",
 		],
 		order_by="opened_at asc",
 	)
@@ -264,10 +272,17 @@ def list_sessions(pos_profile):
 		fields=["restaurant_session", "status"],
 		limit_page_length=0,
 	)
+	rounds = frappe.get_all(
+		"Sales Order",
+		filters={"vunapos_restaurant_session": ["in", [row.name for row in rows]], "docstatus": 1},
+		fields=["name", "vunapos_restaurant_session"],
+		order_by="creation asc",
+	)
 	for row in rows:
 		row["preparation_status"] = preparation_summary(
 			[ticket for ticket in tickets if ticket.restaurant_session == row.name]
 		)
+		row["sales_orders"] = [order.name for order in rounds if order.vunapos_restaurant_session == row.name]
 	return rows
 
 
@@ -330,6 +345,15 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 
 
 def open_session(pos_profile, idempotency_key, tables=None, service_type=None, customer=None, guest_count=0):
+	return session_to_dict(
+		open_session_doc(pos_profile, idempotency_key, tables, service_type, customer, guest_count)
+	)
+
+
+def open_session_doc(
+	pos_profile, idempotency_key, tables=None, service_type=None, customer=None, guest_count=0, values=None
+):
+	"""Open a visit, or return the one opened with this key. `values` sets extra fields, e.g. kiosk ones."""
 	idempotency_key = str(idempotency_key or "").strip()
 	if not idempotency_key or not str(idempotency_key).strip():
 		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required to open a session."))
@@ -344,7 +368,7 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 		doc = _load(existing)
 		if doc.pos_profile != profile.name:
 			_fail("IDEMPOTENCY_CONFLICT", _("This key belongs to a different POS Profile."))
-		return session_to_dict(doc)
+		return doc
 	if isinstance(tables, str):
 		tables = frappe.parse_json(tables)
 	if not isinstance(tables or [], list):
@@ -382,11 +406,12 @@ def open_session(pos_profile, idempotency_key, tables=None, service_type=None, c
 				{"table": table, "assigned_at": now_datetime(), "assigned_by": frappe.session.user}
 				for table in tables
 			],
+			**(values or {}),
 		}
 	)
 	doc.flags.restaurant_session_write = True
 	doc.insert()
-	return session_to_dict(doc)
+	return doc
 
 
 def get_session(session):
@@ -402,6 +427,18 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 	idempotency_key = str(idempotency_key or "").strip()
 	if not idempotency_key:
 		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required for each round."))
+	if doc.get("kiosk_status") == KIOSK_AWAITING_PAYMENT and frappe.db.exists(
+		"Sales Order",
+		{
+			"vunapos_restaurant_session": doc.name,
+			"docstatus": 1,
+			"vunapos_idempotency_key": ["!=", idempotency_key],
+		},
+	):
+		_fail(
+			"KIOSK_ORDER_AWAITING_PAYMENT",
+			_("Confirm the kiosk order's payment before adding more items to it."),
+		)
 	tables = [row.table for row in doc.tables if not row.released_at]
 	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
 	profile = resolve_pos_profile(pos_profile or doc.pos_profile)

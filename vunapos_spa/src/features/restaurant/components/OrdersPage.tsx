@@ -12,7 +12,7 @@ import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useNow } from "../hooks/useNow";
 import { useOpenOrders } from "../hooks/useOrderData";
-import { filterOrders, isFiltered } from "../ordersFilter";
+import { filterOrders, isAwaitingPayment, isFiltered } from "../ordersFilter";
 import { useOrdersFilterStore } from "../stores/ordersFilterStore";
 import { elapsedLabel, sortedServiceTypes } from "../tableStatus";
 import { NewOrderButton } from "./NewOrderButton";
@@ -109,6 +109,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium text-on-surface">
+                  {order.order_number ? `Order ${order.order_number} · ` : ""}
                   {order.table_label
                     ? `Table ${order.table_label}`
                     : order.service_type}
@@ -130,6 +131,11 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end gap-1">
+                {isAwaitingPayment(order) ? (
+                  <span className="rounded-full bg-tertiary-container px-2 py-1 text-xs font-semibold text-on-tertiary-container">
+                    Awaiting payment
+                  </span>
+                ) : null}
                 {order.billing_pending ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Billing pending</span> : null}
                 <span className="text-xs font-medium text-on-surface-variant">
                   {elapsedLabel(order.opened_at, now)}
@@ -185,7 +191,7 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
           <input
             type="search"
             value={filter.query}
-            placeholder="Table, order or customer"
+            placeholder="Table, order number or customer"
             className="h-11 w-full rounded-md border border-outline-variant bg-surface pl-9 pr-3 text-sm text-on-surface outline-none focus:border-primary"
             onChange={(event) => setFilter({ query: event.target.value })}
           />
@@ -222,6 +228,16 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
         >
           My orders
         </button>
+        {filter.awaitingPayment || orders?.some((order) => order.order_number) ? (
+          <button
+            type="button"
+            aria-pressed={filter.awaitingPayment}
+            className={chipClass(filter.awaitingPayment)}
+            onClick={() => setFilter({ awaitingPayment: !filter.awaitingPayment })}
+          >
+            Awaiting payment
+          </button>
+        ) : null}
         {serviceTypes.length > 1 ? (
           <>
             <span

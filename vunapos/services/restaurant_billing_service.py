@@ -15,7 +15,12 @@ from frappe.utils import cint, flt, now_datetime, nowdate, nowtime
 
 from vunapos.services.kitchen_service import fail
 from vunapos.services.profile_service import require_open_pos_session, resolve_pos_profile
-from vunapos.services.restaurant_session_service import SESSION, _load, session_to_dict
+from vunapos.services.restaurant_session_service import (
+	KIOSK_AWAITING_PAYMENT,
+	SESSION,
+	_load,
+	session_to_dict,
+)
 from vunapos.setup.utils import CASHIER_ROLE
 
 PRICE_FIELDS = (
@@ -69,6 +74,15 @@ def _orders(session, lock=False, unbilled=True, billing_invoice=None):
 	if not result:
 		fail("SESSION_NOTHING_TO_BILL", _("There are no placed, non-cancelled orders to bill."))
 	return result
+
+
+def _require_kiosk_payment_confirmed(session):
+	# Billing a held kiosk order would settle a visit the kitchen never received.
+	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:
+		fail(
+			"KIOSK_ORDER_AWAITING_PAYMENT",
+			_("Confirm the customer's payment first. That sends the kiosk order to the kitchen."),
+		)
 
 
 def _fingerprint(orders):
@@ -604,6 +618,7 @@ def checkout(session, pos_profile, fingerprint, payments=None, **options):
 		return {"session": session_to_dict(session), "invoice": invoice_to_dict(doc)}
 	if session.status != "Open":
 		fail("SESSION_NOT_OPEN", _("This visit cannot be billed."))
+	_require_kiosk_payment_confirmed(session)
 	orders = _orders(session, lock=True)
 	doc = _build(session, profile, orders, options.get("loyalty_points"))
 	if not fingerprint or fingerprint != _review_fingerprint(orders, doc):
@@ -684,5 +699,6 @@ def before_submit(doc, method=None):
 	if not doc.get("vunapos_restaurant_session") or doc.get("is_return"):
 		return
 	session = _load(doc.vunapos_restaurant_session, for_update=True)
+	_require_kiosk_payment_confirmed(session)
 	_orders(session, lock=True, billing_invoice=doc.name)
 	validate_billing_stock(doc)

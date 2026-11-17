@@ -13,7 +13,13 @@ type ManagerPinDialogProps = {
   posProfile?: string;
   onCancel: () => void;
   onApproved: (token: string) => void;
-  action?: "item_removal" | "order_cancel";
+  action?: "item_removal" | "order_cancel" | "kiosk_exit";
+};
+
+const COPY = {
+  item_removal: { description: "Enter a manager PIN to remove this item from the cart.", approve: "Approve removal" },
+  order_cancel: { description: "Enter a manager PIN to cancel the whole placed order.", approve: "Approve cancellation" },
+  kiosk_exit: { description: "Enter a manager PIN to leave the kiosk and sign out.", approve: "Leave kiosk" },
 };
 
 export function ManagerPinDialog({
@@ -65,11 +71,7 @@ export function ManagerPinDialog({
         <h2 className="text-lg font-semibold text-on-surface">
           Manager approval required
         </h2>
-        <p className="mt-1 text-sm text-on-surface-variant">
-          {action === "order_cancel"
-            ? "Enter a manager PIN to cancel the whole placed order."
-            : "Enter a manager PIN to remove this item from the cart."}
-        </p>
+        <p className="mt-1 text-sm text-on-surface-variant">{COPY[action].description}</p>
         <input
           autoFocus
           type="password"
@@ -93,11 +95,7 @@ export function ManagerPinDialog({
             Cancel
           </Button>
           <Button onClick={() => void verify()} disabled={isSubmitting}>
-            {isSubmitting
-              ? "Verifying…"
-              : action === "order_cancel"
-              ? "Approve cancellation"
-              : "Approve removal"}
+            {isSubmitting ? "Verifying…" : COPY[action].approve}
           </Button>
         </div>
       </div>
