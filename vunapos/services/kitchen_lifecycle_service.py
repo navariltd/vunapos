@@ -256,13 +256,40 @@ def _native_stock_entry(wo, purpose, qty):
 		entry.to_warehouse = wo.fg_warehouse
 		entry.inspection_required = frappe.get_cached_value("BOM", wo.bom_no, "inspection_required")
 	entry.set_stock_entry_type()
-	entry.get_items()
+	_get_items(entry)
 	entry.set_secondary_items_from_job_card()
 	if purpose == "Manufacture":
 		entry.set_serial_no_batch_for_finished_good()
 	entry.insert(ignore_permissions=True)
 	entry.submit()
 	return entry.name
+
+
+def _get_items(entry):
+	"""Build the entry's rows without ERPNext's read check on its Work Order and BOM.
+
+	ERPNext 16.60 requires Work Order and BOM read in `get_items`, which kitchen and cashier
+	roles deliberately lack; `_work_orders` has already checked both against the ticket.
+	Frappe has no per-call permission flag, and switching user would reset request state,
+	so only this request's check for this entry's own Work Order and BOM is skipped.
+	"""
+	import erpnext
+
+	check = erpnext.require_permission
+	skipped = {("Work Order", entry.work_order), ("BOM", entry.bom_no)}
+
+	def require_permission(doctype, name, ptype="read"):
+		if frappe.flags.get("vunapos_kitchen_stock_entry") is entry and (doctype, name) in skipped:
+			return
+		return check(doctype, name, ptype)
+
+	erpnext.require_permission = require_permission
+	frappe.flags.vunapos_kitchen_stock_entry = entry
+	try:
+		entry.get_items()
+	finally:
+		frappe.flags.vunapos_kitchen_stock_entry = None
+		erpnext.require_permission = check
 
 
 def _produce(doc, ready=False):
