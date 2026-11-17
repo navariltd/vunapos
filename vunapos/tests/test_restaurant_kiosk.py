@@ -102,10 +102,8 @@ class TestRestaurantKiosk(IntegrationTestCase):
 					{"service_type": TEST_COUNTER_SERVICE},
 				],
 				"vunapos_kiosk_floors": [{"floor": self.kiosk_floor}],
-				# Frappe encrypts a child row's password before naming the row on insert.
 				"vunapos_pin_users": [
 					{
-						"name": frappe.generate_hash(length=10),
 						"sales_person": self._manager(),
 						"role": "Manager",
 						"pin": MANAGER_PIN,

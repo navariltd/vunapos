@@ -12,6 +12,11 @@ from vunapos.services.profile_service import require_pos_profile_assignment, res
 PIN_PATTERN = re.compile(r"^\d{4,6}$")
 
 
+def name_new_pin_rows(doc, method=None):
+	"""POS Profile validate hook: name new rows before Frappe stores their PINs."""
+	doc.set_name_in_children()
+
+
 def _failure(code, message):
 	exc = frappe.ValidationError(message)
 	exc.vuna_error_code = code
