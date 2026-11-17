@@ -67,12 +67,22 @@ export function KitchenTicketCard({
               {ticket.name} · {ticket.station_label}
             </p>
           </button>
-          <span
-            className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
-              ticket.status
-            )}`}
-          >
-            {ticket.status}
+          <span className="flex shrink-0 flex-col items-end gap-1">
+            <span
+              className={`rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
+                ticket.status
+              )}`}
+            >
+              {ticket.status}
+            </span>
+            {ticket.production_completed_at_billing ? (
+              <span
+                title="Billed before it was made. Its stock already moved; kitchen steps only update the status."
+                className="rounded-full bg-status-paid-container px-2 py-1 text-xs font-semibold text-on-surface"
+              >
+                Paid
+              </span>
+            ) : null}
           </span>
         </div>
         <p

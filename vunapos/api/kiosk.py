@@ -33,9 +33,33 @@ def place_kiosk_order(
 
 @frappe.whitelist(methods=["POST"])
 @_atomic_write
-def confirm_kiosk_payment(session: str, pos_profile: str):
+def confirm_kiosk_payment(
+	session: str,
+	pos_profile: str,
+	fingerprint: str,
+	payments: list | str | None = None,
+	is_credit_sale: bool | int | str = False,
+	due_date: str | None = None,
+	loyalty_points: int | str | None = None,
+	tax_id: str | None = None,
+	shipping_address_name: str | None = None,
+	checkout_fields: dict | str | None = None,
+):
 	try:
-		return success(kiosk_service.confirm_payment(session, pos_profile))
+		return success(
+			kiosk_service.confirm_payment(
+				session,
+				pos_profile,
+				fingerprint,
+				payments,
+				is_credit_sale=is_credit_sale,
+				due_date=due_date,
+				loyalty_points=loyalty_points,
+				tax_id=tax_id,
+				shipping_address_name=shipping_address_name,
+				checkout_fields=checkout_fields,
+			)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 

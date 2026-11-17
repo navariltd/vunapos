@@ -7,12 +7,15 @@ import { navigateToPosPage } from "../../../lib/stores/navigationStore";
 import { ManagerPinDialog } from "../../pos/components/ManagerPinDialog";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
-import { cancelKioskOrder, confirmKioskPayment, vunaMethods } from "../../../services/vunaApi";
+import { cancelKioskOrder, vunaMethods } from "../../../services/vunaApi";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import type { RestaurantSessionDTO } from "../types";
+import { ClearTableButton } from "./ClearTableButton";
+import { SessionBill } from "./SessionBill";
 
-// A kiosk order on the session screen. While it awaits payment a cashier confirms the
-// customer paid at the counter, which sends it to the kitchen, or cancels it.
+// A kiosk order on the session screen. While it awaits payment a cashier takes the
+// payment with Confirm payment (the session bill) here, or cancels the order. Once
+// paid, its table stays taken until staff clear it.
 export function KioskOrderBanner({
   session,
   posProfile,
@@ -23,47 +26,42 @@ export function KioskOrderBanner({
   onChanged: () => void;
 }) {
   const bootstrap = useBootstrapData();
-  const confirmCall = useFrappePostCall(vunaMethods.confirmKioskPayment);
   const cancelCall = useFrappePostCall(vunaMethods.cancelKioskOrder);
   const showToast = useUiFeedbackStore((state) => state.showToast);
   const changed = useOrderDraftStore((state) => state.markOrdersChanged);
-  const [dialog, setDialog] = useState<"confirm" | "cancel" | "pin" | null>(null);
+  const [dialog, setDialog] = useState<"cancel" | "pin" | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const running = useRef(false);
   const awaiting = session.kiosk_status === "Awaiting Payment";
+  const paid = session.kiosk_status === "Paid";
+  const heldTables = session.tables.filter((row) => !row.released_at);
   const canConfirm = Boolean(bootstrap.data?.can_take_payment);
   const canManage = Boolean(bootstrap.data?.can_manage_restaurant);
   const canCancel = canConfirm || canManage;
   const needsPin = Boolean(bootstrap.data?.restaurant?.require_manager_pin_order_cancel) && !canManage;
   const label = `Kiosk order ${session.order_number ?? ""}`.trim();
 
-  const run = async (action: "confirm" | "cancel", token?: string) => {
+  const cancel = async (token?: string) => {
     if (running.current || !posProfile) return;
     running.current = true;
     setBusy(true);
     try {
-      if (action === "confirm") {
-        await confirmKioskPayment(confirmCall.call, { session: session.name, pos_profile: posProfile });
-        showToast({ type: "info", message: `${label} sent to the kitchen.` });
-      } else {
-        await cancelKioskOrder(cancelCall.call, {
-          session: session.name,
-          reason: reason.trim(),
-          pos_profile: posProfile,
-          manager_pin_token: token,
-        });
-        showToast({ type: "info", message: `${label} cancelled. Its table is free again.` });
-      }
+      await cancelKioskOrder(cancelCall.call, {
+        session: session.name,
+        reason: reason.trim(),
+        pos_profile: posProfile,
+        manager_pin_token: token,
+      });
+      showToast({ type: "info", message: `${label} cancelled. Its table is free again.` });
       setDialog(null);
       changed();
-      if (action === "cancel") navigateToPosPage("Orders");
-      else onChanged();
+      navigateToPosPage("Orders");
     } catch (error) {
-      setDialog(action === "cancel" && dialog === "pin" ? "cancel" : dialog);
+      setDialog("cancel");
       showToast({
         type: "error",
-        message: error instanceof Error ? error.message : "The kiosk order could not be updated. You can retry safely.",
+        message: error instanceof Error ? error.message : "The kiosk order could not be cancelled. You can retry safely.",
       });
     } finally {
       running.current = false;
@@ -84,41 +82,42 @@ export function KioskOrderBanner({
             awaiting ? "bg-tertiary-container text-on-tertiary-container" : "bg-surface-container text-on-surface-variant"
           }`}
         >
-          {awaiting ? "Awaiting payment" : "Sent to kitchen"}
+          {awaiting ? "Awaiting payment" : paid ? "Paid" : "Sent to kitchen"}
         </span>
       </p>
       {awaiting ? (
         <>
           <p className="mt-1 text-on-surface-variant">
-            Take payment at the counter, then confirm it. Nothing goes to the kitchen until you do.
+            {canConfirm
+              ? "Confirm payment takes the payment, sends the order to the kitchen and prints the receipt."
+              : "A cashier takes the payment. Nothing goes to the kitchen until then."}
           </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {canConfirm ? (
-              <Button size="sm" disabled={busy} onClick={() => setDialog("confirm")}>
-                Confirm payment
-              </Button>
-            ) : (
-              <span className="text-xs text-on-surface-variant">A cashier confirms the payment.</span>
-            )}
-            {canCancel ? (
-              <Button size="sm" variant="ghost" className="text-error" disabled={busy} onClick={() => setDialog("cancel")}>
-                Cancel order
-              </Button>
-            ) : null}
-          </div>
+          {canConfirm || canCancel ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {canConfirm && posProfile ? (
+                <SessionBill session={session} posProfile={posProfile} unsent={false} onChanged={onChanged} primary />
+              ) : null}
+              {canCancel ? (
+                <Button size="sm" variant="ghost" className="text-error" disabled={busy} onClick={() => setDialog("cancel")}>
+                  Cancel order
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
         </>
       ) : null}
-      <ConfirmDialog
-        isOpen={dialog === "confirm"}
-        title={`Confirm payment for ${label.toLowerCase()}?`}
-        description="Only confirm once the customer has paid. The order goes to the kitchen straight away; bill it through this session as usual."
-        confirmLabel="Payment received"
-        loading={busy}
-        onCancel={() => {
-          if (!busy) setDialog(null);
-        }}
-        onConfirm={() => void run("confirm")}
-      />
+      {paid && heldTables.length ? (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-on-surface-variant">
+            Paid. The table stays taken until the guests leave.
+          </p>
+          <ClearTableButton
+            session={session.name}
+            tableLabels={heldTables.map((row) => row.table_label).join(", ")}
+            onCleared={onChanged}
+          />
+        </div>
+      ) : null}
       <ConfirmDialog
         isOpen={dialog === "cancel"}
         danger
@@ -133,7 +132,7 @@ export function KioskOrderBanner({
         }}
         onConfirm={() => {
           if (needsPin) setDialog("pin");
-          else void run("cancel");
+          else void cancel();
         }}
       >
         <label className="block text-sm">
@@ -152,7 +151,7 @@ export function KioskOrderBanner({
         posProfile={posProfile}
         action="order_cancel"
         onCancel={() => setDialog("cancel")}
-        onApproved={(token) => void run("cancel", token)}
+        onApproved={(token) => void cancel(token)}
       />
     </div>
   );

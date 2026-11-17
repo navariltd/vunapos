@@ -31,8 +31,9 @@ _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
 _RESERVATIONS = {"read": 1, "create": 1, "submit": 1, "cancel": 1}
-# The kiosk only places orders, so it works on the Sales Orders it created.
-_KIOSK_ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1, "if_owner": 1}
+# The kiosk only places orders: it creates them and reads its own. The server submits
+# them after its checks, so a kiosk login cannot edit or submit an order through the API.
+_KIOSK_ORDERS = {"read": 1, "create": 1, "print": 1, "if_owner": 1}
 # Staff add guests while taking an order; they can't edit existing customers.
 CUSTOMER_CREATE = {"read": 1, "create": 1}
 _MENU_READS = {
@@ -222,7 +223,7 @@ def ensure_vunapos_custom_fields():
 				"insert_after": "vunapos_branch",
 				"default": "0",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
-				"description": "Allow this profile's cashier to accept pending KOTs, finish required material transfers and manufacture remaining quantities during checkout. Marks preparation Ready, not Served. Native stock, tracking, inspection and Job Card checks still apply.",
+				"description": "Allow this profile's cashier to bill orders the kitchen has not finished: checkout posts the remaining material transfers and manufacture. Kitchen tickets keep their status, and the kitchen still accepts, starts, readies and serves them without moving stock again. Native stock, tracking, inspection and Job Card checks still apply.",
 			},
 			{
 				"fieldname": "vunapos_kiosk_section",
@@ -237,11 +238,7 @@ def ensure_vunapos_custom_fields():
 				"fieldtype": "Check",
 				"insert_after": "vunapos_kiosk_section",
 				"default": "0",
-				"description": (
-					"A self-service screen for users with the VunaPOS Kiosk role. Tick Complete Preparation "
-					"on Billing on the tills that confirm and bill kiosk orders, so recipe dishes can be "
-					"billed as soon as the customer pays."
-				),
+				"description": "A self-service screen for users with the VunaPOS Kiosk role.",
 			},
 			{
 				"fieldname": "vunapos_kiosk_payment_timing",

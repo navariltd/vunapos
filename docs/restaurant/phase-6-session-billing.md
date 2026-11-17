@@ -31,13 +31,22 @@ the same Restaurant, Branch, company and currency. The cashier must be assigned 
 Enable **POS Profile → Restaurant → Complete Preparation on Billing** on the
 **billing** profile for simpler/QSR workflows. It is off by default; another
 order-taking profile's setting does not authorize the billing cashier.
+Kiosk orders paid at the counter first do not use this setting: Confirm payment
+always completes their preparation (see `kiosk-setup.md`).
 
 When enabled and the cashier can access every required station, the bill shows a
 notice and enables Checkout even if linked preparation is pending. Confirming
-checkout accepts outstanding tickets, starts preparation, transfers any remaining
-materials to WIP, and manufactures only outstanding quantities through the same
-native production path used by KDS. Tickets become **Ready**, never automatically
-Served. Completed/partially completed production is not duplicated.
+checkout transfers any remaining materials to WIP and manufactures only outstanding
+quantities through the same native production path used by KDS.
+Completed/partially completed production is not duplicated.
+
+The tickets keep their status, are marked **Production Completed at Billing** (a
+**Paid** badge on the kitchen board) and get one **Complete for Billing** action in
+their audit trail. The kitchen still accepts, starts, readies and serves them, also
+after the visit is settled; for these tickets those steps only change the status and
+post no stock entries. They cannot be cancelled from the kitchen board, because the
+order is billed. Tickets already Ready or Served when the bill is taken are not
+touched, so orders billed after the kitchen marked them Ready behave as before.
 
 This is an explicit, scoped cashier permission during billing, not a grant of
 general KDS preparation rights or global Work Order/Stock Entry access. Station
@@ -138,8 +147,9 @@ testing; automated invoice tests do not contact payment providers.
   prices/warehouse and the billing cashier's invoice ownership/shift link.
 - Enable Complete Preparation on Billing on the billing profile. Place a QSR
   order without operating KDS, then complete checkout as a cashier without the
-  Kitchen User role. Verify native production, Ready (not Served) KOT state,
-  action audit, and only one manufacture after retry. Repeat with partial native
+  Kitchen User role. Verify native production, the KOT keeps its status with the
+  Paid badge, one Complete for Billing action, only one manufacture after retry,
+  and that Accept, Start, Ready and Serve afterwards post no stock entries. Repeat with partial native
   production, restricted stations and a forced production/payment failure.
 - Try billing before production completes, with insufficient finished stock, or
   using stock/batches reserved for another visit. Each must fail safely.

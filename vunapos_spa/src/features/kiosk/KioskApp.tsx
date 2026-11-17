@@ -96,7 +96,7 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
   const [printError, setPrintError] = useState<string | null>(null);
   const [exitOpen, setExitOpen] = useState(false);
   const placingRef = useRef(false);
-  const services = setup.data?.service_types ?? [];
+  const services = useMemo(() => setup.data?.service_types ?? [], [setup.data]);
 
   const loadSetup = useCallback(async () => {
     setSetup((current) => ({ ...current, loading: true }));
@@ -128,7 +128,20 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
     setPrintError(null);
   }, []);
 
-  const idle = useIdle(tracksIdle(state.step) && !exitOpen, idleSeconds, startOver);
+  // With one service type the home screen opens straight on it, once it is known.
+  useEffect(() => {
+    if (state.step === "service" && !state.service && services.length === 1)
+      setState((value) => startOrder(services, posProfile, newId, value.entry));
+  }, [state.step, state.service, services, posProfile]);
+
+  // The first touch makes the kiosk full screen (browsers need a user gesture for it).
+  useEffect(() => {
+    window.addEventListener("pointerdown", requestFullscreen, { once: true });
+    return () => window.removeEventListener("pointerdown", requestFullscreen);
+  }, []);
+
+  const tracking = tracksIdle(state) && !exitOpen;
+  const idle = useIdle(tracking, idleSeconds, startOver);
 
   const menu = useMenu(
     posProfile,
@@ -253,47 +266,39 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
   );
 
   let body: ReactNode;
-  if (state.step === "start") {
-    body = (
-      <button
-        type="button"
-        className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-6 rounded-3xl bg-primary p-8 text-on-primary"
-        disabled={setup.loading && !setup.data}
-        onClick={() => {
-          if (!setup.data) {
-            void loadSetup();
-            return;
-          }
-          requestFullscreen();
-          idle.keepGoing();
-          setState(startOrder(services, posProfile, newId));
-        }}
-      >
-        <span className="text-5xl font-bold sm:text-7xl">Tap to order</span>
-        <span className="text-xl sm:text-2xl">
-          {setup.error ? setup.error : setup.data ? "Order here, then pay at the counter" : "Getting ready…"}
-        </span>
-      </button>
-    );
-  } else if (state.step === "service") {
+  if (state.step === "service") {
     body = (
       <section className="flex flex-1 flex-col items-center justify-center gap-8" aria-labelledby="kiosk-service-title">
-        <h2 id="kiosk-service-title" className="text-3xl font-semibold text-on-surface sm:text-4xl">
-          Where will you eat?
-        </h2>
-        <div className="grid w-full max-w-3xl gap-4 sm:grid-cols-2">
-          {services.map((service: CachedServiceType) => (
-            <button
-              key={service.name}
-              type="button"
-              className="flex min-h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-primary bg-surface p-6 text-center hover:bg-primary-container"
-              onClick={() => setState((value) => chooseService(value, service, posProfile, newId))}
-            >
-              <span className="text-3xl font-semibold text-on-surface">{service.service_type_name}</span>
-              {service.description ? <span className="text-on-surface-variant">{service.description}</span> : null}
-            </button>
-          ))}
+        <div className="text-center">
+          <h2 id="kiosk-service-title" className="text-4xl font-bold text-on-surface sm:text-6xl">
+            {restaurantName}
+          </h2>
+          <p className="mt-3 text-xl text-on-surface-variant sm:text-2xl">
+            {setup.error || (setup.data ? "Tap to start your order" : "Getting ready…")}
+          </p>
         </div>
+        {setup.error && !setup.data ? (
+          <Button size="lg" className="h-16 px-10 text-xl" onClick={() => void loadSetup()}>
+            Try again
+          </Button>
+        ) : (
+          <div className="grid w-full max-w-3xl gap-4 sm:grid-cols-2">
+            {services.map((service: CachedServiceType) => (
+              <button
+                key={service.name}
+                type="button"
+                className="flex min-h-32 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-primary bg-surface p-6 text-center hover:bg-primary-container sm:min-h-40"
+                onClick={() => {
+                  idle.keepGoing();
+                  setState((value) => chooseService(value, service, posProfile, newId));
+                }}
+              >
+                <span className="text-3xl font-semibold text-on-surface">{service.service_type_name}</span>
+                {service.description ? <span className="text-on-surface-variant">{service.description}</span> : null}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
     );
   } else if (state.step === "table") {
@@ -305,7 +310,7 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
         error={setup.error}
         onRetry={() => void loadSetup()}
         onSelect={(table) => setState((value) => chooseTable(value, table))}
-        onBack={() => setState((value) => back(value, services.length))}
+        onBack={() => (services.length > 1 ? setState(back) : startOver())}
         onStartOver={startOver}
       />
     );
@@ -324,6 +329,7 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
             error={menu.error}
             currency={currency}
             quantities={new Map((state.draft?.unsent ?? []).map((line) => [line.item_code, line.qty]))}
+            phoneGrid
             onRetry={menu.reload}
             onAddItem={(item) => addItem(item)}
           />
@@ -393,7 +399,9 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
     );
   }
 
-  const canGoBack = ["service", "menu", "review"].includes(state.step);
+  // Back to the service choice only means something when there is a choice.
+  const canGoBack =
+    (state.step === "menu" || state.step === "review") && (back(state).step !== "service" || services.length > 1);
   return (
     <div className="kiosk flex h-[100dvh] flex-col gap-4 overflow-hidden bg-background p-4 text-on-surface sm:p-6">
       <header className="flex shrink-0 items-center gap-3">
@@ -402,12 +410,12 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
         </ExitHold>
         <span className="flex-1" />
         {canGoBack ? (
-          <Button variant="ghost" size="lg" className="gap-2" onClick={() => setState((value) => back(value, services.length))}>
+          <Button variant="ghost" size="lg" className="gap-2" onClick={() => setState(back)}>
             <ArrowLeft className="size-5" aria-hidden="true" />
             Back
           </Button>
         ) : null}
-        {state.step !== "start" && state.step !== "done" ? (
+        {state.step !== "service" && state.step !== "done" ? (
           <Button variant="ghost" size="lg" className="gap-2" onClick={startOver}>
             <RotateCcw className="size-5" aria-hidden="true" />
             Start over
@@ -470,7 +478,8 @@ function KioskScreen({ posProfile, idleSeconds }: { posProfile: string; idleSeco
 }
 
 // Counts inactivity while a customer is ordering: a prompt after `idleSeconds`, then a
-// fresh start after the warning. Whatever starts tracking calls keepGoing first.
+// fresh start after the warning. Activity is always recorded, so tracking that starts
+// with a tap (the first item in the cart) starts from that tap.
 function useIdle(enabled: boolean, idleSeconds: number, onExpired: () => void) {
   const [lastActivity, setLastActivity] = useState(0);
   const [now, setNow] = useState(0);
@@ -482,17 +491,19 @@ function useIdle(enabled: boolean, idleSeconds: number, onExpired: () => void) {
   }, []);
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
     // Once the prompt is up, only its buttons count.
     const mark = () => {
       if (phaseRef.current === "active") setLastActivity(Date.now());
     };
     ACTIVITY_EVENTS.forEach((event) => window.addEventListener(event, mark, { passive: true }));
-    return () => {
-      window.clearInterval(timer);
-      ACTIVITY_EVENTS.forEach((event) => window.removeEventListener(event, mark));
-    };
+    return () => ACTIVITY_EVENTS.forEach((event) => window.removeEventListener(event, mark));
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    // Until the first tick, `now` is older than the tap that started tracking: 0 idle.
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
   }, [enabled]);
 
   const idleMs = enabled ? Math.max(0, now - lastActivity) : 0;

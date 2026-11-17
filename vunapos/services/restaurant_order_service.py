@@ -551,7 +551,9 @@ def create_order(
 	restaurant_session=None,
 	price_list=None,
 	kitchen_routing=None,
+	draft=False,
 ):
+	"""Insert and submit a round. A kiosk order paid first stays a `draft` until confirmed."""
 	idempotency_key = cstr(idempotency_key).strip() or None
 	if idempotency_key:
 		existing = frappe.db.get_value(
@@ -655,7 +657,19 @@ def create_order(
 	_recalculate(doc, profile, price_list)
 	# ERPNext may populate child dates during recalculation; keep today.
 	_apply_sales_order_delivery_date(doc, None)
-	doc.insert()
+	previous_insert = frappe.flags.get("vunapos_inserting_session_round")
+	try:
+		frappe.flags.vunapos_inserting_session_round = True
+		doc.insert()
+	finally:
+		frappe.flags.vunapos_inserting_session_round = previous_insert
+	if draft:
+		return order_to_dict(doc)
+	submit_session_round(doc, restaurant_session, kitchen_routing)
+	return order_to_dict(doc)
+
+
+def submit_session_round(doc, restaurant_session=None, kitchen_routing=None):
 	# ERPNext's global auto-reserve option must not reserve finished goods for
 	# made-to-order rows before their Work Orders have produced them.
 	if restaurant_session:
@@ -666,7 +680,6 @@ def create_order(
 		doc.submit()
 	finally:
 		frappe.flags.vunapos_kitchen_routing = previous_routing
-	return order_to_dict(doc)
 
 
 def get_order(order):
@@ -976,6 +989,13 @@ def preview_order(order, customer=None, pos_profile=None):
 	return {"order": order_to_dict(doc), "invoice": invoice_to_dict(invoice)}
 
 
+def _table_status(session, orders):
+	if session and session.status == "Settled":
+		# A paid kiosk order waiting for staff to clear its table.
+		return "Paid"
+	return "Occupied" if session or orders else "Free"
+
+
 def get_table_status(pos_profile=None):
 	"""Derive each active table's status from its open orders (never stored)."""
 	profile = _restaurant_profile(pos_profile)
@@ -1024,9 +1044,7 @@ def get_table_status(pos_profile=None):
 			"table_label": table.table_label,
 			"floor": table.floor,
 			"seats": cint(table.seats),
-			"status": "Occupied"
-			if orders_by_table.get(table.name) or table.name in sessions_by_table
-			else "Free",
+			"status": _table_status(sessions_by_table.get(table.name), orders_by_table.get(table.name)),
 			"session": sessions_by_table.get(table.name),
 			"orders": orders_by_table.get(table.name, []),
 		}

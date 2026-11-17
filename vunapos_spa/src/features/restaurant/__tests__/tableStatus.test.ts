@@ -67,6 +67,20 @@ describe("deriveTableStatuses", () => {
 		const kiosk = deriveTableStatuses([{ table: "k1", table_label: "K1", floor: "f", seats: 2, status: "Occupied", session: null, orders: [] }]);
 		expect(statusFor(kiosk, "k1")).toEqual({ kind: "occupied", orders: [], guests: 0, openedAt: null, waiters: [] });
 	});
+
+	it("shows a paid kiosk order's table as paid until staff clear it", () => {
+		const session = {
+			name: "RS-1", customer: "Walk-in", waiter: "kiosk@example.com", waiter_name: "Kiosk", guest_count: 0,
+			opened_at: "2026-11-17 12:00:00", service_type: "Dine In", modified: "", status: "Settled" as const,
+			tables: [{ table: "p1", table_label: "P1" }], kiosk_status: "Paid" as const,
+		};
+		const staff = deriveTableStatuses([{ table: "p1", table_label: "P1", floor: "f", seats: 2, status: "Paid", session, orders: [] }]);
+		expect(statusFor(staff, "p1").kind).toBe("paid");
+		expect(tableStatusLines(statusFor(staff, "p1"), 2, new Date("2026-11-17T12:10:00"))[0]).toBe("Paid · 10 min");
+		const kiosk = deriveTableStatuses([{ table: "p1", table_label: "P1", floor: "f", seats: 2, status: "Paid", session: null, orders: [] }]);
+		expect(statusFor(kiosk, "p1").kind).toBe("paid");
+		expect(legendStatuses(staff.values())).toEqual(["paid"]);
+	});
 });
 
 describe("legendStatuses", () => {

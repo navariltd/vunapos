@@ -6,9 +6,12 @@ import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useGatewayPayments } from "../../pos/hooks/useGatewayPayments";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import { formatCurrency, getPaymentModes } from "../../pos/utils";
+import { printHtml } from "../../../lib/printHtml";
 import {
   checkoutSession,
+  confirmKioskPayment,
   previewSessionBill,
+  renderInvoice,
   searchCheckoutLinkOptions,
   getCustomerAddresses,
   getCustomerLoyalty,
@@ -31,15 +34,20 @@ export function SessionBill({
   posProfile,
   unsent,
   onChanged,
+  primary = false,
 }: {
   session: RestaurantSessionDTO;
   posProfile: string;
   unsent: boolean;
   onChanged: () => void;
+  /** Show the opening button as the main action, as on the kiosk order banner. */
+  primary?: boolean;
 }) {
   const bootstrap = useBootstrapData().data;
   const previewCall = useFrappePostCall(vunaMethods.previewSessionBill);
   const checkoutCall = useFrappePostCall(vunaMethods.checkoutSession);
+  const confirmCall = useFrappePostCall(vunaMethods.confirmKioskPayment);
+  const printCall = useFrappePostCall(vunaMethods.renderInvoice);
   const linkOptions = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
   const addressCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const loyaltyCall = useFrappePostCall(vunaMethods.getCustomerLoyalty);
@@ -55,6 +63,10 @@ export function SessionBill({
   const [loyalty, setLoyalty] = useState<CustomerLoyaltyDTO | null>(null);
   const running = useRef(false);
   const canPay = Boolean(bootstrap?.can_take_payment);
+  // A kiosk order paid at the counter first is confirmed here: taking its payment
+  // sends it to the kitchen and bills it in one step.
+  const kioskConfirm = session.kiosk_status === "Awaiting Payment";
+  const kioskLabel = `Kiosk order ${session.order_number ?? ""}`.trim();
   const currency = session.currency || bootstrap?.currency;
   const failed = (cause: unknown) => {
     const message =
@@ -143,7 +155,7 @@ export function SessionBill({
     setBusy(true);
     setError(null);
     try {
-      const result = await checkoutSession(checkoutCall.call, {
+      const params = {
         session: session.name,
         pos_profile: posProfile,
         fingerprint: bill.fingerprint,
@@ -154,14 +166,38 @@ export function SessionBill({
         tax_id: taxId,
         shipping_address_name: shippingAddress,
         checkout_fields: fields,
-      });
+      };
+      const result = kioskConfirm
+        ? await confirmKioskPayment(confirmCall.call, params)
+        : await checkoutSession(checkoutCall.call, params);
+      const tablesHeld = result.session.kiosk_status === "Paid";
       toast({
         type: "info",
-        message:
-          result.invoice.docstatus === 1
-            ? `Bill ${result.invoice.name} completed. The visit is settled and its tables released.`
-            : `Bill ${result.invoice.name} saved for workflow approval. The tables remain occupied.`,
+        message: kioskConfirm
+          ? `${kioskLabel} paid and sent to the kitchen. Receipt ${result.invoice.name}.`
+          : result.invoice.docstatus === 1
+          ? `Bill ${result.invoice.name} completed. The visit is settled${
+              tablesHeld ? "." : " and its tables released."
+            }`
+          : `Bill ${result.invoice.name} saved for workflow approval. The tables remain occupied.`,
       });
+      if (kioskConfirm && result.invoice.docstatus === 1) {
+        try {
+          const receipt = await renderInvoice(printCall.call, {
+            invoice_doctype: result.invoice.doctype || "Sales Invoice",
+            invoice_name: result.invoice.name,
+          });
+          printHtml(receipt.html);
+        } catch (printError) {
+          toast({
+            type: "error",
+            message:
+              printError instanceof Error
+                ? `The payment is recorded, but the receipt did not print: ${printError.message}`
+                : "The payment is recorded, but the receipt did not print. Reprint it from View receipt.",
+          });
+        }
+      }
       setPaying(false);
       setBill(null);
       markChanged();
@@ -213,7 +249,8 @@ export function SessionBill({
   return (
     <>
       <Button
-        variant="ghost"
+        variant={primary ? "primary" : "ghost"}
+        size={primary ? "sm" : "md"}
         disabled={unsent || busy || (session.status === "Settling" && !canPay)}
         onClick={() => void open()}
         title={
@@ -226,11 +263,13 @@ export function SessionBill({
           ? "Preparing bill…"
           : session.status === "Settling"
           ? "Bill awaiting approval"
+          : kioskConfirm && canPay
+          ? "Confirm payment"
           : "View bill"}
       </Button>
       <Sheet
         isOpen={Boolean(bill) && !paying}
-        title="Session bill"
+        title={kioskConfirm ? `Confirm payment · ${kioskLabel}` : "Session bill"}
         description={session.name}
         onClose={() => {
           if (!busy) setBill(null);
@@ -252,7 +291,7 @@ export function SessionBill({
                 disabled={bill.can_checkout === false || busy}
                 onClick={() => setPaying(true)}
               >
-                Checkout
+                {kioskConfirm ? "Take payment" : "Checkout"}
               </Button>
             ) : null}
           </div>
@@ -265,9 +304,9 @@ export function SessionBill({
                 role="status"
                 className="rounded-md bg-amber-50 p-3 text-amber-900 dark:bg-amber-950 dark:text-amber-100"
               >
-                This profile completes pending preparation during checkout.
-                Remaining transfers/manufacturing will run and KOTs will be
-                marked Ready. Stock and production validations still apply.
+                {kioskConfirm
+                  ? "Taking the payment sends this order to the kitchen and bills it at once. Stock for its prepared dishes moves now; the kitchen still accepts, starts and readies each ticket."
+                  : "This profile completes pending preparation during checkout. Remaining transfers and manufacturing run now; kitchen tickets keep their status, and the kitchen still accepts, starts and readies them. Stock and production validations still apply."}
               </p>
             ) : null}
             {bill.checkout_block_reason ? (

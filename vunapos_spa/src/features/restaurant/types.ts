@@ -128,7 +128,8 @@ export type TableStatusDTO = {
 	table_label: string;
 	floor: string;
 	seats: number;
-	status: "Free" | "Occupied";
+	// Paid: a kiosk order paid at the counter first, waiting for staff to clear the table.
+	status: "Free" | "Occupied" | "Paid";
 	orders: TableOrderRefDTO[];
 };
 
@@ -198,9 +199,10 @@ export type RestaurantOrderSummaryDTO = Pick<
 	sales_orders?: string[];
 };
 
-// A kiosk order paid at the counter first waits as Awaiting Payment; nothing reaches the
-// kitchen until a cashier confirms. "Bill at the end" orders start as Sent to Kitchen.
-export type KioskStatus = "Awaiting Payment" | "Sent to Kitchen";
+// A kiosk order paid at the counter first is a draft, Awaiting Payment, until a cashier
+// confirms the payment: that sends it to the kitchen and bills it, and it is then Paid.
+// Its table stays taken until staff clear it. "Bill at the end" orders start as Sent to Kitchen.
+export type KioskStatus = "Awaiting Payment" | "Paid" | "Sent to Kitchen";
 
 export type RestaurantSessionStatus = "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
 
@@ -231,7 +233,7 @@ export type KioskSetupDTO = {
 	service_types: import("../../lib/types").CachedServiceType[];
 	payment_timing: import("../../lib/types").KioskPaymentTiming;
 	floor_plan: FloorPlanDTO;
-	// Free or Occupied only: the kiosk never sees who holds a table.
+	// Free, Occupied or Paid only: the kiosk never sees who holds a table.
 	tables: TableStatusDTO[];
 };
 
@@ -269,6 +271,8 @@ export type KitchenRoutingIssue = {
 export type KitchenTicketSummaryDTO = {
 	name: string; sales_order: string; kitchen_station: string; station_label: string;
 	status: string; sent_at: string;
+	// Billed before the kitchen finished: its stock already moved, and later steps only change the status.
+	production_completed_at_billing?: number;
 };
 
 export type KitchenTicketDTO = KitchenTicketSummaryDTO & {

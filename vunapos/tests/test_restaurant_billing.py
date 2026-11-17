@@ -245,17 +245,26 @@ class TestRestaurantBilling(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", ticket, "status"), "Sent")
 		result = self._checkout(preview)
 		self.assertTrue(result["ok"], result)
-		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", ticket, "status"), "Ready")
+		# Billing posts the production but leaves the ticket for the kitchen.
+		self.assertEqual(
+			frappe.db.get_value(
+				"Kitchen Order Ticket", ticket, ["status", "production_completed_at_billing"]
+			),
+			("Sent", 1),
+		)
 		actions = frappe.get_all(
 			"Kitchen Ticket Action",
 			filters={"kitchen_ticket": ticket, "outcome": "Succeeded"},
-			fields=["action", "actor", "reason"],
+			fields=["action", "actor", "reason", "from_status", "to_status"],
 		)
-		self.assertEqual({row.action for row in actions}, {"Accept", "Start", "Ready"})
+		self.assertEqual(
+			[(row.action, row.from_status, row.to_status) for row in actions],
+			[("Complete for Billing", "Sent", "Sent")],
+		)
 		self.assertTrue(all(row.actor == user and self.profile.name in row.reason for row in actions))
 		self.assertTrue(self._checkout(preview)["ok"])
 		self.assertEqual(
-			frappe.db.count("Kitchen Ticket Action", {"kitchen_ticket": ticket, "outcome": "Succeeded"}), 3
+			frappe.db.count("Kitchen Ticket Action", {"kitchen_ticket": ticket, "outcome": "Succeeded"}), 1
 		)
 		self.assertEqual(
 			frappe.db.count(
@@ -384,7 +393,68 @@ class TestRestaurantBilling(IntegrationTestCase):
 			response = self._checkout()
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["invoice"]["doctype"], "POS Invoice")
-		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", self._tickets()[0], "status"), "Ready")
+		ticket = self._tickets()[0]
+		self.assertEqual(
+			frappe.db.get_value(
+				"Kitchen Order Ticket", ticket, ["status", "production_completed_at_billing"]
+			),
+			("Sent", 1),
+		)
+		# The POS Invoice keeps the finished reservation until consolidation; Ready still
+		# moves no stock and does not check it.
+		for action, expected in (("Accept", "Sent"), ("Start", "Accepted"), ("Ready", "Preparing")):
+			result = restaurant.kitchen_action(ticket, action, str(uuid4()), expected)
+			self.assertTrue(result["ok"], result)
+
+	def test_kitchen_finishes_a_ticket_billed_early_without_moving_stock(self):
+		self.assertTrue(self._send()["ok"])
+		ticket = self._tickets()[0]
+		self._enable_billing_preparation()
+		self.assertEqual(self._checkout()["data"]["session"]["status"], "Settled")
+		work_order = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": ticket}, "work_order")
+		entries = frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1})
+		self.assertEqual(frappe.db.get_value("Work Order", work_order, "status"), "Completed")
+		board = restaurant.get_kitchen_board(self.profile.name)["data"]["tickets"]
+		row = next(row for row in board if row.name == ticket)
+		self.assertEqual((row.status, row.production_completed_at_billing), ("Sent", 1))
+		self.assertFalse(row.can_cancel_order)
+		self.assertFalse(restaurant.get_kitchen_ticket(ticket)["data"]["can_cancel_order"])
+		for action, expected in (
+			("Accept", "Sent"),
+			("Start", "Accepted"),
+			("Ready", "Preparing"),
+			("Serve", "Ready"),
+		):
+			result = restaurant.kitchen_action(ticket, action, str(uuid4()), expected)
+			self.assertTrue(result["ok"], result)
+		self.assertEqual(frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1}), entries)
+		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", ticket, "status"), "Served")
+
+	def test_waiter_order_billed_after_ready_is_unchanged(self):
+		self.assertTrue(self._send()["ok"])
+		ticket = self._tickets()[0]
+		self._enable_billing_preparation()
+		for action, expected in (("Accept", "Sent"), ("Start", "Accepted"), ("Ready", "Preparing")):
+			self.assertTrue(restaurant.kitchen_action(ticket, action, str(uuid4()), expected)["ok"])
+		work_order = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": ticket}, "work_order")
+		entries = frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1})
+		self.assertGreater(entries, 0)
+		result = self._checkout()
+		self.assertTrue(result["ok"], result)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Kitchen Order Ticket", ticket, ["status", "production_completed_at_billing"]
+			),
+			("Ready", 0),
+		)
+		self.assertEqual(frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1}), entries)
+		self.assertFalse(
+			frappe.db.exists(
+				"Kitchen Ticket Action", {"kitchen_ticket": ticket, "action": "Complete for Billing"}
+			)
+		)
+		# Tables of every flow other than a paid-first kiosk order are freed at billing.
+		self.assertTrue(all(row["released_at"] for row in result["data"]["session"]["tables"]))
 
 	def test_pos_stock_override_does_not_apply_to_retail_or_returns(self):
 		from erpnext.accounts.doctype.pos_invoice.pos_invoice import POSInvoice

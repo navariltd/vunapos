@@ -43,6 +43,11 @@ export function isAwaitingPayment(order: RestaurantOrderSummaryDTO): boolean {
 	return order.kiosk_status === "Awaiting Payment";
 }
 
+// A kiosk order paid at the counter first, whose table waits to be cleared.
+export function isPaidKioskOrder(order: RestaurantOrderSummaryDTO): boolean {
+	return order.kiosk_status === "Paid";
+}
+
 export function filterOrders(
 	orders: RestaurantOrderSummaryDTO[],
 	filter: OrdersFilter,

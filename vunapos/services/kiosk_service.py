@@ -1,12 +1,16 @@
 """Self-service kiosk orders on a Restaurant POS Profile with Kiosk Mode ticked.
 
 A kiosk login builds an order like a waiter would, then checks out: one request opens
-a Restaurant Session and submits its Sales Order round, with a short daily order number.
+a Restaurant Session with a short daily order number and saves its Sales Order round.
 
-With "Pay at the counter first" the session is Awaiting Payment: the round is placed
-but gets no Kitchen Order Tickets and reserves no stock until a cashier confirms the
-customer has paid. With "Bill at the end" it goes to the kitchen at once. Either way
-the visit is billed through the normal session checkout.
+With "Pay at the counter first" the round stays a draft and the session is Awaiting
+Payment. A cashier confirms the payment in one request: the draft is submitted, which
+sends it to the kitchen, and the visit is billed with the payment. The paid visit
+keeps its table until staff clear it. With "Bill at the end" the round is submitted
+at once and the visit is billed through the normal session checkout.
+
+The kiosk role may create and read its own Sales Orders but not write or submit them,
+so this module submits rounds in server code after its own checks.
 """
 
 import hashlib
@@ -17,7 +21,7 @@ from frappe.model.naming import getseries
 from frappe.utils import cint, cstr, now_datetime, nowdate
 
 from vunapos.services.floor_plan_service import get_floor_plan, is_floor_plan_manager
-from vunapos.services.kitchen_service import fail, generate_tickets
+from vunapos.services.kitchen_service import fail
 from vunapos.services.pin_service import consume_pin_token
 from vunapos.services.print_service import KIOSK_ORDER_SLIP
 from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
@@ -27,10 +31,11 @@ from vunapos.services.restaurant_service import (
 	require_restaurant_access,
 )
 from vunapos.services.restaurant_session_service import (
-	ACTIVE_STATUSES,
 	KIOSK_AWAITING_PAYMENT,
+	KIOSK_PAID,
 	KIOSK_SENT_TO_KITCHEN,
 	SESSION,
+	TABLE_HOLDING_STATUSES,
 	_load,
 	create_round,
 	lock_tables,
@@ -66,39 +71,46 @@ def kiosk_service_types(profile):
 
 
 def _occupied_tables(tables):
-	"""The same occupancy rule as lock_tables, without exposing who holds a table."""
+	"""The same occupancy rule as lock_tables, without exposing who holds a table.
+
+	Maps each taken table to "Paid" (a settled visit waiting to be cleared) or "Occupied".
+	"""
 	if not tables:
-		return set()
+		return {}
 	assignments = frappe.get_all(
 		"Restaurant Session Table",
 		filters={"parenttype": SESSION, "table": ["in", tables], "released_at": ["is", "not set"]},
 		fields=["table", "parent"],
 	)
-	active = set(
-		frappe.get_all(
+	holding = {
+		row.name: row.status
+		for row in frappe.get_all(
 			SESSION,
 			filters={
 				"name": ["in", list({row.parent for row in assignments}) or [""]],
-				"status": ["in", ACTIVE_STATUSES],
+				"status": ["in", TABLE_HOLDING_STATUSES],
 			},
-			pluck="name",
+			fields=["name", "status"],
 		)
-	)
-	occupied = {row.table for row in assignments if row.parent in active}
-	occupied.update(
-		frappe.get_all(
-			"Sales Order",
-			filters={
-				"vunapos_restaurant_table": ["in", tables],
-				"docstatus": 1,
-				"status": ["!=", "Closed"],
-				"per_billed": ["<", 100],
-				"vunapos_billing_invoice": ["is", "not set"],
-				"vunapos_restaurant_session": ["is", "not set"],
-			},
-			pluck="vunapos_restaurant_table",
-		)
-	)
+	}
+	occupied = {
+		row.table: "Paid" if holding[row.parent] == "Settled" else "Occupied"
+		for row in assignments
+		if row.parent in holding
+	}
+	for table in frappe.get_all(
+		"Sales Order",
+		filters={
+			"vunapos_restaurant_table": ["in", tables],
+			"docstatus": 1,
+			"status": ["!=", "Closed"],
+			"per_billed": ["<", 100],
+			"vunapos_billing_invoice": ["is", "not set"],
+			"vunapos_restaurant_session": ["is", "not set"],
+		},
+		pluck="vunapos_restaurant_table",
+	):
+		occupied.setdefault(table, "Occupied")
 	return occupied
 
 
@@ -120,7 +132,7 @@ def get_setup(pos_profile):
 				"table_label": table["table_label"],
 				"floor": table["floor"],
 				"seats": table["seats"],
-				"status": "Occupied" if table["name"] in occupied else "Free",
+				"status": occupied.get(table["name"], "Free"),
 				"session": None,
 				"orders": [],
 			}
@@ -144,11 +156,20 @@ def _clean_note(note):
 	return note or None
 
 
+def _rounds(session, docstatus):
+	return frappe.get_all(
+		"Sales Order",
+		filters={"vunapos_restaurant_session": session, "docstatus": docstatus},
+		pluck="name",
+		order_by="creation asc",
+	)
+
+
 def _result(session):
 	doc = frappe.get_doc(SESSION, session)
 	order = frappe.get_all(
 		"Sales Order",
-		filters={"vunapos_restaurant_session": session, "docstatus": 1},
+		filters={"vunapos_restaurant_session": session, "docstatus": ["!=", 2]},
 		fields=["name", "grand_total", "rounded_total", "currency"],
 		order_by="creation asc",
 		limit=1,
@@ -169,6 +190,25 @@ def _result(session):
 	}
 
 
+def _submit_rounds(session, kiosk_profile):
+	"""Submit a visit's draft rounds after this module's checks; this sends them to the kitchen.
+
+	Neither the kiosk login nor the cashier has the right to submit them directly. The
+	kiosk's profile routes and prices the tickets; a cashier is not assigned to it.
+	"""
+	from vunapos.services.restaurant_order_service import submit_session_round
+
+	previous = frappe.flags.get("vunapos_kiosk_ticket_profile")
+	frappe.flags.vunapos_kiosk_ticket_profile = kiosk_profile
+	try:
+		for name in _rounds(session, 0):
+			order = frappe.get_doc("Sales Order", name, for_update=True)
+			order.flags.ignore_permissions = True
+			submit_session_round(order, session)
+	finally:
+		frappe.flags.vunapos_kiosk_ticket_profile = previous
+
+
 def place_order(pos_profile, service_type, items, idempotency_key, table=None, order_note=None):
 	"""Checkout: open the visit and place its only round in one transaction."""
 	from vunapos.services.restaurant_stock_service import validate_cart
@@ -179,7 +219,9 @@ def place_order(pos_profile, service_type, items, idempotency_key, table=None, o
 		fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required to place a kiosk order."))
 	session_key = f"kiosk:{key}"
 	existing = frappe.db.get_value(SESSION, {"idempotency_key": session_key}, "name")
-	if existing and frappe.db.exists("Sales Order", {"vunapos_restaurant_session": existing, "docstatus": 1}):
+	if existing and frappe.db.exists(
+		"Sales Order", {"vunapos_restaurant_session": existing, "docstatus": ["!=", 2]}
+	):
 		return _result(existing)
 
 	offered = {row["name"]: row for row in kiosk_service_types(profile)}
@@ -191,7 +233,7 @@ def place_order(pos_profile, service_type, items, idempotency_key, table=None, o
 	if tables and not existing:
 		# Fail fast with a friendly message before any stock or pricing work.
 		lock_tables(tables, profile.vunapos_restaurant, branch=profile.vunapos_branch)
-	# Stock is checked as for any order. A held order reserves it only when payment is confirmed.
+	# Stock is checked as for any order. A draft reserves it only when payment is confirmed.
 	validate_cart(
 		profile.name, service_type, items, table=tables[0] if tables else None, customer=profile.customer
 	)
@@ -215,7 +257,10 @@ def place_order(pos_profile, service_type, items, idempotency_key, table=None, o
 		f"kiosk-round:{key}",
 		order_note=_clean_note(order_note),
 		pos_profile=profile.name,
+		draft=True,
 	)
+	if not pay_first:
+		_submit_rounds(session.name, profile)
 	return _result(session.name)
 
 
@@ -226,38 +271,46 @@ def _require_till(pos_profile, session):
 	return till
 
 
-def confirm_payment(session, pos_profile):
-	"""A cashier confirms the customer paid at the counter; the order goes to the kitchen."""
+def confirm_payment(session, pos_profile, fingerprint, payments=None, **options):
+	"""The cashier takes the payment: send the order to the kitchen and bill it, all or nothing.
+
+	The reviewed bill's fingerprint is checked before anything is submitted. Any later
+	failure rolls the whole request back, so the order stays a draft awaiting payment.
+	"""
+	from vunapos.services.restaurant_billing_service import (
+		_build,
+		_orders,
+		_review_fingerprint,
+		checkout,
+	)
+
 	if CASHIER_ROLE not in frappe.get_roles():
 		_permission_error("KIOSK_CONFIRM_NOT_ALLOWED", _("Only a cashier can confirm a kiosk payment."))
 	doc = _load(session, for_update=True)
 	till = _require_till(pos_profile, doc)
 	require_restaurant_staff_shift(till.name)
-	if doc.kiosk_status == KIOSK_SENT_TO_KITCHEN:
-		return session_to_dict(doc)
+	if doc.kiosk_status == KIOSK_PAID:
+		# A retry after success returns the visit's existing bill.
+		return checkout(doc.name, till.name, fingerprint, payments, **options)
 	if doc.kiosk_status != KIOSK_AWAITING_PAYMENT:
 		fail("NOT_A_KIOSK_ORDER", _("This is not a kiosk order awaiting payment."))
 	if doc.status != "Open":
 		fail("SESSION_NOT_OPEN", _("This kiosk order is no longer open."))
+	orders = _orders(doc, lock=True)
+	if not fingerprint or fingerprint != _review_fingerprint(
+		orders, _build(doc, till, orders, options.get("loyalty_points"))
+	):
+		fail(
+			"SESSION_BILL_CHANGED",
+			_("The order changed since this bill was reviewed. Refresh the bill before taking payment."),
+		)
 	doc.update(
-		{
-			"kiosk_status": KIOSK_SENT_TO_KITCHEN,
-			"confirmed_by": frappe.session.user,
-			"confirmed_at": now_datetime(),
-		}
+		{"kiosk_status": KIOSK_PAID, "confirmed_by": frappe.session.user, "confirmed_at": now_datetime()}
 	)
 	doc.flags.restaurant_session_write = True
 	doc.save()
-	# The kiosk's profile routes and prices the round; the cashier is not assigned to it.
-	kiosk_profile = frappe.get_cached_doc("POS Profile", doc.pos_profile)
-	for name in frappe.get_all(
-		"Sales Order",
-		filters={"vunapos_restaurant_session": doc.name, "docstatus": 1},
-		pluck="name",
-		order_by="creation asc",
-	):
-		generate_tickets(frappe.get_doc("Sales Order", name), profile=kiosk_profile)
-	return session_to_dict(doc)
+	_submit_rounds(doc.name, frappe.get_cached_doc("POS Profile", doc.pos_profile))
+	return checkout(doc.name, till.name, fingerprint, payments, **options)
 
 
 def cancel_order(session, reason, pos_profile, manager_pin_token=None):
@@ -278,28 +331,28 @@ def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 	reason = _clean_note(reason)
 	if not reason:
 		fail("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
-	approved_by = None
 	# The same rule as cancelling any restaurant order, from the cancelling till.
+	approved_by = None
 	if cint(till.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():
 		approved_by = consume_pin_token(manager_pin_token, till, "manager_order_cancel").get("subject")
-	for name in frappe.get_all(
-		"Sales Order", filters={"vunapos_restaurant_session": doc.name, "docstatus": 1}, pluck="name"
-	):
+	now = now_datetime()
+	# Nobody may delete or cancel these through Frappe; access and the PIN rule are checked above.
+	for name in _rounds(doc.name, 0):
+		frappe.delete_doc("Sales Order", name, ignore_permissions=True)
+	# Orders placed before kiosk drafts were submitted at once, without kitchen tickets.
+	for name in _rounds(doc.name, 1):
 		order = frappe.get_doc("Sales Order", name, for_update=True)
 		order.update(
 			{
 				"vunapos_cancel_reason": reason,
-				"vunapos_cancel_approved_by": approved_by,
 				"vunapos_cancelled_by": frappe.session.user,
-				"vunapos_cancelled_at": now_datetime(),
+				"vunapos_cancelled_at": now,
 			}
 		)
-		# Cashiers have no Sales Order cancel right; access and the PIN rule are checked above.
 		order.flags.ignore_permissions = True
 		order.cancel()
 	tables = [row.table for row in doc.tables if not row.released_at]
 	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
-	now = now_datetime()
 	for row in doc.tables:
 		if not row.released_at:
 			row.update(
@@ -309,8 +362,16 @@ def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 					"release_reason": "Kiosk order cancelled",
 				}
 			)
-	doc.status = "Cancelled"
-	doc.closed_at = now
+	doc.update(
+		{
+			"status": "Cancelled",
+			"closed_at": now,
+			"cancel_reason": reason,
+			"cancelled_by": frappe.session.user,
+			"cancel_approved_by": approved_by,
+			"cancelled_at": now,
+		}
+	)
 	doc.flags.restaurant_session_write = True
 	doc.save()
 	return session_to_dict(doc)

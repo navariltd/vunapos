@@ -11,9 +11,15 @@ from vunapos.services.service_type_service import get_default_service_type, reso
 
 SESSION = "Restaurant Session"
 ACTIVE_STATUSES = ("Open", "Settling")
-# A kiosk order paid at the counter first holds its kitchen tickets until a cashier confirms payment.
+# A settled visit only holds the tables it has not released: a paid kiosk order keeps
+# its table until staff clear it. Every other flow releases its tables when settled.
+TABLE_HOLDING_STATUSES = (*ACTIVE_STATUSES, "Settled")
+# A kiosk order paid at the counter first is a draft Sales Order until a cashier
+# confirms the payment, which submits it and bills the visit: it is then Paid.
 KIOSK_AWAITING_PAYMENT = "Awaiting Payment"
+KIOSK_PAID = "Paid"
 KIOSK_SENT_TO_KITCHEN = "Sent to Kitchen"
+TABLE_CLEARED = "Table cleared"
 
 
 def current_assignments(table):
@@ -117,7 +123,7 @@ def lock_tables(tables, restaurant, session=None, branch=None):
 			if (
 				assignment.parent != session
 				and frappe.db.get_value(SESSION, assignment.parent, "status", for_update=True)
-				in ACTIVE_STATUSES
+				in TABLE_HOLDING_STATUSES
 			):
 				_fail("TABLE_OCCUPIED", _("Table {0} already belongs to an active session.").format(table))
 		for order in current_legacy_orders(table):
@@ -211,13 +217,34 @@ def list_sessions(pos_profile):
 	profile = resolve_pos_profile(pos_profile)
 	restaurant = require_restaurant_profile(profile.name)
 	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
-	rows = frappe.get_all(
+	paid = frappe.get_all(
 		SESSION,
 		filters={
 			"restaurant": restaurant,
 			"branch": profile.vunapos_branch,
-			"status": ["in", ACTIVE_STATUSES],
+			"status": "Settled",
+			"kiosk_status": KIOSK_PAID,
 		},
+		pluck="name",
+	)
+	holding = (
+		set(
+			frappe.get_all(
+				"Restaurant Session Table",
+				filters={"parent": ["in", paid], "released_at": ["is", "not set"]},
+				pluck="parent",
+			)
+		)
+		if paid
+		else set()
+	)
+	rows = frappe.get_all(
+		SESSION,
+		or_filters=[
+			["status", "in", ACTIVE_STATUSES],
+			["name", "in", sorted(holding) or [""]],
+		],
+		filters={"restaurant": restaurant, "branch": profile.vunapos_branch},
 		fields=[
 			"name",
 			"customer",
@@ -274,10 +301,15 @@ def list_sessions(pos_profile):
 	)
 	rounds = frappe.get_all(
 		"Sales Order",
-		filters={"vunapos_restaurant_session": ["in", [row.name for row in rows]], "docstatus": 1},
-		fields=["name", "vunapos_restaurant_session"],
+		filters={"vunapos_restaurant_session": ["in", [row.name for row in rows]], "docstatus": ["!=", 2]},
+		fields=["name", "vunapos_restaurant_session", "docstatus"],
 		order_by="creation asc",
 	)
+	awaiting = {row.name for row in rows if row.kiosk_status == KIOSK_AWAITING_PAYMENT}
+	# Only a kiosk order awaiting payment is a draft; never list stray drafts.
+	rounds = [
+		order for order in rounds if order.docstatus == 1 or order.vunapos_restaurant_session in awaiting
+	]
 	for row in rows:
 		row["preparation_status"] = preparation_summary(
 			[ticket for ticket in tickets if ticket.restaurant_session == row.name]
@@ -292,7 +324,7 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 	if doc.status != "Open":
 		_fail("SESSION_NOT_OPEN", _("Only open sessions can be updated."))
 	if customer is not None and customer != doc.customer:
-		if frappe.db.exists("Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": 1}):
+		if frappe.db.exists("Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": ["!=", 2]}):
 			_fail("SESSION_CUSTOMER_LOCKED", _("The customer cannot change after a round is submitted."))
 		doc.customer = customer
 		from vunapos.services.invoice_service import _build_sales_order_doc
@@ -418,7 +450,9 @@ def get_session(session):
 	return session_to_dict(_load(session))
 
 
-def create_round(session, items, idempotency_key, order_note=None, pos_profile=None, kitchen_routing=None):
+def create_round(
+	session, items, idempotency_key, order_note=None, pos_profile=None, kitchen_routing=None, draft=False
+):
 	from vunapos.services.restaurant_order_service import create_order
 
 	doc = _load(session, for_update=True)
@@ -431,7 +465,7 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 		"Sales Order",
 		{
 			"vunapos_restaurant_session": doc.name,
-			"docstatus": 1,
+			"docstatus": ["!=", 2],
 			"vunapos_idempotency_key": ["!=", idempotency_key],
 		},
 	):
@@ -456,6 +490,7 @@ def create_round(session, items, idempotency_key, order_note=None, pos_profile=N
 		restaurant_session=doc.name,
 		price_list=doc.get("selling_price_list"),
 		kitchen_routing=kitchen_routing,
+		draft=draft,
 	)
 
 
@@ -491,6 +526,45 @@ def cancel_empty_session(session):
 	doc.flags.restaurant_session_write = True
 	doc.save()
 	return session_to_dict(doc)
+
+
+def clear_table(session):
+	"""Free the tables of a paid kiosk visit once its guests leave."""
+	from vunapos.setup.utils import CASHIER_ROLE, RESTAURANT_MANAGER_ROLE, WAITER_ROLE
+
+	if not set(frappe.get_roles()) & {WAITER_ROLE, CASHIER_ROLE, RESTAURANT_MANAGER_ROLE, "System Manager"}:
+		frappe.throw(_("Only restaurant staff can clear a table."), frappe.PermissionError)
+	doc = _load(session, for_update=True)
+	tables = [row.table for row in doc.tables if not row.released_at]
+	if doc.status != "Settled" or doc.get("kiosk_status") != KIOSK_PAID:
+		_fail("TABLE_NOT_CLEARABLE", _("Only a paid kiosk order's table is cleared here."))
+	if not tables:
+		return session_to_dict(doc)
+	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
+	now = now_datetime()
+	for row in doc.tables:
+		if not row.released_at:
+			row.update(
+				{"released_at": now, "released_by": frappe.session.user, "release_reason": TABLE_CLEARED}
+			)
+	doc.flags.restaurant_session_write = True
+	doc.save(ignore_permissions=True)
+	return session_to_dict(doc)
+
+
+def protect_session_round(doc, method=None):
+	"""Rounds enter a visit only through the restaurant actions; a draft is never re-saved.
+
+	A kiosk login may create Sales Orders, so without this it could insert one into
+	another visit through the REST API. A kiosk draft is only submitted or deleted.
+	"""
+	if not doc.get("vunapos_restaurant_session") or doc.docstatus != 0:
+		return
+	if doc.is_new():
+		if not frappe.flags.get("vunapos_inserting_session_round"):
+			_fail("SESSION_MANAGED_OPERATION", _("Add orders to a visit through the restaurant actions."))
+		return
+	_fail("ROUND_ALREADY_COMMITTED", _("A kiosk order awaiting payment cannot be changed."))
 
 
 def protect_committed_round(doc, method=None):

@@ -50,7 +50,29 @@ describe("kiosk flow", () => {
 		const state = startOrder([takeaway], "Kiosk 1", newKey);
 		expect(state.step).toBe("menu");
 		expect(state.draft?.service_type).toBe("Takeaway");
-		expect(back(state, 1)).toEqual(KIOSK_START);
+		expect(back(state).step).toBe("service");
+	});
+
+	it("opens on the service choice, the kiosk's home screen", () => {
+		expect(KIOSK_START.step).toBe("service");
+		expect(startOrder([dineIn, takeaway], "Kiosk 1", newKey)).toEqual(KIOSK_START);
+	});
+
+	it("starts at a preset table, as a QR code on the table will", () => {
+		const entry = { table: { name: "tbl-7", table_label: "7" } };
+		const start = startOrder([dineIn, takeaway], "Kiosk 1", newKey, entry);
+		const menu = chooseService(start, dineIn, "Kiosk 1", newKey);
+		expect(menu.step).toBe("menu");
+		expect(menu.draft).toMatchObject({ service_type: "Dine In", table: "tbl-7", table_label: "7" });
+		expect(startOrder([dineIn], "Kiosk 1", newKey, entry).step).toBe("menu");
+		// Back goes to the service choice, never the table step, and can switch to takeaway with the cart.
+		const filled = updateCart(menu, (draft) => addMenuItem(draft, burger, newKey));
+		const services = back(filled);
+		expect(services.step).toBe("service");
+		const switched = chooseService(services, takeaway, "Kiosk 1", newKey);
+		expect(switched.step).toBe("menu");
+		expect(switched.draft).toMatchObject({ service_type: "Takeaway", table: null });
+		expect(cartQuantity(switched)).toBe(1);
 	});
 
 	it("gives each order its own key, so a retried checkout places it once", () => {
@@ -66,9 +88,11 @@ describe("kiosk flow", () => {
 		expect(cartQuantity(filled)).toBe(2);
 		const reviewing = review(filled);
 		expect(reviewing.step).toBe("review");
-		expect(back(reviewing, 2)).toEqual({ ...reviewing, step: "menu" });
-		expect(back(filled, 2).step).toBe("table");
-		expect(back(back(filled, 2), 2)).toEqual({ ...KIOSK_START, step: "service" });
+		expect(back(reviewing)).toEqual({ ...reviewing, step: "menu" });
+		expect(back(filled).step).toBe("table");
+		const services = back(back(filled));
+		expect(services.step).toBe("service");
+		expect(cartQuantity(services)).toBe(2);
 	});
 
 	it("ends on the confirmation with the order number", () => {
@@ -94,9 +118,14 @@ describe("kiosk flow", () => {
 
 describe("kiosk idle reset", () => {
 	it("tracks inactivity only while a customer is ordering", () => {
-		expect(tracksIdle("start")).toBe(false);
-		expect(tracksIdle("done")).toBe(false);
-		expect(["service", "table", "menu", "review"].every((step) => tracksIdle(step as never))).toBe(true);
+		const menu = chooseService(KIOSK_START, takeaway, "Kiosk 1", newKey);
+		expect(tracksIdle(KIOSK_START)).toBe(false);
+		expect(tracksIdle(menu)).toBe(false);
+		const filled = updateCart(menu, (draft) => addMenuItem(draft, burger, newKey));
+		expect(tracksIdle(filled)).toBe(true);
+		expect(tracksIdle(review(filled))).toBe(true);
+		expect(tracksIdle(chooseService(KIOSK_START, dineIn, "Kiosk 1", newKey))).toBe(true);
+		expect(tracksIdle({ ...filled, step: "done" })).toBe(false);
 	});
 
 	it("warns after the idle time, then starts over after the warning", () => {

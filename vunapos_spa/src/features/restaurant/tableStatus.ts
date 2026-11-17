@@ -2,14 +2,16 @@ import type { CachedServiceType } from "../../lib/types";
 import type { TableOrderRefDTO, TableStatusDTO } from "./types";
 
 // Status kinds drawn on the floor. Colours come from design decision 13; later
-// stages add "bill-requested", "in-kitchen", "served" and "reserved".
-export type TableStatusKind = "free" | "occupied";
+// stages add "bill-requested", "in-kitchen", "served" and "reserved". "paid" is a
+// kiosk order paid at the counter first: settled, but its guests are still seated.
+export type TableStatusKind = "free" | "occupied" | "paid";
 
-export const TABLE_STATUS_ORDER: readonly TableStatusKind[] = ["free", "occupied"];
+export const TABLE_STATUS_ORDER: readonly TableStatusKind[] = ["free", "occupied", "paid"];
 
 export const TABLE_STATUS_LABEL: Record<TableStatusKind, string> = {
 	free: "Free",
 	occupied: "Occupied",
+	paid: "Paid",
 };
 
 export type TableStatusView = {
@@ -29,17 +31,18 @@ export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableSt
 	const result = new Map<string, TableStatusView>();
 	for (const row of rows) {
 		if (row.session) {
-			result.set(row.table, { kind: "occupied", orders: row.orders, guests: row.session.guest_count,
+			const kind = row.status === "Paid" || row.session.status === "Settled" ? "paid" : "occupied";
+			result.set(row.table, { kind, orders: row.orders, guests: row.session.guest_count,
 				openedAt: row.session.opened_at, waiters: [row.session.waiter_name || row.session.waiter] });
 			continue;
 		}
-		if (row.status !== "Occupied") {
+		if (row.status === "Free") {
 			result.set(row.table, FREE);
 			continue;
 		}
 		if (!row.orders.length) {
 			// A kiosk is only told that a table is taken, not by whom.
-			result.set(row.table, { ...FREE, kind: "occupied" });
+			result.set(row.table, { ...FREE, kind: row.status === "Paid" ? "paid" : "occupied" });
 			continue;
 		}
 		const orders = [...row.orders].sort((a, b) => a.opened_at.localeCompare(b.opened_at));
@@ -136,7 +139,7 @@ export function tableStatusLines(view: TableStatusView, seats: number, now: Date
 	if (view.kind === "free") return [TABLE_STATUS_LABEL.free, `${seats} ${seats === 1 ? "seat" : "seats"}`];
 	const elapsed = elapsedLabel(view.openedAt, now);
 	const second = [guestsLabel(view.guests), waitersLabel(view.waiters)].filter(Boolean).join(" · ");
-	return [[TABLE_STATUS_LABEL.occupied, elapsed].filter(Boolean).join(" · "), second].filter(Boolean);
+	return [[TABLE_STATUS_LABEL[view.kind], elapsed].filter(Boolean).join(" · "), second].filter(Boolean);
 }
 
 // A small table drops status text that does not fit. Whenever any is dropped, the
@@ -148,7 +151,7 @@ export function tableStatusBadge(view: TableStatusView, lines: string[], shown: 
 // Screen readers get everything, including the full waiter names.
 export function tableAccessibleName(label: string, seats: number, view: TableStatusView, now: Date): string {
 	const parts = [`Table ${label}`, `${seats} ${seats === 1 ? "seat" : "seats"}`, TABLE_STATUS_LABEL[view.kind].toLowerCase()];
-	if (view.kind === "occupied") {
+	if (view.kind !== "free") {
 		const guests = guestsLabel(view.guests);
 		if (guests) parts.push(guests);
 		if (view.waiters.length) parts.push(`waiter ${view.waiters.join(", ")}`);

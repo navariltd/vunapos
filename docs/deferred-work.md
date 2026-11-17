@@ -95,15 +95,17 @@ name-only form was replaced by the sheet at the user's request.
 - **Status:** Deferred
 - **Recorded:** 2026-11-17
 - **Area:** Restaurant / kiosk
-- **Reason:** The first kiosk version only places orders; agreed with the user.
+- **Reason:** The kiosk only places orders; payment is taken by a cashier. Agreed
+  with the user.
 
 ### Current behavior
 
-A kiosk order is paid at the counter. With **Pay at the counter first** a VunaPOS
-Cashier confirms the payment on the session screen, which sends the order to the
-kitchen, then bills it through the normal session checkout. With **Bill at the end**
-it goes to the kitchen at once and is billed when the guests leave. See the
-[kiosk setup notes](restaurant/kiosk-setup.md).
+A kiosk order is paid at the counter. With **Pay at the counter first** the order is
+a draft Sales Order until a VunaPOS Cashier chooses **Confirm payment** on the
+session screen and takes the payment: one request submits the order (sending it to
+the kitchen) and bills the visit on the cashier's till, which needs Complete
+Preparation on Billing. With **Bill at the end** it goes to the kitchen at once and
+is billed when the guests leave. See the [kiosk setup notes](restaurant/kiosk-setup.md).
 
 ### Intended outcome
 
@@ -112,10 +114,8 @@ it goes to the kitchen at once and is billed when the guests leave. See the
 
 ### Decision to resolve
 
-Session billing requires recipe dishes to be produced before an invoice is made,
-unless the billing till has Complete Preparation on Billing. Decide how a payment
-taken before preparation is recorded (advance payment, or billing with completion)
-and which till's shift owns it.
+Which till and shift own a payment taken on the kiosk, since the kiosk login has no
+shift and cannot create invoices.
 
 ### Completion checks
 
@@ -156,7 +156,9 @@ on a Retail profile sees "This kiosk is not set up".
 
 A kiosk order nobody pays for stays **Awaiting payment** on Open Orders and keeps its
 table until a cashier or manager cancels it from the session screen (reason and the
-till's order-cancel PIN rule). It reserves no stock and creates no kitchen tickets.
+till's order-cancel PIN rule). Its Sales Order is a draft, so it reserves no stock and
+creates no kitchen tickets; cancelling deletes the draft and records the reason, user
+and time on the Restaurant Session.
 
 ### Intended outcome
 
@@ -213,3 +215,34 @@ browser's print dialog, which the customer must confirm.
 
 - A failed or missing printer still shows the order number on screen.
 - The slip layout fits 58 mm and 80 mm receipt paper.
+
+## DEF-008 — Refund or return a paid kiosk order
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-17
+- **Area:** Restaurant / kiosk / returns
+- **Reason:** Agreed with the user: this version only cancels orders nobody paid for.
+
+### Current behavior
+
+Confirming a kiosk payment submits the order and bills it at once, so a paid order
+is a settled visit with a submitted invoice. The kiosk **Cancel order** action is
+refused once the order is paid, and kitchen cancellation is refused for billed
+orders. A paid order that the kitchen cannot make, or a customer who changes their
+mind after paying, needs a manual invoice return in Desk.
+
+### Intended outcome
+
+- A cashier or manager action that refunds a paid kiosk order (all or some lines)
+  through a Sales Invoice return, with the refund payment, reason and approval.
+- Its kitchen tickets are cancelled and its table released.
+
+### Decision to resolve
+
+Whether stock already moved at billing (ingredients used, dish made) is returned to
+stock or written off when the dish was never made.
+
+### Completion checks
+
+- The refund appears in the shift that pays it out and in closing reconciliation.
+- A refunded order cannot be served or refunded again.

@@ -3,6 +3,7 @@ import { Pencil } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
+import { Sheet } from "../../../components/ui/Sheet";
 import { navigateToOrder, navigateToPosPage, navigateToRestaurantSession } from "../../../lib/stores/navigationStore";
 import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
@@ -12,7 +13,8 @@ import { useTableStatus } from "../hooks/useOrderData";
 import { useStartOrder } from "../hooks/useStartOrder";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import { legendStatuses, statusFor, tableServiceType, tableTapAction } from "../tableStatus";
-import type { RestaurantTableDTO, TableOrderRefDTO } from "../types";
+import type { RestaurantSessionSummaryDTO, RestaurantTableDTO, TableOrderRefDTO } from "../types";
+import { ClearTableButton } from "./ClearTableButton";
 import { FloorCanvas } from "./FloorCanvas";
 import { FloorTabs } from "./FloorTabs";
 import { NewOrderButton } from "./NewOrderButton";
@@ -36,6 +38,7 @@ export function FloorView({ posProfile }: FloorViewProps) {
   const setPickingTableFor = useOrderDraftStore((s) => s.setPickingTableFor);
   const [selectedFloor, setSelectedFloor] = useState<string | null>(null);
   const [chooser, setChooser] = useState<{ table: RestaurantTableDTO; orders: TableOrderRefDTO[] } | null>(null);
+  const [paid, setPaid] = useState<{ table: RestaurantTableDTO; session: RestaurantSessionSummaryDTO } | null>(null);
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const restaurant = bootstrap.data?.restaurant;
 
@@ -54,6 +57,8 @@ export function FloorView({ posProfile }: FloorViewProps) {
 
   const activateTable = (table: RestaurantTableDTO) => {
     const session = status.data?.find((row) => row.table === table.name)?.session;
+    // A paid kiosk order: its guests are still seated until staff clear the table.
+    if (session?.status === "Settled") { setPaid({ table, session }); return; }
     if (session) { setPickingTableFor(null); navigateToRestaurantSession(session.name); return; }
     if (!statuses) {
       showToast({ type: "info", message: "Loading table status. Try again in a moment." });
@@ -157,6 +162,41 @@ export function FloorView({ posProfile }: FloorViewProps) {
         </div>
       ) : null}
       {body}
+      <Sheet
+        isOpen={paid !== null}
+        title={`Table ${paid?.table.table_label ?? ""}`}
+        description={`Kiosk order ${paid?.session.order_number ?? ""} is paid`.replace("  ", " ")}
+        onClose={() => setPaid(null)}
+        footer={
+          paid ? (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setPaid(null);
+                  setPickingTableFor(null);
+                  navigateToRestaurantSession(paid.session.name);
+                }}
+              >
+                Open order
+              </Button>
+              <ClearTableButton
+                session={paid.session.name}
+                tableLabels={paid.session.tables.map((row) => row.table_label).join(", ")}
+                size="md"
+                onCleared={() => {
+                  setPaid(null);
+                  void status.refresh();
+                }}
+              />
+            </div>
+          ) : null
+        }
+      >
+        <p className="text-sm text-on-surface-variant">
+          The bill is settled. Clear the table once the guests have left so it can take new guests.
+        </p>
+      </Sheet>
       <TableOrdersSheet
         tableLabel={chooser?.table.table_label ?? null}
         orders={chooser?.orders ?? []}

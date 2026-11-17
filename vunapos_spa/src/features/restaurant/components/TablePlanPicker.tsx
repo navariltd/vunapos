@@ -18,7 +18,7 @@ import {
   uniqueExactFloorTable,
 } from "../floorPlanSelection";
 import { useNow } from "../hooks/useNow";
-import { deriveTableStatuses, legendStatuses, statusFor } from "../tableStatus";
+import { deriveTableStatuses, legendStatuses, statusFor, TABLE_STATUS_LABEL } from "../tableStatus";
 import type {
   FloorPlanDTO,
   RestaurantTableDTO,
@@ -276,9 +276,7 @@ export function TablePlanPicker({
                       <strong>Table {table.table_label}</strong> ·{" "}
                       {area.floor_name}
                       <span className="block text-xs text-on-surface-variant">
-                        {statusFor(views, table.name).kind === "occupied"
-                          ? "Occupied"
-                          : "Free"}{" "}
+                        {TABLE_STATUS_LABEL[statusFor(views, table.name).kind]}{" "}
                         · {table.seats} seats
                       </span>
                     </button>

@@ -2,38 +2,62 @@ import type { CachedServiceType } from "../../lib/types";
 import { newOrderDraft, type OrderDraft } from "../restaurant/orderDraft";
 import type { KioskOrderDTO } from "../restaurant/types";
 
-// The customer's path through the kiosk: start, service type, a table for dine-in,
-// the menu and cart, a review, then the confirmation with the order number.
-export type KioskStep = "start" | "service" | "table" | "menu" | "review" | "done";
+// The customer's path through the kiosk: the service type (the kiosk's home screen,
+// skipped with only one), a table for dine-in, the menu and cart, a review, then the
+// confirmation with the order number.
+export type KioskStep = "service" | "table" | "menu" | "review" | "done";
+
+// How the customer arrived. A future QR code on a table starts with that table chosen.
+export type KioskEntry = { table?: { name: string; table_label: string } | null };
 
 export type KioskState = {
 	step: KioskStep;
 	service: CachedServiceType | null;
 	draft: OrderDraft | null;
 	placed: KioskOrderDTO | null;
+	entry: KioskEntry;
 };
 
-export const KIOSK_START: KioskState = { step: "start", service: null, draft: null, placed: null };
+export const KIOSK_START: KioskState = { step: "service", service: null, draft: null, placed: null, entry: {} };
 
 // How long the "Still there?" prompt waits before the kiosk starts over.
 export const IDLE_WARNING_SECONDS = 15;
-// How long the confirmation stays up before the next customer's start screen.
+// How long the confirmation stays up before the kiosk returns to its home screen.
 export const DONE_SECONDS = 20;
 
-export function startOrder(services: CachedServiceType[], posProfile: string, newKey: () => string): KioskState {
-	// With one service type there is nothing to choose.
-	const state: KioskState = { ...KIOSK_START, step: "service" };
+// The home screen for the next customer. With one service type there is nothing to
+// choose, so it opens on that type straight away.
+export function startOrder(
+	services: CachedServiceType[],
+	posProfile: string,
+	newKey: () => string,
+	entry: KioskEntry = {},
+): KioskState {
+	const state: KioskState = { ...KIOSK_START, entry };
 	return services.length === 1 ? chooseService(state, services[0], posProfile, newKey) : state;
 }
 
+// Choosing (or switching) the service type. The cart is kept when switching, so a
+// customer who started at a table can still change to takeaway. A table chosen on
+// arrival skips the table step.
 export function chooseService(
 	state: KioskState,
 	service: CachedServiceType,
 	posProfile: string,
 	newKey: () => string,
 ): KioskState {
-	const draft = newOrderDraft({ pos_profile: posProfile, service_type: service.name, idempotency_key: newKey() });
-	return { ...state, service, draft, step: service.requires_table ? "table" : "menu" };
+	const preset = service.requires_table ? state.entry.table : null;
+	const draft = {
+		...newOrderDraft({
+			pos_profile: posProfile,
+			service_type: service.name,
+			table: preset?.name,
+			table_label: preset?.table_label,
+			idempotency_key: newKey(),
+		}),
+		unsent: state.draft?.unsent ?? [],
+	};
+	return { ...state, service, draft, step: service.requires_table && !preset ? "table" : "menu" };
 }
 
 export function chooseTable(state: KioskState, table: { name: string; table_label: string }): KioskState {
@@ -53,19 +77,18 @@ export function review(state: KioskState): KioskState {
 	return cartQuantity(state) ? { ...state, step: "review" } : state;
 }
 
-// One step back. The cart is kept, except when going back past the service type,
-// which with a single service type means the start screen.
-export function back(state: KioskState, serviceCount: number): KioskState {
-	const serviceStep: KioskState = serviceCount > 1 ? { ...KIOSK_START, step: "service" } : KIOSK_START;
+// One step back. Going back to the service choice keeps the cart.
+export function back(state: KioskState): KioskState {
+	const serviceStep: KioskState = { ...state, step: "service" };
 	switch (state.step) {
 		case "review":
 			return { ...state, step: "menu" };
 		case "menu":
-			return state.service?.requires_table ? { ...state, step: "table" } : serviceStep;
+			return state.service?.requires_table && !state.entry.table ? { ...state, step: "table" } : serviceStep;
 		case "table":
 			return serviceStep;
 		default:
-			return KIOSK_START;
+			return state;
 	}
 }
 
@@ -73,9 +96,11 @@ export function placed(state: KioskState, order: KioskOrderDTO): KioskState {
 	return { ...state, placed: order, step: "done" };
 }
 
-// The idle prompt only matters while a customer is part-way through an order.
-export function tracksIdle(step: KioskStep): boolean {
-	return step !== "start" && step !== "done";
+// The idle prompt only matters while a customer is part-way through an order: on the
+// table step, or once something is in the cart.
+export function tracksIdle(state: KioskState): boolean {
+	if (state.step === "done") return false;
+	return state.step === "table" || state.step === "review" || cartQuantity(state) > 0;
 }
 
 export type IdlePhase = "active" | "warning" | "expired";

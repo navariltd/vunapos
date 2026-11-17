@@ -29,11 +29,14 @@ const kioskProfile = {
 };
 
 describe("KioskApp", () => {
-  it("opens on the start screen of a kiosk profile, with no navigation", () => {
+  it("opens on the service choice under the restaurant name, with no navigation", () => {
     state.data = kioskProfile;
     const html = renderToStaticMarkup(<KioskApp />);
-    expect(html).toContain("Tap to order");
+    expect(html).not.toContain("Tap to order");
+    expect(html).toContain('id="kiosk-service-title"');
     expect(html).toContain("Golden Echo");
+    expect(html).toContain("Getting ready");
+    expect(html).not.toContain("Start over");
     expect(html).not.toContain("Open Orders");
   });
 

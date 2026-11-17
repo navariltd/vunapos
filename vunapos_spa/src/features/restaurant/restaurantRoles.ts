@@ -28,6 +28,16 @@ export function isKitchenOnlyUser(roles: string[], canManage = false) {
   );
 }
 
+// Waiters, cashiers and managers clear a paid kiosk order's table when its guests leave.
+export function canClearTables(roles: string[] = [], canManage = false) {
+  return (
+    canManage ||
+    roles.some((role) =>
+      ["VunaPOS Waiter", "VunaPOS Cashier", "VunaPOS Restaurant Manager"].includes(role)
+    )
+  );
+}
+
 export function needsRestaurantShift(roles: string[] = [], canTakePayment = false, canManage = false) {
   // Fail closed for legacy/ordinary POS roles and incomplete cached role data.
   // Only a positively identified kitchen-only operator bypasses the selling gate.

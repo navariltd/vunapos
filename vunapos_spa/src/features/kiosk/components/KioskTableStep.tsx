@@ -24,10 +24,13 @@ type Props = {
 export function KioskTableStep({ plan, statuses, loading, error, onRetry, onSelect, onBack, onStartOver }: Props) {
   const [view, setView] = useState<"plan" | "list">("plan");
   const [notice, setNotice] = useState<string | null>(null);
-  const occupied = new Set((statuses ?? []).filter((row) => row.status === "Occupied").map((row) => row.table));
+  // Occupied, or Paid: a paid order whose guests are still seated.
+  const taken = new Map(
+    (statuses ?? []).filter((row) => row.status !== "Free").map((row) => [row.table, row.status]),
+  );
 
   const choose = (table: Pick<RestaurantTableDTO, "name" | "table_label">) => {
-    if (occupied.has(table.name)) {
+    if (taken.has(table.name)) {
       setNotice(`Table ${table.table_label} is taken. ${TAKEN}.`);
       return;
     }
@@ -92,22 +95,24 @@ export function KioskTableStep({ plan, statuses, loading, error, onRetry, onSele
                 .filter((table) => table.is_active)
                 .sort((a, b) => a.table_label.localeCompare(b.table_label, undefined, { numeric: true }))
                 .map((table) => {
-                  const taken = occupied.has(table.name);
+                  const status = taken.get(table.name);
                   return (
                     <li key={table.name}>
                       <button
                         type="button"
-                        aria-disabled={taken}
+                        aria-disabled={Boolean(status)}
                         className={cn(
                           "flex min-h-28 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 p-3 text-center",
-                          taken
+                          status
                             ? "border-outline-variant bg-surface-container text-on-surface-variant opacity-60"
                             : "border-primary bg-surface text-on-surface hover:bg-primary-container",
                         )}
                         onClick={() => choose(table)}
                       >
                         <span className="text-3xl font-bold">{table.table_label}</span>
-                        <span className="text-sm">{taken ? TAKEN : `${table.seats} seats`}</span>
+                        <span className="text-sm">
+                          {status === "Paid" ? "Paid" : status ? TAKEN : `${table.seats} seats`}
+                        </span>
                       </button>
                     </li>
                   );

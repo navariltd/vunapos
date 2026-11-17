@@ -12,9 +12,10 @@ import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useNow } from "../hooks/useNow";
 import { useOpenOrders } from "../hooks/useOrderData";
-import { filterOrders, isAwaitingPayment, isFiltered } from "../ordersFilter";
+import { filterOrders, isAwaitingPayment, isFiltered, isPaidKioskOrder } from "../ordersFilter";
 import { useOrdersFilterStore } from "../stores/ordersFilterStore";
 import { elapsedLabel, sortedServiceTypes } from "../tableStatus";
+import { ClearTableButton } from "./ClearTableButton";
 import { NewOrderButton } from "./NewOrderButton";
 import { kitchenStatusClass } from "../kitchenStatus";
 
@@ -94,17 +95,21 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
     body = (
       <ul className="min-w-0 divide-y divide-outline-variant overflow-hidden rounded-md border border-outline-variant bg-surface">
         {visible.map((order) => (
-          <li key={order.name}>
+          <li key={order.name} className="flex min-w-0 items-center">
             <button
               type="button"
-              className="flex min-h-16 w-full min-w-0 items-center gap-3 px-3 py-2 text-left hover:bg-surface-container-low sm:px-4"
+              className="flex min-h-16 w-full min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left hover:bg-surface-container-low sm:px-4"
               onClick={() =>
                 order.restaurant_session
                   ? navigateToRestaurantSession(order.restaurant_session)
                   : navigateToOrder(order.name)
               }
             >
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-status-occupied-container text-sm font-semibold text-on-surface">
+              <span
+                className={`flex size-11 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-on-surface ${
+                  isPaidKioskOrder(order) ? "bg-status-paid-container" : "bg-status-occupied-container"
+                }`}
+              >
                 {order.table_label || "—"}
               </span>
               <span className="min-w-0 flex-1">
@@ -136,6 +141,11 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                     Awaiting payment
                   </span>
                 ) : null}
+                {isPaidKioskOrder(order) ? (
+                  <span className="rounded-full bg-status-paid-container px-2 py-1 text-xs font-semibold text-on-surface">
+                    Paid
+                  </span>
+                ) : null}
                 {order.billing_pending ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-200">Billing pending</span> : null}
                 <span className="text-xs font-medium text-on-surface-variant">
                   {elapsedLabel(order.opened_at, now)}
@@ -157,6 +167,15 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                 aria-hidden="true"
               />
             </button>
+            {isPaidKioskOrder(order) && order.restaurant_session && order.table_label ? (
+              <span className="shrink-0 pr-3 sm:pr-4">
+                <ClearTableButton
+                  session={order.restaurant_session}
+                  tableLabels={order.table_label}
+                  onCleared={() => void refresh()}
+                />
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>

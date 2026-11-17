@@ -12,6 +12,7 @@ vunapos.patches.v1_0.move_modifiers_to_items
 vunapos.patches.v1_0.menu_availability_replaces_action
 vunapos.patches.v1_0.move_restaurant_cancel_pin_to_profile
 vunapos.patches.v1_0.allow_restaurant_customer_creation
+vunapos.patches.v1_0.limit_kiosk_sales_order_rights
 # Patches added in this section will be executed after doctypes are migrated
 vunapos.patches.v1_0.remove_offline_session_ttl_field #1
 vunapos.patches.v1_0.enable_pos_profile_operation_controls

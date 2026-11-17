@@ -260,6 +260,16 @@ def cancel_empty_session(session: str):
 @frappe.whitelist(methods=["POST"])
 @_staff_only
 @_atomic_write
+def clear_table(session: str):
+	try:
+		return success(restaurant_session_service.clear_table(session))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
 def create_session_round(
 	session: str,
 	items: list | str,

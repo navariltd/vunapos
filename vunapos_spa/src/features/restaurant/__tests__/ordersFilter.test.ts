@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_ORDERS_FILTER, filterOrders, isFiltered, type OrdersFilter } from "../ordersFilter";
+import { DEFAULT_ORDERS_FILTER, filterOrders, isFiltered, isPaidKioskOrder, type OrdersFilter } from "../ordersFilter";
 import type { RestaurantOrderSummaryDTO } from "../types";
 
 const order = (
@@ -106,6 +106,11 @@ describe("kiosk orders", () => {
 		expect(kioskNames({ query: "Order 48" })).toEqual(["RS-2026-00042"]);
 		expect(kioskNames({ query: "rs-2026-00041" })).toEqual(["RS-2026-00041"]);
 		expect(kioskNames({ query: "SAL-ORD-2026-00112" })).toEqual(["RS-2026-00041"]);
+	});
+
+	it("marks a paid order whose table waits to be cleared", () => {
+		expect(kiosk.filter(isPaidKioskOrder)).toEqual([]);
+		expect(isPaidKioskOrder({ ...kiosk[kiosk.length - 1], kiosk_status: "Paid" })).toBe(true);
 	});
 });
 

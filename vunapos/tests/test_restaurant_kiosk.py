@@ -40,6 +40,8 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		self.kiosk_floor, self.tables, self.other_floor_table = self._floors()
 		self.kiosk_profile = self._kiosk_profile()
 		ensure_test_user(KIOSK_USER, roles=(KIOSK_ROLE,), pos_profile=self.kiosk_profile)
+		# Kiosk confirmation completes preparation whatever this waiter-flow setting says.
+		self._set_till("vunapos_complete_preparation_on_billing", 0)
 
 	def _floors(self):
 		plan = get_floor_plan(self.till)
@@ -141,6 +143,60 @@ class TestRestaurantKiosk(IntegrationTestCase):
 	def _tickets(self, session):
 		return frappe.get_all("Kitchen Order Ticket", filters={"restaurant_session": session}, pluck="name")
 
+	def _set_till(self, fieldname, value):
+		frappe.db.set_value("POS Profile", self.till, fieldname, value)
+		frappe.clear_document_cache("POS Profile", self.till)
+
+	def _confirm(self, session, ok=True, amount=None):
+		"""The cashier reviews the bill, then confirms with a payment covering it."""
+		preview = restaurant.preview_session_bill(session, self.till)
+		self.assertTrue(preview["ok"], preview)
+		totals = preview["data"]["invoice"]["totals"]
+		total = totals["rounded_total"] or totals["grand_total"]
+		mode = self.profile.payments[0].mode_of_payment
+		response = kiosk.confirm_kiosk_payment(
+			session,
+			self.till,
+			preview["data"]["fingerprint"],
+			[{"mode_of_payment": mode, "amount": total if amount is None else amount}],
+		)
+		if ok:
+			self.assertTrue(response["ok"], response)
+			return response["data"]
+		self.assertFalse(response["ok"], response)
+		return response["errors"][0]["code"]
+
+	def _direct_item(self):
+		"""A stock item no kitchen station prepares, sold straight from the shelf."""
+		from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
+
+		group = frappe.get_doc(
+			{
+				"doctype": "Item Group",
+				"item_group_name": f"_Test Kiosk Shelf {self.token}",
+				"parent_item_group": self.root,
+			}
+		).insert(ignore_permissions=True)
+		item = frappe.copy_doc(frappe.get_doc("Item", self.ingredient))
+		item.item_code = f"_Test Kiosk Shelf Item {self.token}"
+		item.item_name = item.item_code
+		item.item_group = group.name
+		item.insert(ignore_permissions=True)
+		make_stock_entry(item_code=item.name, to_warehouse=self.profile.warehouse, qty=50, rate=10)
+		price = frappe.db.get_value(
+			"Item Price", {"item_code": item.name, "price_list": self.profile.selling_price_list}
+		)
+		if not price:
+			frappe.get_doc(
+				{
+					"doctype": "Item Price",
+					"item_code": item.name,
+					"price_list": self.profile.selling_price_list,
+					"price_list_rate": 40,
+				}
+			).insert(ignore_permissions=True)
+		return item.name
+
 	def _user(self, email, roles, profile=None):
 		return ensure_test_user(email, roles=roles, pos_profile=profile or self.till)
 
@@ -165,6 +221,26 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			),
 			(True, KIOSK_PAY_FIRST, 90),
 		)
+
+	def test_upgrade_removes_write_and_submit_from_the_first_kiosk_order_rule(self):
+		from vunapos.patches.v1_0.limit_kiosk_sales_order_rights import FIRST_RULE, OTHER_RIGHTS, execute
+
+		rule = frappe.db.get_value(
+			"Custom DocPerm", {"parent": "Sales Order", "role": KIOSK_ROLE, "permlevel": 0}
+		)
+		first = {**FIRST_RULE, **dict.fromkeys(OTHER_RIGHTS, 0)}
+		frappe.db.set_value("Custom DocPerm", rule, first)
+		execute()
+		rights = frappe.db.get_value(
+			"Custom DocPerm", rule, ["read", "write", "create", "submit"], as_dict=True
+		)
+		self.assertEqual(rights, {"read": 1, "write": 0, "create": 1, "submit": 0})
+		# A rule changed in Role Permissions Manager is kept as it is.
+		frappe.db.set_value("Custom DocPerm", rule, {**first, "delete": 1})
+		execute()
+		self.assertEqual(frappe.db.get_value("Custom DocPerm", rule, "write"), 1)
+		frappe.db.set_value("Custom DocPerm", rule, {**first, "write": 0, "submit": 0})
+		frappe.clear_cache(doctype="Sales Order")
 
 	def test_profile_validation(self):
 		cases = (
@@ -210,7 +286,7 @@ class TestRestaurantKiosk(IntegrationTestCase):
 
 	# ---- placing orders ----
 
-	def test_pay_first_order_is_held_with_a_number_and_a_slip(self):
+	def test_pay_first_order_is_a_draft_with_a_number_and_a_slip(self):
 		placed = self._place(table=self.tables[0])
 		session = frappe.get_doc("Restaurant Session", placed["session"])
 		self.assertEqual(session.kiosk_status, "Awaiting Payment")
@@ -223,8 +299,8 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		self.assertEqual(
 			placed["table_label"], frappe.db.get_value("Restaurant Table", self.tables[0], "table_label")
 		)
-		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 1)
-		# Held: no kitchen tickets, production or reservations until payment is confirmed.
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 0)
+		# A draft: no kitchen tickets, production or reservations until payment is confirmed.
 		self.assertEqual(self._tickets(placed["session"]), [])
 		self.assertFalse(frappe.db.exists("Work Order", {"sales_order": placed["sales_order"]}))
 		self.assertFalse(
@@ -282,6 +358,7 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			restaurant.cancel_order(placed["sales_order"], "Changed my mind"),
 			restaurant.update_session(placed["session"], guest_count=3),
 			restaurant.cancel_empty_session(placed["session"]),
+			restaurant.clear_table(placed["session"]),
 			restaurant.create_session_round(placed["session"], [{"item_code": self.item}], str(uuid4())),
 			restaurant.list_sessions(self.kiosk_profile),
 			restaurant.get_table_status(self.kiosk_profile),
@@ -289,7 +366,7 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			restaurant.preview_session_bill(placed["session"], self.kiosk_profile),
 		):
 			self.assertEqual(response["errors"][0]["code"], "KIOSK_NOT_ALLOWED", response)
-		confirm = kiosk.confirm_kiosk_payment(placed["session"], self.kiosk_profile)
+		confirm = kiosk.confirm_kiosk_payment(placed["session"], self.kiosk_profile, "x", [])
 		self.assertEqual(confirm["errors"][0]["code"], "KIOSK_CONFIRM_NOT_ALLOWED")
 		cancel = kiosk.cancel_kiosk_order(placed["session"], "No", self.kiosk_profile)
 		self.assertEqual(cancel["errors"][0]["code"], "KIOSK_CANCEL_NOT_ALLOWED")
@@ -300,50 +377,179 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		# The menu and the cart check stay available.
 		self.assertTrue(restaurant.get_menu(self.kiosk_profile, TEST_COUNTER_SERVICE)["ok"])
 		frappe.set_user("Administrator")
-		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 1)
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 0)
+
+	def test_kiosk_login_cannot_change_its_draft_through_the_api(self):
+		import frappe.client
+
+		placed = self._place(table=self.tables[0])
+		frappe.set_user(KIOSK_USER)
+		try:
+			draft = frappe.get_doc("Sales Order", placed["sales_order"]).as_dict()
+			self.assertTrue(frappe.has_permission("Sales Order", "read", doc=placed["sales_order"]))
+			for fn in (
+				lambda: frappe.client.save({**draft, "items": draft["items"][:1]}),
+				lambda: frappe.client.submit(draft),
+				lambda: frappe.client.delete("Sales Order", placed["sales_order"]),
+				lambda: frappe.client.set_value("Sales Order", placed["sales_order"], "customer", "x"),
+			):
+				with self.assertRaises(frappe.PermissionError):
+					fn()
+			# Creating is allowed, but not into a visit: the server adds rounds itself.
+			copy = {
+				key: value
+				for key, value in draft.items()
+				if key not in ("name", "owner", "creation", "modified", "modified_by")
+			}
+			copy["items"] = [
+				{key: value for key, value in row.items() if key not in ("name", "parent")}
+				for row in draft["items"]
+			]
+			with self.assertRaises(frappe.ValidationError):
+				frappe.client.insert(copy)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 0)
+		# A session draft is never re-saved, whoever tries.
+		order = frappe.get_doc("Sales Order", placed["sales_order"])
+		order.items[0].qty = 9
+		with self.assertRaises(frappe.ValidationError):
+			order.save()
 
 	# ---- cashier confirmation, billing and cancelling ----
 
-	def test_cashier_confirms_payment_then_bills_through_session_checkout(self):
+	def test_confirming_payment_sends_the_order_and_bills_it_in_one_step(self):
 		placed = self._place(table=self.tables[0])
 		session = placed["session"]
-		# Staff can see it on Open Orders, and cannot bill or add to it before payment is confirmed.
+		# Staff see it on Open Orders with its draft, and cannot bill or add to it directly.
 		row = next(row for row in restaurant.list_sessions(self.till)["data"] if row["name"] == session)
 		self.assertEqual(
-			(row["kiosk_status"], row["order_number"]), ("Awaiting Payment", placed["order_number"])
+			(row["kiosk_status"], row["order_number"], row["sales_orders"]),
+			("Awaiting Payment", placed["order_number"], [placed["sales_order"]]),
 		)
 		preview = restaurant.preview_session_bill(session, self.till)
 		self.assertTrue(preview["ok"], preview)
+		self.assertTrue(preview["data"]["can_checkout"])
+		self.assertTrue(preview["data"]["will_complete_preparation"])
 		blocked = restaurant.checkout_session(session, self.till, preview["data"]["fingerprint"], [])
 		self.assertEqual(blocked["errors"][0]["code"], "KIOSK_ORDER_AWAITING_PAYMENT")
 		extra = restaurant.create_session_round(session, [{"item_code": self.item}], str(uuid4()))
 		self.assertEqual(extra["errors"][0]["code"], "KIOSK_ORDER_AWAITING_PAYMENT")
 
-		confirmed = kiosk.confirm_kiosk_payment(session, self.till)
-		self.assertTrue(confirmed["ok"], confirmed)
-		self.assertEqual(confirmed["data"]["kiosk_status"], "Sent to Kitchen")
-		self.assertEqual(confirmed["data"]["confirmed_by"], "Administrator")
+		confirmed = self._confirm(session)
+		self.assertEqual(confirmed["session"]["status"], "Settled")
+		self.assertEqual(confirmed["session"]["kiosk_status"], "Paid")
+		self.assertEqual(confirmed["session"]["confirmed_by"], "Administrator")
+		invoice = confirmed["invoice"]["name"]
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 1)
 		tickets = self._tickets(session)
 		self.assertEqual(len(tickets), 1)
-		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", tickets[0], "sent_by"), "Administrator")
-		self.assertTrue(
-			frappe.db.exists("Work Order", {"sales_order": placed["sales_order"], "docstatus": 1})
-		)
-		again = kiosk.confirm_kiosk_payment(session, self.till)
+		# Billing made the dish in stock terms; the kitchen still sees a new ticket.
+		ticket = frappe.get_doc("Kitchen Order Ticket", tickets[0])
+		self.assertEqual((ticket.status, ticket.production_completed_at_billing), ("Sent", 1))
+		work_order = frappe.get_doc("Work Order", {"sales_order": placed["sales_order"], "docstatus": 1})
+		self.assertEqual(work_order.produced_qty, work_order.qty)
+		# A retry returns the same bill.
+		again = kiosk.confirm_kiosk_payment(session, self.till, "stale", [])
 		self.assertTrue(again["ok"], again)
+		self.assertEqual(again["data"]["invoice"]["name"], invoice)
 		self.assertEqual(self._tickets(session), tickets)
 
-		for action, expected in (("Accept", "Sent"), ("Start", "Accepted"), ("Ready", "Preparing")):
+		# The paid table stays taken until staff clear it.
+		status = {row["table"]: row for row in restaurant.get_table_status(self.till)["data"]}
+		self.assertEqual(status[self.tables[0]]["status"], "Paid")
+		self.assertEqual(self._place(table=self.tables[0], ok=False), "TABLE_OCCUPIED")
+		frappe.set_user(KIOSK_USER)
+		kiosk_tables = {
+			row["table"]: row for row in kiosk.get_kiosk_setup(self.kiosk_profile)["data"]["tables"]
+		}
+		frappe.set_user("Administrator")
+		self.assertEqual(kiosk_tables[self.tables[0]]["status"], "Paid")
+		self.assertIn(session, [row["name"] for row in restaurant.list_sessions(self.till)["data"]])
+
+		# The kitchen works the ticket after the bill without moving stock again.
+		for action, expected in (
+			("Accept", "Sent"),
+			("Start", "Accepted"),
+			("Ready", "Preparing"),
+			("Serve", "Ready"),
+		):
 			result = restaurant.kitchen_action(tickets[0], action, str(uuid4()), expected)
 			self.assertTrue(result["ok"], result)
-		preview = restaurant.preview_session_bill(session, self.till)["data"]
-		total = preview["invoice"]["totals"]["rounded_total"] or preview["invoice"]["totals"]["grand_total"]
-		mode = self.profile.payments[0].mode_of_payment
-		billed = restaurant.checkout_session(
-			session, self.till, preview["fingerprint"], [{"mode_of_payment": mode, "amount": total}]
+		actions = frappe.get_all(
+			"Kitchen Ticket Action",
+			filters={"kitchen_ticket": tickets[0], "outcome": "Succeeded"},
+			fields=["action", "stock_entries"],
+			order_by="creation asc",
 		)
-		self.assertTrue(billed["ok"], billed)
-		self.assertEqual(billed["data"]["session"]["status"], "Settled")
+		self.assertEqual(
+			[row.action for row in actions], ["Complete for Billing", "Accept", "Start", "Ready", "Serve"]
+		)
+		self.assertNotEqual(actions[0].stock_entries, "[]")
+		self.assertEqual({row.stock_entries for row in actions[1:]}, {"[]"})
+		self.assertEqual(
+			frappe.db.count("Stock Entry", {"work_order": work_order.name, "docstatus": 1}),
+			len(frappe.parse_json(actions[0].stock_entries)),
+		)
+		# Serving does not free the table; clearing it does.
+		self.assertEqual(status[self.tables[0]]["status"], "Paid")
+		waiter = self._user("_test_kiosk_waiter@example.com", (WAITER_ROLE,))
+		frappe.set_user(waiter)
+		cleared = restaurant.clear_table(session)
+		frappe.set_user("Administrator")
+		self.assertTrue(cleared["ok"], cleared)
+		self.assertTrue(all(row["released_at"] for row in cleared["data"]["tables"]))
+		self.assertNotIn(session, [row["name"] for row in restaurant.list_sessions(self.till)["data"]])
+		self.assertEqual(self._place(table=self.tables[0])["table"], self.tables[0])
+
+	def test_confirming_on_a_later_day(self):
+		placed = self._place(table=self.tables[0])
+		yesterday = add_days(nowdate(), -1)
+		frappe.db.set_value(
+			"Sales Order", placed["sales_order"], {"transaction_date": yesterday, "delivery_date": yesterday}
+		)
+		frappe.db.set_value("Sales Order Item", {"parent": placed["sales_order"]}, "delivery_date", yesterday)
+		frappe.db.set_value("Restaurant Session", placed["session"], "order_date", yesterday)
+		confirmed = self._confirm(placed["session"])
+		invoice = frappe.get_doc(confirmed["invoice"]["doctype"], confirmed["invoice"]["name"])
+		self.assertEqual(str(invoice.posting_date), nowdate())
+		self.assertEqual(invoice.docstatus, 1)
+
+	def test_a_failed_confirmation_leaves_the_order_awaiting_payment(self):
+		placed = self._place(table=self.tables[0])
+		# An underpayment fails after the draft was submitted and the kitchen work posted.
+		self._confirm(placed["session"], ok=False, amount=1)
+		self.assertEqual(
+			frappe.db.get_value("Restaurant Session", placed["session"], ["status", "kiosk_status"]),
+			("Open", "Awaiting Payment"),
+		)
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 0)
+		self.assertEqual(self._tickets(placed["session"]), [])
+		self.assertFalse(frappe.db.exists("Work Order", {"sales_order": placed["sales_order"]}))
+		self._confirm(placed["session"])
+
+	def test_confirming_ignores_the_complete_preparation_on_billing_setting(self):
+		self._set_till("vunapos_complete_preparation_on_billing", 1)
+		self.addCleanup(self._set_till, "vunapos_complete_preparation_on_billing", 0)
+		placed = self._place(table=self.tables[0])
+		self.assertEqual(self._confirm(placed["session"])["session"]["status"], "Settled")
+		tickets = self._tickets(placed["session"])
+		self.assertEqual(
+			frappe.db.get_value(
+				"Kitchen Order Ticket", tickets[0], ["status", "production_completed_at_billing"]
+			),
+			("Sent", 1),
+		)
+		# Shelf items need no kitchen, so confirming makes no ticket.
+		self._set_till("vunapos_complete_preparation_on_billing", 0)
+		shelf = self._place(
+			table=self.tables[1],
+			items=[{"item_code": self._direct_item(), "qty": 1, "line_id": str(uuid4())}],
+		)
+		preview = restaurant.preview_session_bill(shelf["session"], self.till)["data"]
+		self.assertEqual((preview["can_checkout"], preview["will_complete_preparation"]), (True, False))
+		self.assertEqual(self._confirm(shelf["session"])["session"]["status"], "Settled")
+		self.assertEqual(self._tickets(shelf["session"]), [])
 
 	def test_only_cashiers_confirm_and_managers_or_cashiers_cancel(self):
 		placed = self._place(table=self.tables[0])
@@ -351,7 +557,7 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		manager = self._user("_test_kiosk_manager@example.com", (RESTAURANT_MANAGER_ROLE,))
 		for user in (waiter, manager):
 			frappe.set_user(user)
-			response = kiosk.confirm_kiosk_payment(placed["session"], self.till)
+			response = kiosk.confirm_kiosk_payment(placed["session"], self.till, "x", [])
 			self.assertEqual(response["errors"][0]["code"], "KIOSK_CONFIRM_NOT_ALLOWED", user)
 		frappe.set_user(waiter)
 		response = kiosk.cancel_kiosk_order(placed["session"], "Never paid", self.till)
@@ -361,11 +567,10 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		frappe.set_user("Administrator")
 
-	def test_cancelling_an_unpaid_order_frees_its_table_and_follows_the_pin_rule(self):
+	def test_cancelling_an_unpaid_order_deletes_its_draft_and_frees_its_table(self):
 		placed = self._place(table=self.tables[0])
 		cashier = self._user("_test_kiosk_cashier@example.com", (CASHIER_ROLE,))
-		frappe.db.set_value("POS Profile", self.till, "vunapos_require_manager_pin_order_cancel", 1)
-		frappe.clear_document_cache("POS Profile", self.till)
+		self._set_till("vunapos_require_manager_pin_order_cancel", 1)
 		try:
 			frappe.set_user(cashier)
 			self.assertEqual(
@@ -382,19 +587,53 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			self.assertTrue(response["ok"], response)
 		finally:
 			frappe.set_user("Administrator")
-			frappe.db.set_value("POS Profile", self.till, "vunapos_require_manager_pin_order_cancel", 0)
-			frappe.clear_document_cache("POS Profile", self.till)
+			self._set_till("vunapos_require_manager_pin_order_cancel", 0)
 		self.assertEqual(response["data"]["status"], "Cancelled")
-		order = frappe.get_doc("Sales Order", placed["sales_order"])
-		self.assertEqual(
-			(order.docstatus, order.vunapos_cancel_reason, order.vunapos_cancel_approved_by),
-			(2, "Never paid", "Manager"),
-		)
+		self.assertFalse(frappe.db.exists("Sales Order", placed["sales_order"]))
+		session = frappe.get_doc("Restaurant Session", placed["session"])
+		self.assertEqual((session.cancel_reason, session.cancelled_by), ("Never paid", cashier))
+		self.assertTrue(session.cancelled_at)
+		self.assertEqual(session.tables[0].release_reason, "Kiosk order cancelled")
 		self.assertEqual(self._place(table=self.tables[0])["table"], self.tables[0])
 
-	def test_an_order_sent_to_the_kitchen_is_not_cancelled_here(self):
+	def test_cancelling_records_the_manager_who_approved_it_with_a_pin(self):
+		from vunapos.services.pin_service import _issue_token
+
+		cashier = self._user("_test_kiosk_cashier@example.com", (CASHIER_ROLE,))
+		approved = self._place(table=self.tables[0])
+		self._set_till("vunapos_require_manager_pin_order_cancel", 1)
+		try:
+			frappe.set_user(cashier)
+			# The PIN token names the manager's Sales Person from the till's PIN users.
+			token = _issue_token(
+				frappe.get_doc("POS Profile", self.till), "manager_order_cancel", "Mary Manager"
+			)
+			response = kiosk.cancel_kiosk_order(approved["session"], "Never paid", self.till, token)
+			self.assertTrue(response["ok"], response)
+		finally:
+			frappe.set_user("Administrator")
+			self._set_till("vunapos_require_manager_pin_order_cancel", 0)
+		self.assertEqual(
+			frappe.db.get_value(
+				"Restaurant Session", approved["session"], ["cancelled_by", "cancel_approved_by"]
+			),
+			(cashier, "Mary Manager"),
+		)
+		# Without the PIN rule nobody approves it.
+		unapproved = self._place(table=self.tables[1])
+		frappe.set_user(cashier)
+		try:
+			response = kiosk.cancel_kiosk_order(unapproved["session"], "Never paid", self.till)
+		finally:
+			frappe.set_user("Administrator")
+		self.assertTrue(response["ok"], response)
+		self.assertIsNone(
+			frappe.db.get_value("Restaurant Session", unapproved["session"], "cancel_approved_by")
+		)
+
+	def test_a_paid_order_is_not_cancelled_here(self):
 		placed = self._place()
-		self.assertTrue(kiosk.confirm_kiosk_payment(placed["session"], self.till)["ok"])
+		self._confirm(placed["session"])
 		response = kiosk.cancel_kiosk_order(placed["session"], "Too late", self.till)
 		self.assertEqual(response["errors"][0]["code"], "KIOSK_ORDER_NOT_CANCELLABLE")
 
@@ -405,6 +644,7 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		frappe.clear_document_cache("POS Profile", self.kiosk_profile)
 		placed = self._place(table=self.tables[0])
 		self.assertEqual(placed["kiosk_status"], "Sent to Kitchen")
+		self.assertEqual(frappe.db.get_value("Sales Order", placed["sales_order"], "docstatus"), 1)
 		tickets = self._tickets(placed["session"])
 		self.assertEqual(len(tickets), 1)
 		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", tickets[0], "sent_by"), KIOSK_USER)
@@ -426,6 +666,8 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			placed["session"], self.till, preview["fingerprint"], [{"mode_of_payment": mode, "amount": total}]
 		)
 		self.assertTrue(billed["ok"], billed)
+		# Only a paid-first order keeps its table after billing.
+		self.assertTrue(all(row["released_at"] for row in billed["data"]["session"]["tables"]))
 
 	# ---- leaving the kiosk and printing ----
 

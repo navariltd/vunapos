@@ -732,7 +732,10 @@ export function SessionScreen({
             View orders ({session.rounds.length})
           </Button>
         ) : null}
-        {session && posProfile ? (
+        {/* A cashier confirms a kiosk order awaiting payment from its banner. */}
+        {session &&
+        posProfile &&
+        !(session.kiosk_status === "Awaiting Payment" && bootstrap.data?.can_take_payment) ? (
           <SessionBill
             session={session}
             posProfile={posProfile}
