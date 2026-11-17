@@ -220,25 +220,20 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			(True, KIOSK_PAY_FIRST, 90),
 		)
 
-	def test_upgrade_removes_write_and_submit_from_the_first_kiosk_order_rule(self):
-		from vunapos.patches.v1_0.limit_kiosk_sales_order_rights import FIRST_RULE, OTHER_RIGHTS, execute
+	def test_a_fresh_install_lets_the_kiosk_create_read_and_print_its_own_orders(self):
+		from vunapos.setup.utils import ensure_vunapos_roles
 
-		rule = frappe.db.get_value(
-			"Custom DocPerm", {"parent": "Sales Order", "role": KIOSK_ROLE, "permlevel": 0}
+		rule = {"parent": "Sales Order", "role": KIOSK_ROLE, "permlevel": 0}
+		frappe.db.delete("Custom DocPerm", rule)
+		ensure_vunapos_roles()
+		rights = (
+			"read", "write", "create", "submit", "cancel", "amend", "delete", "print",
+			"email", "report", "export", "import", "share", "select", "if_owner",
+		)  # fmt: skip
+		granted = frappe.db.get_value("Custom DocPerm", rule, rights, as_dict=True)
+		self.assertEqual(
+			{right for right in rights if granted[right]}, {"read", "create", "print", "if_owner"}
 		)
-		first = {**FIRST_RULE, **dict.fromkeys(OTHER_RIGHTS, 0)}
-		frappe.db.set_value("Custom DocPerm", rule, first)
-		execute()
-		rights = frappe.db.get_value(
-			"Custom DocPerm", rule, ["read", "write", "create", "submit"], as_dict=True
-		)
-		self.assertEqual(rights, {"read": 1, "write": 0, "create": 1, "submit": 0})
-		# A rule changed in Role Permissions Manager is kept as it is.
-		frappe.db.set_value("Custom DocPerm", rule, {**first, "delete": 1})
-		execute()
-		self.assertEqual(frappe.db.get_value("Custom DocPerm", rule, "write"), 1)
-		frappe.db.set_value("Custom DocPerm", rule, {**first, "write": 0, "submit": 0})
-		frappe.clear_cache(doctype="Sales Order")
 
 	def test_profile_validation(self):
 		cases = (
