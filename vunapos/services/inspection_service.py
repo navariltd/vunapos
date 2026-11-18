@@ -3,6 +3,7 @@
 import math
 
 import frappe
+from frappe import _
 from frappe.model.workflow import (
 	apply_workflow,
 	get_transitions,
@@ -16,7 +17,7 @@ from vunapos.services.stock_service import _inspection_for_row, _receipt_context
 
 
 def _context(pos_profile, stock_entry, receipt, row_name, lock=False):
-	profile, source, doc, _ = _receipt_context(pos_profile, stock_entry, receipt, lock=lock)
+	profile, source, doc, _pending = _receipt_context(pos_profile, stock_entry, receipt, lock=lock)
 	row = next((r for r in doc.items if r.name == row_name and r.t_warehouse == profile.warehouse), None)
 	if not row:
 		fail("Choose an item on this receipt.")
@@ -49,7 +50,7 @@ def _context(pos_profile, stock_entry, receipt, row_name, lock=False):
 			fail("The linked inspection does not match this receipt item.")
 	else:
 		if not state["create_url"]:
-			frappe.throw("You cannot create an inspection for this receipt item.", frappe.PermissionError)
+			frappe.throw(_("You cannot create an inspection for this receipt item."), frappe.PermissionError)
 		inspection = frappe.new_doc("Quality Inspection")
 		inspection.update(state["defaults"])
 		inspection.inspected_by = frappe.session.user
@@ -252,7 +253,7 @@ def save(pos_profile, stock_entry, receipt, row_name, payload):
 		if not state["workflow"] or payload["action"] not in [
 			r["action"] for r in state["workflow"]["actions"]
 		]:
-			frappe.throw("You cannot perform this inspection action.", frappe.PermissionError)
+			frappe.throw(_("You cannot perform this inspection action."), frappe.PermissionError)
 		apply_workflow(doc, payload["action"])
 		return _state(receipt_doc, frappe.get_doc("Quality Inspection", doc.name))
 	doc.check_permission("create" if doc.is_new() else "write")
