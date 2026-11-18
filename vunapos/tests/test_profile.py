@@ -15,6 +15,24 @@ from vunapos.tests.helpers import ensure_test_pos_profile, set_invoice_mode
 
 
 class TestVunaPOSProfile(IntegrationTestCase):
+	def test_material_requests_use_existing_profile_workflow_configuration(self):
+		profile = frappe._dict(
+			vunapos_workflow_configuration=[
+				frappe._dict(transaction_doctype="Material Request", apply_workflow=1)
+			]
+		)
+		workflow = frappe._dict(
+			name="Request approval", workflow_state_field="workflow_state", states=[], transitions=[]
+		)
+		with (
+			patch("vunapos.services.workflow_service.frappe.db.get_value", return_value=workflow),
+			patch("vunapos.services.workflow_service.frappe.get_cached_doc", return_value=workflow),
+		):
+			metadata = get_pos_workflow_metadata(profile)
+		self.assertIn("Material Request", metadata["workflows"])
+		profile.vunapos_workflow_configuration[0].apply_workflow = 0
+		self.assertFalse(get_pos_workflow_metadata(profile)["enabled"])
+
 	def test_unconfigured_checkout_and_workflow_tables_are_empty(self):
 		"""A newly introduced child table may be NULL on an existing POS site."""
 		settings = frappe._dict(vunapos_checkout_fields=None)

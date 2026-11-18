@@ -37,7 +37,7 @@ fixtures = [
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/vunapos/css/vunapos.css"
-# app_include_js = "/assets/vunapos/js/vunapos.js"
+app_include_js = ["/assets/vunapos/js/receipt_inspection_context.js"]
 
 # include js, css files in header of web template
 # web_include_css = "/assets/vunapos/css/vunapos.css"
@@ -57,6 +57,7 @@ fixtures = [
 doctype_js = {
 	"POS Profile": "public/js/pos_profile.js",
 	"POS Settings": "public/js/pos_profile.js",
+	"Quality Inspection": "public/js/quality_inspection.js",
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
