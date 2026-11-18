@@ -149,7 +149,7 @@ export function RemakeItems({
       <ConfirmDialog
         isOpen={open}
         title="Remake prepared food"
-        description="Send a separate replacement ticket with the same dish, UOM, notes and add-ons. Extra ingredients are consumed, but the original ordered quantity and charge stay unchanged. This is not a cancellation or refund."
+        description="Prepare the same dish again with its original UOM, notes and add-ons, without adding another customer charge. For a different dish, review cancellation or rejection and place a new order. Food already cooked under the wrong recipe needs a separate stock review; a remake does not correct it."
         confirmLabel={
           pending ? "Retry original remake" : "Approve and send replacement"
         }

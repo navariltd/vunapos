@@ -478,7 +478,7 @@ export function KitchenActions({
       <ConfirmDialog
         isOpen={Boolean(partial)}
         title="Correct served quantity"
-        description="Return meals marked served by mistake to ready to serve. This does not manufacture food or reverse stock, invoices or payments."
+        description="Correct meals marked served by mistake. Only return untouched meals to ready to serve; consumed food needs manager review. This does not move charges to another table, manufacture food, or reverse stock, invoices or payments."
         confirmLabel={
           pending
             ? "Retry original action"
