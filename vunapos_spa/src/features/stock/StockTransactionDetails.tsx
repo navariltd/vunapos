@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "../../components/ui/Button";
 import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ReceiveStockDialog } from "./ReceiveStockDialog";
-import type { AcceptedQuantity } from "./receiving";
+import { receivableDrafts, type AcceptedQuantity } from "./receiving";
 import { useConnectivityStore } from "../../lib/stores/connectivityStore";
 import { applyDelta } from "../../lib/cacheEngine";
 import { unwrapVunaResponse } from "../../services/vunaApi";
@@ -283,9 +283,8 @@ export function StockTransactionDetails({
       : request?.result.status) ||
     transfer?.status ||
     "";
-  const pendingReceipt = transfer?.receipts.find((row) => row.docstatus === 0);
-  const draftReceipts =
-    transfer?.receipts.filter((row) => row.docstatus === 0) || [];
+  const draftReceipts = receivableDrafts(transfer?.receipts || []);
+  const pendingReceipt = draftReceipts[0];
   return (
     <section className="h-full min-h-0 overflow-y-auto border-t border-outline-variant bg-surface p-4 pb-[84px] lg:pb-4">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
@@ -562,6 +561,17 @@ export function StockTransactionDetails({
                   items={transfer.items}
                   canViewRequests={canViewRequests}
                 />
+                {transfer.receipts.some(
+                  (row) => row.docstatus === 0 && row.has_other_warehouses
+                ) ? (
+                  <p className="rounded-md bg-tertiary-container p-3 text-sm text-on-tertiary-container">
+                    A draft receipt includes other warehouses and must be
+                    reviewed in Desk. End Transit here receives only this POS
+                    warehouse’s remaining items in a separate receipt; the mixed
+                    draft is not changed. Recheck that draft’s quantities in
+                    Desk before submitting it.
+                  </p>
+                ) : null}
                 {pendingReceipt ? (
                   <p className="rounded-md bg-tertiary-container p-3 text-sm text-on-tertiary-container">
                     {draftReceipts.length > 1
@@ -578,8 +588,26 @@ export function StockTransactionDetails({
                     {transfer.receipts.map((row) => (
                       <a
                         key={row.name}
-                        href={stockPath("transfers", name, row.name)}
+                        href={
+                          row.docstatus === 0 && row.has_other_warehouses
+                            ? `/desk/stock-entry/${encodeURIComponent(
+                                row.name
+                              )}`
+                            : stockPath("transfers", name, row.name)
+                        }
+                        target={
+                          row.docstatus === 0 && row.has_other_warehouses
+                            ? "_blank"
+                            : undefined
+                        }
+                        rel={
+                          row.docstatus === 0 && row.has_other_warehouses
+                            ? "noreferrer"
+                            : undefined
+                        }
                         onClick={(event) => {
+                          if (row.docstatus === 0 && row.has_other_warehouses)
+                            return;
                           if (
                             !event.ctrlKey &&
                             !event.metaKey &&
@@ -599,7 +627,9 @@ export function StockTransactionDetails({
                           status={row.docstatus === 1 ? "Submitted" : "Draft"}
                         />
                         <span className="underline">
-                          {row.docstatus === 0
+                          {row.docstatus === 0 && row.has_other_warehouses
+                            ? "Review in Desk"
+                            : row.docstatus === 0
                             ? "Open draft receipt"
                             : "View receipt"}
                         </span>

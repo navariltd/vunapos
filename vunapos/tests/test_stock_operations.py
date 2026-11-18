@@ -1616,8 +1616,12 @@ class TestPOSStockOperations(IntegrationTestCase):
 		self.assertTrue(details["ok"], details)
 		self.assertEqual(len(details["data"]["items"]), 1)
 		self.assertTrue(details["data"]["has_other_warehouses"])
+		mixed_draft = self._draft_receipt(entry)
+		mixed_before = frappe.get_doc("Stock Entry", mixed_draft.name).as_dict()
 		result = stock.end_transit(self.profile.name, entry.name, quote["fingerprint"])
 		self.assertTrue(result["ok"], result)
+		self.assertNotEqual(result["data"]["name"], mixed_draft.name)
+		self.assertEqual(frappe.get_doc("Stock Entry", mixed_draft.name).as_dict(), mixed_before)
 		self.assertEqual(self._qty(self.target), 3)
 		self.assertEqual(self._qty(other), 0)
 		self.assertEqual(self._qty(self.transit), 2)
@@ -1704,7 +1708,7 @@ class TestPOSStockOperations(IntegrationTestCase):
 		request = frappe.get_doc("Material Request", response["data"]["name"])
 		self.assertEqual(request.items[0].stock_qty, 48)
 
-	def _tracked_receipt(self, serial=False, resume=False, partial=False):
+	def _tracked_receipt(self, serial=False, resume=False, partial=False, exact=False, multi=False):
 		from erpnext.stock.doctype.stock_entry.stock_entry_utils import make_stock_entry
 
 		from vunapos.tests.helpers import ensure_test_batch_item
@@ -1728,6 +1732,15 @@ class TestPOSStockOperations(IntegrationTestCase):
 			batch_no=batch.name,
 			serial_no=serials,
 		)
+		batches = {batch.name: 3}
+		if multi:
+			second = frappe.get_doc(
+				{"doctype": "Batch", "batch_id": f"TRANSIT-SECOND-{self.token}", "item": self.item}
+			).insert()
+			make_stock_entry(
+				item_code=self.item, to_warehouse=self.source, qty=2, rate=100, batch_no=second.name
+			)
+			batches = {batch.name: 1, second.name: 2}
 		requested = self._request()
 		self.assertTrue(requested["ok"], requested)
 		request = frappe.get_doc("Material Request", requested["data"]["name"])
@@ -1737,7 +1750,7 @@ class TestPOSStockOperations(IntegrationTestCase):
 			to_warehouse=self.transit,
 			qty=3,
 			rate=100,
-			batch_no=batch.name,
+			batches=batches,
 			serial_no=serials,
 			add_to_transit=1,
 			do_not_save=True,
@@ -1747,7 +1760,70 @@ class TestPOSStockOperations(IntegrationTestCase):
 		entry.insert()
 		entry.submit()
 		quote = self._review(entry)
-		if partial:
+		if exact:
+			details = stock.stock_entry_details(self.profile.name, entry.name)
+			self.assertTrue(details["ok"], details)
+			tracking = details["data"]["items"][0]["tracking"]
+			self.assertEqual(sum(row["qty"] for row in tracking), 3)
+			selected = [{**tracking[-1], "qty": 1}]
+			choice = [{"source_row": entry.items[0].name, "qty": 1, "allocations": selected}]
+			for invalid in (
+				[{**selected[0], "batch_no": "NOT-DISPATCHED"}],
+				[{**selected[0], "qty": 2}],
+				selected + selected,
+				[{**selected[0], "qty": -1}],
+				[{**selected[0], "qty": True}],
+			):
+				bad = stock.end_transit(
+					self.profile.name,
+					entry.name,
+					quote["fingerprint"],
+					[{**choice[0], "allocations": invalid}],
+					"invalid-exact",
+				)
+				self.assertFalse(bad["ok"], bad)
+				self.assertEqual(self._qty(self.target), 0)
+			response = stock.end_transit(
+				self.profile.name, entry.name, quote["fingerprint"], choice, "exact-first"
+			)
+			self.assertTrue(response["ok"], response)
+			first = frappe.get_doc("Stock Entry", response["data"]["name"])
+			bundle = frappe.get_doc("Serial and Batch Bundle", first.items[0].serial_and_batch_bundle)
+			self.assertEqual(
+				[(row.batch_no, row.serial_no, abs(row.qty)) for row in bundle.entries],
+				[(selected[0]["batch_no"], selected[0]["serial_no"], 1)],
+			)
+			self.assertEqual(
+				stock.end_transit(self.profile.name, entry.name, quote["fingerprint"], choice, "exact-first")[
+					"data"
+				]["name"],
+				first.name,
+			)
+			changed = stock.end_transit(
+				self.profile.name,
+				entry.name,
+				quote["fingerprint"],
+				[{**choice[0], "allocations": []}],
+				"exact-first",
+			)
+			self.assertFalse(changed["ok"], changed)
+			self.assertEqual(self._qty(self.target), 1)
+			fresh = self._review(entry)
+			if serial:
+				reused = stock.end_transit(
+					self.profile.name, entry.name, fresh["fingerprint"], choice, "reused-serial"
+				)
+				self.assertFalse(reused["ok"], reused)
+			rest = stock.stock_entry_details(self.profile.name, entry.name)["data"]["items"][0]["tracking"]
+			self.assertEqual(sum(row["qty"] for row in rest), 2)
+			response = stock.end_transit(
+				self.profile.name,
+				entry.name,
+				fresh["fingerprint"],
+				[{"source_row": entry.items[0].name, "qty": 2, "allocations": rest}],
+				"exact-rest",
+			)
+		elif partial:
 			response = stock.end_transit(
 				self.profile.name,
 				entry.name,
@@ -1785,8 +1861,8 @@ class TestPOSStockOperations(IntegrationTestCase):
 		receipt = frappe.get_doc("Stock Entry", response["data"]["name"])
 		self.assertEqual(self._qty(self.target), 3)
 		bundle = frappe.get_doc("Serial and Batch Bundle", receipt.items[0].serial_and_batch_bundle)
-		self.assertEqual({row.batch_no for row in bundle.entries}, {batch.name})
-		if serial:
+		self.assertTrue({row.batch_no for row in bundle.entries}.issubset(set(batches)))
+		if serial and not exact:
 			self.assertEqual({row.serial_no for row in bundle.entries}, set(serials))
 
 	def test_end_transit_preserves_native_batch_bundle(self):
@@ -1806,3 +1882,53 @@ class TestPOSStockOperations(IntegrationTestCase):
 
 	def test_partial_serial_receipt_requires_exact_identifier_selection(self):
 		self._tracked_receipt(serial=True, partial=True)
+
+	def test_partial_serial_receipts_select_exact_dispatched_identifiers(self):
+		self._tracked_receipt(serial=True, exact=True)
+
+	def test_partial_multi_batch_receipts_select_exact_dispatched_batches(self):
+		self._tracked_receipt(multi=True, exact=True)
+
+	def test_mixed_warehouse_draft_receipt_remains_desk_only(self):
+		entry = self._dispatch()
+		draft = self._draft_receipt(entry)
+		other = self._warehouse("Other Receipt Target")
+		row = draft.items[0]
+		row.qty = 2
+		part = row.as_dict()
+		part.update(name=None, qty=1, t_warehouse=other)
+		draft.append("items", part)
+		draft.save()
+		details = stock.receipt_details(self.profile.name, entry.name, draft.name)
+		self.assertTrue(details["ok"], details)
+		self.assertTrue(details["data"]["has_other_warehouses"])
+		self.assertFalse(details["data"]["can_submit"])
+		self.assertIn("Desk", details["data"]["blocking_reason"])
+		response = stock.complete_receipt(
+			self.profile.name, entry.name, draft.name, details["data"]["review"]
+		)
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(frappe.get_doc("Stock Entry", draft.name).docstatus, 0)
+		self.assertEqual(self._qty(self.target), 0)
+		self.assertEqual(self._qty(other), 0)
+		self.assertEqual(self._qty(self.transit), 3)
+		# The mixed draft is Desk-only, not a reason to block this warehouse's
+		# remaining transit rows. POS creates its own receipt without splitting
+		# or modifying anyone else's draft.
+		before = frappe.get_doc("Stock Entry", draft.name).as_dict()
+		transfer = stock.stock_entry_details(self.profile.name, entry.name)
+		self.assertTrue(transfer["ok"], transfer)
+		self.assertTrue(transfer["data"]["receipts"][0]["has_other_warehouses"])
+		quote = self._review(entry)
+		response = stock.end_transit(self.profile.name, entry.name, quote["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		self.assertNotEqual(response["data"]["name"], draft.name)
+		received = frappe.get_doc("Stock Entry", response["data"]["name"])
+		self.assertEqual({row.t_warehouse for row in received.items}, {self.target})
+		self.assertEqual(self._qty(self.target), 3)
+		self.assertEqual(self._qty(other), 0)
+		draft = frappe.get_doc("Stock Entry", draft.name)
+		self.assertEqual(draft.as_dict(), before)
+		# A later Desk submission must not be able to receive the same stock twice.
+		with self.assertRaises(frappe.ValidationError):
+			draft.submit()

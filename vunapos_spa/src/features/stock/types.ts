@@ -74,6 +74,11 @@ export type MaterialRequestDetails = {
     stock_uom: string;
   }>;
 };
+export type TrackingAllocation = {
+  batch_no: string | null;
+  serial_no: string | null;
+  qty: number;
+};
 export type StockEntryDetails = {
   name: string;
   posting_date: string;
@@ -86,10 +91,16 @@ export type StockEntryDetails = {
   status: string;
   fingerprint: string | null;
   has_other_warehouses: boolean;
-  receipts: Array<{ name: string; posting_date: string; docstatus: number }>;
+  receipts: Array<{
+    name: string;
+    posting_date: string;
+    docstatus: number;
+    has_other_warehouses?: boolean;
+  }>;
   items: Array<{
     conversion_factor?: number;
     partial_tracking_restricted?: boolean;
+    tracking?: TrackingAllocation[];
     whole_uom?: boolean;
     whole_stock_uom?: boolean;
     qty_precision?: number;
