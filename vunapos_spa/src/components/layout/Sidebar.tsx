@@ -8,6 +8,7 @@ import {
   ReceiptText,
   UserRound,
   Users,
+  Truck,
 } from "lucide-react";
 
 import { cn } from "../../lib/cn";
@@ -23,16 +24,20 @@ const items: { label: POSPage; title: string; icon: typeof Home }[] = [
   { label: "Invoices", title: "Sales History", icon: ReceiptText },
   { label: "Payments", title: "Payments", icon: CreditCard },
   { label: "Customers", title: "Customers", icon: Users },
+  { label: "End Transit", title: "Stock", icon: Truck },
   { label: "Close Shift", title: "Close Shift", icon: LogOut },
 ];
 
 export type NavFeatureFlags = {
   allowCustomerManagement?: boolean;
   allowCustomerPayments?: boolean;
+  allowStockReceiving?: boolean;
 };
 
 function visibleItems(features?: NavFeatureFlags) {
   return items.filter((item) => {
+    if (item.label === "End Transit")
+      return features?.allowStockReceiving === true;
     if (item.label === "Payments")
       return features?.allowCustomerPayments !== false;
     if (item.label === "Customers")
@@ -68,7 +73,7 @@ export function Sidebar({
   useEffect(() => {
     window.localStorage.setItem(
       "vunapos_sidebar_collapsed",
-      String(isCollapsed),
+      String(isCollapsed)
     );
   }, [isCollapsed]);
 
@@ -76,7 +81,7 @@ export function Sidebar({
     <aside
       className={cn(
         "hidden border-r border-outline-variant bg-surface-container-low p-2 transition-[width] lg:flex lg:flex-col",
-        isCollapsed ? "w-[72px]" : "w-60",
+        isCollapsed ? "w-[72px]" : "w-60"
       )}
     >
       <nav className="space-y-0.5">
@@ -91,7 +96,7 @@ export function Sidebar({
               className={cn(
                 "flex h-touch w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors",
                 isActive ? activeLinkClass : inactiveLinkClass,
-                isCollapsed && "justify-center px-0",
+                isCollapsed && "justify-center px-0"
               )}
               onClick={(event) => {
                 event.preventDefault();
@@ -109,7 +114,7 @@ export function Sidebar({
           type="button"
           className={cn(
             "flex h-touch w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface",
-            isCollapsed && "justify-center px-0",
+            isCollapsed && "justify-center px-0"
           )}
           title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={() => setIsCollapsed((current) => !current)}
@@ -127,7 +132,7 @@ export function Sidebar({
           className={cn(
             "flex min-h-touch w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
             activePage === "Profile" ? activeLinkClass : inactiveLinkClass,
-            isCollapsed && "justify-center px-0",
+            isCollapsed && "justify-center px-0"
           )}
           onClick={(event) => {
             event.preventDefault();
@@ -139,7 +144,7 @@ export function Sidebar({
               "flex size-7 shrink-0 items-center justify-center rounded-full",
               activePage === "Profile"
                 ? "bg-on-primary/15 text-on-primary"
-                : "bg-primary-container text-on-primary-container",
+                : "bg-primary-container text-on-primary-container"
             )}
           >
             <UserRound className="size-4" />
@@ -149,7 +154,7 @@ export function Sidebar({
               <span
                 className={cn(
                   "block truncate font-medium",
-                  activePage === "Profile" ? "text-inherit" : "text-on-surface",
+                  activePage === "Profile" ? "text-inherit" : "text-on-surface"
                 )}
               >
                 {cashier || "Cashier"}
@@ -159,7 +164,7 @@ export function Sidebar({
                   "block truncate text-xs",
                   activePage === "Profile"
                     ? "text-inherit opacity-80"
-                    : "text-on-surface-variant",
+                    : "text-on-surface-variant"
                 )}
               >
                 {posProfile || "No POS Profile"}
@@ -196,7 +201,7 @@ export function BottomNav({ features }: { features?: NavFeatureFlags }) {
                 "flex min-h-touch flex-col items-center justify-center gap-1 rounded-md px-1 text-[11px] font-medium transition-colors",
                 isActive
                   ? activeLinkClass
-                  : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface",
+                  : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
               )}
               onClick={(event) => {
                 event.preventDefault();
@@ -204,7 +209,9 @@ export function BottomNav({ features }: { features?: NavFeatureFlags }) {
               }}
             >
               <Icon className="size-4" aria-hidden="true" />
-              <span className="max-w-full truncate">{item.label}</span>
+              <span className="max-w-full truncate">
+                {item.label === "End Transit" ? item.title : item.label}
+              </span>
             </a>
           );
         })}

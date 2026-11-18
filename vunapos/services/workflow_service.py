@@ -3,6 +3,7 @@ from frappe.model.workflow import apply_workflow, get_transitions, get_workflow
 from frappe.utils import cstr
 
 SUPPORTED_WORKFLOW_DOCTYPES = ("Sales Invoice", "POS Invoice", "Sales Order")
+CONFIGURABLE_WORKFLOW_DOCTYPES = (*SUPPORTED_WORKFLOW_DOCTYPES, "Material Request")
 
 
 def workflow_enabled_for(profile, doctype):
@@ -81,7 +82,7 @@ def get_pos_workflow_metadata(profile):
 		return {"enabled": False, "workflows": {}}
 
 	workflows = {}
-	for doctype in SUPPORTED_WORKFLOW_DOCTYPES:
+	for doctype in CONFIGURABLE_WORKFLOW_DOCTYPES:
 		if doctype not in configured:
 			continue
 		workflow = frappe.db.get_value(

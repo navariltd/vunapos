@@ -8,6 +8,7 @@ import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 import { StockBalanceInfo } from "./StockBalanceInfo";
 
 type ItemCardProps = {
+  hidePricing?: boolean;
   currency?: string;
   disabled?: boolean;
   ignoreStock?: boolean;
@@ -16,7 +17,7 @@ type ItemCardProps = {
   onAdd: (item: ItemDTO) => void;
 };
 
-export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock, item, onAdd, pending }: ItemCardProps) {
+export const ItemCard = memo(function ItemCard({ hidePricing, currency, disabled, ignoreStock, item, onAdd, pending }: ItemCardProps) {
   const outOfStock =
     !item.has_variants &&
     !item.is_product_bundle &&
@@ -72,8 +73,7 @@ export const ItemCard = memo(function ItemCard({ currency, disabled, ignoreStock
           </div>
           <div className="mt-auto flex items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <ItemTaxLabel item={item} />
-              <ItemTaxPrice currency={currency} item={item} />
+              {!hidePricing ? <><ItemTaxLabel item={item} /><ItemTaxPrice currency={currency} item={item} /></> : null}
               {item.actual_qty !== undefined ? (
                 <div
                   className={
