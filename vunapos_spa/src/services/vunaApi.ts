@@ -151,6 +151,7 @@ export const vunaMethods = {
 	recoverSessionRound: "vunapos.api.restaurant.recover_session_round",
 	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
 	checkoutSession: "vunapos.api.restaurant.checkout_session",
+	recordWalkout: "vunapos.api.restaurant.record_walkout",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 	getMenu: "vunapos.api.restaurant.get_menu",
 	getTableStatus: "vunapos.api.restaurant.get_table_status",

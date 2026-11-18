@@ -210,6 +210,7 @@ export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> &
 	pos_profile: string; restaurant: string; branch: string; company: string;
 	selling_price_list?: string | null; currency?: string | null;
 	available_waiters?: Array<{ name: string; full_name: string }>;
+	walkout_reason?: string | null; walkout_by?: string | null; walkout_at?: string | null;
 	status: RestaurantSessionStatus;
 	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
 	rounds: RestaurantOrderDTO[];
@@ -224,7 +225,7 @@ export type ModifierGroupDTO = {
 export type SelectedModifier = { group: string; option: string; label: string; extra_rate: number };
 
 export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };
-export type SessionBillDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO; fingerprint: string; account_reference: string; gateway_links?: import("../pos/types").GatewayPaymentLinkDTO[]; can_checkout?: boolean; checkout_block_reason?: string | null; will_complete_preparation?: boolean };
+export type SessionBillDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO; fingerprint: string; account_reference: string; gateway_links?: import("../pos/types").GatewayPaymentLinkDTO[]; can_checkout?: boolean; can_record_walkout?: boolean; checkout_block_reason?: string | null; will_complete_preparation?: boolean };
 export type SessionSettlementDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO };
 
 export type KitchenRoutingIssue = {

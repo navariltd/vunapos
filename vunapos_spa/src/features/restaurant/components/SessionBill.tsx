@@ -21,6 +21,7 @@ import {
 } from "../../../services/vunaApi";
 import { navigateToInvoice } from "../../../lib/stores/navigationStore";
 import { Sheet } from "./Sheet";
+import { RecordWalkout } from "./RecordWalkout";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
 import type { RestaurantSessionDTO, SessionBillDTO } from "../types";
 import type {
@@ -182,7 +183,8 @@ export function SessionBill({
   if (session.status === "Settled" && !canPay)
     return (
       <span className="text-xs text-primary">
-        Settled · {session.billing_invoice}
+        {session.walkout_reason ? "Walkout recorded" : "Settled"} ·{" "}
+        {session.billing_invoice}
       </span>
     );
   if (session.status === "Settled")
@@ -197,7 +199,8 @@ export function SessionBill({
             );
         }}
       >
-        View receipt · {session.billing_invoice}
+        {session.walkout_reason ? "View walkout bill" : "View receipt"} ·{" "}
+        {session.billing_invoice}
       </Button>
     );
   if (!session.rounds.some((row) => row.status !== "Cancelled")) return null;
@@ -227,7 +230,7 @@ export function SessionBill({
           if (!busy) setBill(null);
         }}
         footer={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               variant="ghost"
               disabled={busy}
@@ -238,6 +241,44 @@ export function SessionBill({
             <Button variant="ghost" disabled={busy} onClick={() => void open()}>
               Refresh bill
             </Button>
+            {canPay && bill?.session.status === "Open" ? (
+              <RecordWalkout
+                bill={bill}
+                posProfile={posProfile}
+                currency={currency}
+                onBusy={setBusy}
+                disabled={
+                  busy ||
+                  bill.can_checkout === false ||
+                  Boolean(
+                    recoveryProblem(
+                      bill.gateway_links || [],
+                      getPaymentModes(bootstrap),
+                      totalToMinorUnits(
+                        Number(
+                          bill.invoice.totals.rounded_total ||
+                            bill.invoice.totals.grand_total
+                        ),
+                        bootstrap?.currency_precision || 2
+                      ),
+                      bootstrap?.currency_precision || 2
+                    )
+                  )
+                }
+                onRecorded={(result) => {
+                  toast({
+                    type: "info",
+                    message:
+                      result.invoice.docstatus === 1
+                        ? `Walkout recorded on ${result.invoice.name}. The unpaid balance remains due; tables are released.`
+                        : `Walkout recorded on ${result.invoice.name}. Workflow approval is still required; tables remain occupied.`,
+                  });
+                  setBill(null);
+                  markChanged();
+                  onChanged();
+                }}
+              />
+            ) : null}
             {canPay && bill?.session.status === "Open" ? (
               <Button
                 disabled={
@@ -266,6 +307,15 @@ export function SessionBill({
           </div>
         }
       >
+        {bill?.session.walkout_reason ? (
+          <p
+            role="status"
+            className="mb-4 rounded-md border border-outline-variant p-3 text-sm"
+          >
+            Walkout: {bill.session.walkout_reason} · Approved by{" "}
+            {bill.session.walkout_by}
+          </p>
+        ) : null}
         {bill?.session.status === "Settling" ? (
           <div
             role="status"

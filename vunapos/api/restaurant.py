@@ -75,6 +75,17 @@ def preview_rejection(ticket: str):
 
 @frappe.whitelist(methods=["POST"])
 @_atomic_write
+def record_walkout(session: str, pos_profile: str, fingerprint: str, reason: str):
+	from vunapos.services.restaurant_walkout_service import record
+
+	try:
+		return success(record(session, pos_profile, fingerprint, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_atomic_write
 def handover_session_payment(link: str, session: str, pos_profile: str, reason: str):
 	from vunapos.services.restaurant_payment_service import handover
 

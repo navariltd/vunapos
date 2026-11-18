@@ -83,6 +83,31 @@ class TestRestaurantPayments(IntegrationTestCase):
 		)
 		self.assertEqual(self._start(bill_fingerprint="stale")["errors"][0]["code"], "SESSION_BILL_CHANGED")
 
+	def test_walkout_cannot_ignore_a_pending_payment(self):
+		self.assertTrue(self._start()["ok"])
+		response = restaurant.record_walkout(
+			self.session, self.profile.name, self.quote["fingerprint"], "Guests left"
+		)
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "WALKOUT_PAYMENT_UNCONFIRMED")
+
+	def test_walkout_preserves_confirmed_partial_receipt(self):
+		link = self._paid(self.total / 2)
+		response = restaurant.record_walkout(
+			self.session, self.profile.name, self.quote["fingerprint"], "Guests left with a balance"
+		)
+		self.assertTrue(response["ok"], response)
+		self.assertAlmostEqual(response["data"]["invoice"]["totals"]["outstanding_amount"], self.total / 2)
+		self.assertTrue(frappe.db.get_value(payments.LINK, link.name, "consumed"))
+
+	def test_fully_received_payment_cannot_be_recorded_as_a_walkout(self):
+		self._paid()
+		response = restaurant.record_walkout(
+			self.session, self.profile.name, self.quote["fingerprint"], "Guests left"
+		)
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "WALKOUT_NOT_UNPAID")
+
 	def test_attempt_commits_before_dispatch_and_reload_reuses_it_despite_new_browser_key(self):
 		first, second = self._start(), self._start()
 		self.assertTrue(first["ok"], first)

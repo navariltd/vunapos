@@ -359,6 +359,10 @@ def preview(session, pos_profile=None, loyalty_points=None):
 		"gateway_links": _recover_payments(session, profile, orders),
 		"can_checkout": not pending or auto_complete,
 		"will_complete_preparation": bool(pending and auto_complete),
+		"can_record_walkout": bool(
+			set(frappe.get_roles()) & {"System Manager", "VunaPOS Restaurant Manager"}
+			and CASHIER_ROLE in frappe.get_roles()
+		),
 		"checkout_block_reason": _("Complete kitchen production before taking payment: {0}").format(
 			", ".join(pending)
 		)
@@ -626,7 +630,7 @@ def validate_billing_stock(doc):
 			row.batch_no = allocations[0]["batch_no"] if len(allocations) == 1 else None
 
 
-def checkout(session, pos_profile, fingerprint, payments=None, **options):
+def checkout(session, pos_profile, fingerprint, payments=None, *, _walkout_reason=None, **options):
 	from vunapos.dto.invoice import invoice_to_dict
 	from vunapos.services.gateway_payment_service import consume_gateway_payment_links
 	from vunapos.services.invoice_service import (
@@ -637,9 +641,15 @@ def checkout(session, pos_profile, fingerprint, payments=None, **options):
 	from vunapos.services.workflow_service import workflow_enabled_for
 	from vunapos.utils.permissions import require_create
 
+	if _walkout_reason is not None:
+		from vunapos.services.restaurant_walkout_service import require_manager
+
+		_walkout_reason = require_manager(_walkout_reason)
 	session = _load(session, for_update=True)
 	profile = _profile(session, pos_profile, payment=True)
 	if session.billing_invoice:
+		if _walkout_reason is not None and session.get("walkout_reason") != _walkout_reason:
+			fail("WALKOUT_BILL_EXISTS", _("This visit already has a bill. Review its original incident."))
 		doc = frappe.get_doc(session.billing_doctype, session.billing_invoice)
 		doc.check_permission("read")
 		if doc.docstatus == 2:
@@ -662,6 +672,36 @@ def checkout(session, pos_profile, fingerprint, payments=None, **options):
 	require_create(doc.doctype)
 	from vunapos.services.restaurant_payment_service import validate_checkout
 
+	if _walkout_reason is not None:
+		from vunapos.services.gateway_payment_service import SUCCESSFUL_LINK_STATUSES
+		from vunapos.services.restaurant_payment_service import links
+		from vunapos.services.restaurant_walkout_service import APPROVAL
+
+		payments = []
+		for link in links(session):
+			if link.status not in SUCCESSFUL_LINK_STATUSES:
+				fail(
+					"WALKOUT_PAYMENT_UNCONFIRMED",
+					_("Resolve the pending gateway payment before recording a walkout."),
+				)
+			payments.append(
+				{
+					"mode_of_payment": link.mode_of_payment,
+					"amount": link.amount,
+					"gateway_payment_link": link.name,
+				}
+			)
+		precision = doc.precision("grand_total") or 2
+		if (
+			flt(
+				(doc.rounded_total or doc.grand_total) - sum(flt(row["amount"]) for row in payments),
+				precision,
+			)
+			<= 0
+		):
+			fail("WALKOUT_NOT_UNPAID", _("This bill has no unpaid balance. Review its payments instead."))
+		doc.flags.restaurant_walkout_approval = APPROVAL
+		options.update(is_credit_sale=True, due_date=nowdate())
 	validate_checkout(session, profile, payments)
 	if cint(profile.get("vunapos_complete_preparation_on_billing")):
 		from vunapos.services.kitchen_lifecycle_service import complete_for_billing
@@ -693,6 +733,10 @@ def checkout(session, pos_profile, fingerprint, payments=None, **options):
 	# Workflow drafts retain their table and bill identity until native submission.
 	session.billing_doctype, session.billing_invoice = doc.doctype, doc.name
 	session.billing_profile, session.billing_fingerprint = profile.name, fingerprint
+	if _walkout_reason is not None:
+		session.walkout_reason = _walkout_reason
+		session.walkout_by = frappe.session.user
+		session.walkout_at = now_datetime()
 	session.status = "Settling"
 	session.flags.restaurant_session_write = True
 	session.save(ignore_permissions=True)

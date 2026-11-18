@@ -385,12 +385,15 @@ def _normalize_credit_sale_flag(is_credit_sale):
 	_throw("INVALID_CREDIT_SALE_FLAG", _("Credit sale must be true or false"))
 
 
-def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None):
+def _validate_credit_sale_request(profile, is_credit_sale=False, customer=None, *, doc=None):
 	is_credit_sale = _normalize_credit_sale_flag(is_credit_sale)
 	if not is_credit_sale:
 		return False
 	if not profile or not profile.get("vunapos_allow_credit_sales"):
-		_throw("CREDIT_SALES_NOT_ALLOWED", _("Credit sales are not allowed for this POS Profile"))
+		from vunapos.services.restaurant_walkout_service import authorized
+
+		if not profile or not authorized(doc, profile):
+			_throw("CREDIT_SALES_NOT_ALLOWED", _("Credit sales are not allowed for this POS Profile"))
 	if not customer:
 		_throw("CREDIT_CUSTOMER_REQUIRED", _("Select a customer before completing a credit sale"))
 	return True
@@ -477,7 +480,7 @@ def validate_payment_rows(
 	opening_entry=None,
 	allow_partial_override=False,
 ):
-	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
+	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"), doc=doc)
 	rows = _payment_rows(payments)
 	precision = _currency_precision(doc)
 	expected_total = flt(_invoice_total_for_payment(doc), precision)
@@ -1767,7 +1770,7 @@ def _prepare_invoice_for_checkout(
 	# Preserve the original intentional-hold marker when a held draft is checked
 	# out directly. Editing/restoring a draft clears the active marker separately.
 	held_before_checkout = bool(doc.get(HELD_FIELD))
-	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"))
+	is_credit_sale = _validate_credit_sale_request(profile, is_credit_sale, doc.get("customer"), doc=doc)
 	opening_entry = require_open_pos_session(profile.name)
 	if doc.get("vunapos_restaurant_session"):
 		from vunapos.services.restaurant_billing_service import (
