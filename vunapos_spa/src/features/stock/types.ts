@@ -49,6 +49,9 @@ export type MaterialRequestRow = {
   docstatus: number;
 };
 export type MaterialRequestDetails = {
+  can_edit?: boolean;
+  can_submit?: boolean;
+  edit_reason?: string | null;
   transaction_date: string;
   owner: string;
   company: string;
@@ -166,6 +169,8 @@ export const stockMethods = {
   catalogue: "vunapos.api.stock.catalogue",
   listRequests: "vunapos.api.stock.list_requests",
   requestDetails: "vunapos.api.stock.request_details",
+  requestDraft: "vunapos.api.stock.request_draft",
+  submitRequest: "vunapos.api.stock.submit_request",
   scanRequestItem: "vunapos.api.stock.scan_request_item",
   requestWorkflowAction: "vunapos.api.stock.request_workflow_action",
   createRequest: "vunapos.api.stock.create_request",

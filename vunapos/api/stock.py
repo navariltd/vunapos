@@ -57,6 +57,18 @@ def request_details(pos_profile: str, name: str):
 
 @frappe.whitelist()
 @endpoint
+def request_draft(pos_profile: str, name: str):
+	return stock_service.request_draft(pos_profile, name)
+
+
+@frappe.whitelist(methods=["POST"])
+@endpoint
+def submit_request(pos_profile: str, name: str, modified: str):
+	return stock_service.submit_request(pos_profile, name, modified)
+
+
+@frappe.whitelist()
+@endpoint
 def scan_request_item(pos_profile: str, barcode: str):
 	return stock_service.scan_request_item(pos_profile, barcode)
 

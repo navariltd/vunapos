@@ -6,7 +6,10 @@ import { RequestPage, StockResultNotice } from "../RequestPage";
 import { RequestCheckout } from "../RequestCheckout";
 import { ItemGrid } from "../../pos/components/ItemGrid";
 import { StockOperationsPage } from "../StockOperationsPage";
-import { StockTransferItems } from "../StockTransactionDetails";
+import {
+  StockTransferItems,
+  RequestDraftActions,
+} from "../StockTransactionDetails";
 import { ReceiptActions, ReceiptInspection } from "../StockReceiptDetails";
 import { ReceiveStockDialog } from "../ReceiveStockDialog";
 import {
@@ -22,6 +25,8 @@ import { initialReceiptSelection, receiptLineState } from "../receiving";
 import { stockPath, stockRoute } from "../navigation";
 import {
   addRequestLine,
+  clearRequestDraft,
+  requestDraftScope,
   loadRequestDraft,
   newRequestDraft,
   saveRequestDraft,
@@ -30,7 +35,12 @@ import {
   getPosPageFromPath,
   getPosPagePath,
 } from "../../../lib/stores/navigationStore";
-import type { StockItem, ReceiptDetails, StockEntryDetails } from "../types";
+import type {
+  StockItem,
+  ReceiptDetails,
+  StockEntryDetails,
+  MaterialRequestDetails,
+} from "../types";
 
 vi.mock("../../../features/pos/hooks/useThemeSync", () => ({
   useThemeSync: vi.fn(),
@@ -52,6 +62,26 @@ const item: StockItem = {
 };
 
 describe("stock request draft", () => {
+  it("keeps recovery carts separate and retains the request identity when clearing items", () => {
+    const draft = {
+      ...newRequestDraft(),
+      name: "MR-1",
+      modified: "original",
+      lines: [{ item, qty: 3, uom: "Pcs" }],
+    };
+    const cleared = clearRequestDraft(draft, true);
+    expect(cleared.name).toBe("MR-1");
+    expect(cleared.modified).toBe("original");
+    expect(cleared.key).toBe(draft.key);
+    expect(cleared.lines).toEqual([]);
+    expect(clearRequestDraft(draft).name).toBeUndefined();
+    expect(requestDraftScope("U", "P", "W", "MR-1")).not.toBe(
+      requestDraftScope("U", "P", "W")
+    );
+    expect(requestDraftScope("U", "P", "W", "MR-1")).not.toBe(
+      requestDraftScope("U", "P", "W", "MR-2")
+    );
+  });
   it("converts accepted cartons and pieces without losing the remaining stock", () => {
     const row = {
       name: "row",
@@ -200,6 +230,37 @@ describe("stock request draft", () => {
 });
 
 describe("stock navigation and result", () => {
+  it("offers draft Edit and Submit only when the server permits them", () => {
+    const draft = {
+      can_edit: true,
+      can_submit: true,
+      result: { name: "MR-1", docstatus: 0 },
+    } as MaterialRequestDetails;
+    const actions = (request: MaterialRequestDetails) =>
+      renderToStaticMarkup(
+        <RequestDraftActions
+          request={request}
+          disabled={false}
+          onEdit={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      );
+    expect(actions(draft)).toContain(">Edit</button>");
+    expect(actions(draft)).toContain("Submit Request");
+    expect(actions({ ...draft, can_submit: false })).not.toContain(
+      "Submit Request"
+    );
+    expect(actions({ ...draft, can_edit: false, can_submit: false })).toBe("");
+    expect(
+      actions({ ...draft, result: { ...draft.result, docstatus: 1 } })
+    ).toBe("");
+    expect(stockRoute(`${stockPath("requests", "MR/1")}/edit`)).toEqual({
+      view: "requests",
+      name: "MR/1",
+      editing: true,
+    });
+    expect(stockRoute(`${stockPath("transfers", "STE-1")}/edit`)).toEqual({});
+  });
   it("requires a saved unchanged inspection before showing submit or workflow actions", () => {
     const draft: Inspection = {
       name: null,

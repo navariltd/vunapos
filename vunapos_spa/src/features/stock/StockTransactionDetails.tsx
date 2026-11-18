@@ -2,13 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useFrappePostCall } from "frappe-react-sdk";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "../../components/ui/Button";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 import { ReceiveStockDialog } from "./ReceiveStockDialog";
 import type { AcceptedQuantity } from "./receiving";
 import { useConnectivityStore } from "../../lib/stores/connectivityStore";
 import { applyDelta } from "../../lib/cacheEngine";
 import { unwrapVunaResponse } from "../../services/vunaApi";
 import { StockResultNotice } from "./RequestPage";
-import { navigateToStock, stockPath, type StockView } from "./navigation";
+import {
+  navigateToStock,
+  navigateToRequestEdit,
+  stockPath,
+  type StockView,
+} from "./navigation";
 import { StockStatus } from "./stockUi";
 import { stockDate, stockQty } from "./stockFormatting";
 import {
@@ -95,6 +101,34 @@ export function StockTransferItems({
   );
 }
 
+export function RequestDraftActions({
+  request,
+  disabled,
+  onEdit,
+  onSubmit,
+}: {
+  request: MaterialRequestDetails | null;
+  disabled: boolean;
+  onEdit: () => void;
+  onSubmit: () => void;
+}) {
+  if (request?.result.docstatus !== 0) return null;
+  return (
+    <>
+      {request.can_edit ? (
+        <Button variant="ghost" disabled={disabled} onClick={onEdit}>
+          Edit
+        </Button>
+      ) : null}
+      {request.can_submit ? (
+        <Button disabled={disabled} onClick={onSubmit}>
+          Submit Request
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
 export function StockTransactionDetails({
   profile,
   warehouse,
@@ -116,6 +150,7 @@ export function StockTransactionDetails({
   const { call: advance } = useFrappePostCall(
     stockMethods.requestWorkflowAction
   );
+  const { call: submitRequest } = useFrappePostCall(stockMethods.submitRequest);
   const [request, setRequest] = useState<MaterialRequestDetails | null>(null);
   const [transfer, setTransfer] = useState<StockEntryDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -123,6 +158,7 @@ export function StockTransactionDetails({
   const [error, setError] = useState("");
   const [result, setResult] = useState<StockResult | null>(null);
   const [confirm, setConfirm] = useState(false);
+  const [submitOpen, setSubmitOpen] = useState(false);
   const running = useRef(false);
   const online = useConnectivityStore((state) => state.state === "reachable");
   const reload = useCallback(async () => {
@@ -174,19 +210,29 @@ export function StockTransactionDetails({
   ) => {
     if (running.current || !online) return;
     if (view === "transfers" && !transfer?.fingerprint) return;
-    if (view === "requests" && (!action || !request?.result.modified)) return;
+    if (
+      view === "requests" &&
+      (!request?.result.modified || (!action && !request.can_submit))
+    )
+      return;
     running.current = true;
     setBusy(true);
     setError("");
     try {
       const value =
         view === "requests"
-          ? await advance({
-              pos_profile: profile,
-              name,
-              action,
-              modified: request?.result.modified,
-            })
+          ? action
+            ? await advance({
+                pos_profile: profile,
+                name,
+                action,
+                modified: request?.result.modified,
+              })
+            : await submitRequest({
+                pos_profile: profile,
+                name,
+                modified: request?.result.modified,
+              })
           : await receive({
               pos_profile: profile,
               stock_entry: name,
@@ -197,6 +243,7 @@ export function StockTransactionDetails({
       const saved = unwrapVunaResponse<StockResult>(value);
       setResult(saved);
       setConfirm(false);
+      setSubmitOpen(false);
       if (view === "requests")
         setRequest((current) =>
           current ? { ...current, result: saved } : current
@@ -218,7 +265,10 @@ export function StockTransactionDetails({
           ? cause.message
           : "The action could not be confirmed. Refresh and review before retrying."
       );
-      if (view === "requests") setConfirm(false);
+      if (view === "requests") {
+        setConfirm(false);
+        setSubmitOpen(false);
+      }
     } finally {
       running.current = false;
       setBusy(false);
@@ -273,6 +323,12 @@ export function StockTransactionDetails({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <RequestDraftActions
+              request={request}
+              disabled={busy || !online}
+              onEdit={() => navigateToRequestEdit(name)}
+              onSubmit={() => setSubmitOpen(true)}
+            />
             <Button
               variant="ghost"
               disabled={busy || loading}
@@ -363,6 +419,11 @@ export function StockTransactionDetails({
               <p className="rounded-md bg-tertiary-container p-3 text-sm text-on-tertiary-container">
                 Only items for {warehouse} are shown. The full document includes
                 other warehouses.
+              </p>
+            ) : null}
+            {request?.result.docstatus === 0 && request.edit_reason ? (
+              <p className="text-sm text-on-surface-variant">
+                {request.edit_reason}
               </p>
             ) : null}
             {request?.result.workflow ? (
@@ -558,6 +619,16 @@ export function StockTransactionDetails({
             ) : null}
           </>
         ) : null}
+        <ConfirmDialog
+          isOpen={submitOpen}
+          title="Submit Material Request?"
+          description={`Submit ${name} with the quantities shown? This requests a stock transfer; it does not move stock.`}
+          confirmLabel="Submit Request"
+          loading={busy}
+          confirmDisabled={!online}
+          onCancel={() => setSubmitOpen(false)}
+          onConfirm={() => void act()}
+        />
         {confirm && transfer ? (
           <ReceiveStockDialog
             transfer={transfer}

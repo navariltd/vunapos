@@ -219,6 +219,8 @@ function AuthenticatedApp() {
               warehouse={stock.warehouse}
               canReceive={stock.can_receive}
               canViewRequests={stock.can_view_requests}
+              user={bootstrap.data.current_user || ""}
+              atTop={bootstrap.data.new_item_position === "Top"}
             />
           ) : (
             <p className="p-4">
