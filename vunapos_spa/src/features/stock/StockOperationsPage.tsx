@@ -9,6 +9,7 @@ import { unwrapVunaResponse } from "../../services/vunaApi";
 import { navigateToStock, stockRoute, type StockView } from "./navigation";
 import { StockTransactionDetails } from "./StockTransactionDetails";
 import { StockReceiptDetails } from "./StockReceiptDetails";
+import { RequestPage } from "./RequestPage";
 import { StockStatus } from "./stockUi";
 import { stockDate, stockFieldClass } from "./stockFormatting";
 import {
@@ -52,11 +53,15 @@ export function StockOperationsPage({
   warehouse,
   canReceive,
   canViewRequests,
+  user = "",
+  atTop = false,
 }: {
   profile: string;
   warehouse: string;
   canReceive: boolean;
   canViewRequests: boolean;
+  user?: string;
+  atTop?: boolean;
 }) {
   const path = useNavigationStore((state) => state.currentPath);
   const route = stockRoute(path);
@@ -156,6 +161,17 @@ export function StockOperationsPage({
     setPages((current) => ({ ...current, [view]: 0 }));
   };
   const visible = rows.slice(0, 20);
+  if (route.name && route.editing && permitted)
+    return (
+      <RequestPage
+        key={`${profile}:${route.name}`}
+        profile={profile}
+        warehouse={warehouse}
+        user={user}
+        atTop={atTop}
+        requestName={route.name}
+      />
+    );
   if (route.name && permitted)
     if (route.receipt)
       return (

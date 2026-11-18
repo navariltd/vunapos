@@ -137,13 +137,20 @@ def request_details(pos_profile, name):
 	if doc.company != profile.company or doc.material_request_type != "Material Transfer" or not rows:
 		frappe.throw(_("This request does not target the POS Profile warehouse."), frappe.PermissionError)
 	result = _stock_result(doc, profile)
+	edit_error = _request_edit_error(profile, doc)
 	if result.get("workflow") and (
 		not cint(profile.get("vunapos_allow_stock_requests"))
+		or not doc.get("vunapos_created_in_pos")
 		or doc.get("vunapos_pos_profile") != profile.name
 		or len(rows) != len(doc.items)
 	):
 		result["workflow"]["actions"] = []
 	return {
+		"can_edit": not edit_error,
+		"edit_reason": edit_error,
+		"can_submit": not edit_error
+		and not get_workflow_name("Material Request")
+		and bool(doc.has_permission("submit")),
 		"result": result,
 		"transaction_date": doc.transaction_date,
 		"owner": doc.owner,
@@ -201,7 +208,7 @@ def _item_filters(profile):
 
 def catalogue(pos_profile, query=None, item_code=None):
 	profile = profile_context(pos_profile, "vunapos_allow_stock_requests")
-	require_create("Material Request")
+	_request_catalogue_permission()
 	query = str(query or "").strip()[:140]
 	filters = _item_filters(profile)
 	if item_code:
@@ -235,7 +242,7 @@ def scan_request_item(pos_profile, barcode):
 	from erpnext.stock.utils import scan_barcode
 
 	profile_context(pos_profile, "vunapos_allow_stock_requests")
-	require_create("Material Request")
+	_request_catalogue_permission()
 	barcode = str(barcode or "").strip()
 	if not barcode or len(barcode) > 140:
 		fail("Scan a valid item barcode or enter an item code.")
@@ -323,12 +330,93 @@ def request_workflow_action(pos_profile, name, action, modified):
 	return _stock_result(frappe.get_doc("Material Request", name), profile)
 
 
+def _request_scope_error(profile, doc):
+	if (
+		not cint(profile.get("vunapos_allow_stock_requests"))
+		or not doc.get("vunapos_created_in_pos")
+		or doc.get("vunapos_pos_profile") != profile.name
+		or doc.company != profile.company
+		or doc.material_request_type != "Material Transfer"
+		or not doc.items
+		or any(row.warehouse != profile.warehouse for row in doc.items)
+	):
+		return _("Only POS requests belonging entirely to this POS Profile can be edited here.")
+	if doc.get("vunapos_stock_request_held") and doc.owner != frappe.session.user:
+		return _("This held request belongs to another user.")
+	return None
+
+
+def _request_catalogue_permission():
+	require_read("Material Request")
+	if not (
+		frappe.has_permission("Material Request", "create")
+		or frappe.has_permission("Material Request", "write")
+	):
+		frappe.throw(_("You cannot create or edit Material Requests."), frappe.PermissionError)
+
+
+def _request_edit_error(profile, doc):
+	if reason := _request_scope_error(profile, doc):
+		return reason
+	if doc.docstatus != 0:
+		return _("Only draft Material Requests can be edited.")
+	if not doc.has_permission("write"):
+		return _("You do not have permission to edit this Material Request.")
+	if get_workflow_name("Material Request"):
+		workflow = get_workflow("Material Request")
+		state = next(
+			(
+				row
+				for row in workflow.get("states") or []
+				if row.state == doc.get(workflow.workflow_state_field)
+			),
+			None,
+		)
+		if not state:
+			return _(
+				"This request has no valid workflow state. Ask your workflow administrator to review it."
+			)
+		if state.allow_edit and state.allow_edit != "All" and state.allow_edit not in frappe.get_roles():
+			return _("You cannot edit this request in its current workflow state.")
+	return None
+
+
+def request_draft(pos_profile, name):
+	profile = profile_context(pos_profile, "vunapos_allow_stock_requests")
+	doc = frappe.get_doc("Material Request", name)
+	doc.check_permission("read")
+	if reason := _request_edit_error(profile, doc):
+		frappe.throw(reason, frappe.PermissionError)
+	return _draft_request_data(doc)
+
+
+def submit_request(pos_profile, name, modified):
+	profile = profile_context(pos_profile, "vunapos_allow_stock_requests")
+	doc = frappe.get_doc("Material Request", name, for_update=True)
+	doc.check_permission("read")
+	if reason := _request_scope_error(profile, doc):
+		frappe.throw(reason, frappe.PermissionError)
+	if doc.docstatus == 1:
+		return _stock_result(doc, profile)
+	if reason := _request_edit_error(profile, doc):
+		frappe.throw(reason, frappe.PermissionError)
+	if get_workflow_name("Material Request"):
+		fail("This request has an active workflow. Use its permitted workflow action instead of Submit.")
+	if not modified or str(doc.modified) != str(modified):
+		fail("This request changed. Refresh and review it before submitting.")
+	doc.check_permission("submit")
+	doc.vunapos_stock_request_held = 0
+	doc.submit()
+	return _stock_result(doc, profile)
+
+
 def create_request(
 	pos_profile, items, required_by, request_key, notes=None, hold=False, draft_name=None, draft_modified=None
 ):
 	profile = profile_context(pos_profile, "vunapos_allow_stock_requests")
 	hold = bool(cint(hold))
-	require_create("Material Request")
+	if not draft_name:
+		require_create("Material Request")
 	require_read("Material Request")
 	if not isinstance(request_key, str) or not request_key.strip() or len(request_key) > 140:
 		fail("A request key is required. Reopen the request and try again.")
@@ -393,18 +481,23 @@ def create_request(
 	if draft_name:
 		doc = frappe.get_doc("Material Request", draft_name, for_update=True)
 		doc.check_permission("read")
-		if doc.owner != frappe.session.user or doc.vunapos_pos_profile != profile.name:
-			frappe.throw(_("This request belongs to another user or POS Profile."), frappe.PermissionError)
-		if doc.docstatus != 0 or not doc.get("vunapos_stock_request_held"):
+		if reason := _request_scope_error(profile, doc):
+			frappe.throw(reason, frappe.PermissionError)
+		if doc.docstatus != 0:
 			if doc.vunapos_stock_request_fingerprint == stamp and not hold and doc.docstatus != 2:
 				return _stock_result(doc, profile)
-			fail("This request is no longer held. Reload it before continuing.")
+			fail("This request is no longer a draft. Reload it before continuing.")
+		if reason := _request_edit_error(profile, doc):
+			frappe.throw(reason, frappe.PermissionError)
 		doc.check_permission("write")
 		if str(doc.modified) != str(draft_modified):
 			# A lost hold response can be retried, but stale edits cannot overwrite another terminal.
-			if hold and doc.vunapos_stock_request_fingerprint == stamp:
+			if (
+				bool(doc.vunapos_stock_request_held) == hold
+				and doc.vunapos_stock_request_fingerprint == stamp
+			):
 				return _stock_result(doc, profile)
-			fail("This held request changed in another window. Reload it before continuing.")
+			fail("This request changed in another window. Reload it before continuing.")
 		doc.set("items", rows)
 		doc.schedule_date = date
 		doc.terms = escape_html(notes or "").replace("\n", "<br>")
@@ -486,6 +579,12 @@ def held_request(pos_profile, name):
 		or not doc.get("vunapos_stock_request_held")
 	):
 		fail("This held request is not available for this user and POS Profile.")
+	if reason := _request_edit_error(profile, doc):
+		frappe.throw(reason, frappe.PermissionError)
+	return _draft_request_data(doc)
+
+
+def _draft_request_data(doc):
 	lines = []
 	for row in doc.items:
 		item = frappe.get_doc("Item", row.item_code)
@@ -511,6 +610,8 @@ def held_request(pos_profile, name):
 			}
 		)
 	return {
+		"workflow": get_workflow_name("Material Request") or None,
+		"submitAllowed": not get_workflow_name("Material Request") and bool(doc.has_permission("submit")),
 		"name": doc.name,
 		"modified": str(doc.modified),
 		"lines": lines,

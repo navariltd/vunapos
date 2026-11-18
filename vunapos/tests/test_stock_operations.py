@@ -101,6 +101,205 @@ class TestPOSStockOperations(IntegrationTestCase):
 		self.assertEqual(stock.list_requests(self.profile.name)["data"], [])
 		self.assertFalse(stock.request_details(self.profile.name, name)["ok"])
 
+	def _ordinary_request_draft(self):
+		result = stock.create_request(
+			self.profile.name,
+			[{"item_code": self.item, "qty": 3, "uom": self.uom}],
+			nowdate(),
+			str(uuid4()),
+			hold=True,
+		)
+		self.assertTrue(result["ok"], result)
+		doc = frappe.get_doc("Material Request", result["data"]["name"])
+		doc.vunapos_stock_request_held = 0
+		doc.save()
+		return doc
+
+	def test_ordinary_request_draft_can_be_recovered_edited_and_submitted_without_duplication(self):
+		doc = self._ordinary_request_draft()
+		state = stock.request_details(self.profile.name, doc.name)
+		self.assertTrue(state["ok"], state)
+		self.assertTrue(state["data"]["can_edit"])
+		self.assertTrue(state["data"]["can_submit"])
+		recovered = stock.request_draft(self.profile.name, doc.name)
+		self.assertTrue(recovered["ok"], recovered)
+		self.assertEqual(recovered["data"]["name"], doc.name)
+		self.assertEqual(recovered["data"]["lines"][0]["item"]["item_code"], self.item)
+		response = stock.create_request(
+			self.profile.name,
+			[{"item_code": self.item, "qty": 7, "uom": self.uom}],
+			nowdate(),
+			"edit-existing",
+			draft_name=doc.name,
+			draft_modified=recovered["data"]["modified"],
+		)
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["name"], doc.name)
+		self.assertEqual(response["data"]["docstatus"], 1)
+		doc.reload()
+		self.assertEqual(doc.items[0].qty, 7)
+		self.assertEqual(self._qty(self.target), 0)
+		self.assertFalse(stock.request_draft(self.profile.name, doc.name)["ok"])
+
+	def test_ordinary_request_draft_submit_is_explicit_stale_safe_and_retryable(self):
+		doc = self._ordinary_request_draft()
+		old_modified = str(doc.modified)
+		doc.terms = "Changed by another terminal"
+		doc.save()
+		self.assertFalse(stock.submit_request(self.profile.name, doc.name, old_modified)["ok"])
+		response = stock.submit_request(self.profile.name, doc.name, str(doc.modified))
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["docstatus"], 1)
+		retry = stock.submit_request(self.profile.name, doc.name, old_modified)
+		self.assertTrue(retry["ok"], retry)
+		self.assertEqual(retry["data"]["name"], doc.name)
+
+	def test_ordinary_request_draft_edit_rejects_stale_changes_and_foreign_scope(self):
+		doc = self._ordinary_request_draft()
+		modified = str(doc.modified)
+		doc.terms = "Changed in Desk"
+		doc.save()
+		result = stock.create_request(
+			self.profile.name,
+			[{"item_code": self.item, "qty": 9}],
+			nowdate(),
+			"stale-edit",
+			draft_name=doc.name,
+			draft_modified=modified,
+		)
+		self.assertFalse(result["ok"], result)
+		doc.reload()
+		self.assertNotEqual(doc.items[0].qty, 9)
+		self.profile.db_set("warehouse", self.source)
+		self.assertFalse(stock.request_draft(self.profile.name, doc.name)["ok"])
+		self.assertFalse(stock.submit_request(self.profile.name, doc.name, str(doc.modified))["ok"])
+
+	def test_ordinary_request_recovery_rejects_desk_origins_and_mixed_warehouses(self):
+		doc = self._ordinary_request_draft()
+		desk = frappe.copy_doc(doc)
+		desk.vunapos_stock_request_key = None
+		desk.vunapos_stock_request_fingerprint = None
+		desk.vunapos_created_in_pos = 0
+		desk.vunapos_pos_profile = None
+		desk.insert()
+		self.assertFalse(stock.request_details(self.profile.name, desk.name)["data"]["can_edit"])
+		self.assertFalse(stock.request_draft(self.profile.name, desk.name)["ok"])
+		self.assertFalse(stock.submit_request(self.profile.name, desk.name, str(desk.modified))["ok"])
+		doc.append(
+			"items",
+			{
+				"item_code": self.item,
+				"qty": 1,
+				"warehouse": self.source,
+				"schedule_date": frappe.utils.getdate(nowdate()),
+			},
+		)
+		doc.save()
+		self.assertFalse(stock.request_details(self.profile.name, doc.name)["data"]["can_edit"])
+		self.assertFalse(stock.request_draft(self.profile.name, doc.name)["ok"])
+		self.assertFalse(stock.submit_request(self.profile.name, doc.name, str(doc.modified))["ok"])
+
+	def test_workflow_request_recovery_respects_state_edit_rules_and_never_direct_submits(self):
+		doc = self._ordinary_request_draft()
+		workflow = frappe._dict(
+			name="MR approval",
+			workflow_state_field="status",
+			states=[frappe._dict(state="Draft", allow_edit="System Manager")],
+			transitions=[],
+		)
+		with (
+			patch("vunapos.services.stock_service.get_workflow_name", return_value=workflow.name),
+			patch("vunapos.services.stock_service.get_workflow", return_value=workflow),
+			patch("vunapos.services.stock_service.apply_workflow") as advance,
+		):
+			state = stock.request_details(self.profile.name, doc.name)
+			self.assertTrue(state["ok"], state)
+			self.assertTrue(state["data"]["can_edit"])
+			self.assertFalse(state["data"]["can_submit"])
+			self.assertTrue(stock.request_draft(self.profile.name, doc.name)["ok"])
+			self.assertFalse(stock.submit_request(self.profile.name, doc.name, str(doc.modified))["ok"])
+			response = stock.create_request(
+				self.profile.name,
+				[{"item_code": self.item, "qty": 4}],
+				nowdate(),
+				"workflow-edit",
+				draft_name=doc.name,
+				draft_modified=str(doc.modified),
+			)
+			self.assertTrue(response["ok"], response)
+			self.assertEqual(response["data"]["docstatus"], 0)
+			advance.assert_not_called()
+			workflow.states[0].allow_edit = "_Unassigned Workflow Role"
+			self.assertFalse(stock.request_details(self.profile.name, doc.name)["data"]["can_edit"])
+			self.assertFalse(stock.request_draft(self.profile.name, doc.name)["ok"])
+			doc.reload()
+			self.assertFalse(
+				stock.create_request(
+					self.profile.name,
+					[{"item_code": self.item, "qty": 5}],
+					nowdate(),
+					"locked-edit",
+					draft_name=doc.name,
+					draft_modified=str(doc.modified),
+				)["ok"]
+			)
+
+	def test_existing_request_can_be_saved_without_create_or_submit_permission(self):
+		doc = self._ordinary_request_draft()
+		original = frappe.permissions.has_permission
+
+		def permission(doctype, ptype="read", *args, **kwargs):
+			return (
+				False
+				if doctype == "Material Request" and ptype in ("create", "submit")
+				else original(doctype, ptype, *args, **kwargs)
+			)
+
+		with (
+			patch("frappe.has_permission", side_effect=permission),
+			patch("frappe.permissions.has_permission", side_effect=permission),
+		):
+			recovered = stock.request_draft(self.profile.name, doc.name)
+			self.assertTrue(recovered["ok"], recovered)
+			self.assertFalse(recovered["data"]["submitAllowed"])
+			self.assertTrue(stock.catalogue(self.profile.name)["ok"])
+			modified = recovered["data"]["modified"]
+			for _ in range(2):
+				response = stock.create_request(
+					self.profile.name,
+					[{"item_code": self.item, "qty": 4}],
+					nowdate(),
+					"edit-only",
+					draft_name=doc.name,
+					draft_modified=modified,
+				)
+				self.assertTrue(response["ok"], response)
+				self.assertEqual(response["data"]["docstatus"], 0)
+				self.assertEqual(response["data"]["name"], doc.name)
+			self.assertFalse(self._request()["ok"])
+		doc.reload()
+		self.assertEqual(doc.items[0].qty, 4)
+
+	def test_request_draft_recovery_enforces_write_and_submit_permissions(self):
+		doc = self._ordinary_request_draft()
+		original = frappe.permissions.has_permission
+		denied = "write"
+
+		def permission(doctype, ptype="read", *args, **kwargs):
+			return (
+				False
+				if doctype == "Material Request" and ptype == denied
+				else original(doctype, ptype, *args, **kwargs)
+			)
+
+		with patch("frappe.permissions.has_permission", side_effect=permission):
+			self.assertFalse(stock.request_draft(self.profile.name, doc.name)["ok"])
+			self.assertFalse(stock.submit_request(self.profile.name, doc.name, str(doc.modified))["ok"])
+			denied = "submit"
+			self.assertTrue(stock.request_draft(self.profile.name, doc.name)["ok"])
+			self.assertFalse(stock.request_details(self.profile.name, doc.name)["data"]["can_submit"])
+			self.assertFalse(stock.submit_request(self.profile.name, doc.name, str(doc.modified))["ok"])
+
 	def test_request_history_remains_available_to_receivers_without_request_creation(self):
 		name = self._request()["data"]["name"]
 		self.profile.db_set("vunapos_allow_stock_requests", 0)

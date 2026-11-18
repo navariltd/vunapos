@@ -1,6 +1,8 @@
 import type { RequestLine } from "./types";
 
 export type RequestDraft = {
+  workflow?: string | null;
+  submitAllowed?: boolean;
   name?: string;
   modified?: string;
   key: string;
@@ -8,6 +10,24 @@ export type RequestDraft = {
   requiredBy: string;
   notes: string;
 };
+
+export function requestDraftScope(
+  user: string,
+  profile: string,
+  warehouse: string,
+  name?: string
+) {
+  return JSON.stringify(
+    name ? [user, profile, warehouse, "edit", name] : [user, profile, warehouse]
+  );
+}
+
+export function clearRequestDraft(
+  draft: RequestDraft,
+  editing = false
+): RequestDraft {
+  return editing ? { ...draft, lines: [] } : newRequestDraft();
+}
 export function newRequestDraft(): RequestDraft {
   const date = new Date();
   const today = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(

@@ -174,7 +174,7 @@ export function RequestCheckout({
           <Button disabled={disabled || busy} onClick={onSubmit}>
             {busy
               ? "Please wait…"
-              : workflow
+              : workflow || draft.submitAllowed === false
               ? "Save request"
               : "Submit request"}
           </Button>
