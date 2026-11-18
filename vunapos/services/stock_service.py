@@ -995,7 +995,9 @@ def _inspection_for_row(profile, source, doc, row):
 			message = _(
 				"The Quality Inspection for {0} must be accepted before this receipt can be submitted."
 			).format(row.item_name)
-	can_read = bool(qi and frappe.has_permission("Quality Inspection", "read", doc=qi.name))
+	can_read = False
+	if qi:
+		can_read = frappe.has_permission("Quality Inspection", "read", doc=qi.name)
 	if not qi and frappe.has_permission("Quality Inspection", "read"):
 		existing = frappe.get_list(
 			"Quality Inspection",
@@ -1027,15 +1029,11 @@ def _inspection_for_row(profile, source, doc, row):
 	}
 	if row.get("batch_no"):
 		defaults["batch_no"] = row.batch_no
-	can_create = (
-		required
-		and doc.docstatus == 0
-		and not qi
-		and bool(
-			frappe.has_permission("Quality Inspection", "create")
-			and frappe.has_permission("Quality Inspection", "read")
-		)
-	)
+	can_create = False
+	if required and doc.docstatus == 0 and not qi:
+		can_create_inspection = frappe.has_permission("Quality Inspection", "create")
+		can_read_inspection = frappe.has_permission("Quality Inspection", "read")
+		can_create = can_create_inspection and can_read_inspection
 	return {
 		"required": required,
 		"blocked": blocked,
