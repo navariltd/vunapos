@@ -4,11 +4,14 @@ import { useThemeSync } from "../../features/pos/hooks/useThemeSync";
 import { navigateToPosPage } from "../../lib/stores/navigationStore";
 
 export type OrderType = "Sales Invoice" | "Sales Order";
+export type WorkspaceMode = OrderType | "Material Request";
 
 type HeaderProps = {
   allowOrderTypeChange?: boolean;
-  orderType: OrderType;
-  onOrderTypeChange: (orderType: OrderType) => void;
+  orderType: WorkspaceMode;
+  onOrderTypeChange: (orderType: WorkspaceMode) => void;
+  allowMaterialRequests?: boolean;
+  defaultOrderType?: OrderType;
   salesperson?: { name: string; displayName: string; token: string } | null;
   salespersonPinEnabled?: boolean;
   salespersonLocked?: boolean;
@@ -19,15 +22,18 @@ export function Header({
   allowOrderTypeChange = true,
   orderType,
   onOrderTypeChange,
+  allowMaterialRequests = false,
+  defaultOrderType = "Sales Invoice",
   salesperson,
   salespersonPinEnabled,
   salespersonLocked,
   onLockSalesperson,
 }: HeaderProps) {
   useThemeSync();
-  const orderTypes: OrderType[] = allowOrderTypeChange
+  const orderTypes: WorkspaceMode[] = allowOrderTypeChange
     ? ["Sales Invoice", "Sales Order"]
-    : [orderType];
+    : [orderType === "Material Request" ? defaultOrderType : orderType];
+  if (allowMaterialRequests) orderTypes.push("Material Request");
 
   return (
     <header className="sticky top-0 z-40 h-12 shrink-0 border-b border-outline-variant bg-surface px-2 sm:px-3">
@@ -60,10 +66,22 @@ export function Header({
           {salespersonPinEnabled ? (
             <div className="hidden items-center gap-2 rounded-md bg-surface-container-low px-2 py-1 text-xs sm:flex">
               <span className="text-on-surface-variant">Sales Person</span>
-              <span className="max-w-32 truncate font-medium text-on-surface">{salesperson?.displayName || "Locked"}</span>
+              <span className="max-w-32 truncate font-medium text-on-surface">
+                {salesperson?.displayName || "Locked"}
+              </span>
               {salesperson && onLockSalesperson ? (
-                <button type="button" className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface" onClick={onLockSalesperson} aria-label="Lock salesperson session" title="Lock salesperson session">
-                  {salespersonLocked ? <Unlock className="size-4" /> : <Lock className="size-4" />}
+                <button
+                  type="button"
+                  className="rounded p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface"
+                  onClick={onLockSalesperson}
+                  aria-label="Lock salesperson session"
+                  title="Lock salesperson session"
+                >
+                  {salespersonLocked ? (
+                    <Unlock className="size-4" />
+                  ) : (
+                    <Lock className="size-4" />
+                  )}
                 </button>
               ) : null}
             </div>
@@ -73,15 +91,19 @@ export function Header({
             <span className="relative">
               <select
                 className="h-8 max-w-36 appearance-none rounded-md border border-outline-variant bg-surface-container-low py-0 pl-2 pr-7 text-xs font-medium text-on-surface outline-none hover:border-outline focus:border-primary sm:max-w-none sm:pl-3 sm:pr-8 sm:text-sm"
-                disabled={!allowOrderTypeChange}
+                disabled={orderTypes.length < 2}
                 value={orderType}
                 onChange={(event) =>
-                  onOrderTypeChange(event.target.value as OrderType)
+                  onOrderTypeChange(event.target.value as WorkspaceMode)
                 }
               >
                 {orderTypes.map((type) => (
                   <option key={type} value={type}>
-                    {type === "Sales Invoice" ? "Invoice" : "Order"}
+                    {type === "Sales Invoice"
+                      ? "Invoice"
+                      : type === "Material Request"
+                      ? "Request"
+                      : "Order"}
                   </option>
                 ))}
               </select>

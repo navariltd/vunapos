@@ -5,6 +5,7 @@ import { ItemListRow } from "./ItemListRow";
 import type { CatalogueView } from "./ItemSearch";
 
 type ItemGridProps = {
+  hidePricing?: boolean;
   currency?: string;
   hideImages?: boolean;
   ignoreStock?: boolean;
@@ -16,6 +17,7 @@ type ItemGridProps = {
 };
 
 export function ItemGrid({
+  hidePricing,
   currency,
   hideImages,
   ignoreStock,
@@ -47,6 +49,7 @@ export function ItemGrid({
     <div>
       {items?.map((item) => (
         <ItemListRow
+          hidePricing={hidePricing}
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}
@@ -61,6 +64,7 @@ export function ItemGrid({
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
       {items?.map((item) => (
         <ItemCard
+          hidePricing={hidePricing}
           key={item.item_code}
           currency={currency}
           disabled={pendingItemCode === item.item_code}

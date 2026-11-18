@@ -8,6 +8,7 @@ import { ItemTaxLabel, ItemTaxPrice } from "./ItemTaxPrice";
 import { StockBalanceInfo } from "./StockBalanceInfo";
 
 type ItemListRowProps = {
+  hidePricing?: boolean;
   currency?: string;
   disabled?: boolean;
   ignoreStock?: boolean;
@@ -17,6 +18,7 @@ type ItemListRowProps = {
 };
 
 export const ItemListRow = memo(function ItemListRow({
+  hidePricing,
   currency,
   disabled,
   ignoreStock,
@@ -62,10 +64,10 @@ export const ItemListRow = memo(function ItemListRow({
             .filter(Boolean)
             .join(" · ")}
         </span>
-        <ItemTaxLabel item={item} reserveSpace />
+        {!hidePricing ? <ItemTaxLabel item={item} reserveSpace /> : null}
       </button>
       <div className="text-right sm:order-none sm:text-left">
-        <ItemTaxPrice currency={currency} item={item} align="right" />
+        {!hidePricing ? <ItemTaxPrice currency={currency} item={item} align="right" /> : null}
         <div
           className={
             outOfStock

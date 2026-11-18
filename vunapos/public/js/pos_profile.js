@@ -1,4 +1,5 @@
 const VUNAPOS_CHECKOUT_DOCTYPES = ["Sales Invoice", "POS Invoice", "Sales Order"];
+const VUNAPOS_WORKFLOW_DOCTYPES = [...VUNAPOS_CHECKOUT_DOCTYPES, "Material Request"];
 const VUNAPOS_CHECKOUT_FIELD_TYPES = new Set([
 	"Data",
 	"Small Text",
@@ -82,7 +83,7 @@ function setup_checkout_field_form(frm) {
 
 function setup_workflow_configuration(frm) {
 	frm.set_query("transaction_doctype", "vunapos_workflow_configuration", () => ({
-		filters: { name: ["in", VUNAPOS_CHECKOUT_DOCTYPES] },
+		filters: { name: ["in", VUNAPOS_WORKFLOW_DOCTYPES] },
 	}));
 }
 

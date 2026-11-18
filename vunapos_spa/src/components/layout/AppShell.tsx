@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { Header, type OrderType } from "./Header";
+import { Header, type OrderType, type WorkspaceMode } from "./Header";
 import { BottomNav, Sidebar } from "./Sidebar";
 import type { NavFeatureFlags } from "./Sidebar";
 
@@ -9,8 +9,10 @@ type AppShellProps = {
   children: ReactNode;
   cashier?: string;
   features?: NavFeatureFlags;
-  onOrderTypeChange: (orderType: OrderType) => void;
-  orderType: OrderType;
+  onOrderTypeChange: (orderType: WorkspaceMode) => void;
+  orderType: WorkspaceMode;
+  allowMaterialRequests?: boolean;
+  defaultOrderType?: OrderType;
   posProfile?: string;
   warehouse?: string;
   salesperson?: { name: string; displayName: string; token: string } | null;
@@ -25,6 +27,8 @@ export function AppShell({
   children,
   features,
   onOrderTypeChange,
+  allowMaterialRequests,
+  defaultOrderType,
   orderType,
   posProfile,
   warehouse,
@@ -39,6 +43,8 @@ export function AppShell({
         allowOrderTypeChange={allowOrderTypeChange}
         orderType={orderType}
         onOrderTypeChange={onOrderTypeChange}
+        allowMaterialRequests={allowMaterialRequests}
+        defaultOrderType={defaultOrderType}
         salesperson={salesperson}
         salespersonPinEnabled={salespersonPinEnabled}
         salespersonLocked={salespersonLocked}
