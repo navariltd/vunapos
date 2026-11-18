@@ -133,7 +133,11 @@ export function ReceiveStockDialog({
                     Object.fromEntries(
                       Object.entries(current).map(([id, value]) => [
                         id,
-                        { ...value, qty: "0" },
+                        {
+                          ...value,
+                          qty: "0",
+                          allocations: value.allocations ? [] : undefined,
+                        },
                       ])
                     )
                   )
@@ -202,9 +206,27 @@ export function ReceiveStockDialog({
                         step="any"
                         value={choice?.qty || ""}
                         disabled={busy}
-                        onChange={(event) =>
-                          update(row.name, { qty: event.target.value })
-                        }
+                        onChange={(event) => {
+                          const qty = event.target.value;
+                          const tracking = row.tracking || [];
+                          const stock =
+                            Number(qty) *
+                            (choice?.uom === row.stock_uom
+                              ? 1
+                              : row.conversion_factor || 1);
+                          update(row.name, {
+                            qty,
+                            ...(stock === 0
+                              ? {
+                                  allocations: tracking.length ? [] : undefined,
+                                }
+                              : tracking.length === 1 && !tracking[0].serial_no
+                              ? {
+                                  allocations: [{ ...tracking[0], qty: stock }],
+                                }
+                              : {}),
+                          });
+                        }}
                         className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-right text-base text-on-surface focus:border-primary"
                       />
                     </label>
@@ -264,6 +286,100 @@ export function ReceiveStockDialog({
                         : `${stockQty(state.left)} ${row.stock_uom}`}
                     </p>
                   </div>
+                  {row.tracking?.length ? (
+                    <fieldset disabled={busy} className="min-w-0 md:col-span-4">
+                      <legend className="mb-2 text-sm font-medium">
+                        Batches / serial numbers received · {row.stock_uom}
+                      </legend>
+                      <p className="mb-2 text-xs text-on-surface-variant">
+                        Only stock still in transit is listed. Changing these
+                        selections updates the accepted quantity.
+                      </p>
+                      <div className="max-h-64 overflow-y-auto rounded-md border border-outline-variant divide-y divide-outline-variant">
+                        {row.tracking.map((part, partIndex) => {
+                          const selected = choice?.allocations?.find(
+                            (value) =>
+                              value.batch_no === part.batch_no &&
+                              value.serial_no === part.serial_no
+                          );
+                          const select = (qty: number) => {
+                            const allocations = (
+                              choice?.allocations || []
+                            ).filter(
+                              (value) =>
+                                value.batch_no !== part.batch_no ||
+                                value.serial_no !== part.serial_no
+                            );
+                            if (qty !== 0) allocations.push({ ...part, qty });
+                            update(row.name, {
+                              allocations,
+                              qty: String(
+                                Number(
+                                  allocations
+                                    .reduce(
+                                      (total, value) => total + value.qty,
+                                      0
+                                    )
+                                    .toFixed(row.stock_precision ?? 6)
+                                )
+                              ),
+                              uom: row.stock_uom,
+                            });
+                          };
+                          return (
+                            <label
+                              key={partIndex}
+                              className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                            >
+                              <span className="min-w-0 break-words">
+                                {part.serial_no
+                                  ? `Serial: ${part.serial_no}`
+                                  : `Batch: ${part.batch_no}`}
+                                {part.serial_no && part.batch_no ? (
+                                  <span className="block text-xs text-on-surface-variant">
+                                    Batch: {part.batch_no}
+                                  </span>
+                                ) : null}
+                              </span>
+                              {part.serial_no ? (
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(selected)}
+                                  onChange={(event) =>
+                                    select(event.target.checked ? 1 : 0)
+                                  }
+                                  aria-label={`Receive serial ${part.serial_no}`}
+                                  className="size-5 accent-primary"
+                                />
+                              ) : (
+                                <span className="flex shrink-0 items-center gap-2">
+                                  <span className="text-xs text-on-surface-variant">
+                                    of {stockQty(part.qty)}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max={part.qty}
+                                    step="any"
+                                    value={selected?.qty ?? 0}
+                                    onChange={(event) =>
+                                      select(
+                                        event.target.value === ""
+                                          ? 0
+                                          : Number(event.target.value)
+                                      )
+                                    }
+                                    aria-label={`Accepted quantity from batch ${part.batch_no}`}
+                                    className="h-touch w-28 rounded-md border border-outline-variant bg-surface px-3 text-right"
+                                  />
+                                </span>
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </fieldset>
+                  ) : null}
                 </div>
               );
             })}
@@ -305,6 +421,10 @@ export function ReceiveStockDialog({
                     source_row: row.name,
                     qty: states[index].qty,
                     uom: selection[row.name].uom,
+                    allocations:
+                      states[index].stock > 0
+                        ? selection[row.name].allocations
+                        : [],
                   })),
                   key
                 )

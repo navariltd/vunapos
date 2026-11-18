@@ -21,7 +21,11 @@ import {
   inspectionPreviewKey,
   mergeInspectionPreview,
 } from "../useInspectionPreview";
-import { initialReceiptSelection, receiptLineState } from "../receiving";
+import {
+  initialReceiptSelection,
+  receiptLineState,
+  receivableDrafts,
+} from "../receiving";
 import { stockPath, stockRoute } from "../navigation";
 import {
   addRequestLine,
@@ -62,6 +66,23 @@ const item: StockItem = {
 };
 
 describe("stock request draft", () => {
+  it("does not let mixed-warehouse drafts block warehouse-scoped receiving", () => {
+    const mixed = {
+      name: "MIXED",
+      posting_date: "2026-11-18",
+      docstatus: 0,
+      has_other_warehouses: true,
+    };
+    const own = { ...mixed, name: "OWN", has_other_warehouses: false };
+    expect(receivableDrafts([mixed])).toEqual([]);
+    expect(
+      receivableDrafts([
+        mixed,
+        own,
+        { ...own, name: "SUBMITTED", docstatus: 1 },
+      ])
+    ).toEqual([own]);
+  });
   it("keeps recovery carts separate and retains the request identity when clearing items", () => {
     const draft = {
       ...newRequestDraft(),
@@ -161,6 +182,7 @@ describe("stock request draft", () => {
           source_warehouse: "S",
           transit_warehouse: "T",
           conversion_factor: 24,
+          tracking: [{ batch_no: "BATCH-1", serial_no: null, qty: 48 }],
         },
       ],
     };
@@ -174,6 +196,7 @@ describe("stock request draft", () => {
         onReceive={vi.fn()}
       />
     );
+    expect(html).toContain("Accepted quantity from batch BATCH-1");
     expect(html).toContain('role="dialog"');
     expect(html).toContain("max-w-6xl");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
@@ -181,6 +204,65 @@ describe("stock request draft", () => {
     expect(html).toContain('aria-label="Receipt UOM for Milk"');
     expect(html).toContain("Left in transit");
     expect(html).toContain("Receive stock</button>");
+  });
+  it("validates exact partial batch and serial allocations in stock UOM", () => {
+    const row: StockEntryDetails["items"][number] = {
+      name: "row",
+      item_code: "A",
+      item_name: "Tracked",
+      qty: 3,
+      uom: "Box",
+      stock_qty: 6,
+      stock_uom: "Pcs",
+      conversion_factor: 2,
+      received_qty: 0,
+      remaining_qty: 6,
+      material_request: "MR",
+      source_warehouse: "S",
+      transit_warehouse: "T",
+      partial_tracking_restricted: true,
+      tracking: [
+        { batch_no: "B1", serial_no: null, qty: 4 },
+        { batch_no: "B2", serial_no: null, qty: 2 },
+      ],
+    };
+    expect(initialReceiptSelection([row]).row.allocations).toEqual(
+      row.tracking
+    );
+    expect(
+      receiptLineState(row, {
+        qty: "1",
+        uom: "Box",
+        allocations: [{ batch_no: "B2", serial_no: null, qty: 2 }],
+      })
+    ).toMatchObject({ stock: 2, left: 4, error: "" });
+    for (const allocations of [
+      [],
+      [{ batch_no: "B2", serial_no: null, qty: 3 }],
+      [{ batch_no: "NOT-SENT", serial_no: null, qty: 2 }],
+    ]) {
+      expect(
+        receiptLineState(row, { qty: "2", uom: "Pcs", allocations }).error
+      ).toContain("Select batches or serial");
+    }
+    const serial = {
+      ...row,
+      tracking: [{ batch_no: "B", serial_no: "SERIAL-1", qty: 1 }],
+    };
+    expect(
+      receiptLineState(serial, {
+        qty: "1",
+        uom: "Pcs",
+        allocations: serial.tracking,
+      }).error
+    ).toBe("");
+    expect(
+      receiptLineState(serial, {
+        qty: "2",
+        uom: "Pcs",
+        allocations: [{ ...serial.tracking[0], qty: 2 }],
+      }).error
+    ).not.toBe("");
   });
   it("uses the scanned barcode UOM rather than the default sales UOM", () => {
     const rows = addRequestLine([], item, true, "Pcs");

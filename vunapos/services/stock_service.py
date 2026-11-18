@@ -773,6 +773,20 @@ def list_transit(
 	return rows
 
 
+def _mixed_receipts(names, warehouse):
+	if not names:
+		return set()
+	return {
+		row.parent
+		for row in frappe.get_all(
+			"Stock Entry Detail",
+			filters={"parent": ["in", names], "parenttype": "Stock Entry"},
+			fields=["parent", "t_warehouse"],
+		)
+		if row.t_warehouse != warehouse
+	}
+
+
 def stock_entry_details(pos_profile, stock_entry):
 	profile = profile_context(pos_profile, "vunapos_allow_end_transit")
 	doc = frappe.get_doc("Stock Entry", stock_entry)
@@ -814,6 +828,7 @@ def stock_entry_details(pos_profile, stock_entry):
 				"uom": row.uom,
 				"conversion_factor": row.conversion_factor,
 				"partial_tracking_restricted": _partial_tracking_restricted(row),
+				"tracking": _remaining_tracking(row),
 				"whole_uom": bool(frappe.get_cached_value("UOM", row.uom, "must_be_whole_number")),
 				"whole_stock_uom": bool(
 					frappe.get_cached_value("UOM", row.stock_uom, "must_be_whole_number")
@@ -846,6 +861,9 @@ def stock_entry_details(pos_profile, stock_entry):
 		order_by="creation desc",
 		limit_page_length=20,
 	)
+	mixed = _mixed_receipts([row.name for row in receipts], profile.warehouse)
+	for row in receipts:
+		row["has_other_warehouses"] = row.name in mixed
 	return {
 		"name": doc.name,
 		"posting_date": doc.posting_date,
@@ -1216,9 +1234,48 @@ def _partial_tracking_restricted(row):
 	)
 
 
-def _apply_receipt_tracking(part, original, stock_qty):
+def _selected_tracking(tracking, selection, stock_qty, precision):
+	if not isinstance(selection, list) or len(selection) > len(tracking):
+		fail("Choose valid batches or serial numbers from this transfer.")
+	available = {(row["batch_no"], row["serial_no"]): row["qty"] for row in tracking}
+	chosen = {}
+	for row in selection:
+		if not isinstance(row, dict):
+			fail("Choose valid batches or serial numbers from this transfer.")
+		batch, serial = row.get("batch_no") or None, row.get("serial_no") or None
+		if (batch is not None and not isinstance(batch, str)) or (
+			serial is not None and not isinstance(serial, str)
+		):
+			fail("Choose valid batches or serial numbers from this transfer.")
+		key = (batch, serial)
+		try:
+			qty = float(row.get("qty"))
+		except (TypeError, ValueError):
+			fail("Enter a positive quantity for each selected batch or serial number.")
+		if (
+			isinstance(row.get("qty"), bool)
+			or not math.isfinite(qty)
+			or qty <= 0
+			or qty != flt(qty, precision)
+			or key not in available
+			or key in chosen
+			or flt(qty, precision) > flt(available[key], precision)
+			or (serial and qty != 1)
+		):
+			fail(
+				"Selected batches or serial numbers exceed this transfer's remaining quantities or are invalid."
+			)
+		chosen[key] = qty
+	if flt(sum(chosen.values()), precision) != flt(stock_qty, precision):
+		fail("Selected batch or serial quantities must match the accepted quantity in stock UOM.")
+	return [{"batch_no": batch, "serial_no": serial, "qty": qty} for (batch, serial), qty in chosen.items()]
+
+
+def _apply_receipt_tracking(part, original, stock_qty, selection=None):
 	tracking = _remaining_tracking(original)
 	if not tracking:
+		if selection:
+			fail("This transfer row has no remaining batch or serial allocations.")
 		return
 	available = sum(value["qty"] for value in tracking)
 	if flt(available, part.precision("transfer_qty")) < flt(stock_qty, part.precision("transfer_qty")):
@@ -1226,15 +1283,17 @@ def _apply_receipt_tracking(part, original, stock_qty):
 	restricted = (
 		any(value["serial_no"] for value in tracking) or len({value["batch_no"] for value in tracking}) > 1
 	)
-	if restricted and flt(stock_qty, part.precision("transfer_qty")) != flt(
+	if selection is not None:
+		tracking = _selected_tracking(tracking, selection, stock_qty, part.precision("transfer_qty"))
+	elif restricted and flt(stock_qty, part.precision("transfer_qty")) != flt(
 		available, part.precision("transfer_qty")
 	):
 		frappe.throw(
-			_("Partial receipt of {0} requires choosing its exact batches or serial numbers in Desk.").format(
+			_("Partial receipt of {0} requires choosing its exact batches or serial numbers.").format(
 				original.item_name
 			)
 		)
-	if not restricted:
+	elif not restricted:
 		tracking = [{**tracking[0], "qty": stock_qty}]
 	if part.serial_and_batch_bundle:
 		bundle = frappe.get_doc("Serial and Batch Bundle", part.serial_and_batch_bundle)
@@ -1286,7 +1345,14 @@ def _accepted_quantities(value):
 		uom = part.get("uom")
 		if uom is not None and not isinstance(uom, str):
 			fail("Choose a valid receipt UOM.")
+		allocation = part.get("allocations")
+		if allocation is not None and (not isinstance(allocation, list) or len(allocation) > 10000):
+			fail("Choose valid batch or serial allocations.")
+		if qty == 0 and allocation:
+			fail("An item with zero accepted quantity cannot have batch or serial allocations.")
 		quantities[part["source_row"]] = {"qty": qty, "uom": uom}
+		if allocation is not None:
+			quantities[part["source_row"]]["allocations"] = allocation
 	if not any(value["qty"] for value in quantities.values()):
 		fail("Accept a quantity greater than zero for at least one item.")
 	return quantities
@@ -1341,6 +1407,10 @@ def end_transit(pos_profile, stock_entry, review, quantities=None, request_key=N
 		.for_update()
 		.run(as_dict=True)
 	)
+	# A mixed-warehouse draft remains a Desk operation. Do not adopt it,
+	# mutate it, or let it prevent a separate receipt for this warehouse.
+	mixed = _mixed_receipts([value.name for value in previous], profile.warehouse)
+	previous = [value for value in previous if value.docstatus != 0 or value.name not in mixed]
 	drafts = [value for value in previous if value.docstatus == 0]
 	if rows and len(drafts) > 1:
 		fail(
@@ -1415,7 +1485,7 @@ def end_transit(pos_profile, stock_entry, review, quantities=None, request_key=N
 		part.qty = qty
 		part.transfer_qty = stock_qty
 		original = next(row for row in source.items if row.name == part.ste_detail)
-		_apply_receipt_tracking(part, original, stock_qty)
+		_apply_receipt_tracking(part, original, stock_qty, choice.get("allocations"))
 	doc.to_warehouse = profile.warehouse
 	doc.vunapos_created_in_pos = 1
 	doc.vunapos_stock_receipt_key = key

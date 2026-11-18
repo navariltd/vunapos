@@ -1,8 +1,21 @@
-import type { StockEntryDetails } from "./types";
+import type { StockEntryDetails, TrackingAllocation } from "./types";
 
 export type ReceivingItem = StockEntryDetails["items"][number];
-export type AcceptedQuantity = { source_row: string; qty: number; uom: string };
-export type ReceiptSelection = Record<string, { qty: string; uom: string }>;
+export function receivableDrafts(receipts: StockEntryDetails["receipts"]) {
+  return receipts.filter(
+    (row) => row.docstatus === 0 && !row.has_other_warehouses
+  );
+}
+export type AcceptedQuantity = {
+  source_row: string;
+  qty: number;
+  uom: string;
+  allocations?: TrackingAllocation[];
+};
+export type ReceiptSelection = Record<
+  string,
+  { qty: string; uom: string; allocations?: TrackingAllocation[] }
+>;
 export function initialReceiptSelection(
   items: ReceivingItem[]
 ): ReceiptSelection {
@@ -20,6 +33,7 @@ export function initialReceiptSelection(
           {
             qty: String(stockInstead ? row.remaining_qty : sourceQty),
             uom: stockInstead ? row.stock_uom : row.uom,
+            allocations: row.tracking?.map((part) => ({ ...part })),
           },
         ];
       })
@@ -50,12 +64,36 @@ export function receiptLineState(
   else if (item.whole_stock_uom && !Number.isInteger(stock))
     error = `Accepted quantity must convert to a whole number of ${item.stock_uom}.`;
   else if (
+    choice?.allocations &&
+    item.tracking?.length &&
+    stock > 0 &&
+    (Number(
+      choice.allocations
+        .reduce((total, part) => total + part.qty, 0)
+        .toFixed(precision)
+    ) !== stock ||
+      choice.allocations.some(
+        (part) =>
+          !Number.isFinite(part.qty) ||
+          part.qty <= 0 ||
+          (part.serial_no && part.qty !== 1) ||
+          part.qty >
+            (item.tracking?.find(
+              (value) =>
+                value.batch_no === part.batch_no &&
+                value.serial_no === part.serial_no
+            )?.qty ?? 0)
+      ))
+  )
+    error = `Select batches or serial numbers totalling ${stock} ${item.stock_uom}.`;
+  else if (
+    !choice?.allocations &&
     item.partial_tracking_restricted &&
     stock > 0 &&
     stock !== item.remaining_qty
   )
     error =
-      "Choose exact batches or serial numbers in Desk for a partial receipt of this item.";
+      "Choose exact batches or serial numbers for a partial receipt of this item.";
   return {
     qty,
     stock,
