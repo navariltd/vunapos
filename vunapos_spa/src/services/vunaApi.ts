@@ -50,6 +50,8 @@ type VunaEnvelope<T> = {
 export type FrappeCall<T = unknown> = (params: Record<string, unknown>) => Promise<T>;
 
 export class VunaApiError extends Error {
+	// An application error envelope, rather than an uncertain transport failure.
+	serverRejected = false;
 	code?: string;
 	field?: string;
 	// The envelope's meta, e.g. which floor or table label failed validation.
@@ -89,6 +91,7 @@ export const vunaMethods = {
 	allocateCustomerPayments: "vunapos.api.payment.allocate_customer_payments",
 	reconcileCustomerPayment: "vunapos.api.payment.reconcile_customer_payment",
 	initiateStkGatewayPayment: "vunapos.api.gateway.initiate_stk_gateway_payment",
+	handoverSessionPayment: "vunapos.api.restaurant.handover_session_payment",
 	getGatewayPaymentStatus: "vunapos.api.gateway.get_gateway_payment_status",
 	cancelGatewayPaymentLink: "vunapos.api.gateway.cancel_gateway_payment_link",
 	attachC2bGatewayPayment: "vunapos.api.gateway.attach_c2b_gateway_payment",
@@ -133,14 +136,26 @@ export const vunaMethods = {
 	getKitchenBoard: "vunapos.api.restaurant.get_kitchen_board",
 	kitchenAction: "vunapos.api.restaurant.kitchen_action",
 	cancelKitchenOrder: "vunapos.api.restaurant.cancel_kitchen_order",
+  previewItemCancellation: "vunapos.api.restaurant.preview_item_cancellation",
+  cancelOrderItems: "vunapos.api.restaurant.cancel_order_items",
+  previewRestaurantWaste: "vunapos.api.restaurant.preview_restaurant_waste",
+  recordRestaurantWaste: "vunapos.api.restaurant.record_restaurant_waste",
+  previewRemake: "vunapos.api.restaurant.preview_remake",
+  previewRejection: "vunapos.api.restaurant.preview_rejection",
+  previewPreparationStop: "vunapos.api.restaurant.preview_preparation_stop",
+  stopPreparation: "vunapos.api.restaurant.stop_preparation",
+  rejectPreparedItems: "vunapos.api.restaurant.reject_prepared_items",
+  requestRemake: "vunapos.api.restaurant.request_remake",
 	validateRestaurantCart: "vunapos.api.restaurant.validate_cart",
 	previewRestaurantCart: "vunapos.api.restaurant.preview_cart",
 	listRestaurantSessions: "vunapos.api.restaurant.list_sessions",
 	updateRestaurantSession: "vunapos.api.restaurant.update_session",
 	cancelEmptyRestaurantSession: "vunapos.api.restaurant.cancel_empty_session",
 	createSessionRound: "vunapos.api.restaurant.create_session_round",
+	recoverSessionRound: "vunapos.api.restaurant.recover_session_round",
 	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
 	checkoutSession: "vunapos.api.restaurant.checkout_session",
+	recordWalkout: "vunapos.api.restaurant.record_walkout",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 	getMenu: "vunapos.api.restaurant.get_menu",
 	getKioskSetup: "vunapos.api.kiosk.get_kiosk_setup",
@@ -176,12 +191,14 @@ export function unwrapVunaResponse<T>(response: unknown): T {
 			return envelope.data;
 		}
 		const error = envelope.errors?.[0];
-		throw new VunaApiError(
+		const rejected = new VunaApiError(
 			error?.message || error?.code || "VunaPOS request failed",
 			error?.code,
 			error?.field,
 			envelope.meta,
 		);
+		rejected.serverRejected = true;
+		throw rejected;
 	}
 
 	return payload as T;
@@ -392,6 +409,9 @@ export function initiateStkGatewayPayment(
 		currency?: string;
 		idempotency_key?: string;
 		account_reference?: string;
+		restaurant_session?: string;
+		bill_fingerprint?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
@@ -415,6 +435,9 @@ export function attachC2bGatewayPayment(
 		customer?: string;
 		currency?: string;
 		idempotency_key?: string;
+		restaurant_session?: string;
+		bill_fingerprint?: string;
+		loyalty_points?: number;
 	},
 ) {
 	return callAndUnwrap<GatewayPaymentLinkDTO>(call, params);
@@ -723,7 +746,7 @@ export function listRestaurantSessions(call: FrappeCall, pos_profile: string) {
 }
 
 export function updateRestaurantSession(call: FrappeCall, params: {
-	session: string; tables?: string[]; guest_count?: number; customer?: string; waiter?: string;
+	session: string; tables?: string[]; guest_count?: number; customer?: string; waiter?: string; expected_modified?: string;
 }) {
 	return callAndUnwrap<RestaurantSessionDTO>(call, {
 		...params, ...(params.tables ? { tables: JSON.stringify(params.tables) } : {}),
@@ -734,6 +757,16 @@ export function createSessionRound(call: FrappeCall, params: {
 	session: string; items: OrderLineInput[]; idempotency_key: string; order_note?: string | null; pos_profile?: string; kitchen_routing?: Record<string, string>;
 }) {
 	return callAndUnwrap<RestaurantOrderDTO>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+export function recoverSessionRound(call: FrappeCall, params: {
+  pos_profile: string; idempotency_key: string; session?: string;
+  items: OrderLineInput[]; order_note?: string | null; kitchen_routing?: Record<string, string>;
+}) {
+  return callAndUnwrap<{ session: RestaurantSessionDTO | null; order: RestaurantOrderDTO | null }>(call, {
+    ...params, items: JSON.stringify(params.items),
+    ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}),
+  });
 }
 
 export function validateRestaurantCart(call: FrappeCall, params: {
@@ -773,12 +806,20 @@ export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string;
 	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params);
 }
 
-export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string }) {
+export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string; expected_modified?: string; quantities?: Record<string, number>; reason?: string }) {
 	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
 }
 
 export function cancelKitchenOrder(call: FrappeCall, params: { ticket: string; request_key: string; expected_status: string; reason: string; manager_pin_token?: string }) {
 	return callAndUnwrap<import("../features/restaurant/types").KitchenTicketDTO>(call, params);
+}
+
+export function previewItemCancellation(call: FrappeCall, order: string) {
+  return callAndUnwrap<import("../features/restaurant/cancellationCommand").CancellationQuote>(call, { order });
+}
+
+export function cancelOrderItems(call: FrappeCall, params: import("../features/restaurant/cancellationCommand").CancellationCommand & { manager_pin_token?: string }) {
+  return callAndUnwrap<RestaurantOrderDTO>(call, params);
 }
 
 export function previewRestaurantCart(call: FrappeCall, params: {

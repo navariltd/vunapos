@@ -102,6 +102,10 @@ export function OrderScreen({ posProfile }: { posProfile?: string }) {
 
   const addItem = useCallback(
     (item: ItemDTO) => {
+      if (item.ordering_paused) {
+        showToast({ type: "error", message: item.availability_reason || "This item is temporarily unavailable." });
+        return;
+      }
       if (item.has_variants) {
         showToast({ type: "info", message: "Items with variants can't be ordered yet." });
         return;

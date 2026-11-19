@@ -1,8 +1,5 @@
 import { useCallback, useContext, useEffect, useState } from "react";
-import {
-  FrappeContext,
-  useFrappePostCall,
-} from "frappe-react-sdk";
+import { FrappeContext, useFrappePostCall } from "frappe-react-sdk";
 import { Clock3, RefreshCw } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -13,7 +10,10 @@ import { kitchenStatusClass } from "../kitchenStatus";
 import { subscribeKitchenStation } from "../kitchenRealtime";
 import { KitchenActions } from "./KitchenActions";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { KitchenDishes } from "./KitchenDishes";
 import type { KitchenTicketDTO } from "../types";
+import { pendingKitchenTickets } from "../kitchenCommand";
+import { useOrderDraftStore } from "../stores/orderDraftStore";
 
 function StationSubscription({
   name,
@@ -52,6 +52,11 @@ export function KitchenTicketCard({
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
+        {ticket.remake_of ? (
+          <p className="mb-2 text-sm font-semibold text-primary">
+            Remake · {ticket.remake_of}
+          </p>
+        ) : null}
         <div className="flex items-start justify-between gap-2">
           <button
             type="button"
@@ -97,49 +102,21 @@ export function KitchenTicketCard({
         </p>
         {ticket.waiter ? (
           <p className="mt-1 truncate text-xs text-on-surface-variant">
-            Waiter: {ticket.waiter}
+            Waiter: {ticket.waiter_name || ticket.waiter}
           </p>
         ) : null}
       </header>
-      <ul className="flex-1 divide-y divide-outline-variant px-4">
-        {ticket.items.map((item) => (
-          <li
-            key={item.line_id}
-            className={`py-3 ${item.parent_line_id ? "pl-5" : ""}`}
-          >
-            <p className="text-sm font-semibold">
-              {new Intl.NumberFormat(undefined, {
-                maximumFractionDigits: 6,
-              }).format(item.qty)}{" "}
-              {item.uom} × {item.item_name}
-            </p>
-            {item.parent_line_id ? (
-              <p className="text-xs text-on-surface-variant">Add-on</p>
-            ) : null}
-            {item.modifiers.length ? (
-              <p className="mt-1 text-xs">
-                {item.modifiers.map((choice) => choice.label).join(" · ")}
-              </p>
-            ) : null}
-            {item.note ? (
-              <p className="mt-1 whitespace-pre-wrap rounded bg-tertiary-container p-2 text-sm font-medium text-on-tertiary-container">
-                {item.note}
-              </p>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-      {ticket.order_note ? (
-        <p className="mx-4 mb-3 whitespace-pre-wrap rounded bg-error-container p-2 text-sm font-medium text-on-error-container">
-          {ticket.order_note}
-        </p>
-      ) : null}
+      <KitchenActions ticket={ticket} showCancel={false} onChanged={onChanged}>
+        <div className="px-4">
+          <KitchenDishes ticket={ticket} />
+        </div>
+        {ticket.order_note ? (
+          <p className="mx-4 mb-3 whitespace-pre-wrap rounded bg-error-container p-2 text-sm font-medium text-on-error-container">
+            {ticket.order_note}
+          </p>
+        ) : null}
+      </KitchenActions>
       <footer className="space-y-2 border-t border-outline-variant p-3">
-        <KitchenActions
-          ticket={ticket}
-          showCancel={false}
-          onChanged={onChanged}
-        />
         <Button variant="ghost" size="sm" onClick={onOpen}>
           Ticket details
         </Button>
@@ -150,6 +127,7 @@ export function KitchenTicketCard({
 
 export function KitchenPage({ posProfile }: { posProfile?: string }) {
   const call = useFrappePostCall(vunaMethods.getKitchenBoard);
+  const scope = useOrderDraftStore((state) => state.scope);
   const [station, setStation] = useState("");
   const [history, setHistory] = useState(false);
   const [start, setStart] = useState(0);
@@ -169,6 +147,13 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
     posProfile ? `kitchen:${posProfile}:${station}:${history}:${start}` : null,
     fetcher
   );
+  let pendingTickets: string[] = [];
+  let recoveryError = false;
+  try {
+    pendingTickets = pendingKitchenTickets(scope);
+  } catch {
+    recoveryError = true;
+  }
   return (
     <section className="flex h-full min-h-0 flex-col overflow-y-auto p-4 pb-24 lg:pb-4">
       {(result.data?.stations || [])
@@ -183,6 +168,16 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
         ))}
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-semibold">Kitchen</h2>
+        {result.data?.can_manage_availability ? (
+          <a
+            className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-primary hover:bg-surface-container"
+            href="/desk/restaurant-availability"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Ordering availability
+          </a>
+        ) : null}
         <label className="text-sm">
           <span className="sr-only">Kitchen station</span>
           <select
@@ -198,6 +193,7 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
               <option key={row.name} value={row.name}>
                 {row.station_name}
                 {row.enabled ? "" : " (disabled)"}
+                {row.ordering_paused ? " · Orders paused" : ""}
               </option>
             ))}
           </select>
@@ -221,10 +217,58 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
           <RefreshCw className="size-4" />
         </Button>
       </header>
+      {result.data?.stations
+        .filter(
+          (row) => row.ordering_paused && (!station || row.name === station)
+        )
+        .map((row) => (
+          <div
+            key={row.name}
+            role="status"
+            className="mb-3 rounded-md border border-outline-variant bg-surface-container p-3 text-sm"
+          >
+            <p className="font-semibold">
+              {row.station_name} · New orders paused
+            </p>
+            <p>{row.availability_reason}</p>
+            <p className="text-xs text-on-surface-variant">
+              Existing tickets can still be prepared and served.
+              {row.unavailable_until
+                ? ` Resumes ${row.unavailable_until}.`
+                : ""}
+            </p>
+          </div>
+        ))}
       <p className="mb-3 text-xs text-on-surface-variant">
-        Live station updates with polling recovery. Ready completes native
-        manufacture; Served does not issue stock again.
+        Mark meals ready as they finish, then mark them served as they leave the
+        kitchen.
       </p>
+      {recoveryError ? (
+        <p role="alert" className="mb-3 text-sm text-error">
+          Kitchen recovery storage could not be read. Check browser storage
+          before taking another action.
+        </p>
+      ) : null}
+      {pendingTickets.length ? (
+        <div className="mb-3 rounded-lg border border-outline-variant p-3 text-sm">
+          <p className="mb-2">
+            Review unconfirmed kitchen actions before updating these tickets. A
+            completed ticket may no longer appear on the active board.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {pendingTickets.map((name) => (
+              <Button
+                key={name}
+                size="sm"
+                variant="ghost"
+                onClick={() => setTicket(name)}
+              >
+                Review {name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       {result.error ? (
         <p
           role="alert"
@@ -280,6 +324,7 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
       ) : null}
       {ticket ? (
         <KitchenTicketSheet
+          key={ticket}
           name={ticket}
           onClose={() => {
             setTicket(null);

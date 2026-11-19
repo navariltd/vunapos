@@ -9,6 +9,7 @@ from vunapos.dto.restaurant import ORDER_STATUS_FIELDS, ORDER_STATUS_OPEN, floor
 from vunapos.services.profile_service import require_pos_profile_assignment
 from vunapos.services.restaurant_service import RESTAURANT_DOCTYPE, require_restaurant_context
 from vunapos.setup.utils import DEFAULT_POS_MODE, RESTAURANT_MANAGER_ROLE
+from vunapos.utils.transactions import rollback_savepoint
 
 CANVAS_WIDTH = 1000
 CANVAS_HEIGHT = 700
@@ -583,7 +584,7 @@ def save_floor_plan(pos_profile, payload):
 			if row.name not in kept_floors:
 				frappe.delete_doc(FLOOR_DOCTYPE, row.name, ignore_permissions=True)
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 
 	return {"plan": get_floor_plan(pos_profile), "id_map": id_map}

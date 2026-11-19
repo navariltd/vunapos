@@ -11,12 +11,13 @@ import {
 import { Button } from "../../../components/ui/Button";
 import { ConfirmDialog } from "../../../components/ui/ConfirmDialog";
 import { EmptyState } from "../../../components/ui/EmptyState";
-import { navigateToRestaurantSession } from "../../../lib/stores/navigationStore";
 import {
-  createSessionRound,
+  navigateToOrder,
+  navigateToRestaurantSession,
+} from "../../../lib/stores/navigationStore";
+import {
   validateRestaurantCart,
   getRestaurantSession,
-  openRestaurantSession,
   updateRestaurantSession,
   cancelEmptyRestaurantSession,
   VunaApiError,
@@ -52,11 +53,13 @@ import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { CancelOrderItems } from "./CancelOrderItems";
 import { KioskOrderBanner } from "./KioskOrderBanner";
 import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
 import { kitchenStatusClass } from "../kitchenStatus";
+import { placePending } from "../placement";
 import { restaurantCustomerControls } from "../customerControls";
 import type { KitchenRoutingIssue } from "../types";
 import type {
@@ -76,14 +79,23 @@ export function SessionScreen({
   allowCustomerCreation?: boolean;
 }) {
   const bootstrap = useBootstrapData();
+  const draft = useOrderDraftStore((s) => s.draft);
+  const pendingPlacement = useOrderDraftStore((s) => s.pendingPlacement);
+  const storageError = useOrderDraftStore((s) => s.storageError);
   // Opening a visit and sending a round are separate requests. Keep a newly
   // opened visit authoritative even when routing/round submission needs a retry.
   const [openedSession, setOpenedSession] =
     useState<RestaurantSessionDTO | null>(null);
-  const effectiveSessionName = sessionName || openedSession?.name;
+  const effectiveSessionName =
+    sessionName ||
+    openedSession?.name ||
+    (draft?.unsent.length || pendingPlacement
+      ? draft?.restaurant_session
+      : undefined);
   const getCall = useFrappePostCall(vunaMethods.getRestaurantSession);
   const openCall = useFrappePostCall(vunaMethods.openRestaurantSession);
   const roundCall = useFrappePostCall(vunaMethods.createSessionRound);
+  const recoverCall = useFrappePostCall(vunaMethods.recoverSessionRound);
   const updateCall = useFrappePostCall(vunaMethods.updateRestaurantSession);
   const cancelCall = useFrappePostCall(
     vunaMethods.cancelEmptyRestaurantSession
@@ -99,7 +111,20 @@ export function SessionScreen({
     fetcher
   );
   const session = result.data || openedSession;
-  const draft = useOrderDraftStore((s) => s.draft);
+  const updateVisit = async (
+    params: Parameters<typeof updateRestaurantSession>[1]
+  ) => {
+    try {
+      return await updateRestaurantSession(updateCall.call, {
+        ...params,
+        expected_modified: session?.modified,
+      });
+    } catch (caught) {
+      if (caught instanceof VunaApiError && caught.code === "SESSION_CHANGED")
+        void result.refresh();
+      throw caught;
+    }
+  };
   const setDraft = useOrderDraftStore((s) => s.setDraft);
   const updateDraft = useOrderDraftStore((s) => s.updateDraft);
   const markChanged = useOrderDraftStore((s) => s.markOrdersChanged);
@@ -132,6 +157,7 @@ export function SessionScreen({
     [showToast]
   );
   const [busy, setBusy] = useState(false);
+  const [recovering, setRecovering] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const inFlight = useRef(false);
   const cartQueue = useRef(new ValidatedDraftQueue<OrderDraft>());
@@ -144,11 +170,18 @@ export function SessionScreen({
   const pendingCartEdit = useRef<((current: OrderDraft) => OrderDraft) | null>(
     null
   );
-  const activeDraft = sessionName
+  const activeDraft = pendingPlacement
+    ? draft
+    : sessionName
     ? draft?.restaurant_session === sessionName
       ? draft
       : null
-    : draft && !draft.order && !draft.restaurant_session
+    : draft &&
+      !draft.order &&
+      draft.pos_profile === posProfile &&
+      (!draft.restaurant_session ||
+        draft.unsent.length > 0 ||
+        openedSession?.name === draft.restaurant_session)
     ? draft
     : null;
   const header = activeDraft ? effectiveHeader(activeDraft) : null;
@@ -175,8 +208,19 @@ export function SessionScreen({
   );
 
   useEffect(() => {
+    // A direct link/reload bypasses the in-app discard guard. Resume saved
+    // work instead of silently replacing it with another visit's empty cart.
+    if (!activeDraft && draft?.unsent.length && !pendingPlacement) {
+      if (draft.restaurant_session)
+        navigateToRestaurantSession(draft.restaurant_session, {
+          replace: true,
+        });
+      else navigateToOrder(draft.order?.name, { replace: true });
+      return;
+    }
     if (sessionName) {
-      if (session && !activeDraft) setDraft(newSessionRound(session, newId()));
+      if (session && !activeDraft && !pendingPlacement)
+        setDraft(newSessionRound(session, newId()));
     } else if (!activeDraft && posProfile && serviceTypes?.length) {
       const service =
         serviceTypes.find((row) => row.is_default) || serviceTypes[0];
@@ -199,6 +243,8 @@ export function SessionScreen({
     serviceTypes,
     bootstrap.data,
     setDraft,
+    pendingPlacement,
+    draft,
   ]);
 
   const [knownItems, setKnownItems] = useState<ItemDTO[]>([]);
@@ -259,6 +305,7 @@ export function SessionScreen({
         edit,
         blocked: () =>
           inFlight.current ||
+          Boolean(useOrderDraftStore.getState().pendingPlacement) ||
           epoch !== cartEditEpoch.current ||
           useOrderDraftStore.getState().draft?.service_type !==
             activeDraft?.service_type ||
@@ -312,8 +359,15 @@ export function SessionScreen({
   };
 
   const addItem = async (item: ItemDTO, modifiers?: SelectedModifier[]) => {
-    if (busy || (session && session.status !== "Open")) return;
-    if (needsTable) {
+    if (busy || pendingPlacement || (session && session.status !== "Open"))
+      return;
+    if (item.ordering_paused) {
+      setError(
+        item.availability_reason || "This item is temporarily unavailable."
+      );
+      return;
+    }
+    if (needsTable && !pendingPlacement) {
       setTablePicker(true);
       return;
     }
@@ -415,41 +469,82 @@ export function SessionScreen({
     )
       return;
     pendingCartEdit.current = null;
-    if (needsTable) {
+    if (needsTable && !pendingPlacement) {
       setTablePicker(true);
       return;
     }
     const step = planSave(activeDraft)[0];
     if (!step || step.kind !== "create") return;
     inFlight.current = true;
+    setRecovering(Boolean(pendingPlacement));
     setBusy(true);
     setError(null);
+    // A failed recovery read does not prove the original placement failed.
+    let commandStarted = false;
+    const requestScope = useOrderDraftStore.getState().scope;
     try {
-      const visit =
-        session ||
-        (await openRestaurantSession(openCall.call, {
+      const store = useOrderDraftStore.getState();
+      const intent = store.beginPlacement({
+        key: activeDraft.idempotency_key,
+        pos_profile: posProfile,
+        session: session?.name || activeDraft.restaurant_session || null,
+        opening: {
           pos_profile: posProfile,
           idempotency_key: `session:${activeDraft.idempotency_key}`,
           service_type: activeDraft.service_type,
           tables: activeDraft.table ? [activeDraft.table] : [],
           customer: header?.customer || null,
           guest_count: header?.pax || 0,
-        }));
-      if (!sessionName) setOpenedSession(visit);
-      await createSessionRound(roundCall.call, {
-        session: visit.name,
+        },
         items: step.params.items,
-        idempotency_key: activeDraft.idempotency_key,
         order_note: step.params.order_note,
-        pos_profile: posProfile,
         kitchen_routing: kitchenRouting || activeDraft.kitchen_routing,
       });
-      setDraft(newSessionRound(visit, newId()));
+      const visit = await placePending(
+        intent,
+        {
+          open: (params) => {
+            commandStarted = true;
+            return openCall.call(params);
+          },
+          round: (params) => {
+            commandStarted = true;
+            return roundCall.call(params);
+          },
+          recover: recoverCall.call,
+          get: (name) =>
+            session?.name === name && !pendingPlacement
+              ? Promise.resolve(session)
+              : getRestaurantSession(getCall.call, name),
+        },
+        (opened) => {
+          if (useOrderDraftStore.getState().scope !== requestScope)
+            throw new Error(
+              "Return to the original POS Profile to recover this order."
+            );
+          store.rememberSession(opened.name);
+          if (!sessionName) setOpenedSession(opened);
+        },
+        Boolean(pendingPlacement)
+      );
+      if (useOrderDraftStore.getState().scope !== requestScope) return;
+      store.finishPlacement(newSessionRound(visit, newId()));
       markChanged();
-      if (!sessionName)
+      if (sessionName !== visit.name)
         navigateToRestaurantSession(visit.name, { replace: true });
       else await result.refresh();
     } catch (caught) {
+      if (useOrderDraftStore.getState().scope !== requestScope) return;
+      if (
+        commandStarted &&
+        caught instanceof VunaApiError &&
+        caught.serverRejected &&
+        !["IDEMPOTENCY_CONFLICT", "REQUEST_REVIEW_REQUIRED"].includes(
+          caught.code || ""
+        )
+      ) {
+        useOrderDraftStore.getState().rejectPlacement();
+      }
       if (
         caught instanceof VunaApiError &&
         ["KITCHEN_ROUTING_REQUIRED", "INVALID_KITCHEN_STATION"].includes(
@@ -531,7 +626,7 @@ export function SessionScreen({
       inFlight.current = true;
       setBusy(true);
       try {
-        await updateRestaurantSession(updateCall.call, {
+        await updateVisit({
           session: session.name,
           customer: selected.customer,
         });
@@ -562,6 +657,27 @@ export function SessionScreen({
       );
   };
 
+  if (pendingPlacement && (!busy || recovering))
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+        <h2 className="text-lg font-semibold">
+          Confirm this order's placement
+        </h2>
+        <p className="max-w-md text-sm text-on-surface-variant">
+          Your order is saved on this device, but its placement has not been
+          confirmed. Check the saved result before changing or placing another
+          order.
+        </p>
+        <Button disabled={busy} onClick={() => void send()}>
+          {busy ? "Checking order…" : "Check and recover order"}
+        </Button>
+        {error || storageError ? (
+          <p role="alert" className="max-w-md text-sm text-error">
+            {storageError || error}
+          </p>
+        ) : null}
+      </div>
+    );
   if (bootstrap.data && !serviceTypes?.length)
     return (
       <EmptyState
@@ -584,11 +700,25 @@ export function SessionScreen({
   const readOnly =
     busy ||
     checkingCart ||
-    Boolean(session && (session.status !== "Open" || session.kiosk_status === "Awaiting Payment"));
+    Boolean(pendingPlacement) ||
+    Boolean(
+      session &&
+        (session.status !== "Open" ||
+          session.kiosk_status === "Awaiting Payment")
+    );
   const context = (
     <div className="mb-3 space-y-2">
+      {storageError ? (
+        <p role="alert" className="text-sm text-error">
+          {storageError}
+        </p>
+      ) : null}
       {session?.kiosk_status ? (
-        <KioskOrderBanner session={session} posProfile={posProfile} onChanged={() => void result.refresh()} />
+        <KioskOrderBanner
+          session={session}
+          posProfile={posProfile}
+          onChanged={() => void result.refresh()}
+        />
       ) : null}
       <div className="flex flex-wrap gap-2" aria-label="Service type">
         {serviceTypes?.map((service) => (
@@ -707,7 +837,7 @@ export function SessionScreen({
             onBlur={() => {
               if (session && guestEdit !== null) {
                 const value = Math.max(0, Math.floor(Number(guestEdit) || 0));
-                void updateRestaurantSession(updateCall.call, {
+                void updateVisit({
                   session: session.name,
                   guest_count: value,
                 })
@@ -735,7 +865,10 @@ export function SessionScreen({
         {/* A cashier confirms a kiosk order awaiting payment from its banner. */}
         {session &&
         posProfile &&
-        !(session.kiosk_status === "Awaiting Payment" && bootstrap.data?.can_take_payment) ? (
+        !(
+          session.kiosk_status === "Awaiting Payment" &&
+          bootstrap.data?.can_take_payment
+        ) ? (
           <SessionBill
             session={session}
             posProfile={posProfile}
@@ -1036,7 +1169,7 @@ export function SessionScreen({
                   inFlight.current = true;
                   setBusy(true);
                   try {
-                    await updateRestaurantSession(updateCall.call, {
+                    await updateVisit({
                       session: session.name,
                       tables: selectedTables,
                     });
@@ -1098,7 +1231,7 @@ export function SessionScreen({
               disabled={busy}
               onChange={(event) => {
                 setBusy(true);
-                void updateRestaurantSession(updateCall.call, {
+                void updateVisit({
                   session: session.name,
                   waiter: event.target.value,
                 })
@@ -1186,6 +1319,13 @@ export function SessionScreen({
               ))}
             </ul>
             <div className="mt-3 flex flex-wrap gap-2">
+              <CancelOrderItems
+                order={round.name}
+                allowed={
+                  Boolean(round.can_cancel_items) && session.status === "Open"
+                }
+                onChanged={() => void result.refresh()}
+              />
               {(session.kitchen_tickets || [])
                 .filter((ticket) => ticket.sales_order === round.name)
                 .map((ticket) => (
@@ -1202,6 +1342,31 @@ export function SessionScreen({
                   </Button>
                 ))}
             </div>
+            {round.cancellations?.length ? (
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer text-on-surface-variant">
+                  Cancellation history
+                </summary>
+                <ul className="mt-2 space-y-2">
+                  {round.cancellations.map((event, eventIndex) => (
+                    <li key={eventIndex}>
+                      <p>
+                        {event.items
+                          .map(
+                            (item) =>
+                              `${item.qty} ${item.uom} × ${item.item_name}`
+                          )
+                          .join(" · ")}{" "}
+                        cancelled
+                      </p>
+                      <p className="text-xs text-on-surface-variant">
+                        {event.reason} · {event.actor} · {event.occurred_at}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </details>
         ))}
       </Sheet>
@@ -1235,7 +1400,7 @@ export function SessionScreen({
         title="Discard unplaced items?"
         description="Placed orders remain saved. Only unplaced cart items will be discarded."
         confirmLabel="Discard"
-        confirmDisabled={busy}
+        confirmDisabled={busy || Boolean(pendingPlacement)}
         loading={busy}
         onConfirm={() => {
           const target = guard.pendingPage;

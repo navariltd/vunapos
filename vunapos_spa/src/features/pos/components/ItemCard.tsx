@@ -32,7 +32,8 @@ export const ItemCard = memo(function ItemCard({
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&
     Number(item.actual_qty || 0) <= 0;
-  const isDisabled = disabled || (outOfStock && !ignoreStock);
+  const isDisabled =
+    disabled || item.ordering_paused || (outOfStock && !ignoreStock);
 
   return (
     <div
@@ -88,6 +89,14 @@ export const ItemCard = memo(function ItemCard({
             <div className="min-w-0 flex-1">
               <ItemTaxLabel item={item} />
               <ItemTaxPrice currency={currency} item={item} />
+              {item.ordering_paused ? (
+                <p
+                  className="mt-1 text-xs font-medium text-error"
+                  title={item.availability_reason || undefined}
+                >
+                  {item.availability_reason || "Temporarily unavailable"}
+                </p>
+              ) : null}
               {item.is_qsr ? (
                 <span
                   title="Made to order. Ingredient availability is checked when adding and sending."

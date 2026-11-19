@@ -32,7 +32,8 @@ export const ItemListRow = memo(function ItemListRow({
     !item.allow_negative_stock &&
     item.actual_qty !== undefined &&
     Number(item.actual_qty || 0) <= 0;
-  const isDisabled = disabled || (outOfStock && !ignoreStock);
+  const isDisabled =
+    disabled || item.ordering_paused || (outOfStock && !ignoreStock);
 
   return (
     <div
@@ -66,6 +67,11 @@ export const ItemListRow = memo(function ItemListRow({
             .join(" · ")}
         </span>
         <ItemTaxLabel item={item} reserveSpace />
+        {item.ordering_paused ? (
+          <span className="block text-xs font-medium text-error">
+            {item.availability_reason || "Temporarily unavailable"}
+          </span>
+        ) : null}
       </button>
       <div className="text-right sm:order-none sm:text-left">
         <ItemTaxPrice currency={currency} item={item} align="right" />

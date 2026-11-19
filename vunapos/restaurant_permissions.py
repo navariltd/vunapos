@@ -44,6 +44,10 @@ def station_conditions(user=None):
 	return _related_conditions("Kitchen Station", "restaurant", user)
 
 
+def availability_conditions(user=None):
+	return _related_conditions("Restaurant Availability", "restaurant", user)
+
+
 def ticket_conditions(user=None):
 	return _station_scoped_conditions("Kitchen Order Ticket", user)
 
@@ -94,3 +98,10 @@ def related_has_permission(doc, user=None, permission_type=None):
 def has_permission(doc, user=None, permission_type=None):
 	# Ignore the retired Branch column: Restaurant is Company-level now.
 	return True
+
+
+def gateway_link_has_permission(doc, user=None, permission_type=None):
+	user = user or frappe.session.user
+	if not doc.get("restaurant_session"):
+		return doc.get("cashier") == user or "System Manager" in frappe.get_roles(user)
+	return frappe.has_permission("Restaurant Session", "read", doc=doc.restaurant_session, user=user)

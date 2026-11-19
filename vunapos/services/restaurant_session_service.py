@@ -2,8 +2,9 @@
 
 import frappe
 from frappe import _
-from frappe.utils import cint, now_datetime
+from frappe.utils import cint, flt, get_datetime, now_datetime
 
+from vunapos.services import restaurant_request_service as requests
 from vunapos.services.floor_plan_service import require_restaurant_profile
 from vunapos.services.profile_service import require_restaurant_staff_shift, resolve_pos_profile
 from vunapos.services.restaurant_service import require_restaurant_access, require_restaurant_context
@@ -139,7 +140,7 @@ def _load(session, for_update=False):
 
 
 def session_to_dict(doc):
-	from vunapos.dto.restaurant import order_to_dict, waiter_name
+	from vunapos.dto.restaurant import cancellation_histories, order_to_dict, waiter_name
 	from vunapos.services.floor_plan_service import is_floor_plan_manager
 	from vunapos.services.kitchen_lifecycle_service import preparation_summary
 	from vunapos.services.kitchen_service import session_tickets
@@ -165,6 +166,10 @@ def session_to_dict(doc):
 			)
 
 	tickets = session_tickets(doc)
+	orders = frappe.get_all(
+		"Sales Order", filters={"vunapos_restaurant_session": doc.name}, pluck="name", order_by="creation asc"
+	)
+	histories = cancellation_histories(orders)
 	return {
 		"name": doc.name,
 		"restaurant": doc.restaurant,
@@ -187,6 +192,9 @@ def session_to_dict(doc):
 		"billing_doctype": doc.get("billing_doctype"),
 		"billing_invoice": doc.get("billing_invoice"),
 		"billing_profile": doc.get("billing_profile"),
+		"walkout_reason": doc.get("walkout_reason"),
+		"walkout_by": doc.get("walkout_by"),
+		"walkout_at": doc.get("walkout_at"),
 		"kitchen_tickets": tickets,
 		"preparation_status": preparation_summary(tickets),
 		"opened_at": doc.opened_at,
@@ -200,13 +208,8 @@ def session_to_dict(doc):
 			for row in doc.tables
 		],
 		"rounds": [
-			order_to_dict(frappe.get_doc("Sales Order", name))
-			for name in frappe.get_all(
-				"Sales Order",
-				filters={"vunapos_restaurant_session": doc.name},
-				pluck="name",
-				order_by="creation asc",
-			)
+			order_to_dict(frappe.get_doc("Sales Order", name), cancellations=histories[name])
+			for name in orders
 		],
 	}
 
@@ -318,9 +321,16 @@ def list_sessions(pos_profile):
 	return rows
 
 
-def update_session(session, tables=None, guest_count=None, customer=None, waiter=None):
+def update_session(
+	session, tables=None, guest_count=None, customer=None, waiter=None, expected_modified=None
+):
 	doc = _load(session, for_update=True)
 	doc.check_permission("write")
+	if expected_modified and get_datetime(expected_modified) != get_datetime(doc.modified):
+		_fail(
+			"SESSION_CHANGED",
+			_("This visit changed on another terminal. Review the refreshed visit before trying again."),
+		)
 	if doc.status != "Open":
 		_fail("SESSION_NOT_OPEN", _("Only open sessions can be updated."))
 	if customer is not None and customer != doc.customer:
@@ -386,21 +396,32 @@ def open_session_doc(
 	pos_profile, idempotency_key, tables=None, service_type=None, customer=None, guest_count=0, values=None
 ):
 	"""Open a visit, or return the one opened with this key. `values` sets extra fields, e.g. kiosk ones."""
-	idempotency_key = str(idempotency_key or "").strip()
-	if not idempotency_key or not str(idempotency_key).strip():
-		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required to open a session."))
+	idempotency_key = requests.request_key(idempotency_key)
 	profile = resolve_pos_profile(pos_profile)
 	require_restaurant_staff_shift(profile.name)
 	restaurant = require_restaurant_profile(profile.name)
 	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
 	# Serialize retries on the profile even for takeaway sessions without tables.
 	frappe.db.get_value("POS Profile", profile.name, "name", for_update=True)
+	payload = {
+		"pos_profile": profile.name,
+		"tables": sorted(requests.parsed(tables) or []),
+		"service_type": service_type or "",
+		"customer": customer or "",
+		"guest_count": cint(guest_count),
+	}
+	previous = requests.replay("Open Session", idempotency_key, profile.name, payload)
+	if previous:
+		return _load(previous, for_update=True)
 	existing = frappe.db.get_value(SESSION, {"idempotency_key": idempotency_key}, "name", for_update=True)
 	if existing:
 		doc = _load(existing)
 		if doc.pos_profile != profile.name:
 			_fail("IDEMPOTENCY_CONFLICT", _("This key belongs to a different POS Profile."))
-		return doc
+		_fail(
+			"REQUEST_REVIEW_REQUIRED",
+			_("Open the existing visit to review this older request before continuing."),
+		)
 	if isinstance(tables, str):
 		tables = frappe.parse_json(tables)
 	if not isinstance(tables or [], list):
@@ -443,6 +464,7 @@ def open_session_doc(
 	)
 	doc.flags.restaurant_session_write = True
 	doc.insert()
+	requests.record("Open Session", idempotency_key, profile.name, payload, SESSION, doc.name)
 	return doc
 
 
@@ -456,11 +478,7 @@ def create_round(
 	from vunapos.services.restaurant_order_service import create_order
 
 	doc = _load(session, for_update=True)
-	if doc.status != "Open":
-		_fail("SESSION_NOT_OPEN", _("Only an open session can receive new orders."))
-	idempotency_key = str(idempotency_key or "").strip()
-	if not idempotency_key:
-		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required for each round."))
+	idempotency_key = requests.request_key(idempotency_key)
 	if doc.get("kiosk_status") == KIOSK_AWAITING_PAYMENT and frappe.db.exists(
 		"Sales Order",
 		{
@@ -473,12 +491,36 @@ def create_round(
 			"KIOSK_ORDER_AWAITING_PAYMENT",
 			_("Confirm the kiosk order's payment before adding more items to it."),
 		)
+	profile = resolve_pos_profile(pos_profile or doc.pos_profile)
+	payload = requests.round_payload(doc.name, profile.name, items, order_note, kitchen_routing)
+	if draft:
+		payload["draft"] = True
+	previous = requests.replay("Place Order", idempotency_key, profile.name, payload)
+	if previous:
+		from vunapos.services.restaurant_order_service import get_order
+
+		if draft:
+			# Kiosk receipts refer to the durable visit: an unpaid draft may
+			# legitimately be deleted when staff cancel that visit.
+			previous_order = frappe.db.get_value(
+				"Sales Order",
+				{"vunapos_restaurant_session": doc.name, "vunapos_idempotency_key": idempotency_key},
+				"name",
+				for_update=True,
+			)
+			if previous != doc.name or not previous_order:
+				_fail("REQUEST_REVIEW_REQUIRED", _("Review the original kiosk visit before retrying."))
+			return get_order(previous_order, for_update=True)
+		return get_order(previous, for_update=True)
+	if frappe.db.exists("Sales Order", {"vunapos_idempotency_key": idempotency_key}):
+		_fail("REQUEST_REVIEW_REQUIRED", _("Review the existing order before retrying this older request."))
+	if doc.status != "Open":
+		_fail("SESSION_NOT_OPEN", _("Only an open session can receive new orders."))
 	tables = [row.table for row in doc.tables if not row.released_at]
 	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
-	profile = resolve_pos_profile(pos_profile or doc.pos_profile)
 	if require_restaurant_profile(profile.name) != doc.restaurant or profile.vunapos_branch != doc.branch:
 		_fail("SESSION_CONTEXT_MISMATCH", _("Choose a POS Profile belonging to this session's restaurant."))
-	return create_order(
+	result = create_order(
 		pos_profile=profile.name,
 		service_type=doc.service_type,
 		customer=doc.customer,
@@ -492,6 +534,41 @@ def create_round(
 		kitchen_routing=kitchen_routing,
 		draft=draft,
 	)
+	if draft:
+		requests.record(
+			"Place Order",
+			idempotency_key,
+			profile.name,
+			payload,
+			SESSION,
+			doc.name,
+			details={"sales_order": result["name"]},
+		)
+	else:
+		requests.record("Place Order", idempotency_key, profile.name, payload, "Sales Order", result["name"])
+	return result
+
+
+def recover_round(pos_profile, idempotency_key, items, order_note=None, kitchen_routing=None, session=None):
+	"""Read a committed result before retrying an uncertain placement."""
+	from vunapos.services.restaurant_order_service import get_order
+
+	profile = resolve_pos_profile(pos_profile)
+	require_restaurant_profile(profile.name)
+	# A read-only recovery check uses one consistent snapshot. If placement
+	# has not committed yet, the subsequent idempotent command will wait for it.
+	receipt = requests.find("Place Order", idempotency_key, for_update=False)
+	if not receipt:
+		return None
+	if receipt.owner != frappe.session.user or receipt.pos_profile != profile.name:
+		frappe.throw(
+			_("This restaurant request belongs to another user or POS Profile."), frappe.PermissionError
+		)
+	order = get_order(receipt.reference_name)
+	visit = order["restaurant_session"]
+	payload = requests.round_payload(session or visit, profile.name, items, order_note, kitchen_routing)
+	requests.replay("Place Order", idempotency_key, profile.name, payload, for_update=False)
+	return {"session": get_session(visit), "order": order}
 
 
 def cancel_empty_session(session):
@@ -499,6 +576,9 @@ def cancel_empty_session(session):
 	doc.check_permission("write")
 	if doc.status == "Cancelled":
 		return session_to_dict(doc)
+	from vunapos.services.restaurant_payment_service import guard_order_change
+
+	guard_order_change(doc)
 	if doc.status != "Open" or frappe.db.exists(
 		"Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": ["!=", 2]}
 	):
@@ -582,8 +662,11 @@ def protect_committed_round(doc, method=None):
 		"uom",
 		"conversion_factor",
 		"rate",
+		"price_list_rate",
 		"discount_percentage",
 		"discount_amount",
+		"is_free_item",
+		"mapped_additional_discount_amount",
 		"warehouse",
 		"item_tax_template",
 		"vunapos_item_note",
@@ -594,6 +677,41 @@ def protect_committed_round(doc, method=None):
 	)
 	old_lines = [tuple(row.get(field) for field in line_fields) for row in before.items]
 	new_lines = [tuple(row.get(field) for field in line_fields) for row in doc.items]
+	adjustment = frappe.flags.get("vunapos_restaurant_charge_adjustment") or {}
+	prices = adjustment.get("prices", {}) if adjustment.get("order") == doc.name else {}
+	cancelling = frappe.flags.get("vunapos_cancelling_restaurant_items") == doc.name
+	if cancelling or prices:
+		old = {row.name: row for row in before.items}
+		fee = frappe.flags.get("vunapos_stop_fee") or {}
+		new_fees = [row for row in doc.items if row.name not in old]
+		valid_fee = (
+			cancelling
+			and fee.get("order") == doc.name
+			and len(new_fees) == 1
+			and new_fees[0].get("vunapos_line_id") == fee.get("line_id")
+			and new_fees[0].item_code == fee.get("item")
+			and new_fees[0].qty == 1
+			and new_fees[0].rate == fee.get("rate")
+			and not frappe.get_cached_value("Item", new_fees[0].item_code, "is_stock_item")
+		)
+		valid = all(
+			row.name in old
+			and (0 < flt(row.qty) <= flt(old[row.name].qty) if cancelling else row.qty == old[row.name].qty)
+			and all(
+				row.get(field) == prices.get(row.name, {}).get(field, old[row.name].get(field))
+				for field in line_fields
+				if field != "qty"
+			)
+			for row in doc.items
+			if row.name in old
+		)
+		if (
+			valid
+			and (not new_fees or valid_fee)
+			and (cancelling or len(doc.items) == len(before.items))
+			and not any(doc.get(field) != before.get(field) for field in headers)
+		):
+			return
 	if old_lines != new_lines or any(doc.get(field) != before.get(field) for field in headers):
 		_fail(
 			"ROUND_ALREADY_COMMITTED",

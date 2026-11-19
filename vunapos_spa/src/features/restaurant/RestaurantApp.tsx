@@ -22,6 +22,7 @@ import { OrdersPage } from "./components/OrdersPage";
 import { KitchenPage } from "./components/KitchenPage";
 import { RestaurantToast } from "./components/RestaurantToast";
 import { SharedRestaurantPages } from "./components/SharedRestaurantPages";
+import { draftScope, useOrderDraftStore } from "./stores/orderDraftStore";
 import {
   isRestaurantPageAllowed,
   restaurantRoleLabel,
@@ -34,7 +35,13 @@ export function RestaurantApp() {
   const bootstrap = useBootstrapData();
   const canTakePayment = Boolean(bootstrap.data?.can_take_payment);
 
-  if (needsRestaurantShift(bootstrap.data?.restaurant_roles, canTakePayment, bootstrap.data?.can_manage_restaurant)) {
+  if (
+    needsRestaurantShift(
+      bootstrap.data?.restaurant_roles,
+      canTakePayment,
+      bootstrap.data?.can_manage_restaurant
+    )
+  ) {
     return (
       <PosOpeningGate>
         <RestaurantShell canTakePayment={canTakePayment} />
@@ -46,11 +53,24 @@ export function RestaurantApp() {
 
 function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
   const bootstrap = useBootstrapData();
+  const user = bootstrap.data?.current_user;
+  const profile = bootstrap.data?.pos_profile;
+  const scope = useOrderDraftStore((state) => state.scope);
+  const storageError = useOrderDraftStore((state) => state.storageError);
+  const savedDraft = useOrderDraftStore((state) => state.draft);
+  useEffect(() => {
+    if (user && profile)
+      useOrderDraftStore.getState().activateScope(user, profile);
+  }, [user, profile]);
   const activePage = useNavigationStore((s) => s.activePage);
   const currentPath = useNavigationStore((s) => s.currentPath);
   const sessionName = getRestaurantSessionFromPath(currentPath);
   const roles = bootstrap.data?.restaurant_roles || [];
-  const canManageShift = needsRestaurantShift(roles, canTakePayment, bootstrap.data?.can_manage_restaurant);
+  const canManageShift = needsRestaurantShift(
+    roles,
+    canTakePayment,
+    bootstrap.data?.can_manage_restaurant
+  );
   const kitchenOnly = isKitchenOnlyUser(
     roles,
     bootstrap.data?.can_manage_restaurant
@@ -77,6 +97,8 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
 
   const posProfile = bootstrap.data?.pos_profile;
 
+  if (!user || !profile || scope !== draftScope(user, profile)) return null;
+
   return (
     <>
       <ConnectivityMonitor />
@@ -87,9 +109,17 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
         posProfile={posProfile}
         warehouse={bootstrap.data?.warehouse}
       >
-        {!isAllowedPage ? null : ["Invoices", "Payments", "Customers"].includes(
-            activePage
-          ) && bootstrap.data ? (
+        {storageError &&
+        !savedDraft &&
+        ["Home", "Order"].includes(activePage) ? (
+          <p role="alert" className="p-6 text-error">
+            {storageError}
+          </p>
+        ) : !isAllowedPage ? null : [
+            "Invoices",
+            "Payments",
+            "Customers",
+          ].includes(activePage) && bootstrap.data ? (
           <SharedRestaurantPages
             page={activePage}
             path={currentPath}

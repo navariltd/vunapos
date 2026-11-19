@@ -1,3 +1,6 @@
+from functools import wraps
+from inspect import signature
+
 import frappe
 
 from vunapos.services.gateway_payment_service import (
@@ -16,9 +19,28 @@ from vunapos.services.gateway_payment_service import (
 	search_c2b_gateway_payments as search_c2b_gateway_payments_service,
 )
 from vunapos.utils.response import failure, success
+from vunapos.utils.transactions import DATABASE_CONFLICTS
+
+
+def _restaurant_payment_write(fn):
+	# Retail sends synchronously: do not expand restaurant retry behavior to it.
+	from vunapos.api.restaurant import _atomic_write
+
+	parameters = signature(fn)
+	retry = _atomic_write(fn)
+
+	@wraps(fn)
+	def wrapped(*args, **kwargs):
+		if parameters.bind_partial(*args, **kwargs).arguments.get("restaurant_session"):
+			return retry(*args, **kwargs)
+		return fn(*args, **kwargs)
+
+	return wrapped
 
 
 def _failure_from_exception(exc):
+	if isinstance(exc, DATABASE_CONFLICTS) and frappe.flags.get("vunapos_retrying_database"):
+		raise exc
 	return failure(
 		str(exc),
 		code=getattr(exc, "vuna_error_code", exc.__class__.__name__),
@@ -27,6 +49,7 @@ def _failure_from_exception(exc):
 
 
 @frappe.whitelist(methods=["POST"])
+@_restaurant_payment_write
 def initiate_stk_gateway_payment(
 	pos_profile: str | None = None,
 	mode_of_payment: str | None = None,
@@ -36,6 +59,9 @@ def initiate_stk_gateway_payment(
 	currency: str | None = None,
 	idempotency_key: str | None = None,
 	account_reference: str | None = None,
+	restaurant_session: str | None = None,
+	bill_fingerprint: str | None = None,
+	loyalty_points: int | None = None,
 ):
 	try:
 		return success(
@@ -48,6 +74,9 @@ def initiate_stk_gateway_payment(
 				currency=currency,
 				idempotency_key=idempotency_key,
 				account_reference=account_reference,
+				restaurant_session=restaurant_session,
+				bill_fingerprint=bill_fingerprint,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:
@@ -71,6 +100,7 @@ def cancel_gateway_payment_link(gateway_payment_link: str | None = None):
 
 
 @frappe.whitelist(methods=["POST"])
+@_restaurant_payment_write
 def attach_c2b_gateway_payment(
 	pos_profile: str | None = None,
 	mode_of_payment: str | None = None,
@@ -79,6 +109,9 @@ def attach_c2b_gateway_payment(
 	customer: str | None = None,
 	currency: str | None = None,
 	idempotency_key: str | None = None,
+	restaurant_session: str | None = None,
+	bill_fingerprint: str | None = None,
+	loyalty_points: int | None = None,
 ):
 	try:
 		return success(
@@ -90,6 +123,9 @@ def attach_c2b_gateway_payment(
 				customer=customer,
 				currency=currency,
 				idempotency_key=idempotency_key,
+				restaurant_session=restaurant_session,
+				bill_fingerprint=bill_fingerprint,
+				loyalty_points=loyalty_points,
 			)
 		)
 	except Exception as exc:

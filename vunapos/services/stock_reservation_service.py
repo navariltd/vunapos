@@ -13,6 +13,8 @@ from erpnext.stock.utils import get_or_make_bin
 from frappe import _
 from frappe.utils import flt
 
+from vunapos.utils.transactions import rollback_savepoint
+
 SUPPORTED_RESERVATION_DOCTYPE = "Sales Invoice"
 
 
@@ -259,7 +261,7 @@ def create_invoice_stock_reservations(doc) -> list[str]:
 		validate_invoice_stock_reservations(doc)
 		return reservations
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 
 

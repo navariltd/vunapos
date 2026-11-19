@@ -85,6 +85,17 @@ def _configuration_profile_names(doc: Document, method: str | None) -> list[str]
 	profile's default list, so those must still reach all enabled profiles.
 	"""
 	filters = {"disabled": 0}
+	if doc.doctype == "Restaurant Availability":
+		return frappe.get_all(
+			"POS Profile",
+			filters={
+				**filters,
+				"vunapos_pos_mode": "Restaurant",
+				"vunapos_restaurant": doc.restaurant,
+				"vunapos_branch": doc.branch,
+			},
+			pluck="name",
+		)
 	if doc.doctype in ("Restaurant Menu", "Menu Section", "Restaurant Modifier Group", "Kitchen Station"):
 		return frappe.get_all(
 			"POS Profile", filters={**filters, "vunapos_pos_mode": "Restaurant"}, pluck="name"
@@ -174,27 +185,31 @@ def publish_checkout_queue_change(doc: Document) -> None:
 
 
 def publish_gateway_payment_change(doc: Document) -> None:
-	"""Notify only the cashier who owns an active gateway checkout payment."""
+	"""Notify the original cashier and any approved receiving cashier."""
 	cashier = doc.get("cashier")
 	if not cashier:
 		return
-	frappe.publish_realtime(
-		GATEWAY_PAYMENT_EVENT,
-		{
-			"name": doc.name,
-			"source_doctype": doc.get("source_doctype"),
-			"source_name": doc.get("source_name"),
-			"payment_gateway": doc.get("payment_gateway"),
-			"mode_of_payment": doc.get("mode_of_payment"),
-			"status": doc.get("status"),
-			"transaction_reference": doc.get("transaction_reference"),
-			"pos_profile": doc.get("pos_profile"),
-			"opening_entry": doc.get("opening_entry"),
-			"customer": doc.get("customer"),
-			"amount": flt(doc.get("amount")),
-			"currency": doc.get("currency"),
-			"consumed": cint(doc.get("consumed")),
-		},
-		user=cashier,
-		after_commit=True,
-	)
+	payload = {
+		"name": doc.name,
+		"source_doctype": doc.get("source_doctype"),
+		"source_name": doc.get("source_name"),
+		"payment_gateway": doc.get("payment_gateway"),
+		"mode_of_payment": doc.get("mode_of_payment"),
+		"status": doc.get("status"),
+		"transaction_reference": doc.get("transaction_reference"),
+		"pos_profile": doc.get("pos_profile"),
+		"opening_entry": doc.get("opening_entry"),
+		"customer": doc.get("customer"),
+		"amount": flt(doc.get("amount")),
+		"currency": doc.get("currency"),
+		"consumed": cint(doc.get("consumed")),
+	}
+	if doc.get("restaurant_session"):
+		payload.update(
+			{
+				field: doc.get(field)
+				for field in ("restaurant_session", "dispatch_state", "settlement_profile", "remarks")
+			}
+		)
+	for recipient in {cashier, doc.get("settlement_cashier")} - {None, ""}:
+		frappe.publish_realtime(GATEWAY_PAYMENT_EVENT, payload, user=recipient, after_commit=True)

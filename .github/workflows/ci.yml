@@ -133,3 +133,12 @@ jobs:
           bench --site test_site run-tests --app vunapos
         env:
           TYPE: server
+
+      - name: Run restaurant concurrency tests
+        working-directory: /home/runner/frappe-bench
+        run: |
+          bench --site test_site run-tests --module vunapos.tests.test_restaurant_concurrency
+          bench --site test_site run-tests --module vunapos.tests.test_restaurant_payment_concurrency
+        env:
+          TYPE: server
+          VUNAPOS_CONCURRENCY_TESTS: '1'

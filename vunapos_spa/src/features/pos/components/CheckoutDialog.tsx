@@ -16,6 +16,7 @@ import {
 
 import { Button } from "../../../components/ui/Button";
 import { useGatewayPaymentRealtime } from "../hooks/useGatewayPaymentRealtime";
+import { recoveredAmounts } from "../gatewayRecovery";
 import {
   allocateAllToMode,
 	allocatePaymentRemainderToNextMode,
@@ -318,8 +319,8 @@ function CheckoutDialogContent({
   const loyaltyAmountMinor = totalToMinorUnits(appliedLoyaltyAmount, precision);
   const payableMinor = Math.max(totalMinor - loyaltyAmountMinor, 0);
   const [amounts, setAmounts] = useState(() =>
-    initialGatewayLinks?.[0]
-      ? allocateAllToMode(availableModes, initialGatewayLinks[0].mode_of_payment, payableMinor, precision)
+    initialGatewayLinks?.length
+      ? recoveredAmounts(availableModes, initialGatewayLinks, payableMinor, precision)
       :
     (allowCreditSales && defaultSaleType === "Credit Sale") ||
     (isSalesOrder && Boolean(allowSalesOrderPayments))
@@ -525,6 +526,11 @@ function CheckoutDialogContent({
       amounts[mode.mode_of_payment] || "",
       precision,
     );
+    const existing = gatewayLinks[mode.mode_of_payment];
+    if (existing?.handover_required || (existing?.settlement_profile && existing.settlement_profile !== posProfile)) return true;
+    if (existing && (isPendingGatewayLink(existing) || isSuccessfulGatewayLink(existing))) {
+      return !isSuccessfulGatewayLink(existing) || amountMinor !== totalToMinorUnits(existing.amount, precision);
+    }
     if (!amountMinor || amountMinor <= 0) return false;
     return !isSuccessfulGatewayLink(gatewayLinks[mode.mode_of_payment]);
   });
@@ -658,8 +664,9 @@ function CheckoutDialogContent({
     const currentLink = gatewayLinks[mode.mode_of_payment];
     if (
       currentLink &&
+      !currentLink.restaurant_session &&
       totalToMinorUnits(Number(currentLink.amount || 0), precision) !==
-        payableMinor
+        gatewayAmountMinor(mode.mode_of_payment)
     ) {
       clearGatewayVerification(mode.mode_of_payment);
     }
@@ -724,7 +731,7 @@ function CheckoutDialogContent({
       );
     });
     if (!matchingMode) return;
-    if (event.pos_profile && posProfile && event.pos_profile !== posProfile)
+    if (event.pos_profile && posProfile && event.pos_profile !== posProfile && event.settlement_profile !== posProfile)
       return;
     setPaidGatewayLink(matchingMode.mode_of_payment, event);
   });
@@ -1579,7 +1586,14 @@ function InvoiceSummary({
               key={item.row_name}
               className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 text-sm"
             >
-              <span className="truncate text-on-surface">{item.item_name}</span>
+              <span className="min-w-0 text-on-surface">
+                <span className="block truncate">{item.item_name}</span>
+                {Number(item.distributed_discount_amount) > 0 ? (
+                  <span className="block text-xs text-on-surface-variant">
+                    Additional discount (excl. tax): {formatCurrency(item.distributed_discount_amount, currency, precision)}
+                  </span>
+                ) : null}
+              </span>
               <span className="text-on-surface-variant">×{item.qty}</span>
               <span className="font-medium text-on-surface">
                 {formatCurrency(item.amount, currency, precision)}

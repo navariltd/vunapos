@@ -151,6 +151,7 @@ def invoice_to_dict(doc):
 				"price_list_rate": row.get("price_list_rate"),
 				"discount_percentage": row.get("discount_percentage"),
 				"discount_amount": row.get("discount_amount"),
+				"distributed_discount_amount": row.get("distributed_discount_amount"),
 				"amount": row.amount,
 				"is_free_item": bool(row.get("is_free_item")),
 				"warehouse": row.get("warehouse"),

@@ -259,6 +259,21 @@ class TestKitchenLifecycle(IntegrationTestCase):
 		self.assertNotIn("grand_total", response["data"]["tickets"][0])
 		self.assertNotIn("rate", response["data"]["tickets"][0]["items"][0])
 
+	def test_board_and_ticket_show_full_names_without_changing_user_ids(self):
+		ticket = self._placed()
+		frappe.db.set_value("User", "Administrator", "full_name", "Kitchen Demo User")
+		for response in (
+			restaurant.get_kitchen_ticket(ticket),
+			restaurant.get_kitchen_board(self.profile.name, self.station),
+		):
+			self.assertTrue(response["ok"], response)
+			data = response["data"]
+			row = data["tickets"][0] if "tickets" in data else data
+			self.assertEqual(row["waiter"], "Administrator")
+			self.assertEqual(row["sent_by"], "Administrator")
+			self.assertEqual(row["waiter_name"], "Kitchen Demo User")
+			self.assertEqual(row["sent_by_name"], "Kitchen Demo User")
+
 	def test_summary_uses_preparation_states_not_document_statuses(self):
 		for statuses, expected in [
 			([], "No preparation"),

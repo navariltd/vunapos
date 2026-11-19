@@ -235,6 +235,64 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			{right for right in rights if granted[right]}, {"read", "create", "print", "if_owner"}
 		)
 
+	def test_kiosk_cannot_use_new_staff_exception_or_recovery_endpoints(self):
+		frappe.set_user(KIOSK_USER)
+		calls = (
+			lambda: restaurant.preview_rejection("ticket"),
+			lambda: restaurant.preview_preparation_stop("ticket"),
+			lambda: restaurant.preview_item_cancellation("order"),
+			lambda: restaurant.preview_restaurant_waste("ticket"),
+			lambda: restaurant.preview_remake("ticket"),
+			lambda: restaurant.record_walkout("visit", self.till, "review", "reason"),
+			lambda: restaurant.handover_session_payment("link", "visit", self.till, "reason"),
+			lambda: restaurant.recover_session_round(self.kiosk_profile, "key", []),
+			lambda: restaurant.kitchen_action("ticket", "Ready", "key", "Preparing", {"meal": 1}),
+		)
+		try:
+			for call in calls:
+				response = call()
+				self.assertFalse(response["ok"], response)
+				self.assertEqual(response["errors"][0]["code"], "KIOSK_NOT_ALLOWED")
+		finally:
+			frappe.set_user("Administrator")
+
+	def test_kiosk_round_retries_preserve_receipts_without_pinning_deleted_drafts(self):
+		from vunapos.services import restaurant_request_service as requests
+		from vunapos.services.restaurant_session_service import create_round
+
+		key = str(uuid4())
+		items = [{"item_code": self.item, "qty": 2, "line_id": "meal"}]
+		placed = self._place(items=items, key=key)
+		round_key = f"kiosk-round:{key}"
+		frappe.set_user(KIOSK_USER)
+		try:
+			replayed = create_round(
+				placed["session"], items, round_key, "No onions", self.kiosk_profile, draft=True
+			)
+			self.assertEqual(replayed["name"], placed["sales_order"])
+			with self.assertRaises(frappe.ValidationError) as conflict:
+				create_round(
+					placed["session"],
+					[{**items[0], "qty": 3}],
+					round_key,
+					"No onions",
+					self.kiosk_profile,
+					draft=True,
+				)
+			self.assertEqual(conflict.exception.vuna_error_code, "IDEMPOTENCY_CONFLICT")
+		finally:
+			frappe.set_user("Administrator")
+		receipt_name = requests.receipt_name("Place Order", round_key)
+		receipt = frappe.get_doc("Restaurant Request", receipt_name)
+		self.assertEqual(
+			(receipt.reference_doctype, receipt.reference_name), ("Restaurant Session", placed["session"])
+		)
+		self.assertEqual(frappe.parse_json(receipt.details)["sales_order"], placed["sales_order"])
+		cancelled = kiosk.cancel_kiosk_order(placed["session"], "Guest cancelled before payment", self.till)
+		self.assertTrue(cancelled["ok"], cancelled)
+		self.assertFalse(frappe.db.exists("Sales Order", placed["sales_order"]))
+		self.assertTrue(frappe.db.exists("Restaurant Request", receipt_name))
+
 	def test_profile_validation(self):
 		cases = (
 			({"vunapos_pin_users": []}, "Manager PIN"),

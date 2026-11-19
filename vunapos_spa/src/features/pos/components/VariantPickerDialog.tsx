@@ -215,15 +215,22 @@ export function VariantPickerDialog({
                           } available`
                         : "Out of stock"}
                     </p>
+                    {variant.ordering_paused ? (
+                      <p className="max-w-48 text-xs text-error">
+                        {variant.availability_reason ||
+                          "Temporarily unavailable"}
+                      </p>
+                    ) : null}
                   </div>
                   <Button
                     size="sm"
                     disabled={
-                      !ignoreStock &&
-                      !variant.is_qsr &&
-                      Boolean(variant.is_stock_item ?? true) &&
-                      !variant.allow_negative_stock &&
-                      Number(variant.actual_qty || 0) <= 0
+                      Boolean(variant.ordering_paused) ||
+                      (!ignoreStock &&
+                        !variant.is_qsr &&
+                        Boolean(variant.is_stock_item ?? true) &&
+                        !variant.allow_negative_stock &&
+                        Number(variant.actual_qty || 0) <= 0)
                     }
                     onClick={() => onSelect(variant)}
                   >

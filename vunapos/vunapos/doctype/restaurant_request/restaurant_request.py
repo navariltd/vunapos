@@ -1,0 +1,14 @@
+import frappe
+from frappe import _
+from frappe.model.document import Document
+
+
+class RestaurantRequest(Document):
+	def validate(self):
+		if not self.is_new() or not self.flags.restaurant_request_write:
+			frappe.throw(
+				_("Restaurant request receipts are managed by restaurant actions."), frappe.PermissionError
+			)
+
+	def on_trash(self):
+		frappe.throw(_("Restaurant request receipts cannot be deleted."), frappe.PermissionError)
