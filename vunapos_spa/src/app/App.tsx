@@ -13,6 +13,7 @@ import { ConnectivityMonitor } from "./ConnectivityMonitor";
 import { PosModeSwitch } from "./PosModeSwitch";
 import { PosOpeningGate } from "./PosOpeningGate";
 import { RestaurantApp } from "../features/restaurant/RestaurantApp";
+import { KioskApp } from "../features/kiosk/KioskApp";
 import { VunaApiError, refreshSalespersonPin, vunaMethods } from "../services/vunaApi";
 import { useUiFeedbackStore } from "../features/pos/stores/uiFeedbackStore";
 
@@ -28,6 +29,7 @@ export function App() {
               </PosOpeningGate>
             }
             restaurant={<RestaurantApp />}
+            kiosk={<KioskApp />}
           />
         </BootstrapGate>
       </AuthGate>

@@ -135,7 +135,7 @@
    "link_fieldname": "default_menu"
   }
  ],
- "modified": "2026-11-07 18:13:10.732000",
+ "modified": "2026-11-17 07:21:49.167442",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant Menu",
@@ -176,6 +176,10 @@
   {
    "read": 1,
    "role": "VunaPOS Cashier"
+  },
+  {
+   "role": "VunaPOS Kiosk",
+   "read": 1
   }
  ],
  "row_format": "Dynamic",

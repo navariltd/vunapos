@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_ORDERS_FILTER, filterOrders, isFiltered, type OrdersFilter } from "../ordersFilter";
+import { DEFAULT_ORDERS_FILTER, filterOrders, isFiltered, isPaidKioskOrder, type OrdersFilter } from "../ordersFilter";
 import type { RestaurantOrderSummaryDTO } from "../types";
 
 const order = (
@@ -75,6 +75,42 @@ describe("filterOrders", () => {
 		const input = [...orders];
 		expect(names({ floor: "Main Hall", query: "walk", sort: "newest" })).toEqual(["VRO-2"]);
 		expect(orders).toEqual(input);
+	});
+});
+
+describe("kiosk orders", () => {
+	const kiosk = [
+		...orders,
+		order("RS-2026-00041", "2026-10-27 12:30:00", {
+			restaurant_session: "RS-2026-00041",
+			kiosk_status: "Awaiting Payment",
+			order_number: 47,
+			sales_orders: ["SAL-ORD-2026-00112"],
+		}),
+		order("RS-2026-00042", "2026-10-27 12:31:00", {
+			restaurant_session: "RS-2026-00042",
+			kiosk_status: "Sent to Kitchen",
+			order_number: 48,
+		}),
+	];
+	const kioskNames = (filter: Partial<OrdersFilter>) =>
+		filterOrders(kiosk, { ...DEFAULT_ORDERS_FILTER, ...filter }, context).map((row) => row.name);
+
+	it("filters to orders awaiting payment", () => {
+		expect(kioskNames({ awaitingPayment: true })).toEqual(["RS-2026-00041"]);
+		expect(isFiltered({ ...DEFAULT_ORDERS_FILTER, awaitingPayment: true })).toBe(true);
+	});
+
+	it("finds an order by its number, its session or its Sales Order", () => {
+		expect(kioskNames({ query: "47" })).toEqual(["RS-2026-00041"]);
+		expect(kioskNames({ query: "Order 48" })).toEqual(["RS-2026-00042"]);
+		expect(kioskNames({ query: "rs-2026-00041" })).toEqual(["RS-2026-00041"]);
+		expect(kioskNames({ query: "SAL-ORD-2026-00112" })).toEqual(["RS-2026-00041"]);
+	});
+
+	it("marks a paid order whose table waits to be cleared", () => {
+		expect(kiosk.filter(isPaidKioskOrder)).toEqual([]);
+		expect(isPaidKioskOrder({ ...kiosk[kiosk.length - 1], kiosk_status: "Paid" })).toBe(true);
 	});
 });
 

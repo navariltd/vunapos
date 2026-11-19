@@ -276,6 +276,7 @@ export type BootstrapData = {
 	// Restaurant mode: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
 	restaurant_roles?: string[];
+	is_kiosk_user?: boolean;
 	// Null on Retail profiles.
 	restaurant?: CachedRestaurantSettings | null;
 };

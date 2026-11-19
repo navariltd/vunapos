@@ -6,6 +6,7 @@
  "field_order": [
   "kitchen_station",
   "status",
+  "production_completed_at_billing",
   "service_type",
   "table_labels",
   "column_break_service",
@@ -140,6 +141,16 @@
    "in_standard_filter": 1
   },
   {
+   "fieldname": "production_completed_at_billing",
+   "fieldtype": "Check",
+   "label": "Production Completed at Billing",
+   "default": "0",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 1,
+   "description": "The cashier billed this order early and its stock was moved then. Kitchen steps now only change the status."
+  },
+  {
    "fieldname": "order_note",
    "label": "Order Note",
    "fieldtype": "Small Text",
@@ -213,7 +224,7 @@
  "track_changes": 1,
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-17 14:04:09.012244",
  "creation": "2026-11-05 07:53:35.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

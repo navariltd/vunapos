@@ -58,6 +58,12 @@ export function KitchenTicketSheet({
         </p>
       ) : (
         <div className="space-y-4">
+          {ticket.production_completed_at_billing ? (
+            <p role="status" className="rounded-md bg-status-paid-container p-3 text-sm text-on-surface">
+              Paid. This order was billed before it was made, so its stock has already moved.
+              Accept, Start and Ready only update its status.
+            </p>
+          ) : null}
           <div className="rounded-lg bg-surface-container-low p-3 text-sm">
             <span
               className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(

@@ -16,6 +16,17 @@
   "waiter",
   "opened_at",
   "closed_at",
+  "kiosk_section",
+  "order_number",
+  "kiosk_status",
+  "order_date",
+  "column_break_kiosk",
+  "confirmed_by",
+  "confirmed_at",
+  "cancel_reason",
+  "cancelled_by",
+  "cancel_approved_by",
+  "cancelled_at",
   "tables_section",
   "tables",
   "billing_section",
@@ -201,6 +212,87 @@
   {
    "fieldname": "column_break_context",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "kiosk_section",
+   "fieldtype": "Section Break",
+   "label": "Kiosk Order",
+   "depends_on": "eval:doc.kiosk_status"
+  },
+  {
+   "fieldname": "order_number",
+   "fieldtype": "Int",
+   "label": "Order Number",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "description": "The number shown to the customer, counted from 1 each day at this branch."
+  },
+  {
+   "fieldname": "kiosk_status",
+   "fieldtype": "Select",
+   "label": "Kiosk Status",
+   "options": "\nAwaiting Payment\nPaid\nSent to Kitchen",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 1,
+   "description": "Awaiting Payment: nothing goes to the kitchen until a cashier confirms payment. Paid: the bill is settled and the table stays occupied until staff clear it."
+  },
+  {
+   "fieldname": "order_date",
+   "fieldtype": "Date",
+   "label": "Order Date",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "column_break_kiosk",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "confirmed_by",
+   "fieldtype": "Link",
+   "label": "Payment Confirmed By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "confirmed_at",
+   "fieldtype": "Datetime",
+   "label": "Payment Confirmed At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cancel_reason",
+   "fieldtype": "Small Text",
+   "label": "Cancel Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cancelled_by",
+   "fieldtype": "Link",
+   "label": "Cancelled By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cancel_approved_by",
+   "fieldtype": "Data",
+   "label": "Cancel Approved By",
+   "description": "The manager who approved the cancellation with their PIN.",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "cancelled_at",
+   "fieldtype": "Datetime",
+   "label": "Cancelled At",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "permissions": [
@@ -231,9 +323,16 @@
    "create": 1,
    "write": 1,
    "print": 1
+  },
+  {
+   "role": "VunaPOS Kiosk",
+   "read": 1,
+   "create": 1,
+   "write": 1,
+   "if_owner": 1
   }
  ],
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-17 22:00:26.295869",
  "creation": "2026-11-04 21:01:06.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

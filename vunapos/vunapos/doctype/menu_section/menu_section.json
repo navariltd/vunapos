@@ -53,6 +53,10 @@
   {
    "role": "VunaPOS Cashier",
    "read": 1
+  },
+  {
+   "role": "VunaPOS Kiosk",
+   "read": 1
   }
  ],
  "autoname": "field:section_name",
@@ -60,7 +64,7 @@
  "title_field": "section_name",
  "sort_field": "section_name",
  "sort_order": "ASC",
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-17 07:21:49.167442",
  "creation": "2026-11-04 22:11:50.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

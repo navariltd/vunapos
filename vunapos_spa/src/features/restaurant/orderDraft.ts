@@ -249,7 +249,7 @@ export type SaveStep =
 	| { kind: "add_items"; params: { order: string; items: OrderLineInput[] } }
 	| { kind: "update_item"; params: { order: string; line_id: string; qty?: number; note?: string } };
 
-function lineInput(line: UnsentLine): OrderLineInput {
+export function lineInput(line: UnsentLine): OrderLineInput {
 	const input: OrderLineInput = { line_id: line.line_id, item_code: line.item_code, qty: line.qty };
 	if (line.uom) input.uom = line.uom;
 	if (line.note.trim()) input.note = line.note.trim();

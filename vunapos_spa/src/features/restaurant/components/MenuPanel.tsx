@@ -18,6 +18,8 @@ type MenuPanelProps = {
   disabled?: boolean;
   // Item code -> quantity already on the order, shown on the phone list's buttons.
   quantities: Map<string, number>;
+  // The kiosk shows the image grid (or the list, by choice) on phones too.
+  phoneGrid?: boolean;
   onRetry: () => void;
   onAddItem: (item: ItemDTO) => void;
 };
@@ -25,9 +27,20 @@ type MenuPanelProps = {
 const ALL = "__all__";
 
 // The menu for the order's service type and table: category tabs, search, and
-// the items as compact rows on phones or the retail item grid from md up. Items
-// with variants are listed separately, disabled (stage 1).
-export function MenuPanel({ menu, isLoading, error, currency, disabled, quantities, onRetry, onAddItem }: MenuPanelProps) {
+// the items as compact rows on phones or the retail item grid from md up (or at
+// every width with `phoneGrid`). Items with variants are listed separately,
+// disabled (stage 1).
+export function MenuPanel({
+  menu,
+  isLoading,
+  error,
+  currency,
+  disabled,
+  quantities,
+  phoneGrid,
+  onRetry,
+  onAddItem,
+}: MenuPanelProps) {
   const [category, setCategory] = useState<string>(ALL);
   const [query, setQuery] = useState("");
   const [view, setView] = useState<CatalogueView>("grid");
@@ -70,7 +83,7 @@ export function MenuPanel({ menu, isLoading, error, currency, disabled, quantiti
         </label>
         <Button
           variant="ghost"
-          className="hidden size-11 shrink-0 p-0 md:flex"
+          className={cn("size-11 shrink-0 p-0", phoneGrid ? "flex" : "hidden md:flex")}
           aria-label={view === "grid" ? "Show as list" : "Show as grid"}
           title={view === "grid" ? "Show as list" : "Show as grid"}
           onClick={() => setView(view === "grid" ? "list" : "grid")}
@@ -102,7 +115,7 @@ export function MenuPanel({ menu, isLoading, error, currency, disabled, quantiti
       <div className={cn("min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain", disabled && "pointer-events-none opacity-60")}>
         {orderable.length || !templates.length ? (
           <>
-            <div className="md:hidden">
+            <div className={phoneGrid ? "hidden" : "md:hidden"}>
               {orderable.length ? (
                 <ul className="divide-y divide-outline-variant">
                   {orderable.map((item) => (
@@ -119,7 +132,7 @@ export function MenuPanel({ menu, isLoading, error, currency, disabled, quantiti
                 <EmptyState title="No items found" description="Try another name or category." />
               )}
             </div>
-            <div className="hidden md:block">
+            <div className={phoneGrid ? "block" : "hidden md:block"}>
               <ItemGrid currency={currency} items={orderable} view={view} onAddItem={onAddItem} />
             </div>
           </>

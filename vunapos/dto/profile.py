@@ -9,7 +9,11 @@ from vunapos.services.customer_group_service import profile_customer_groups
 from vunapos.services.phone_search import profile_isd
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
-from vunapos.services.restaurant_service import get_profile_restaurant
+from vunapos.services.restaurant_service import (
+	get_profile_restaurant,
+	kiosk_idle_seconds,
+	kiosk_payment_timing,
+)
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 
@@ -28,6 +32,9 @@ def _restaurant_settings(profile):
 			cint(profile.get("vunapos_require_manager_pin_order_cancel"))
 		),
 		"complete_preparation_on_billing": bool(cint(profile.get("vunapos_complete_preparation_on_billing"))),
+		"kiosk_mode": bool(cint(profile.get("vunapos_kiosk_mode"))),
+		"kiosk_payment_timing": kiosk_payment_timing(profile),
+		"kiosk_idle_seconds": kiosk_idle_seconds(profile),
 	}
 
 

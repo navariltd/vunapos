@@ -52,6 +52,7 @@ import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
+import { KioskOrderBanner } from "./KioskOrderBanner";
 import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
@@ -581,9 +582,14 @@ export function SessionScreen({
       />
     );
   const readOnly =
-    busy || checkingCart || Boolean(session && session.status !== "Open");
+    busy ||
+    checkingCart ||
+    Boolean(session && (session.status !== "Open" || session.kiosk_status === "Awaiting Payment"));
   const context = (
     <div className="mb-3 space-y-2">
+      {session?.kiosk_status ? (
+        <KioskOrderBanner session={session} posProfile={posProfile} onChanged={() => void result.refresh()} />
+      ) : null}
       <div className="flex flex-wrap gap-2" aria-label="Service type">
         {serviceTypes?.map((service) => (
           <button
@@ -726,7 +732,10 @@ export function SessionScreen({
             View orders ({session.rounds.length})
           </Button>
         ) : null}
-        {session && posProfile ? (
+        {/* A cashier confirms a kiosk order awaiting payment from its banner. */}
+        {session &&
+        posProfile &&
+        !(session.kiosk_status === "Awaiting Payment" && bootstrap.data?.can_take_payment) ? (
           <SessionBill
             session={session}
             posProfile={posProfile}

@@ -10,8 +10,14 @@ RESTAURANT_MANAGER_ROLE = "VunaPOS Restaurant Manager"
 CASHIER_ROLE = "VunaPOS Cashier"
 WAITER_ROLE = "VunaPOS Waiter"
 KITCHEN_ROLE = "VunaPOS Kitchen User"
+# The login of a self-service kiosk device. It has no Desk access.
+KIOSK_ROLE = "VunaPOS Kiosk"
 # Display order: the Profile page lists a user's roles in this order.
-RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE)
+RESTAURANT_ROLES = (WAITER_ROLE, CASHIER_ROLE, KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE, KIOSK_ROLE)
+KIOSK_PAY_FIRST = "Pay at the counter first"
+KIOSK_BILL_AT_END = "Bill at the end"
+KIOSK_PAYMENT_TIMINGS = (KIOSK_PAY_FIRST, KIOSK_BILL_AT_END)
+DEFAULT_KIOSK_IDLE_SECONDS = 90
 
 _READ = {"read": 1}
 # Catalogue pricing (ERPNext's apply_pricing_rule) needs doctype-level read on
@@ -25,6 +31,9 @@ _BILLING = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _ORDERS = {"read": 1, "write": 1, "create": 1, "submit": 1, "print": 1}
 _SHIFT = {"read": 1, "write": 1, "create": 1, "submit": 1}
 _RESERVATIONS = {"read": 1, "create": 1, "submit": 1, "cancel": 1}
+# The kiosk only places orders: it creates them and reads its own. The server submits
+# them after its checks, so a kiosk login cannot edit or submit an order through the API.
+_KIOSK_ORDERS = {"read": 1, "create": 1, "print": 1, "if_owner": 1}
 # Staff add guests while taking an order; they can't edit existing customers.
 CUSTOMER_CREATE = {"read": 1, "create": 1}
 _MENU_READS = {
@@ -81,15 +90,29 @@ ROLE_PERMISSIONS = {
 		# Closing a shift lists the cashier's own customer receipts.
 		"Payment Entry": {"read": 1, "if_owner": 1},
 	},
+	KIOSK_ROLE: {
+		**_MENU_READS,
+		"Sales Order": _KIOSK_ORDERS,
+		# "Bill at the end" sends a kiosk order to the kitchen, which reserves its stock.
+		# Submitting a reservation saves it again, which needs write.
+		"Stock Reservation Entry": {"read": 1, "write": 1, "create": 1, "submit": 1, "if_owner": 1},
+		"Sales Invoice": _OWN_INVOICE_READ,
+		"POS Invoice": _OWN_INVOICE_READ,
+	},
 }
 
 
 def ensure_vunapos_roles():
 	for role in RESTAURANT_ROLES:
 		if not frappe.db.exists("Role", role):
-			frappe.get_doc({"doctype": "Role", "role_name": role, "desk_access": 1}).insert(
-				ignore_permissions=True
-			)
+			frappe.get_doc(
+				{"doctype": "Role", "role_name": role, "desk_access": int(role != KIOSK_ROLE)}
+			).insert(ignore_permissions=True)
+	# DocType sync creates the role first, with Desk access. A kiosk login must never reach
+	# Desk, and lands on the kiosk screen after signing in.
+	kiosk = frappe.db.get_value("Role", KIOSK_ROLE, ["desk_access", "home_page"], as_dict=True)
+	if kiosk.desk_access or not kiosk.home_page:
+		frappe.db.set_value("Role", KIOSK_ROLE, {"desk_access": 0, "home_page": kiosk.home_page or "vunapos"})
 	for role, grants in ROLE_PERMISSIONS.items():
 		for doctype, flags in grants.items():
 			_ensure_role_permission(doctype, role, flags)
@@ -200,7 +223,69 @@ def ensure_vunapos_custom_fields():
 				"insert_after": "vunapos_branch",
 				"default": "0",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
-				"description": "Allow this profile's cashier to accept pending KOTs, finish required material transfers and manufacture remaining quantities during checkout. Marks preparation Ready, not Served. Native stock, tracking, inspection and Job Card checks still apply.",
+				"description": "Allow this profile's cashier to bill orders the kitchen has not finished: checkout posts the remaining material transfers and manufacture. Kitchen tickets keep their status, and the kitchen still accepts, starts, readies and serves them without moving stock again. Native stock, tracking, inspection and Job Card checks still apply.",
+			},
+			{
+				"fieldname": "vunapos_kiosk_section",
+				"label": "Kiosk",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_complete_preparation_on_billing",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_kiosk_mode",
+				"label": "Kiosk Mode",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_kiosk_section",
+				"default": "0",
+				"description": "A self-service screen for users with the VunaPOS Kiosk role.",
+			},
+			{
+				"fieldname": "vunapos_kiosk_payment_timing",
+				"label": "Kiosk Payment Timing",
+				"fieldtype": "Select",
+				"options": "\n".join(KIOSK_PAYMENT_TIMINGS),
+				"default": KIOSK_PAY_FIRST,
+				"insert_after": "vunapos_kiosk_mode",
+				"depends_on": "eval:doc.vunapos_kiosk_mode",
+				"mandatory_depends_on": "eval:doc.vunapos_kiosk_mode",
+				"description": (
+					"Pay at the counter first: the kitchen starts once a cashier confirms payment. "
+					"Bill at the end: orders go to the kitchen straight away and are billed when the guests leave."
+				),
+			},
+			{
+				"fieldname": "vunapos_kiosk_idle_seconds",
+				"label": "Kiosk Idle Reset (Seconds)",
+				"fieldtype": "Int",
+				"default": str(DEFAULT_KIOSK_IDLE_SECONDS),
+				"insert_after": "vunapos_kiosk_payment_timing",
+				"depends_on": "eval:doc.vunapos_kiosk_mode",
+				"description": "After this much inactivity the kiosk asks whether the customer is still there, then starts over 15 seconds later.",
+			},
+			{
+				"fieldname": "vunapos_kiosk_column_break",
+				"fieldtype": "Column Break",
+				"insert_after": "vunapos_kiosk_idle_seconds",
+			},
+			{
+				"fieldname": "vunapos_kiosk_service_types",
+				"label": "Kiosk Service Types",
+				"fieldtype": "Table MultiSelect",
+				"options": "Restaurant Service Type Assignment",
+				"insert_after": "vunapos_kiosk_column_break",
+				"depends_on": "eval:doc.vunapos_kiosk_mode",
+				"mandatory_depends_on": "eval:doc.vunapos_kiosk_mode",
+				"description": "For example Dine In and Takeaway. Each must be offered at this restaurant branch.",
+			},
+			{
+				"fieldname": "vunapos_kiosk_floors",
+				"label": "Kiosk Floors",
+				"fieldtype": "Table MultiSelect",
+				"options": "Restaurant Menu Floor",
+				"insert_after": "vunapos_kiosk_service_types",
+				"depends_on": "eval:doc.vunapos_kiosk_mode",
+				"description": "Leave empty to offer every floor of the restaurant branch.",
 			},
 			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode

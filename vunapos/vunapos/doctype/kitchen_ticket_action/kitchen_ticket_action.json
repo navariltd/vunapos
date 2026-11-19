@@ -80,7 +80,7 @@
    "fieldtype": "Select",
    "label": "Action",
    "read_only": 1,
-   "options": "Accept\nStart\nReady\nServe\nCancel Order",
+   "options": "Accept\nStart\nReady\nServe\nCancel Order\nComplete for Billing",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
@@ -220,7 +220,7 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-07 21:31:00.752296",
+ "modified": "2026-11-17 14:04:09.012244",
  "creation": "2026-11-05 10:39:27.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

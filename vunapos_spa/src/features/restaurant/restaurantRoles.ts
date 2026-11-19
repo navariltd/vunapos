@@ -6,6 +6,7 @@ const ROLE_LABELS: Record<string, string> = {
   "VunaPOS Cashier": "Cashier",
   "VunaPOS Restaurant Manager": "Manager",
   "VunaPOS Kitchen User": "Kitchen",
+  "VunaPOS Kiosk": "Kiosk",
 };
 
 export function restaurantRoleLabel(roles?: string[] | null) {
@@ -23,6 +24,16 @@ export function isKitchenOnlyUser(roles: string[], canManage = false) {
         "VunaPOS Cashier",
         "VunaPOS Restaurant Manager",
       ].includes(role)
+    )
+  );
+}
+
+// Waiters, cashiers and managers clear a paid kiosk order's table when its guests leave.
+export function canClearTables(roles: string[] = [], canManage = false) {
+  return (
+    canManage ||
+    roles.some((role) =>
+      ["VunaPOS Waiter", "VunaPOS Cashier", "VunaPOS Restaurant Manager"].includes(role)
     )
   );
 }

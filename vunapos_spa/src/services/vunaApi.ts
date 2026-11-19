@@ -143,6 +143,11 @@ export const vunaMethods = {
 	checkoutSession: "vunapos.api.restaurant.checkout_session",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
 	getMenu: "vunapos.api.restaurant.get_menu",
+	getKioskSetup: "vunapos.api.kiosk.get_kiosk_setup",
+	placeKioskOrder: "vunapos.api.kiosk.place_kiosk_order",
+	confirmKioskPayment: "vunapos.api.kiosk.confirm_kiosk_payment",
+	cancelKioskOrder: "vunapos.api.kiosk.cancel_kiosk_order",
+	clearTable: "vunapos.api.restaurant.clear_table",
 	getTableStatus: "vunapos.api.restaurant.get_table_status",
 	listRestaurantOrders: "vunapos.api.restaurant.list_orders",
 	getRestaurantOrder: "vunapos.api.restaurant.get_order",
@@ -735,6 +740,33 @@ export function validateRestaurantCart(call: FrappeCall, params: {
 	pos_profile: string; service_type: string; items: OrderLineInput[]; table?: string | null; customer?: string | null; kitchen_routing?: Record<string, string>; price_list?: string | null;
 }) {
 	return callAndUnwrap<{ valid: boolean; qsr_items: string[]; invoice: InvoiceDTO }>(call, { ...params, items: JSON.stringify(params.items), ...(params.kitchen_routing ? { kitchen_routing: JSON.stringify(params.kitchen_routing) } : {}) });
+}
+
+// ---- kiosk orders (vunapos.api.kiosk) ----
+
+export function getKioskSetup(call: FrappeCall, pos_profile: string) {
+	return callAndUnwrap<import("../features/restaurant/types").KioskSetupDTO>(call, { pos_profile });
+}
+
+export function placeKioskOrder(call: FrappeCall, params: {
+	pos_profile: string; service_type: string; items: OrderLineInput[]; idempotency_key: string;
+	table?: string | null; order_note?: string | null;
+}) {
+	return callAndUnwrap<import("../features/restaurant/types").KioskOrderDTO>(call, { ...params, items: JSON.stringify(params.items) });
+}
+
+// Takes the counter payment: submits the kiosk's draft order (sending it to the kitchen)
+// and bills the visit, all or nothing. The fields match checkoutSession.
+export function confirmKioskPayment(call: FrappeCall, params: Parameters<typeof checkoutSession>[1]) {
+	return callAndUnwrap<import("../features/restaurant/types").SessionSettlementDTO>(call, params);
+}
+
+export function clearTable(call: FrappeCall, session: string) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, { session });
+}
+
+export function cancelKioskOrder(call: FrappeCall, params: { session: string; reason: string; pos_profile: string; manager_pin_token?: string }) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, params);
 }
 
 export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string; station?: string; history?: number; start?: number }) {
