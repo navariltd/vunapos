@@ -2,7 +2,7 @@ import { useFrappeGetCall } from "frappe-react-sdk";
 import { useState } from "react";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { KitchenActions } from "./KitchenActions";
 import { kitchenStatusClass } from "../kitchenStatus";
 import { KitchenDishes } from "./KitchenDishes";
@@ -67,6 +67,16 @@ export function KitchenTicketSheet({
           onChanged={() => void response.mutate()}
         >
           <div className="space-y-4">
+            {ticket.production_completed_at_billing ? (
+              <p
+                role="status"
+                className="rounded-md bg-status-paid-container p-3 text-sm text-on-surface"
+              >
+                Paid. This order was billed before it was made, so its stock has
+                already moved. Preparation actions record progress without
+                moving stock again.
+              </p>
+            ) : null}
             <div className="rounded-lg bg-surface-container-low p-3 text-sm">
               {ticket.remake_of ? (
                 <div className="mb-3 border-b border-outline-variant pb-3">

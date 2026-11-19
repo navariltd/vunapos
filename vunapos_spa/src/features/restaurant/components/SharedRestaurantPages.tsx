@@ -97,6 +97,7 @@ export function SharedRestaurantPages({
     <CustomersPage
       posProfile={bootstrap.pos_profile}
       defaultCurrency={bootstrap.currency}
+      allowCustomerCreation={bootstrap.allow_customer_creation !== false}
     />
   );
 }

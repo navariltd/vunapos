@@ -198,7 +198,7 @@ def parse_overrides(value):
 	if isinstance(value, str):
 		try:
 			value = json.loads(value)
-		except (ValueError, TypeError):
+		except ValueError, TypeError:
 			fail("INVALID_KITCHEN_ROUTING", _("Invalid temporary kitchen routing."))
 	if value is None:
 		return {}
@@ -389,7 +389,11 @@ def generate_tickets(order, method=None):
 
 	frappe.db.get_value("Sales Order", order.name, "name", for_update=True)
 	session = _load(order.vunapos_restaurant_session, for_update=True)
-	profile = resolve_pos_profile(order.vunapos_pos_profile)
+	# A cashier confirming a kiosk payment submits the kiosk's draft; it passes the
+	# kiosk profile, which the cashier is not assigned to, in this request flag.
+	profile = frappe.flags.get("vunapos_kiosk_ticket_profile")
+	if not profile or profile.name != order.vunapos_pos_profile:
+		profile = resolve_pos_profile(order.vunapos_pos_profile)
 	if (
 		order.docstatus != 1
 		or session.status != "Open"
@@ -599,7 +603,9 @@ def get_ticket(name, for_update=False):
 		and bool(frappe.db.get_value("Restaurant Session", doc.restaurant_session, "billing_invoice")),
 		"can_cancel_order": can_cancel()
 		and not doc.get("remake_of")
-		and doc.status not in ("Served", "Completed", "Cancelled"),
+		and doc.status not in ("Served", "Completed", "Cancelled")
+		and not doc.get("production_completed_at_billing"),
+		"production_completed_at_billing": cint(doc.get("production_completed_at_billing")),
 		"requires_cancel_pin": bool(
 			frappe.get_cached_value(
 				"POS Profile", doc.pos_profile, "vunapos_require_manager_pin_order_cancel"

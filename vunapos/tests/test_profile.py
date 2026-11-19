@@ -202,6 +202,23 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			resolve_pos_profile(profile_name)
 
+	def test_a_new_profile_saves_with_a_pin_row(self):
+		manager = frappe.get_doc(
+			{
+				"doctype": "Sales Person",
+				"sales_person_name": f"_Test PIN Manager {frappe.generate_hash(length=6)}",
+			}
+		).insert(ignore_permissions=True)
+		profile = frappe.copy_doc(frappe.get_doc("POS Profile", ensure_test_pos_profile()))
+		profile.set("__newname", f"_Test PIN Profile {frappe.generate_hash(length=6)}")
+		profile.set(
+			"vunapos_pin_users",
+			[{"sales_person": manager.name, "role": "Manager", "pin": "4821", "enabled": 1}],
+		)
+		profile.insert(ignore_permissions=True)
+		row = frappe.get_doc("POS Profile", profile.name).vunapos_pin_users[0]
+		self.assertEqual(row.get_password("pin"), "4821")
+
 	def test_missing_explicit_assignment_has_stable_denial_code(self):
 		with patch("vunapos.services.profile_service.frappe.db.exists", return_value=False):
 			with self.assertRaises(frappe.PermissionError) as raised:

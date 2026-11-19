@@ -61,5 +61,6 @@ export function toBootstrapData(profile: CachedProfile, currentUser?: string | n
 		can_take_payment: profile.can_take_payment,
 		can_manage_restaurant: profile.can_manage_restaurant,
 		restaurant_roles: profile.restaurant_roles,
+		is_kiosk_user: profile.is_kiosk_user,
 	};
 }

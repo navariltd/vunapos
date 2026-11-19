@@ -7,6 +7,8 @@ export type OrdersFilter = {
 	serviceType: string | null;
 	floor: string | null;
 	mine: boolean;
+	// Kiosk orders waiting for a cashier to confirm payment.
+	awaitingPayment: boolean;
 	query: string;
 	sort: OrdersSort;
 };
@@ -15,6 +17,7 @@ export const DEFAULT_ORDERS_FILTER: OrdersFilter = {
 	serviceType: null,
 	floor: null,
 	mine: false,
+	awaitingPayment: false,
 	query: "",
 	sort: "oldest",
 };
@@ -28,7 +31,21 @@ type FilterContext = {
 
 function matchesQuery(order: RestaurantOrderSummaryDTO, needle: string): boolean {
 	if (!needle) return true;
-	return [order.table_label, order.name, order.customer].some((value) => value?.toLowerCase().includes(needle));
+	// "47" or "Order 47" finds kiosk order 47.
+	const number = needle.replace(/^order\s*/, "");
+	if (order.order_number && number === String(order.order_number)) return true;
+	return [order.table_label, order.name, order.customer, ...(order.sales_orders ?? [])].some((value) =>
+		value?.toLowerCase().includes(needle),
+	);
+}
+
+export function isAwaitingPayment(order: RestaurantOrderSummaryDTO): boolean {
+	return order.kiosk_status === "Awaiting Payment";
+}
+
+// A kiosk order paid at the counter first, whose table waits to be cleared.
+export function isPaidKioskOrder(order: RestaurantOrderSummaryDTO): boolean {
+	return order.kiosk_status === "Paid";
 }
 
 export function filterOrders(
@@ -43,6 +60,7 @@ export function filterOrders(
 			// Orders without a table (takeaway, delivery) are on no floor.
 			(!filter.floor || (order.table ? context.floorOfTable.get(order.table) === filter.floor : false)) &&
 			(!filter.mine || (Boolean(context.currentUser) && order.waiter === context.currentUser)) &&
+			(!filter.awaitingPayment || isAwaitingPayment(order)) &&
 			matchesQuery(order, needle),
 	);
 	const direction = filter.sort === "newest" ? -1 : 1;
@@ -53,5 +71,5 @@ export function filterOrders(
 
 // Whether anything narrows the list (the sort order doesn't).
 export function isFiltered(filter: OrdersFilter): boolean {
-	return Boolean(filter.serviceType || filter.floor || filter.mine || filter.query.trim());
+	return Boolean(filter.serviceType || filter.floor || filter.mine || filter.awaitingPayment || filter.query.trim());
 }

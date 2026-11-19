@@ -121,11 +121,18 @@ export type CachedServiceType = {
 };
 
 export type CachedRestaurantSettings = {
+	restaurant_name?: string | null;
 	service_types: CachedServiceType[];
 	allow_multiple_orders_per_table: boolean;
 	require_manager_pin_order_cancel: boolean;
 	complete_preparation_on_billing?: boolean;
+	// A self-service kiosk profile (see features/kiosk).
+	kiosk_mode?: boolean;
+	kiosk_payment_timing?: KioskPaymentTiming;
+	kiosk_idle_seconds?: number;
 };
+
+export type KioskPaymentTiming = "Pay at the counter first" | "Bill at the end";
 
 export type CachedProfile = {
 	name: string;
@@ -160,6 +167,10 @@ export type CachedProfile = {
 	allow_order_type_change?: boolean;
 	allow_customer_management?: boolean;
 	allow_customer_creation?: boolean;
+	// The POS Profile's Customer Groups and their descendants; null shows every customer.
+	customer_groups?: string[] | null;
+	// The company country's dialling code digits, e.g. "254".
+	phone_isd?: string;
 	allow_customer_payments?: boolean;
 	allow_sales_order_payments?: boolean;
 	allow_payment_reconciliation?: boolean;
@@ -202,6 +213,8 @@ export type CachedProfile = {
 	can_take_payment?: boolean;
 	can_manage_restaurant?: boolean;
 	restaurant_roles?: string[];
+	// A kiosk device's login: the VunaPOS Kiosk role and no staff role.
+	is_kiosk_user?: boolean;
 };
 
 export type CachedPosSession = {

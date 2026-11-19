@@ -57,6 +57,24 @@ export type CustomerDTO = {
 	tax_id?: string | null;
 };
 
+export type CustomerCreateOptionsDTO = {
+	customer_types: string[];
+	default_customer_type: string;
+	countries: Array<{ country: string; code: string; isd: string }>;
+	default_country?: string | null;
+	customer_group?: string | null;
+	territory?: string | null;
+};
+
+export type CustomerMatchesDTO = {
+	mobile_no?: string | null;
+	mobile_error?: string | null;
+	mobile_matches: CustomerDTO[];
+	// The number is also on customers outside this till's Customer Groups.
+	mobile_elsewhere?: boolean;
+	similar: CustomerDTO[];
+};
+
 export type CustomerContactPhoneDTO = {
 	customer: string;
 	mobile_no?: string | null;
@@ -258,6 +276,7 @@ export type BootstrapData = {
 	// Restaurant mode: true only with the VunaPOS Cashier role.
 	can_take_payment?: boolean;
 	restaurant_roles?: string[];
+	is_kiosk_user?: boolean;
 	// Null on Retail profiles.
 	restaurant?: CachedRestaurantSettings | null;
 };

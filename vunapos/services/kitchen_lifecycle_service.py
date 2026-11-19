@@ -24,6 +24,8 @@ TRANSITIONS = {
 	"Serve": ("Ready", "Served"),
 	"Undo Serve": ("Served", "Ready"),
 }
+# Billing completes a ticket's production without changing its status.
+BILLING_ACTION = "Complete for Billing"
 MANAGERS = {"System Manager", RESTAURANT_MANAGER_ROLE}
 
 
@@ -259,7 +261,7 @@ def _stock_entry(wo, purpose, qty):
 				if isinstance(message, str):
 					try:
 						message = json.loads(message)
-					except (TypeError, ValueError):
+					except TypeError, ValueError:
 						continue
 				if isinstance(message, dict) and message.get("raise_exception"):
 					detail = strip_html(str(message.get("message") or "")).strip()
@@ -298,13 +300,40 @@ def _native_stock_entry(wo, purpose, qty):
 		entry.to_warehouse = wo.fg_warehouse
 		entry.inspection_required = frappe.get_cached_value("BOM", wo.bom_no, "inspection_required")
 	entry.set_stock_entry_type()
-	entry.get_items()
+	_get_items(entry)
 	entry.set_secondary_items_from_job_card()
 	if purpose == "Manufacture":
 		entry.set_serial_no_batch_for_finished_good()
 	entry.insert(ignore_permissions=True)
 	entry.submit()
 	return entry.name
+
+
+def _get_items(entry):
+	"""Build the entry's rows without ERPNext's read check on its Work Order and BOM.
+
+	ERPNext 16.60 requires Work Order and BOM read in `get_items`, which kitchen and cashier
+	roles deliberately lack; `_work_orders` has already checked both against the ticket.
+	Frappe has no per-call permission flag, and switching user would reset request state,
+	so only this request's check for this entry's own Work Order and BOM is skipped.
+	"""
+	import erpnext
+
+	check = erpnext.require_permission
+	skipped = {("Work Order", entry.work_order), ("BOM", entry.bom_no)}
+
+	def require_permission(doctype, name, ptype="read"):
+		if frappe.flags.get("vunapos_kitchen_stock_entry") is entry and (doctype, name) in skipped:
+			return
+		return check(doctype, name, ptype)
+
+	erpnext.require_permission = require_permission
+	frappe.flags.vunapos_kitchen_stock_entry = entry
+	try:
+		entry.get_items()
+	finally:
+		frappe.flags.vunapos_kitchen_stock_entry = None
+		erpnext.require_permission = check
 
 
 def _produce(doc, targets, ready=False):
@@ -415,7 +444,9 @@ def transition(
 		quantified=quantities is not None,
 	):
 		return ticket_detail(doc.name)
-	_order(doc, serving=action in ("Serve", "Undo Serve"))
+	# Billing may already have posted production; the kitchen still records its
+	# real preparation/service progress without manufacturing the food twice.
+	_order(doc, serving=action in ("Serve", "Undo Serve") or cint(doc.production_completed_at_billing))
 	if doc.status != expected_status or (
 		expected_modified and get_datetime(doc.modified) != get_datetime(expected_modified)
 	):
@@ -481,7 +512,11 @@ def _apply_transition(
 		line: flt(progress[line][field] + (-qty if action == "Undo Serve" else qty), 6)
 		for line, qty in quantities.items()
 	}
-	entries = _produce(doc, targets, ready=action == "Ready") if action in ("Start", "Ready") else []
+	entries = (
+		_produce(doc, targets, ready=action == "Ready")
+		if action in ("Start", "Ready") and not cint(doc.production_completed_at_billing)
+		else []
+	)
 	for line, total in targets.items():
 		progress[line][field] = total
 	target = progress_service.status_for(doc.items, progress)
@@ -498,14 +533,16 @@ def _apply_transition(
 	)
 
 
-def complete_for_billing(ticket, profile):
-	"""Private opt-in cashier path. The outer billing transaction owns rollback.
+def complete_for_billing(ticket, profile, kiosk=False):
+	"""Private cashier path, opted in by the till or by confirming a kiosk payment.
+	The outer billing transaction owns rollback.
 
 	Does not grant the cashier general KDS preparation rights or bypass station
-	permissions. Each successful step retains its actor and native stock entries.
+	permissions. Posts the ticket's transfers and manufacture, flags it and keeps its
+	status; one audit row retains the actor and native stock entries.
 	"""
 	if (
-		not cint(profile.get("vunapos_complete_preparation_on_billing"))
+		not (kiosk or cint(profile.get("vunapos_complete_preparation_on_billing")))
 		or CASHIER_ROLE not in frappe.get_roles()
 	):
 		frappe.throw(
@@ -522,24 +559,31 @@ def complete_for_billing(ticket, profile):
 			"KITCHEN_CONTEXT_MISMATCH", _("The billing profile does not belong to this ticket's Restaurant.")
 		)
 	_order(doc)
-	if doc.status in ("Ready", "Served", "Completed"):
+	if doc.status in ("Ready", "Served", "Completed") or cint(doc.production_completed_at_billing):
 		return
 	if doc.status not in ("Sent", "Accepted", "Preparing"):
 		fail("KITCHEN_STALE_STATE", _("This ticket cannot be completed during billing."))
-	for action in TRANSITIONS:
-		if action == "Serve":
-			break
-		from vunapos.services import kitchen_progress_service as progress_service
+	# Stock only: the kitchen still accepts, starts and readies the ticket itself.
+	from vunapos.services import kitchen_progress_service as progress_service
 
-		progress = progress_service.load([doc], for_update=True)[doc.name]
-		if any(row.get("available_quantities", {}).get(action, 0) > 0.000001 for row in progress.values()):
-			key = "billing-" + hashlib.sha256(f"{doc.name}:{action}".encode()).hexdigest()
-			_apply_transition(
-				doc,
-				action,
-				key,
-				reason=_("Completed during billing using POS Profile {0}.").format(profile.name),
-			)
+	progress = progress_service.load([doc], for_update=True)[doc.name]
+	targets = {
+		row.line_id: flt(progress[row.line_id]["qty"] - progress[row.line_id]["cancelled_qty"], 6)
+		for row in doc.items
+		if not row.parent_line_id
+		and progress[row.line_id]["qty"] - progress[row.line_id]["cancelled_qty"]
+		> progress[row.line_id]["ready_qty"] + 0.000001
+	}
+	entries = _produce(doc, targets, ready=True)
+	doc.db_set("production_completed_at_billing", 1)
+	_record(
+		doc,
+		BILLING_ACTION,
+		"billing-" + hashlib.sha256(f"{doc.name}:{BILLING_ACTION}".encode()).hexdigest(),
+		doc.status,
+		entries=entries,
+		reason=_("Completed during billing using POS Profile {0}.").format(profile.name),
+	)
 	_publish(doc)
 
 
@@ -726,6 +770,7 @@ def list_board(pos_profile, station=None, history=False, start=0):
 			"waiter",
 			"order_note",
 			"status",
+			"production_completed_at_billing",
 			"modified",
 			"remake_of",
 			"remake_reason",
@@ -766,6 +811,7 @@ def list_board(pos_profile, station=None, history=False, start=0):
 			can_cancel()
 			and not row.get("remake_of")
 			and row.status not in ("Served", "Completed", "Cancelled")
+			and not row.production_completed_at_billing
 		)
 	from vunapos.services.kitchen_progress_service import load
 

@@ -142,11 +142,9 @@ def annotate(restaurant, branch, items, floor=None, *, all_floors=False):
 		if not pause and stations and stations <= by_station.keys():
 			pause = by_station[sorted(stations)[0]]
 		item["ordering_paused"] = bool(pause)
-		visible = (
-			not pause
-			or pause.target_type != "Kitchen Station"
-			or frappe.has_permission("Kitchen Station", "read", doc=pause.kitchen_station)
-		)
+		visible = True
+		if pause and pause.target_type == "Kitchen Station":
+			visible = frappe.has_permission("Kitchen Station", "read", doc=pause.kitchen_station)
 		item["availability_reason"] = (
 			(
 				_reason(pause)

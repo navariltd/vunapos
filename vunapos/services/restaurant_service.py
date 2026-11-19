@@ -233,9 +233,65 @@ def on_restaurant_update(doc):
 		)
 
 
+def kiosk_payment_timing(profile):
+	from vunapos.setup.utils import KIOSK_PAY_FIRST, KIOSK_PAYMENT_TIMINGS
+
+	timing = profile.get("vunapos_kiosk_payment_timing")
+	return timing if timing in KIOSK_PAYMENT_TIMINGS else KIOSK_PAY_FIRST
+
+
+def kiosk_idle_seconds(profile):
+	from vunapos.setup.utils import DEFAULT_KIOSK_IDLE_SECONDS
+
+	return cint(profile.get("vunapos_kiosk_idle_seconds")) or DEFAULT_KIOSK_IDLE_SECONDS
+
+
+def kiosk_floors(profile):
+	"""The floors a kiosk offers, or None for every floor of its branch."""
+	return {row.floor for row in profile.get("vunapos_kiosk_floors") or [] if row.floor} or None
+
+
+def _validate_profile_kiosk(profile):
+	from vunapos.services.service_type_service import get_profile_service_types
+
+	if not profile.get("customer"):
+		frappe.throw(_("Set the Customer that kiosk orders are placed for."), title=_("Kiosk"))
+	if not any(
+		row.get("enabled") and row.get("role") == "Manager" for row in profile.get("vunapos_pin_users") or []
+	):
+		frappe.throw(
+			_("Add an enabled Manager PIN user. A manager PIN is needed to leave the kiosk."),
+			title=_("Kiosk"),
+		)
+	if not 30 <= kiosk_idle_seconds(profile) <= 3600:
+		frappe.throw(_("Kiosk Idle Reset must be between 30 and 3600 seconds."), title=_("Kiosk"))
+	selected = [row.service_type for row in profile.get("vunapos_kiosk_service_types") or []]
+	if not selected:
+		frappe.throw(_("Choose the service types the kiosk offers."), title=_("Kiosk"))
+	offered = {row["name"] for row in get_profile_service_types(profile)}
+	missing = [name for name in selected if name not in offered]
+	if missing:
+		frappe.throw(
+			_("Service types not offered at this restaurant branch: {0}").format(", ".join(missing)),
+			title=_("Kiosk"),
+		)
+	for row in profile.get("vunapos_kiosk_floors") or []:
+		floor = frappe.db.get_value("Restaurant Floor", row.floor, ["restaurant", "branch"], as_dict=True)
+		if not floor or (floor.restaurant, floor.branch) != (
+			profile.get("vunapos_restaurant"),
+			profile.get("vunapos_branch"),
+		):
+			frappe.throw(
+				_("Kiosk floor {0} is not a floor of this restaurant branch.").format(row.floor),
+				title=_("Kiosk"),
+			)
+
+
 def validate_profile_restaurant(profile, method=None):
 	"""POS Profile validate hook: a Restaurant-mode profile needs a restaurant of its company."""
 	if profile.get("vunapos_pos_mode") != "Restaurant":
+		if cint(profile.get("vunapos_kiosk_mode")):
+			frappe.throw(_("Kiosk Mode is available for Restaurant POS Profiles only."), title=_("Kiosk"))
 		return
 	if profile.get("vunapos_cancellation_charge_item"):
 		from vunapos.services.restaurant_stop_service import validate_charge_item
@@ -267,3 +323,5 @@ def validate_profile_restaurant(profile, method=None):
 				),
 				title=_("Restaurant"),
 			)
+	if cint(profile.get("vunapos_kiosk_mode")):
+		_validate_profile_kiosk(profile)

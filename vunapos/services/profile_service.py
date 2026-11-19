@@ -2,7 +2,16 @@ import frappe
 from frappe import _
 
 from vunapos.dto.profile import profile_to_dict
-from vunapos.setup.utils import CASHIER_ROLE, RESTAURANT_ROLES
+from vunapos.setup.utils import (
+	CASHIER_ROLE,
+	KIOSK_ROLE,
+	KITCHEN_ROLE,
+	RESTAURANT_MANAGER_ROLE,
+	RESTAURANT_ROLES,
+	WAITER_ROLE,
+)
+
+STAFF_ROLES = (CASHIER_ROLE, WAITER_ROLE, KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE, "System Manager")
 
 SUPPORTED_INVOICE_MODES = ("Sales Invoice", "POS Invoice")
 
@@ -226,21 +235,29 @@ def get_restaurant_user_context():
 		"can_take_payment": CASHIER_ROLE in roles,
 		"can_manage_restaurant": bool(roles & {"System Manager", "VunaPOS Restaurant Manager"}),
 		"restaurant_roles": [role for role in RESTAURANT_ROLES if role in roles],
+		"is_kiosk_user": is_kiosk_user(),
 	}
+
+
+def is_kiosk_user(user=None):
+	"""A kiosk device's login: the Kiosk role and no staff role."""
+	roles = set(frappe.get_roles(user))
+	return KIOSK_ROLE in roles and not roles & set(STAFF_ROLES)
+
+
+def require_restaurant_staff():
+	"""Kiosk logins only place orders, through the kiosk actions."""
+	if is_kiosk_user():
+		exc = frappe.PermissionError(_("A kiosk can only place orders."))
+		exc.vuna_error_code = "KIOSK_NOT_ALLOWED"
+		raise exc
 
 
 def require_restaurant_staff_shift(pos_profile):
-	"""Match Retail's shift gate for selling users; exempt only kitchen-only staff."""
-	from vunapos.setup.utils import KITCHEN_ROLE, RESTAURANT_MANAGER_ROLE, WAITER_ROLE
-
+	"""Match Retail's shift gate for selling users; exempt kitchen-only staff and kiosks."""
 	roles = set(frappe.get_roles())
-	kitchen_only = KITCHEN_ROLE in roles and not roles & {
-		CASHIER_ROLE,
-		WAITER_ROLE,
-		RESTAURANT_MANAGER_ROLE,
-		"System Manager",
-	}
-	if not kitchen_only:
+	kitchen_only = KITCHEN_ROLE in roles and not roles & set(STAFF_ROLES) - {KITCHEN_ROLE}
+	if not kitchen_only and not is_kiosk_user():
 		return require_open_pos_session(pos_profile)
 
 

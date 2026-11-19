@@ -4,6 +4,7 @@ import { ChevronDown, Plus, Search, X } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import type { CustomerDTO } from "../types";
 import { useCustomerSearch } from "../hooks/useCustomerSearch";
+import { CustomerCreateSheet } from "./CustomerCreateSheet";
 
 type CustomerSelectorProps = {
   allowCreate?: boolean;
@@ -24,19 +25,14 @@ export function CustomerSelector({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [showCreate, setShowCreate] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const { create, customers, error, isCreating, isLoading } = useCustomerSearch(
-    query,
-    posProfile,
-  );
+  const [createSheetName, setCreateSheetName] = useState<string | null>(null);
+  const { customers, isLoading } = useCustomerSearch(query, posProfile);
 
   useEffect(() => {
     if (!isOpen) return;
     const closeWhenOutside = (event: PointerEvent) => {
       if (selectorRef.current?.contains(event.target as Node)) return;
       setIsOpen(false);
-      setShowCreate(false);
     };
     document.addEventListener("pointerdown", closeWhenOutside);
     return () => document.removeEventListener("pointerdown", closeWhenOutside);
@@ -60,18 +56,6 @@ export function CustomerSelector({
       }
       return nextOpen;
     });
-  };
-
-  const handleCreate = async () => {
-    if (!customerName.trim()) {
-      return;
-    }
-    const customer = await create({ customer_name: customerName.trim() });
-    onSelect(customer);
-    setCustomerName("");
-    setShowCreate(false);
-    setQuery("");
-    setIsOpen(false);
   };
 
   return (
@@ -137,7 +121,6 @@ export function CustomerSelector({
               Searching customers...
             </p>
           ) : null}
-          {error ? <p className="mt-2 text-xs text-error">{error}</p> : null}
 
           <div className="mt-3 max-h-48 overflow-auto rounded-md border border-outline-variant">
             {customers.length ? (
@@ -170,35 +153,29 @@ export function CustomerSelector({
           </div>
 
           {allowCreate ? (
-            <div className="mt-3 space-y-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="gap-2"
-                onClick={() => setShowCreate((current) => !current)}
-              >
-                <Plus className="size-4" />
-                Create customer
-              </Button>
-              {showCreate ? (
-                <div className="flex gap-2">
-                  <input
-                    className="h-touch min-w-0 flex-1 rounded-md border border-outline-variant bg-surface px-3 text-sm outline-none focus:border-primary"
-                    placeholder="Customer name"
-                    value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
-                  />
-                  <Button
-                    disabled={isCreating || !customerName.trim()}
-                    onClick={handleCreate}
-                  >
-                    Save
-                  </Button>
-                </div>
-              ) : null}
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-3 gap-2"
+              onClick={() => {
+                setCreateSheetName(query.trim());
+                setQuery("");
+                setIsOpen(false);
+              }}
+            >
+              <Plus className="size-4" />
+              Create customer
+            </Button>
           ) : null}
         </div>
+      ) : null}
+      {createSheetName !== null ? (
+        <CustomerCreateSheet
+          posProfile={posProfile}
+          initialName={createSheetName}
+          onClose={() => setCreateSheetName(null)}
+          onSelect={onSelect}
+        />
       ) : null}
     </div>
   );

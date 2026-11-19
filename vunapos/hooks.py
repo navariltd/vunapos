@@ -221,6 +221,8 @@ doc_events["POS Profile"] = {
 	"validate": [
 		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
 		"vunapos.services.restaurant_service.validate_profile_restaurant",
+		"vunapos.services.customer_service.validate_profile_customer_defaults",
+		"vunapos.services.pin_service.name_new_pin_rows",
 	],
 	"before_save": "vunapos.realtime.capture_pos_profile_realtime_recipients",
 	"on_update": "vunapos.realtime.publish_configuration_change",
@@ -231,7 +233,10 @@ doc_events["Branch"] = {
 }
 doc_events["Item"]["validate"] = "vunapos.services.modifier_service.validate_item_options"
 doc_events["Sales Order"] = {
-	"validate": "vunapos.services.restaurant_location_service.validate_location_snapshot",
+	"validate": [
+		"vunapos.services.restaurant_location_service.validate_location_snapshot",
+		"vunapos.services.restaurant_session_service.protect_session_round",
+	],
 	"on_cancel": "vunapos.services.kitchen_lifecycle_service.allow_cancelled_order_audit_links",
 	"on_submit": "vunapos.services.kitchen_service.generate_tickets",
 	"before_cancel": "vunapos.services.kitchen_service.protect_order_cancellation",

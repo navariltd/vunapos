@@ -128,7 +128,7 @@
    "fieldtype": "Select",
    "label": "Action",
    "read_only": 1,
-   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Items\nCancel Order\nRecord Waste\nRequest Remake\nCancel Remake\nReject Items\nStop Preparation",
+   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Items\nCancel Order\nRecord Waste\nRequest Remake\nCancel Remake\nReject Items\nStop Preparation\nComplete for Billing",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
@@ -268,7 +268,7 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-16 14:03:21.389598",
+ "modified": "2026-11-19 11:57:49.817722",
  "creation": "2026-11-05 10:39:27.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

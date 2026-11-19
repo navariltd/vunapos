@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { elapsedLabel } from "../tableStatus";
 import type { TableOrderRefDTO } from "../types";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 
 type TableOrdersSheetProps = {
   tableLabel: string | null;

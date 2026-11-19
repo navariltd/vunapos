@@ -7,7 +7,6 @@ import type {
   HeldInvoiceDTO,
   ItemDTO,
   PaymentInput,
-  PrintPayload,
 } from "./types";
 import {
   getInvoiceTotal,
@@ -21,6 +20,7 @@ import {
   navigateToPosPage,
   useNavigationStore,
 } from "../../lib/stores/navigationStore";
+import { printHtml } from "../../lib/printHtml";
 import {
   getItemDetails,
   getCustomerAddresses,
@@ -76,34 +76,6 @@ type POSHomePageProps = {
 	onSalespersonVerified?: (salesperson: { name: string; displayName: string; token: string; expiresIn: number }) => void;
   onLockSalesperson?: () => void;
 };
-
-function printInvoiceHtml(printPayload: PrintPayload) {
-  const printFrame = document.createElement("iframe");
-  printFrame.style.position = "fixed";
-  printFrame.style.right = "0";
-  printFrame.style.bottom = "0";
-  printFrame.style.width = "0";
-  printFrame.style.height = "0";
-  printFrame.style.border = "0";
-  printFrame.setAttribute("aria-hidden", "true");
-  document.body.appendChild(printFrame);
-
-  const printDocument = printFrame.contentWindow?.document;
-  if (!printDocument) {
-    printFrame.remove();
-    return;
-  }
-
-  printDocument.open();
-  printDocument.write(printPayload.html);
-  printDocument.close();
-
-  window.setTimeout(() => {
-    printFrame.contentWindow?.focus();
-    printFrame.contentWindow?.print();
-    window.setTimeout(() => printFrame.remove(), 1000);
-  }, 100);
-}
 
 function getCheckoutErrorMessage(error: unknown) {
   if (error instanceof VunaApiError) {
@@ -977,7 +949,7 @@ export function POSHomePage({
         clearToast();
       }
       if (result?.printPayload) {
-        printInvoiceHtml(result.printPayload);
+        printHtml(result.printPayload.html);
       }
     } catch (err) {
       customerLoyalty.refresh();
@@ -1106,6 +1078,7 @@ export function POSHomePage({
             <CustomersPage
               posProfile={bootstrap.data?.pos_profile}
               defaultCurrency={bootstrap.data?.currency}
+              allowCustomerCreation={allowCustomerCreation}
             />
           )
         ) : (

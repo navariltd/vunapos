@@ -47,18 +47,20 @@ import {
 import { committedSessionTotal, newSessionRound } from "../sessionDraft";
 import { useRestaurantPricing } from "../hooks/useRestaurantPricing";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
-import { Sheet } from "./Sheet";
+import { Sheet } from "../../../components/ui/Sheet";
 import { TablePlanPicker } from "./TablePlanPicker";
 import { selectVisitTable } from "../tableTransfer";
 import { ModifierPicker } from "./ModifierPicker";
 import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
 import { CancelOrderItems } from "./CancelOrderItems";
+import { KioskOrderBanner } from "./KioskOrderBanner";
 import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
 import { kitchenStatusClass } from "../kitchenStatus";
 import { placePending } from "../placement";
+import { restaurantCustomerControls } from "../customerControls";
 import type { KitchenRoutingIssue } from "../types";
 import type {
   ModifierGroupDTO,
@@ -70,9 +72,11 @@ import type {
 export function SessionScreen({
   sessionName,
   posProfile,
+  allowCustomerCreation = false,
 }: {
   sessionName?: string | null;
   posProfile?: string;
+  allowCustomerCreation?: boolean;
 }) {
   const bootstrap = useBootstrapData();
   const draft = useOrderDraftStore((s) => s.draft);
@@ -358,7 +362,9 @@ export function SessionScreen({
     if (busy || pendingPlacement || (session && session.status !== "Open"))
       return;
     if (item.ordering_paused) {
-      setError(item.availability_reason || "This item is temporarily unavailable.");
+      setError(
+        item.availability_reason || "This item is temporarily unavailable."
+      );
       return;
     }
     if (needsTable && !pendingPlacement) {
@@ -695,13 +701,24 @@ export function SessionScreen({
     busy ||
     checkingCart ||
     Boolean(pendingPlacement) ||
-    Boolean(session && session.status !== "Open");
+    Boolean(
+      session &&
+        (session.status !== "Open" ||
+          session.kiosk_status === "Awaiting Payment")
+    );
   const context = (
     <div className="mb-3 space-y-2">
       {storageError ? (
         <p role="alert" className="text-sm text-error">
           {storageError}
         </p>
+      ) : null}
+      {session?.kiosk_status ? (
+        <KioskOrderBanner
+          session={session}
+          posProfile={posProfile}
+          onChanged={() => void result.refresh()}
+        />
       ) : null}
       <div className="flex flex-wrap gap-2" aria-label="Service type">
         {serviceTypes?.map((service) => (
@@ -845,7 +862,13 @@ export function SessionScreen({
             View orders ({session.rounds.length})
           </Button>
         ) : null}
-        {session && posProfile ? (
+        {/* A cashier confirms a kiosk order awaiting payment from its banner. */}
+        {session &&
+        posProfile &&
+        !(
+          session.kiosk_status === "Awaiting Payment" &&
+          bootstrap.data?.can_take_payment
+        ) ? (
           <SessionBill
             session={session}
             posProfile={posProfile}
@@ -875,6 +898,11 @@ export function SessionScreen({
       ) : null}
     </div>
   );
+  const customerControls = restaurantCustomerControls({
+    allowCreation: allowCustomerCreation,
+    roundCount: session?.rounds.length || 0,
+    readOnly,
+  });
   const renderCart = (className: string) => (
     <CartPanel
       className={className}
@@ -916,14 +944,14 @@ export function SessionScreen({
           </button>
         );
       }}
-      customerDisabled={Boolean(session?.rounds.length) || readOnly}
+      customerDisabled={customerControls.disabled}
       primaryActionLabel={busy ? "Placing order…" : "Place Order"}
       hideHold
       totalsNote="Current order totals. Prices and taxes are recalculated when the order is placed."
       currency={currency}
       posProfile={posProfile}
       isOnline={navigator.onLine}
-      allowCustomerCreation={false}
+      allowCustomerCreation={customerControls.allowCreate}
       allowRateChange={false}
       allowDiscountChange={false}
       onSelectCustomer={(customer) => void selectCustomer(customer)}
@@ -1291,7 +1319,13 @@ export function SessionScreen({
               ))}
             </ul>
             <div className="mt-3 flex flex-wrap gap-2">
-              <CancelOrderItems order={round.name} allowed={Boolean(round.can_cancel_items) && session.status === "Open"} onChanged={() => void result.refresh()} />
+              <CancelOrderItems
+                order={round.name}
+                allowed={
+                  Boolean(round.can_cancel_items) && session.status === "Open"
+                }
+                onChanged={() => void result.refresh()}
+              />
               {(session.kitchen_tickets || [])
                 .filter((ticket) => ticket.sales_order === round.name)
                 .map((ticket) => (
@@ -1308,7 +1342,31 @@ export function SessionScreen({
                   </Button>
                 ))}
             </div>
-            {round.cancellations?.length ? <details className="mt-3 text-sm"><summary className="cursor-pointer text-on-surface-variant">Cancellation history</summary><ul className="mt-2 space-y-2">{round.cancellations.map((event, eventIndex) => <li key={eventIndex}><p>{event.items.map((item) => `${item.qty} ${item.uom} × ${item.item_name}`).join(" · ")} cancelled</p><p className="text-xs text-on-surface-variant">{event.reason} · {event.actor} · {event.occurred_at}</p></li>)}</ul></details> : null}
+            {round.cancellations?.length ? (
+              <details className="mt-3 text-sm">
+                <summary className="cursor-pointer text-on-surface-variant">
+                  Cancellation history
+                </summary>
+                <ul className="mt-2 space-y-2">
+                  {round.cancellations.map((event, eventIndex) => (
+                    <li key={eventIndex}>
+                      <p>
+                        {event.items
+                          .map(
+                            (item) =>
+                              `${item.qty} ${item.uom} × ${item.item_name}`
+                          )
+                          .join(" · ")}{" "}
+                        cancelled
+                      </p>
+                      <p className="text-xs text-on-surface-variant">
+                        {event.reason} · {event.actor} · {event.occurred_at}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </details>
         ))}
       </Sheet>

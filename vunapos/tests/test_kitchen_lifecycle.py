@@ -90,6 +90,23 @@ class TestKitchenLifecycle(IntegrationTestCase):
 		self.assertFalse(conflict["ok"], conflict)
 		self.assertEqual(conflict["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
 
+	def test_stock_entry_rows_skip_only_their_own_work_order_and_bom_read_check(self):
+		import erpnext
+
+		check = erpnext.require_permission
+		checked = []
+
+		def get_items():
+			for source in (("Work Order", "WO-1"), ("BOM", "BOM-1"), ("BOM", "BOM-2")):
+				erpnext.require_permission(*source)
+
+		entry = frappe._dict(work_order="WO-1", bom_no="BOM-1", get_items=get_items)
+		with patch("erpnext.require_permission", side_effect=lambda *args: checked.append(args)):
+			kitchen._get_items(entry)
+			self.assertEqual(checked, [("BOM", "BOM-2", "read")])
+		self.assertIs(erpnext.require_permission, check)
+		self.assertIsNone(frappe.flags.get("vunapos_kitchen_stock_entry"))
+
 	def test_kitchen_user_prepares_without_global_manufacturing_permissions(self):
 		name = self._placed()
 		user = f"chef-{self.token}@example.com"

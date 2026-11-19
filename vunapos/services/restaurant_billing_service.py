@@ -15,7 +15,13 @@ from frappe.utils import cint, flt, now_datetime, nowdate, nowtime
 
 from vunapos.services.kitchen_service import fail
 from vunapos.services.profile_service import require_open_pos_session, resolve_pos_profile
-from vunapos.services.restaurant_session_service import SESSION, _load, session_to_dict
+from vunapos.services.restaurant_session_service import (
+	KIOSK_AWAITING_PAYMENT,
+	KIOSK_PAID,
+	SESSION,
+	_load,
+	session_to_dict,
+)
 from vunapos.setup.utils import CASHIER_ROLE
 
 PRICE_FIELDS = (
@@ -84,6 +90,8 @@ def consolidated_reservation_sources(invoice):
 
 
 def _orders(session, lock=False, unbilled=True, billing_invoice=None):
+	# A kiosk order awaiting payment is reviewed and confirmed while still a draft.
+	drafts = session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT
 	result = []
 	for name in frappe.get_all(
 		"Sales Order", filters={"vunapos_restaurant_session": session.name}, pluck="name", order_by="name"
@@ -91,7 +99,7 @@ def _orders(session, lock=False, unbilled=True, billing_invoice=None):
 		doc = frappe.get_doc("Sales Order", name, for_update=lock)
 		if doc.docstatus == 2:
 			continue
-		if doc.docstatus != 1 or doc.status == "Closed":
+		if (doc.docstatus != 1 and not (drafts and doc.docstatus == 0)) or doc.status == "Closed":
 			fail(
 				"SESSION_ORDER_NOT_BILLABLE",
 				_("Order {0} is not submitted and open for billing.").format(name),
@@ -119,6 +127,24 @@ def _orders(session, lock=False, unbilled=True, billing_invoice=None):
 	if not result:
 		fail("SESSION_NOTHING_TO_BILL", _("There are no placed, non-cancelled orders to bill."))
 	return result
+
+
+def _require_kiosk_payment_confirmed(session):
+	# A kiosk order awaiting payment is billed only by confirming its payment.
+	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:
+		fail(
+			"KIOSK_ORDER_AWAITING_PAYMENT",
+			_("Use Confirm payment to bill this kiosk order. That also sends it to the kitchen."),
+		)
+
+
+def needs_preparation(orders):
+	"""Whether any line goes to a kitchen station and so is made from its recipe."""
+	return any(
+		row.get("vunapos_kitchen_station") and not row.get("vunapos_parent_line_id")
+		for order in orders
+		for row in order.items
+	)
 
 
 def _fingerprint(orders):
@@ -216,6 +242,8 @@ def _pending_production(order_names):
 				"sales_order": ["in", order_names],
 				"docstatus": 1,
 				"status": ["not in", ["Ready", "Served", "Completed", "Cancelled"]],
+				# Production finished at billing; the kitchen finishes the ticket later.
+				"production_completed_at_billing": 0,
 			},
 			pluck="name",
 			order_by="name",
@@ -347,6 +375,19 @@ def preview(session, pos_profile=None, loyalty_points=None):
 		fail("SESSION_NOT_OPEN", _("Only an open visit can be billed."))
 	orders = _orders(session)
 	bill = _build(session, profile, orders, loyalty_points)
+	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:
+		# Confirming submits the drafts, so their tickets and Work Orders do not exist yet.
+		# It always completes their preparation, whatever this till's setting.
+		return {
+			"session": session_to_dict(session),
+			"invoice": invoice_to_dict(bill),
+			"fingerprint": _review_fingerprint(orders, bill),
+			"account_reference": orders[0].name,
+			"gateway_links": _recover_payments(session, profile, orders),
+			"can_checkout": True,
+			"will_complete_preparation": needs_preparation(orders),
+			"checkout_block_reason": None,
+		}
 	pending = _pending_production([order.name for order in orders])
 	auto_complete = bool(
 		pending and _can_complete_preparation(profile, [order.name for order in orders], pending)
@@ -662,6 +703,7 @@ def checkout(session, pos_profile, fingerprint, payments=None, *, _walkout_reaso
 		return {"session": session_to_dict(session), "invoice": invoice_to_dict(doc)}
 	if session.status != "Open":
 		fail("SESSION_NOT_OPEN", _("This visit cannot be billed."))
+	_require_kiosk_payment_confirmed(session)
 	orders = _orders(session, lock=True)
 	doc = _build(session, profile, orders, options.get("loyalty_points"))
 	if not fingerprint or fingerprint != _review_fingerprint(orders, doc):
@@ -703,7 +745,10 @@ def checkout(session, pos_profile, fingerprint, payments=None, *, _walkout_reaso
 		doc.flags.restaurant_walkout_approval = APPROVAL
 		options.update(is_credit_sale=True, due_date=nowdate())
 	validate_checkout(session, profile, payments)
-	if cint(profile.get("vunapos_complete_preparation_on_billing")):
+	# A kiosk order paid at the counter is billed as it reaches the kitchen, so its
+	# preparation is always completed here. For waiter orders the till decides.
+	kiosk = session.get("kiosk_status") == KIOSK_PAID
+	if kiosk or cint(profile.get("vunapos_complete_preparation_on_billing")):
 		from vunapos.services.kitchen_lifecycle_service import complete_for_billing
 
 		for name in frappe.get_all(
@@ -712,11 +757,12 @@ def checkout(session, pos_profile, fingerprint, payments=None, *, _walkout_reaso
 				"sales_order": ["in", [order.name for order in orders]],
 				"docstatus": 1,
 				"status": ["in", ["Sent", "Accepted", "Preparing"]],
+				"production_completed_at_billing": 0,
 			},
 			pluck="name",
 			order_by="name",
 		):
-			complete_for_billing(name, profile)
+			complete_for_billing(name, profile, kiosk=kiosk)
 		# The bill was priced before manufacture. Its stock issue must be posted
 		# after the new finished-goods receipts, not at that earlier preview time.
 		if str(doc.posting_date) != nowdate():
@@ -768,7 +814,8 @@ def on_submit(doc, method=None):
 	# manufacture, issue ingredients, or create another reservation here.
 	session.status = "Settled"
 	session.closed_at = now_datetime()
-	for row in session.tables:
+	# A paid kiosk order keeps its table until staff clear it as the guests leave.
+	for row in session.tables if session.get("kiosk_status") != KIOSK_PAID else []:
 		if not row.released_at:
 			row.released_at = session.closed_at
 	session.flags.restaurant_session_write = True
@@ -779,5 +826,6 @@ def before_submit(doc, method=None):
 	if not doc.get("vunapos_restaurant_session") or doc.get("is_return"):
 		return
 	session = _load(doc.vunapos_restaurant_session, for_update=True)
+	_require_kiosk_payment_confirmed(session)
 	_orders(session, lock=True, billing_invoice=doc.name)
 	validate_billing_stock(doc)

@@ -5,9 +5,15 @@ from frappe.utils import cint
 from vunapos.dto.customer import customer_to_dict
 from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.checkout_queue_service import get_queue_limits
+from vunapos.services.customer_group_service import profile_customer_groups
+from vunapos.services.phone_search import profile_isd
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
-from vunapos.services.restaurant_service import get_profile_restaurant
+from vunapos.services.restaurant_service import (
+	get_profile_restaurant,
+	kiosk_idle_seconds,
+	kiosk_payment_timing,
+)
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 
@@ -26,6 +32,9 @@ def _restaurant_settings(profile):
 			cint(profile.get("vunapos_require_manager_pin_order_cancel"))
 		),
 		"complete_preparation_on_billing": bool(cint(profile.get("vunapos_complete_preparation_on_billing"))),
+		"kiosk_mode": bool(cint(profile.get("vunapos_kiosk_mode"))),
+		"kiosk_payment_timing": kiosk_payment_timing(profile),
+		"kiosk_idle_seconds": kiosk_idle_seconds(profile),
 	}
 
 
@@ -113,6 +122,10 @@ def profile_to_dict(profile, invoice_mode):
 		"allow_order_type_change": enabled("vunapos_allow_order_type_change"),
 		"allow_customer_management": enabled("vunapos_allow_customer_management"),
 		"allow_customer_creation": enabled("vunapos_allow_customer_creation"),
+		# None shows every customer; otherwise the till's search keeps to these groups.
+		"customer_groups": profile_customer_groups(profile),
+		# Lets customer search read 0790 001 011 and +254 790 001 011 as the same number.
+		"phone_isd": profile_isd(profile),
 		"enable_home_customer_selection": bool(profile.get("vunapos_enable_home_customer_selection")),
 		"allow_customer_payments": enabled("vunapos_allow_customer_payments"),
 		"allow_sales_order_payments": enabled("vunapos_allow_customer_payments")

@@ -16,8 +16,9 @@ def item_search_key(user, query, profile, customer, price_list, limit, item_grou
 	return _key("items", user, query, profile, customer, price_list, limit, groups, codes)
 
 
-def customer_search_key(user, query, limit):
-	return _key("customers", user, query, limit)
+def customer_search_key(user, query, limit, customer_groups=None):
+	groups = ",".join(customer_groups) if customer_groups else ""
+	return _key("customers", user, query, limit, groups)
 
 
 def get(key):
@@ -26,6 +27,18 @@ def get(key):
 
 def set(key, value):
 	frappe.cache().set_value(key, value, expires_in_sec=CACHE_TTL_SECONDS, shared=True)
+
+
+def invalidate_customer_search_cache():
+	"""Drop cached customer searches so a new customer is found straight away."""
+	cache = frappe.cache()
+	# get_keys returns bytes, while shared keys are cached in-request as str;
+	# delete by str so this request's local copy goes too.
+	keys = [
+		key.decode() if isinstance(key, bytes) else key
+		for key in cache.get_keys(_key("customers"), shared=True)
+	]
+	cache.delete_value(keys, shared=True)
 
 
 def invalidate_catalogue_cache(doc=None, method=None):

@@ -4,11 +4,13 @@ import { STATUS_ICON } from "./statusIcons";
 const BADGE: Record<TableStatusKind, string> = {
   free: "bg-status-free",
   occupied: "bg-status-occupied",
+  paid: "bg-status-paid",
 };
 
 const SWATCH: Record<TableStatusKind, string> = {
   free: "border-dashed border-status-free bg-status-free-container",
   occupied: "border-solid border-status-occupied bg-status-occupied-container",
+  paid: "border-solid border-status-paid bg-status-paid-container",
 };
 
 // Lists only the statuses currently on the floor. Each swatch repeats the

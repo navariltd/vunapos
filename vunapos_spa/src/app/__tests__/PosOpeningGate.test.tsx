@@ -10,8 +10,9 @@ const state = vi.hoisted(() => ({
   session: undefined as undefined | { pos_profile: string; cashier: string; ready: boolean; status: string },
   loading: false,
   error: null as string | null,
+  kiosk: false,
 }));
-vi.mock("../../features/pos/hooks/useBootstrapData", () => ({ useBootstrapData: () => ({ data: { pos_profile: state.profile, pos_mode: state.mode, current_user: "test@navari.co.ke", restaurant_roles: [], can_take_payment: false } }) }));
+vi.mock("../../features/pos/hooks/useBootstrapData", () => ({ useBootstrapData: () => ({ data: { pos_profile: state.profile, pos_mode: state.mode, current_user: "test@navari.co.ke", restaurant_roles: [], can_take_payment: false, is_kiosk_user: state.kiosk } }) }));
 vi.mock("../../features/pos/hooks/usePosSessionStatus", () => ({ usePosSessionStatus: () => ({ session: state.session, isLoading: state.loading, error: state.error, reload: vi.fn() }) }));
 vi.mock("frappe-react-sdk", () => ({ useFrappeGetCall: () => ({}) }));
 vi.mock("../../features/pos/components/PosOpeningEntryDialog", () => ({ PosOpeningEntryDialog: ({ posProfile }: { posProfile: string }) => <div>Open shift: {posProfile}</div> }));
@@ -28,9 +29,27 @@ describe("personal profile opening gate", () => {
       const html = renderToStaticMarkup(<PosModeSwitch
         retail={<PosOpeningGate>Selling workspace</PosOpeningGate>}
         restaurant={<RestaurantApp />}
+        kiosk={<div>Kiosk screen</div>}
       />);
       expect(html).toContain(`Open shift: ${profile}`);
       expect(html).not.toContain("Selling workspace");
+    }
+  });
+  it("shows a kiosk login only the kiosk screen, with no shift to open", () => {
+    state.kiosk = true;
+    try {
+      for (const mode of ["Restaurant", "Retail"]) {
+        state.mode = mode;
+        state.session = { pos_profile: state.profile, cashier: "test@navari.co.ke", ready: false, status: "OPENING_REQUIRED" };
+        const html = renderToStaticMarkup(<PosModeSwitch
+          retail={<PosOpeningGate>Selling workspace</PosOpeningGate>}
+          restaurant={<RestaurantApp />}
+          kiosk={<div>Kiosk screen</div>}
+        />);
+        expect(html).toBe("<div>Kiosk screen</div>");
+      }
+    } finally {
+      state.kiosk = false;
     }
   });
   it("keeps opening required when switching between profiles with no open session", () => {

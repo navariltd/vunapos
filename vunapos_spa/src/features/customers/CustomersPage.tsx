@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFrappeGetCall } from "frappe-react-sdk";
-import { Search, Users } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 
 import { Button } from "../../components/ui/Button";
 import {
@@ -8,9 +8,11 @@ import {
   navigateToPosPage,
 } from "../../lib/stores/navigationStore";
 import { unwrapVunaResponse, vunaMethods } from "../../services/vunaApi";
+import { CustomerCreateSheet } from "../pos/components/CustomerCreateSheet";
 import type { CustomerDirectoryDTO } from "../pos/types";
+import { openCustomerFromSheet } from "./customerCreation";
 
-type Props = { posProfile?: string; defaultCurrency?: string };
+type Props = { posProfile?: string; defaultCurrency?: string; allowCustomerCreation?: boolean };
 const PAGE_SIZE = 25;
 const CUSTOMER_FILTERS_STORAGE_KEY = "vunapos.customers-filters";
 type CustomerFilters = { query: string; group: string; type: string; territory: string };
@@ -30,10 +32,11 @@ function money(value: number, currency?: string | null) {
   }).format(value);
 }
 
-export function CustomersPage({ posProfile, defaultCurrency }: Props) {
+export function CustomersPage({ posProfile, defaultCurrency, allowCustomerCreation = false }: Props) {
   const [filters, setFilters] = useState<CustomerFilters>(readCustomerFilters);
   const { query, group, type, territory } = filters;
   const [start, setStart] = useState(0);
+  const [isCreating, setIsCreating] = useState(false);
   useEffect(() => {
     window.localStorage.setItem(CUSTOMER_FILTERS_STORAGE_KEY, JSON.stringify(filters));
   }, [filters]);
@@ -73,7 +76,15 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
               Customers and balances you are permitted to view.
             </p>
           </div>
-          <Button onClick={() => navigateToPosPage("Home")}>Back to POS</Button>
+          <div className="flex flex-wrap gap-2">
+            {allowCustomerCreation ? (
+              <Button variant="ghost" className="gap-2" onClick={() => setIsCreating(true)}>
+                <Plus className="size-4" />
+                New customer
+              </Button>
+            ) : null}
+            <Button onClick={() => navigateToPosPage("Home")}>Back to POS</Button>
+          </div>
         </div>
         <div className="grid gap-2 rounded-lg border border-outline-variant bg-surface-container-low p-3 md:grid-cols-[minmax(14rem,1fr)_repeat(3,minmax(9rem,auto))]">
           <label className="flex items-center gap-2 rounded-md border border-outline-variant bg-surface px-3">
@@ -235,6 +246,14 @@ export function CustomersPage({ posProfile, defaultCurrency }: Props) {
           </div>
         ) : null}
       </div>
+      {isCreating ? (
+        <CustomerCreateSheet
+          posProfile={posProfile}
+          description="The customer opens once saved."
+          onClose={() => setIsCreating(false)}
+          onSelect={(customer) => openCustomerFromSheet(customer, () => response.mutate(), navigateToCustomer)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -8,6 +8,7 @@ from vunapos.services.floor_plan_service import get_floor_plan as get_floor_plan
 from vunapos.services.floor_plan_service import save_floor_plan as save_floor_plan_service
 from vunapos.services.menu_service import get_menu as get_menu_service
 from vunapos.services.menu_service import list_service_types
+from vunapos.services.profile_service import require_restaurant_staff
 from vunapos.utils.response import failure, success
 
 
@@ -30,6 +31,20 @@ def _atomic_write(fn):
 	return wrapped
 
 
+def _staff_only(fn):
+	"""Kiosk logins only read the menu, check their cart and use the kiosk actions."""
+
+	@wraps(fn)
+	def wrapped(*args, **kwargs):
+		try:
+			require_restaurant_staff()
+		except frappe.PermissionError as exc:
+			return _failure_from_exception(exc)
+		return fn(*args, **kwargs)
+
+	return wrapped
+
+
 def _failure_from_exception(exc):
 	message = frappe.utils.strip_html(str(exc)).strip()
 	if not message and isinstance(exc, frappe.PermissionError):
@@ -42,6 +57,7 @@ def _failure_from_exception(exc):
 
 
 @frappe.whitelist()
+@_staff_only
 def get_kitchen_board(pos_profile: str, station: str | None = None, history: int = 0, start: int = 0):
 	from vunapos.services.kitchen_lifecycle_service import list_board
 
@@ -52,6 +68,7 @@ def get_kitchen_board(pos_profile: str, station: str | None = None, history: int
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_session_bill(
 	session: str, pos_profile: str | None = None, loyalty_points: int | str | None = None
 ):
@@ -64,6 +81,7 @@ def preview_session_bill(
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_rejection(ticket: str):
 	from vunapos.services.restaurant_rejection_service import preview
 
@@ -74,6 +92,7 @@ def preview_rejection(ticket: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def record_walkout(session: str, pos_profile: str, fingerprint: str, reason: str):
 	from vunapos.services.restaurant_walkout_service import record
@@ -85,6 +104,7 @@ def record_walkout(session: str, pos_profile: str, fingerprint: str, reason: str
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def handover_session_payment(link: str, session: str, pos_profile: str, reason: str):
 	from vunapos.services.restaurant_payment_service import handover
@@ -96,6 +116,7 @@ def handover_session_payment(link: str, session: str, pos_profile: str, reason: 
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_preparation_stop(ticket: str):
 	from vunapos.services.restaurant_stop_service import preview
 
@@ -106,6 +127,7 @@ def preview_preparation_stop(ticket: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def stop_preparation(
 	ticket: str,
@@ -125,6 +147,7 @@ def stop_preparation(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def reject_prepared_items(
 	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, charge: str
@@ -138,6 +161,7 @@ def reject_prepared_items(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def checkout_session(
 	session: str,
@@ -173,6 +197,7 @@ def checkout_session(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 def kitchen_action(
 	ticket: str,
 	action: str,
@@ -198,6 +223,7 @@ def kitchen_action(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 def cancel_kitchen_order(
 	ticket: str, request_key: str, expected_status: str, reason: str, manager_pin_token: str | None = None
 ):
@@ -210,6 +236,7 @@ def cancel_kitchen_order(
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_item_cancellation(order: str):
 	from vunapos.services.restaurant_cancellation_service import preview
 
@@ -220,6 +247,7 @@ def preview_item_cancellation(order: str):
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_restaurant_waste(ticket: str):
 	from vunapos.services.restaurant_waste_service import preview
 
@@ -230,6 +258,7 @@ def preview_restaurant_waste(ticket: str):
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_remake(ticket: str):
 	from vunapos.services.restaurant_remake_service import preview
 
@@ -240,6 +269,7 @@ def preview_remake(ticket: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def request_remake(
 	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, disposition: str
@@ -253,6 +283,7 @@ def request_remake(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def record_restaurant_waste(
 	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str
@@ -266,6 +297,7 @@ def record_restaurant_waste(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def cancel_remake(
 	ticket: str,
@@ -283,6 +315,7 @@ def cancel_remake(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def cancel_order_items(
 	order: str,
@@ -338,6 +371,7 @@ def preview_cart(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def open_session(
 	pos_profile: str,
@@ -358,6 +392,7 @@ def open_session(
 
 
 @frappe.whitelist()
+@_staff_only
 def get_session(session: str):
 	try:
 		return success(restaurant_session_service.get_session(session))
@@ -366,6 +401,7 @@ def get_session(session: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 def recover_session_round(
 	pos_profile: str,
 	idempotency_key: str,
@@ -384,6 +420,7 @@ def recover_session_round(
 
 
 @frappe.whitelist()
+@_staff_only
 def get_kitchen_ticket(ticket: str):
 	from vunapos.services.kitchen_service import get_ticket
 
@@ -394,6 +431,7 @@ def get_kitchen_ticket(ticket: str):
 
 
 @frappe.whitelist()
+@_staff_only
 def list_sessions(pos_profile: str):
 	try:
 		return success(restaurant_session_service.list_sessions(pos_profile))
@@ -402,6 +440,7 @@ def list_sessions(pos_profile: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def update_session(
 	session: str,
@@ -422,6 +461,7 @@ def update_session(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def cancel_empty_session(session: str):
 	try:
@@ -431,6 +471,17 @@ def cancel_empty_session(session: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def clear_table(session: str):
+	try:
+		return success(restaurant_session_service.clear_table(session))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def create_session_round(
 	session: str,
@@ -459,6 +510,7 @@ def get_floor_plan(pos_profile: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def save_floor_plan(pos_profile: str, payload: dict | str):
 	try:
@@ -500,6 +552,7 @@ def get_menu(
 
 
 @frappe.whitelist()
+@_staff_only
 def get_table_status(pos_profile: str):
 	try:
 		return success(restaurant_order_service.get_table_status(pos_profile=pos_profile))
@@ -508,6 +561,7 @@ def get_table_status(pos_profile: str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def create_order(
 	pos_profile: str,
@@ -537,6 +591,7 @@ def create_order(
 
 
 @frappe.whitelist()
+@_staff_only
 def get_order(order: str):
 	try:
 		return success(restaurant_order_service.get_order(order))
@@ -545,6 +600,7 @@ def get_order(order: str):
 
 
 @frappe.whitelist()
+@_staff_only
 def list_orders(
 	pos_profile: str,
 	status: str | None = "Open",
@@ -563,6 +619,7 @@ def list_orders(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def update_order(
 	order: str,
@@ -588,6 +645,7 @@ def update_order(
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def add_order_items(order: str, items: list | str):
 	try:
@@ -597,6 +655,7 @@ def add_order_items(order: str, items: list | str):
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def update_order_item(order: str, line_id: str, qty: float | str | None = None, note: str | None = None):
 	try:
@@ -606,6 +665,7 @@ def update_order_item(order: str, line_id: str, qty: float | str | None = None, 
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def remove_order_item(order: str, line_id: str, manager_pin_token: str | None = None):
 	try:
@@ -617,6 +677,7 @@ def remove_order_item(order: str, line_id: str, manager_pin_token: str | None = 
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def cancel_order(order: str, reason: str | None = None, manager_pin_token: str | None = None):
 	try:
@@ -628,6 +689,7 @@ def cancel_order(order: str, reason: str | None = None, manager_pin_token: str |
 
 
 @frappe.whitelist(methods=["POST"])
+@_staff_only
 @_atomic_write
 def checkout_order(
 	order: str,
@@ -669,6 +731,7 @@ def checkout_order(
 
 
 @frappe.whitelist()
+@_staff_only
 def preview_order(order: str, customer: str | None = None, pos_profile: str | None = None):
 	try:
 		return success(
