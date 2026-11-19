@@ -475,6 +475,10 @@ def transition(
 			request_fingerprint=request_fingerprint,
 			reason=reason,
 		)
+	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+		# The request boundary restarts the whole aborted transaction. Do not
+		# reload or append an audit using objects from the invalid snapshot.
+		raise
 	except Exception as exc:
 		_rollback_command(savepoint)
 		doc.reload()
@@ -664,6 +668,8 @@ def cancel_order(ticket, request_key, expected_status, reason, manager_pin_token
 			_record(
 				row, "Cancel Order", key, previous, reason=reason, approved_by=approved_by, claim=index == 0
 			)
+	except (frappe.QueryDeadlockError, frappe.QueryTimeoutError):
+		raise
 	except Exception as exc:
 		_rollback_command(savepoint)
 		doc.reload()

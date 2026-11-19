@@ -54,6 +54,7 @@ from vunapos.services.stock_reservation_service import (
 )
 from vunapos.services.workflow_service import assert_pos_workflow_editable, workflow_enabled_for
 from vunapos.utils.permissions import require_create, require_read, require_write
+from vunapos.utils.transactions import rollback_savepoint
 
 SUPPORTED_INVOICE_DOCTYPES = ("Sales Invoice", "POS Invoice")
 SUPPORTED_ORDER_DOCTYPES = ("Sales Order",)
@@ -1863,7 +1864,7 @@ def create_invoice_from_cart(
 		_save_invoice(doc)
 		return invoice_to_dict(doc)
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 
 
@@ -2019,7 +2020,7 @@ def create_and_submit_invoice(
 			checkout_fields=checkout_fields,
 		)
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 
 
@@ -2124,5 +2125,5 @@ def create_and_submit_sales_order(
 		result["advance_payments"] = advance_payments
 		return result
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise

@@ -66,6 +66,7 @@ from vunapos.services.service_type_service import (
 	get_service_type_pricing,
 	resolve_service_type,
 )
+from vunapos.utils.transactions import rollback_savepoint
 
 ORDER_DOCTYPE = "Sales Order"
 MAX_NOTE_LENGTH = 500
@@ -989,7 +990,7 @@ def checkout_order(
 			}
 		)
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 	doc.reload()
 	return {"order": order_to_dict(doc), "invoice": invoice}

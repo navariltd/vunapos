@@ -2,6 +2,7 @@ from functools import wraps
 from uuid import uuid4
 
 import frappe
+from frappe import _
 
 from vunapos.services import restaurant_order_service, restaurant_session_service
 from vunapos.services.floor_plan_service import get_floor_plan as get_floor_plan_service
@@ -10,6 +11,36 @@ from vunapos.services.menu_service import get_menu as get_menu_service
 from vunapos.services.menu_service import list_service_types
 from vunapos.services.profile_service import require_restaurant_staff
 from vunapos.utils.response import failure, success
+from vunapos.utils.transactions import DATABASE_CONFLICTS, rollback_savepoint, run_with_database_retry
+
+
+def _retry_database_conflicts(fn):
+	"""Restart only aborted DB transactions, never business failures or unknown payments.
+
+	An outer restaurant request owns retries; nested endpoints must propagate
+	conflicts rather than discard and replay only part of a larger command.
+	No commit happens here. Request keys, current locks and review checks remain
+	unchanged, and only the eventual successful transaction may be committed.
+	"""
+
+	@wraps(fn)
+	def wrapped(*args, **kwargs):
+		if frappe.flags.get("vunapos_retrying_database"):
+			return fn(*args, **kwargs)
+		previous = frappe.flags.get("vunapos_retrying_database")
+		frappe.flags.vunapos_retrying_database = True
+		try:
+			return run_with_database_retry(fn, *args, **kwargs)
+		except DATABASE_CONFLICTS:
+			return failure(
+				_("Another terminal changed this transaction. Refresh and retry the original request."),
+				code="RESTAURANT_TRANSACTION_CONFLICT",
+				meta={"retryable": True},
+			)
+		finally:
+			frappe.flags.vunapos_retrying_database = previous
+
+	return wrapped
 
 
 def _atomic_write(fn):
@@ -21,14 +52,17 @@ def _atomic_write(fn):
 		frappe.db.savepoint(savepoint)
 		try:
 			result = fn(*args, **kwargs)
-			if not result.get("ok"):
-				frappe.db.rollback(save_point=savepoint)
-			return result
-		except Exception:
-			frappe.db.rollback(save_point=savepoint)
+		except DATABASE_CONFLICTS:
+			# The outer retry boundary must restart the entire transaction.
 			raise
+		except Exception:
+			rollback_savepoint(savepoint)
+			raise
+		if not result.get("ok"):
+			rollback_savepoint(savepoint)
+		return result
 
-	return wrapped
+	return _retry_database_conflicts(wrapped)
 
 
 def _staff_only(fn):
@@ -42,10 +76,12 @@ def _staff_only(fn):
 			return _failure_from_exception(exc)
 		return fn(*args, **kwargs)
 
-	return wrapped
+	return _retry_database_conflicts(wrapped)
 
 
 def _failure_from_exception(exc):
+	if isinstance(exc, DATABASE_CONFLICTS) and frappe.flags.get("vunapos_retrying_database"):
+		raise exc
 	message = frappe.utils.strip_html(str(exc)).strip()
 	if not message and isinstance(exc, frappe.PermissionError):
 		message = "You do not have permission for this restaurant action. Ask a manager to check your role, Restaurant, Branch and Kitchen Station access."

@@ -128,6 +128,10 @@ class RestaurantConcurrencyFixture(IntegrationTestCase):
 			frappe.connect()
 			try:
 				frappe.flags.in_test = True
+				if frappe.db.db_type == "mariadb":
+					# MariaDB 11.8 enables this in CI. Exercise the same conflict
+					# behavior on supported older local servers, without a global change.
+					frappe.db.sql("SET SESSION innodb_snapshot_isolation = ON")
 				frappe.set_user("Administrator")
 				frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 10")
 				barrier.wait(timeout=15)
@@ -723,7 +727,9 @@ class TestRestaurantConcurrency(RestaurantConcurrencyFixture):
 			try:
 				_stock_entry(frappe.get_doc("Work Order", wo_name), "Manufacture", 1)
 				return {"ok": True}
-			except frappe.ValidationError as exc:
+			except (frappe.ValidationError, frappe.QueryDeadlockError, frappe.QueryTimeoutError) as exc:
+				# The competing native Desk transaction may lose its snapshot;
+				# POS still must succeed without manufacturing or issuing twice.
 				return {"ok": False, "error": str(exc)}
 
 		results = self._race(

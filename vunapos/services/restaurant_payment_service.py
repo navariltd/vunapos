@@ -283,8 +283,8 @@ def enqueue_dispatch(name):
 	)
 
 
-def dispatch(link_name):
-	"""Worker only: commit the send claim BEFORE calling an external provider."""
+def _claim_dispatch(link_name):
+	"""DB-only claim; conflicts may be retried before any provider call."""
 	visit = frappe.db.get_value(LINK, link_name, "restaurant_session")
 	if not visit:
 		return
@@ -313,6 +313,17 @@ def dispatch(link_name):
 		return
 	link.db_set("dispatch_state", "Started")
 	frappe.db.commit()  # nosemgrep - durable worker claim must precede external money movement
+	return link, source
+
+
+def dispatch(link_name):
+	"""Worker only: commit the send claim BEFORE calling an external provider."""
+	from vunapos.utils.transactions import run_with_database_retry
+
+	claim = run_with_database_retry(_claim_dispatch, link_name)
+	if not claim:
+		return
+	link, source = claim
 	try:
 		source.flags.ignore_permissions = True
 		source.submit()
