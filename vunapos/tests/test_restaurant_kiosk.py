@@ -670,6 +670,10 @@ class TestRestaurantKiosk(IntegrationTestCase):
 	def test_leaving_the_kiosk_needs_a_manager_pin(self):
 		from vunapos.api.pin import verify_manager
 
+		# The manager PIN works without the salesperson lock.
+		self.assertFalse(
+			frappe.db.get_value("POS Profile", self.kiosk_profile, "vunapos_enable_salesperson_pin")
+		)
 		frappe.set_user(KIOSK_USER)
 		self.assertEqual(
 			verify_manager(self.kiosk_profile, "0000", "kiosk_exit")["errors"][0]["code"],
@@ -681,6 +685,36 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		frappe.cache().delete_keys(f"vunapos:pin-attempts:{KIOSK_USER}")
 		response = verify_manager(self.till, MANAGER_PIN, "kiosk_exit")
 		self.assertEqual(response["errors"][0]["code"], "MANAGER_PIN_NOT_REQUIRED")
+
+	def test_manager_pins_approve_removal_and_cancellation_without_the_salesperson_lock(self):
+		from vunapos.api.pin import verify_manager, verify_salesperson
+		from vunapos.services.pin_service import consume_pin_token
+
+		frappe.db.set_value(
+			"POS Profile",
+			self.kiosk_profile,
+			{
+				"vunapos_enable_salesperson_pin": 0,
+				"vunapos_require_manager_pin_item_removal": 1,
+				"vunapos_require_manager_pin_order_cancel": 1,
+			},
+		)
+		frappe.clear_document_cache("POS Profile", self.kiosk_profile)
+		frappe.set_user(KIOSK_USER)
+		try:
+			removal = verify_manager(self.kiosk_profile, MANAGER_PIN, "item_removal")
+			cancellation = verify_manager(self.kiosk_profile, MANAGER_PIN, "order_cancel")
+			salesperson = verify_salesperson(self.kiosk_profile, self._manager(), MANAGER_PIN)
+			self.assertTrue(removal["ok"], removal)
+			self.assertTrue(cancellation["ok"], cancellation)
+			self.assertEqual(salesperson["errors"][0]["code"], "PIN_NOT_ENABLED")
+			# Each token is accepted for its own action, as item removal and order cancellation consume them.
+			profile = frappe.get_doc("POS Profile", self.kiosk_profile)
+			for response, purpose in ((removal, "manager"), (cancellation, "manager_order_cancel")):
+				state = consume_pin_token(response["data"]["token"], profile, purpose)
+				self.assertEqual(state["subject"], self._manager())
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_the_slip_is_never_the_default_sales_order_format(self):
 		from vunapos.services.print_service import KIOSK_ORDER_SLIP, resolve_print_format

@@ -220,6 +220,50 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		self.assertTrue(response["ok"], response)
 		self.assertEqual(response["data"]["items"], [])
 
+	def test_manager_pin_approves_item_removal_without_the_salesperson_lock(self):
+		from vunapos.api.pin import verify_manager
+
+		profile = ensure_test_pos_profile()
+		item_code = ensure_test_item()
+		manager = f"_Test Retail Manager {frappe.generate_hash(length=6)}"
+		frappe.get_doc({"doctype": "Sales Person", "sales_person_name": manager}).insert(
+			ignore_permissions=True
+		)
+		profile_doc = frappe.get_doc("POS Profile", profile)
+		was = {
+			field: profile_doc.get(field)
+			for field in ("vunapos_enable_salesperson_pin", "vunapos_require_manager_pin_item_removal")
+		}
+		profile_doc.update(
+			{"vunapos_enable_salesperson_pin": 0, "vunapos_require_manager_pin_item_removal": 1}
+		)
+		profile_doc.append(
+			"vunapos_pin_users", {"sales_person": manager, "role": "Manager", "pin": "5824", "enabled": 1}
+		)
+		profile_doc.save(ignore_permissions=True)
+		try:
+			set_invoice_mode("Sales Invoice")
+			invoice = create_invoice(pos_profile=profile)["data"]
+			response = add_item(invoice["doctype"], invoice["name"], item_code, 1)
+			self.assertTrue(response["ok"], response)
+			row_name = response["data"]["items"][0]["row_name"]
+
+			response = remove_item(invoice["doctype"], invoice["name"], row_name)
+			self.assertFalse(response["ok"], response)
+			approval = verify_manager(profile, "5824", "item_removal")
+			self.assertTrue(approval["ok"], approval)
+			response = remove_item(invoice["doctype"], invoice["name"], row_name, approval["data"]["token"])
+			self.assertTrue(response["ok"], response)
+			self.assertEqual(response["data"]["items"], [])
+		finally:
+			profile_doc = frappe.get_doc("POS Profile", profile)
+			profile_doc.update(was)
+			profile_doc.set(
+				"vunapos_pin_users",
+				[row for row in profile_doc.get("vunapos_pin_users") if row.sales_person != manager],
+			)
+			profile_doc.save(ignore_permissions=True)
+
 	def test_create_and_submit_sales_order_from_cart(self):
 		profile = ensure_test_pos_profile()
 		item_code = ensure_test_item()
