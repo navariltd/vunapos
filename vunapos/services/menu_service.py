@@ -316,6 +316,9 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 	from vunapos.services.kitchen_service import classify_items
 
 	classify_items(profile.vunapos_restaurant, items, branch=profile.vunapos_branch)
+	from vunapos.services.restaurant_availability_service import annotate
+
+	availability_refresh_after = annotate(profile.vunapos_restaurant, profile.vunapos_branch, items, floor)
 	from vunapos.services.sync_service import _get_tax_settings
 
 	service_pricing = get_service_type_pricing(profile, service_type)
@@ -325,6 +328,7 @@ def get_menu(pos_profile, service_type=None, table=None, query=None, customer=No
 	)
 	tax_settings = _get_tax_settings()
 	return {
+		"availability_refresh_after": availability_refresh_after,
 		"pricing_context": {
 			"tax_rows": [
 				{

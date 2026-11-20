@@ -16,6 +16,33 @@ const dish: ItemDTO = {
 };
 
 describe("contextual QSR catalogue", () => {
+  it("keeps operational pauses separate from stock and Sales Order stock bypass", () => {
+    const paused = {
+      ...dish,
+      actual_qty: 100,
+      ordering_paused: true,
+      availability_reason: "Coffee machine being repaired",
+    };
+    for (const Component of [ItemCard, ItemListRow]) {
+      const html = renderToStaticMarkup(
+        <Component item={paused} ignoreStock onAdd={() => {}} />
+      );
+      expect(html).toContain("Coffee machine being repaired");
+      expect(html).toContain('disabled=""');
+    }
+    const html = renderToStaticMarkup(
+      <VariantPickerDialog
+        isOpen
+        ignoreStock
+        template={{ ...dish, has_variants: true }}
+        variants={[paused]}
+        onClose={() => {}}
+        onSelect={() => {}}
+      />
+    );
+    expect(html).toContain("Coffee machine being repaired");
+    expect(html).toContain('disabled=""');
+  });
   it("shows QSR instead of finished-stock warnings in grid and list", () => {
     for (const Component of [ItemCard, ItemListRow]) {
       const html = renderToStaticMarkup(

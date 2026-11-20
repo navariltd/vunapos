@@ -94,6 +94,7 @@ export function useMenu(
         "Restaurant Menu",
         "Menu Section",
         "Kitchen Station",
+        "Restaurant Availability",
         "Restaurant Modifier Group",
         "Item",
         "Item Price",
@@ -148,6 +149,15 @@ export function useMenu(
 
   const reload = useCallback(() => setRevision((current) => current + 1), []);
   const current = result?.key === key ? result : null;
+  const expiresAfter = current?.menu?.availability_refresh_after;
+  useEffect(() => {
+    if (!expiresAfter || !Number.isFinite(expiresAfter)) return;
+    const timer = window.setTimeout(
+      reload,
+      Math.min(expiresAfter * 1000, 2_147_000_000)
+    );
+    return () => window.clearTimeout(timer);
+  }, [expiresAfter, current?.menu, reload]);
   return {
     menu: current?.menu ?? null,
     error: current?.error ?? null,

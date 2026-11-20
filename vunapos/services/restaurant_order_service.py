@@ -34,6 +34,7 @@ from vunapos.dto.restaurant import (
 	order_to_dict,
 	waiter_name,
 )
+from vunapos.services import restaurant_request_service as requests
 from vunapos.services.floor_plan_service import (
 	TABLE_DOCTYPE,
 	is_floor_plan_manager,
@@ -65,6 +66,7 @@ from vunapos.services.service_type_service import (
 	get_service_type_pricing,
 	resolve_service_type,
 )
+from vunapos.utils.transactions import rollback_savepoint
 
 ORDER_DOCTYPE = "Sales Order"
 MAX_NOTE_LENGTH = 500
@@ -296,6 +298,9 @@ def _validate_lines(profile, service_type, table, lines, existing_rows=(), price
 	from vunapos.services.modifier_service import expand_modifier_lines
 
 	lines[:] = expand_modifier_lines(lines)
+	from vunapos.services.restaurant_availability_service import check_items
+
+	check_items(profile.vunapos_restaurant, profile.vunapos_branch, [line.item_code for line in lines])
 	addon_codes = {line.item_code for line in lines if line.get("parent_line_id")}
 	priced_addons = set()
 	if addon_codes:
@@ -336,7 +341,9 @@ def _validate_lines(profile, service_type, table, lines, existing_rows=(), price
 
 
 def _load_order(order, for_update=False):
-	restaurant = order and frappe.db.get_value(ORDER_DOCTYPE, order, "vunapos_restaurant")
+	restaurant = order and frappe.db.get_value(
+		ORDER_DOCTYPE, order, "vunapos_restaurant", for_update=for_update
+	)
 	if not restaurant:
 		_throw("ORDER_NOT_FOUND", _("Order {0} was not found").format(order), {"order": order})
 	# Orders belong to the restaurant, so staff of any of its tills can open them.
@@ -555,6 +562,25 @@ def create_order(
 ):
 	"""Insert and submit a round. A kiosk order paid first stays a `draft` until confirmed."""
 	idempotency_key = cstr(idempotency_key).strip() or None
+	profile = _restaurant_profile(pos_profile)
+	legacy_payload = None
+	if idempotency_key and not restaurant_session:
+		idempotency_key = requests.request_key(idempotency_key)
+		frappe.db.get_value("POS Profile", profile.name, "name", for_update=True)
+		legacy_payload = {
+			"pos_profile": profile.name,
+			"service_type": service_type or "",
+			"table": table or "",
+			"customer": customer or "",
+			"pax": _clean_pax(pax),
+			"order_note": order_note or "",
+			"items": requests.parsed(items),
+			"price_list": price_list or "",
+			"kitchen_routing": requests.parsed(kitchen_routing) or {},
+		}
+		previous = requests.replay("Create Order", idempotency_key, profile.name, legacy_payload)
+		if previous:
+			return get_order(previous, for_update=True)
 	if idempotency_key:
 		existing = frappe.db.get_value(
 			ORDER_DOCTYPE,
@@ -565,8 +591,12 @@ def create_order(
 			doc, _profile = _load_order(existing)
 			if doc.get("vunapos_restaurant_session") != restaurant_session:
 				_throw("IDEMPOTENCY_CONFLICT", _("This order key belongs to a different session."))
+			if legacy_payload is not None:
+				_throw(
+					"REQUEST_REVIEW_REQUIRED",
+					_("Review the existing order before retrying this older request."),
+				)
 			return order_to_dict(doc)
-	profile = _restaurant_profile(pos_profile)
 	require_restaurant_staff_shift(profile.name)
 	if not service_type:
 		default = get_default_service_type(profile)
@@ -589,6 +619,10 @@ def create_order(
 		_validate_table_kitchens(profile, [row.table for row in session.tables if not row.released_at])
 	table = _validate_table(profile, service_type_row, table or None, restaurant_session=restaurant_session)
 	# A Sales Order cannot be submitted without lines.
+	from vunapos.services.restaurant_availability_service import lock_branch
+
+	# Serialize new-order acceptance with manager pauses, after replay checks.
+	lock_branch(profile.vunapos_branch)
 	lines = _new_lines(items)
 	if not lines:
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
@@ -663,9 +697,12 @@ def create_order(
 		doc.insert()
 	finally:
 		frappe.flags.vunapos_inserting_session_round = previous_insert
-	if draft:
-		return order_to_dict(doc)
-	submit_session_round(doc, restaurant_session, kitchen_routing)
+	if not draft:
+		submit_session_round(doc, restaurant_session, kitchen_routing)
+	if legacy_payload is not None:
+		requests.record(
+			"Create Order", idempotency_key, profile.name, legacy_payload, ORDER_DOCTYPE, doc.name
+		)
 	return order_to_dict(doc)
 
 
@@ -682,8 +719,8 @@ def submit_session_round(doc, restaurant_session=None, kitchen_routing=None):
 		frappe.flags.vunapos_kitchen_routing = previous_routing
 
 
-def get_order(order):
-	doc, _profile = _load_order(order)
+def get_order(order, for_update=False):
+	doc, _profile = _load_order(order, for_update=for_update)
 	return order_to_dict(doc)
 
 
@@ -748,6 +785,9 @@ def update_order(order, service_type=None, table=None, customer=None, pax=None, 
 def add_items(order, items):
 	doc, profile = _load_open_order(order)
 	_require_editable_round(doc)
+	from vunapos.services.restaurant_availability_service import lock_branch
+
+	lock_branch(profile.vunapos_branch)
 	if not _parse_list(items):
 		_throw("ITEMS_REQUIRED", _("Add at least one item"))
 	lines = _new_lines(items, {line_id(row) for row in doc.get("items")})
@@ -776,6 +816,11 @@ def update_item(order, line_id, qty=None, note=None):
 		qty = flt(qty)
 		if qty <= 0:
 			_throw("INVALID_QTY", _("Quantity must be greater than zero. Remove the line instead."))
+		if qty > flt(row.qty):
+			from vunapos.services.restaurant_availability_service import check_items, lock_branch
+
+			lock_branch(profile.vunapos_branch)
+			check_items(profile.vunapos_restaurant, profile.vunapos_branch, [row.item_code])
 		if qty != flt(row.qty):
 			# Re-priced at the new quantity, as checkout would (quantity offers).
 			rate = flt(_price_line(doc, profile, row.item_code, qty, row.uom)["rate"])
@@ -945,7 +990,7 @@ def checkout_order(
 			}
 		)
 	except Exception:
-		frappe.db.rollback(save_point=savepoint)
+		rollback_savepoint(savepoint)
 		raise
 	doc.reload()
 	return {"order": order_to_dict(doc), "invoice": invoice}

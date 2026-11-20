@@ -1,9 +1,11 @@
 import { useFrappeGetCall } from "frappe-react-sdk";
+import { useState } from "react";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
 import { Sheet } from "../../../components/ui/Sheet";
 import { KitchenActions } from "./KitchenActions";
 import { kitchenStatusClass } from "../kitchenStatus";
+import { KitchenDishes } from "./KitchenDishes";
 
 export function KitchenTicketSheet({
   name,
@@ -12,10 +14,12 @@ export function KitchenTicketSheet({
   name: string;
   onClose: () => void;
 }) {
+  const [linkedName, setLinkedName] = useState<string | null>(null);
+  const activeName = linkedName || name;
   const response = useFrappeGetCall<unknown>(
     vunaMethods.getKitchenTicket,
-    { ticket: name },
-    ["kitchen-ticket", name],
+    { ticket: activeName },
+    ["kitchen-ticket", activeName],
     {
       refreshInterval: 12000,
       refreshWhenHidden: false,
@@ -40,7 +44,7 @@ export function KitchenTicketSheet({
   return (
     <Sheet
       isOpen
-      title={name}
+      title={activeName}
       description={
         ticket
           ? `${ticket.station_label} · ${ticket.status}`
@@ -57,114 +61,224 @@ export function KitchenTicketSheet({
           Loading kitchen ticket…
         </p>
       ) : (
-        <div className="space-y-4">
-          {ticket.production_completed_at_billing ? (
-            <p role="status" className="rounded-md bg-status-paid-container p-3 text-sm text-on-surface">
-              Paid. This order was billed before it was made, so its stock has already moved.
-              Accept, Start and Ready only update its status.
-            </p>
-          ) : null}
-          <div className="rounded-lg bg-surface-container-low p-3 text-sm">
-            <span
-              className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
-                ticket.status
-              )}`}
-            >
-              {ticket.status}
-            </span>
-            <p>
-              {ticket.sales_order} · {ticket.service_type}
-            </p>
-            <p>
-              {ticket.table_labels
-                ? `Tables: ${ticket.table_labels}`
-                : "No table"}
-            </p>
-            <p className="mt-1 text-xs text-on-surface-variant">
-              Sent {new Date(ticket.sent_at.replace(" ", "T")).toLocaleString()}{" "}
-              · {ticket.sent_by}
+        <KitchenActions
+          key={ticket.name}
+          ticket={ticket}
+          onChanged={() => void response.mutate()}
+        >
+          <div className="space-y-4">
+            {ticket.production_completed_at_billing ? (
+              <p
+                role="status"
+                className="rounded-md bg-status-paid-container p-3 text-sm text-on-surface"
+              >
+                Paid. This order was billed before it was made, so its stock has
+                already moved. Preparation actions record progress without
+                moving stock again.
+              </p>
+            ) : null}
+            <div className="rounded-lg bg-surface-container-low p-3 text-sm">
+              {ticket.remake_of ? (
+                <div className="mb-3 border-b border-outline-variant pb-3">
+                  <p className="font-semibold text-primary">
+                    Replacement preparation — no extra charge
+                  </p>
+                  <button
+                    className="cursor-pointer underline"
+                    onClick={() => setLinkedName(ticket.remake_of!)}
+                  >
+                    Original ticket: {ticket.remake_of}
+                  </button>
+                  <p>{ticket.remake_reason}</p>
+                  <p className="text-xs text-on-surface-variant">
+                    Original food: {ticket.original_disposition}
+                  </p>
+                  {ticket.replacement_stock_issues?.length ? (
+                    <ul className="mt-2 space-y-1 text-xs">
+                      {ticket.replacement_stock_issues.map((entry) => (
+                        <li key={entry.name}>
+                          <a
+                            className="underline"
+                            href={`/desk/stock-entry/${encodeURIComponent(
+                              entry.name
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Replacement stock issue · {entry.name}
+                          </a>
+                          {entry.docstatus === 2 ? " · Cancelled" : ""}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+              {linkedName && linkedName !== name ? (
+                <button
+                  className="mb-2 block cursor-pointer underline"
+                  onClick={() => setLinkedName(null)}
+                >
+                  Back to first ticket
+                </button>
+              ) : null}
+              <span
+                className={`mb-2 inline-flex rounded-full px-2 py-1 text-xs font-semibold ${kitchenStatusClass(
+                  ticket.status
+                )}`}
+              >
+                {ticket.status}
+              </span>
+              <p>
+                {ticket.sales_order} · {ticket.service_type}
+              </p>
+              <p>
+                {ticket.table_labels
+                  ? `Tables: ${ticket.table_labels}`
+                  : "No table"}
+              </p>
+              <p className="mt-1 text-xs text-on-surface-variant">
+                Sent{" "}
+                {new Date(ticket.sent_at.replace(" ", "T")).toLocaleString()} ·{" "}
+                {ticket.sent_by_name || ticket.sent_by}
+              </p>
+              {ticket.waiter ? (
+                <p className="mt-1 text-sm">
+                  Waiter: {ticket.waiter_name || ticket.waiter}
+                </p>
+              ) : null}
+            </div>
+            {ticket.order_note ? (
+              <p className="rounded-md border border-outline-variant p-3 text-sm">
+                {ticket.order_note}
+              </p>
+            ) : null}
+            <KitchenDishes ticket={ticket} details />
+            {ticket.actions?.length ? (
+              <details className="rounded-md border border-outline-variant p-3">
+                <summary className="cursor-pointer text-sm font-medium">
+                  Preparation activity
+                </summary>
+                <ul className="mt-2 space-y-2">
+                  {ticket.actions.map((action) => (
+                    <li key={action.name} className="text-xs">
+                      <p className="font-medium">
+                        {action.action} · {action.outcome} · {action.actor}
+                      </p>
+                      <p className="text-on-surface-variant">
+                        {action.occurred_at} · {action.from_status} →{" "}
+                        {action.to_status}
+                      </p>
+                      {action.item_quantities?.deltas ? (
+                        <ul>
+                          {Object.entries(action.item_quantities.deltas).map(
+                            ([lineId, qty]) => {
+                              const line = ticket.items.find(
+                                (item) => item.line_id === lineId
+                              );
+                              return (
+                                <li key={lineId}>
+                                  {quantity(qty)} {line?.uom} ×{" "}
+                                  {line?.item_name || lineId}
+                                </li>
+                              );
+                            }
+                          )}
+                        </ul>
+                      ) : null}
+                      {action.reason ? <p>{action.reason}</p> : null}
+                      {action.item_quantities?.charge ? (
+                        <p className="font-medium">
+                          Charge decision:{" "}
+                          {action.item_quantities.charge === "Remove charge"
+                            ? "Charge waived"
+                            : "Charge kept"}
+                        </p>
+                      ) : null}
+                      {action.action === "Stop Preparation" ? (
+                        <div className="space-y-1">
+                          {action.item_quantities?.charge_item ? (
+                            <p>
+                              Cancellation charge:{" "}
+                              {action.item_quantities.charge_item}
+                            </p>
+                          ) : null}
+                          {action.item_quantities?.materials?.map((part) => (
+                            <p key={part.id}>
+                              {part.item_name}: {quantity(part.used_qty)}{" "}
+                              {part.uom} used/spoiled;{" "}
+                              {quantity(part.max_qty - part.used_qty)}{" "}
+                              {part.uom}{" "}
+                              {part.kind === "WIP"
+                                ? "returned to stores"
+                                : "released unused"}
+                            </p>
+                          ))}
+                          {action.item_quantities?.stock_entries?.map(
+                            (entry) => (
+                              <a
+                                key={entry}
+                                className="block underline"
+                                href={`/desk/stock-entry/${encodeURIComponent(
+                                  entry
+                                )}`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Stock entry · {entry}
+                              </a>
+                            )
+                          )}
+                        </div>
+                      ) : null}
+                      {action.item_quantities?.replacement_ticket ? (
+                        <p>
+                          <button
+                            className="cursor-pointer underline"
+                            onClick={() =>
+                              setLinkedName(
+                                action.item_quantities!.replacement_ticket!
+                              )
+                            }
+                          >
+                            View replacement ·{" "}
+                            {action.item_quantities.replacement_ticket}
+                          </button>
+                          {action.item_quantities.disposition ? (
+                            <span className="block">
+                              Original food:{" "}
+                              {action.item_quantities.disposition}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      {action.item_quantities?.journal_entry ? (
+                        <a
+                          className="underline"
+                          href={`/desk/journal-entry/${encodeURIComponent(
+                            action.item_quantities.journal_entry
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Waste accounting entry ·{" "}
+                          {action.item_quantities.journal_entry}
+                        </a>
+                      ) : null}
+                      {action.error_message ? (
+                        <p className="text-error">{action.error_message}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            <p className="text-xs text-on-surface-variant">
+              Preparation instructions remain an immutable snapshot. Progress
+              actions are recorded separately.
             </p>
           </div>
-          {ticket.order_note ? (
-            <p className="rounded-md border border-outline-variant p-3 text-sm">
-              {ticket.order_note}
-            </p>
-          ) : null}
-          <ul className="divide-y divide-outline-variant">
-            {ticket.items.map((item) => (
-              <li
-                key={item.line_id}
-                className={`py-3 ${item.parent_line_id ? "pl-5" : ""}`}
-              >
-                <p className="text-sm font-semibold">
-                  {quantity(item.qty)} {item.uom} × {item.item_name}
-                </p>
-                {item.parent_line_id ? (
-                  <p className="text-xs text-on-surface-variant">Add-on</p>
-                ) : null}
-                {item.work_order ? (
-                  <p className="text-xs text-on-surface-variant">
-                    Production: {item.work_order}
-                  </p>
-                ) : null}
-                {item.uom !== item.stock_uom ? (
-                  <p className="text-xs text-on-surface-variant">
-                    {quantity(item.stock_qty)} {item.stock_uom}
-                  </p>
-                ) : null}
-                {item.modifiers.length ? (
-                  <p className="mt-1 text-sm">
-                    {item.modifiers.map((choice) => choice.label).join(" · ")}
-                  </p>
-                ) : null}
-                {item.note ? (
-                  <p className="mt-1 whitespace-pre-wrap text-sm">
-                    {item.note}
-                  </p>
-                ) : null}
-                {item.temporary_routing ? (
-                  <p className="mt-1 text-xs text-on-surface-variant">
-                    Temporary station selection
-                  </p>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-          {ticket.available_actions?.length || ticket.can_cancel_order ? (
-            <KitchenActions
-              ticket={ticket}
-              onChanged={() => void response.mutate()}
-            />
-          ) : null}
-          {ticket.actions?.length ? (
-            <details className="rounded-md border border-outline-variant p-3">
-              <summary className="cursor-pointer text-sm font-medium">
-                Preparation activity
-              </summary>
-              <ul className="mt-2 space-y-2">
-                {ticket.actions.map((action) => (
-                  <li key={action.name} className="text-xs">
-                    <p className="font-medium">
-                      {action.action} · {action.outcome} · {action.actor}
-                    </p>
-                    <p className="text-on-surface-variant">
-                      {action.occurred_at} · {action.from_status} →{" "}
-                      {action.to_status}
-                    </p>
-                    {action.reason ? <p>{action.reason}</p> : null}
-                    {action.error_message ? (
-                      <p className="text-error">{action.error_message}</p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          ) : null}
-          <p className="text-xs text-on-surface-variant">
-            Preparation instructions remain an immutable snapshot. Progress
-            actions are recorded separately.
-          </p>
-        </div>
+        </KitchenActions>
       )}
     </Sheet>
   );

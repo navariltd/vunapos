@@ -48,7 +48,7 @@ def _require_navari_ke_payments(doctype: str):
 	if not frappe.db.exists("DocType", doctype):
 		_gateway_error(
 			"GATEWAY_APP_MISSING",
-			_("navari_ke_payments is required for {0} gateway payments").format(doctype),
+			_("vuna_payments is required for {0} gateway payments").format(doctype),
 		)
 
 
@@ -85,7 +85,13 @@ def _normalize_amount(value, precision: int) -> float:
 		_gateway_error(
 			"GATEWAY_PAYMENT_AMOUNT_MISMATCH", _("Gateway payment amount must be greater than zero")
 		)
-	return flt(float(amount), precision)
+	normalized = flt(float(amount), precision)
+	if normalized <= 0:
+		_gateway_error(
+			"GATEWAY_PAYMENT_AMOUNT_MISMATCH",
+			_("Gateway payment amount must be greater than zero at this currency precision."),
+		)
+	return normalized
 
 
 def _status_from_source(source_doc) -> str:
@@ -132,7 +138,12 @@ def _active_c2b_gateway_links(source_doc, exclude_link: str | None = None) -> li
 	}
 	if exclude_link:
 		filters["name"] = ["!=", exclude_link]
-	return frappe.get_all("VunaPOS Gateway Payment Link", filters=filters, pluck="name")
+	return [
+		row.name
+		for row in frappe.qb.get_query(
+			"VunaPOS Gateway Payment Link", filters=filters, fields=["name"], for_update=True
+		).run(as_dict=True)
+	]
 
 
 def _ensure_c2b_source_available(source_doc, current_link: str | None = None) -> None:
@@ -183,17 +194,20 @@ def _submit_c2b_source_without_payment_entry(source_doc) -> None:
 	source_doc.reload()
 
 
+def _payment_source(link):
+	if not link.get("source_doctype") or not link.get("source_name"):
+		return None
+	try:
+		return frappe.get_doc(link.source_doctype, link.source_name, for_update=True)
+	except frappe.DoesNotExistError:
+		return None
+
+
 def gateway_payment_metadata(link_name: str | None) -> dict:
 	if not link_name or not frappe.db.exists("VunaPOS Gateway Payment Link", link_name):
 		return {}
 	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
-	source_doc = None
-	if (
-		link.get("source_doctype")
-		and link.get("source_name")
-		and frappe.db.exists(link.source_doctype, link.source_name)
-	):
-		source_doc = frappe.get_doc(link.source_doctype, link.source_name)
+	source_doc = _payment_source(link)
 	transaction_reference = (
 		_get_source_transaction_reference(source_doc) if source_doc else None
 	) or link.get("transaction_reference")
@@ -217,6 +231,21 @@ def _validate_source(link, source_doc, precision: int):
 			_("Gateway source {0} is not supported").format(link.source_doctype),
 		)
 	_ensure_c2b_source_available(source_doc, current_link=link.name)
+	if (
+		source_doc.doctype == "KE Payment Request"
+		and not link.consumed
+		and (
+			source_doc.get("payment_entry")
+			or source_doc.get("is_reconciled")
+			or (source_doc.get("reference_doctype") and source_doc.get("reference_docname"))
+		)
+	):
+		_gateway_error(
+			"GATEWAY_PAYMENT_ALREADY_CONSUMED",
+			_(
+				"This payment source already has an accounting allocation. Ask accounts to reconcile it before checkout."
+			),
+		)
 
 	success_statuses = _source_success_statuses(link.source_doctype)
 	if source_doc.get("status") not in success_statuses:
@@ -249,14 +278,12 @@ def _validate_source(link, source_doc, precision: int):
 
 
 def gateway_payment_link_to_dict(link):
-	source_doc = None
-	if (
-		link.get("source_doctype")
-		and link.get("source_name")
-		and frappe.db.exists(link.source_doctype, link.source_name)
-	):
-		source_doc = frappe.get_doc(link.source_doctype, link.source_name)
+	source_doc = _payment_source(link)
 	return {
+		"restaurant_session": link.get("restaurant_session"),
+		"settlement_profile": link.get("settlement_profile"),
+		"dispatch_state": link.get("dispatch_state"),
+		"remarks": link.get("remarks"),
 		"name": link.name,
 		"source_doctype": link.source_doctype,
 		"source_name": link.source_name,
@@ -277,13 +304,36 @@ def gateway_payment_link_to_dict(link):
 
 
 def _sync_link_from_source(link):
-	if not cint(link.get("consumed")) and link.get("status") in TERMINAL_RELEASED_LINK_STATUSES:
-		return link
-	if not frappe.db.exists(link.source_doctype, link.source_name):
+	source_doc = _payment_source(link)
+	if not source_doc:
+		if link.get("status") in TERMINAL_RELEASED_LINK_STATUSES:
+			return link
 		_gateway_error("GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment source was not found"))
-	source_doc = frappe.get_doc(link.source_doctype, link.source_name)
 	status = _status_from_source(source_doc)
+	if not cint(link.get("consumed")) and link.get("status") in TERMINAL_RELEASED_LINK_STATUSES:
+		# Released C2B reservations must not be reclaimed. A late successful STK
+		# callback, however, is real money and must remain visible for review.
+		if link.source_doctype != "KE Payment Request" or status != "Paid":
+			return link
+	if (
+		link.get("restaurant_session")
+		and link.get("dispatch_state") in ("Started", "Submitted", "Uncertain")
+		and status != "Paid"
+	):
+		if not (source_doc.get("callback_received_on") and status in TERMINAL_RELEASED_LINK_STATUSES):
+			status = "Pending"
 	values = {"status": status}
+	if status == "Paid" and link.get("status") in TERMINAL_RELEASED_LINK_STATUSES:
+		values["remarks"] = (
+			"A late successful payment was received. The earlier local release did not reverse the money; review this receipt."
+		)
+	elif status == "Paid" and link.get("dispatch_state") in ("Started", "Uncertain"):
+		values.update(
+			{
+				"dispatch_state": "Submitted",
+				"remarks": "The original payment source confirmed receipt. No additional prompt was sent.",
+			}
+		)
 	transaction_reference = _get_source_transaction_reference(source_doc)
 	if transaction_reference:
 		values["transaction_reference"] = transaction_reference
@@ -307,6 +357,7 @@ def validate_gateway_payment_link(
 	amount=None,
 	currency: str | None = None,
 	precision: int = 2,
+	restaurant_session: str | None = None,
 ):
 	if not link_name:
 		_gateway_error(
@@ -318,7 +369,10 @@ def validate_gateway_payment_link(
 			"GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment link {0} was not found").format(link_name)
 		)
 
-	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+	from vunapos.services.restaurant_payment_service import lock_link, require_access
+
+	link = lock_link(link_name)
+	require_access(link)
 	if not frappe.has_permission(link.doctype, "read", doc=link):
 		frappe.throw(_("Not permitted to read VunaPOS Gateway Payment Link"), frappe.PermissionError)
 	link = _sync_link_from_source(link)
@@ -334,10 +388,15 @@ def validate_gateway_payment_link(
 			_("Gateway payment {0} is not ready for checkout").format(link.name),
 			{"status": link.status},
 		)
+	if (link.get("restaurant_session") or None) != (restaurant_session or None):
+		_gateway_error(
+			"SESSION_PAYMENT_CONTEXT_MISMATCH",
+			_("This payment does not belong to the current restaurant visit."),
+		)
 	if (
-		link.pos_profile != profile.name
-		or link.opening_entry != opening_entry.name
-		or link.cashier != opening_entry.user
+		(link.get("settlement_profile") or link.pos_profile) != profile.name
+		or (link.get("settlement_opening_entry") or link.opening_entry) != opening_entry.name
+		or (link.get("settlement_cashier") or link.cashier) != opening_entry.user
 	):
 		_gateway_error(
 			"GATEWAY_PAYMENT_SESSION_MISMATCH", _("Gateway payment belongs to another POS session")
@@ -359,9 +418,9 @@ def validate_gateway_payment_link(
 			"GATEWAY_PAYMENT_AMOUNT_MISMATCH", _("Gateway payment amount does not match checkout amount")
 		)
 
-	if not frappe.db.exists(link.source_doctype, link.source_name):
+	source_doc = _payment_source(link)
+	if not source_doc:
 		_gateway_error("GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment source was not found"))
-	source_doc = frappe.get_doc(link.source_doctype, link.source_name)
 	_validate_source(link, source_doc, precision)
 
 	transaction_reference = _get_source_transaction_reference(source_doc)
@@ -374,7 +433,9 @@ def validate_gateway_payment_link(
 
 def consume_gateway_payment_links(links, target_doc):
 	for link in links or []:
-		link = frappe.get_doc("VunaPOS Gateway Payment Link", link.name)
+		from vunapos.services.restaurant_payment_service import lock_link
+
+		link = lock_link(link.name)
 		if link.consumed:
 			_gateway_error(
 				"GATEWAY_PAYMENT_ALREADY_CONSUMED",
@@ -397,13 +458,9 @@ def consume_gateway_payment_links(links, target_doc):
 
 
 def _link_gateway_source_to_target(link, target_doc) -> None:
-	if not (
-		link.get("source_doctype")
-		and link.get("source_name")
-		and frappe.db.exists(link.source_doctype, link.source_name)
-	):
+	source_doc = _payment_source(link)
+	if not source_doc:
 		return
-	source_doc = frappe.get_doc(link.source_doctype, link.source_name)
 	updates = {}
 	for source_field, value in {
 		"reference_doctype": target_doc.doctype,
@@ -422,9 +479,9 @@ def _link_gateway_source_to_target(link, target_doc) -> None:
 def _consume_c2b_source(link, target_doc) -> None:
 	if link.get("source_doctype") != "KE C2B Payment Register" or not link.get("source_name"):
 		return
-	if not frappe.db.exists(link.source_doctype, link.source_name):
+	source_doc = _payment_source(link)
+	if not source_doc:
 		return
-	source_doc = frappe.get_doc(link.source_doctype, link.source_name)
 	_ensure_c2b_source_available(source_doc, current_link=link.name)
 	_submit_c2b_source_without_payment_entry(source_doc)
 	updates = {
@@ -484,6 +541,9 @@ def get_gateway_payment_status(link_name: str | None):
 			"GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment link {0} was not found").format(link_name)
 		)
 	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+	from vunapos.services.restaurant_payment_service import require_access
+
+	require_access(link)
 	if not frappe.has_permission(link.doctype, "read", doc=link):
 		frappe.throw(_("Not permitted to read VunaPOS Gateway Payment Link"), frappe.PermissionError)
 	link = _sync_link_from_source(link)
@@ -497,10 +557,20 @@ def cancel_gateway_payment_link(link_name: str | None):
 		_gateway_error(
 			"GATEWAY_PAYMENT_NOT_FOUND", _("Gateway payment link {0} was not found").format(link_name)
 		)
-	link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
+	from vunapos.services.restaurant_payment_service import lock_link, require_access
+
+	visit = frappe.db.get_value("VunaPOS Gateway Payment Link", link_name, "restaurant_session")
+	if visit:
+		frappe.db.get_value("Restaurant Session", visit, "name", for_update=True)
+	link = lock_link(link_name)
+	require_access(link)
 	if not frappe.has_permission(link.doctype, "read", doc=link):
 		frappe.throw(_("Not permitted to read VunaPOS Gateway Payment Link"), frappe.PermissionError)
-	if link.get("cashier") != frappe.session.user and "System Manager" not in frappe.get_roles():
+	if (
+		(link.get("settlement_cashier") or link.get("cashier")) != frappe.session.user
+		and "System Manager" not in frappe.get_roles()
+		and not (visit and "VunaPOS Restaurant Manager" in frappe.get_roles())
+	):
 		frappe.throw(_("Not permitted to cancel this gateway payment"), frappe.PermissionError)
 	if link.consumed:
 		_gateway_error(
@@ -508,7 +578,21 @@ def cancel_gateway_payment_link(link_name: str | None):
 			_("Gateway payment {0} has already been consumed").format(link.name),
 		)
 	link = _sync_link_from_source(link)
-	if link.status in SUCCESSFUL_LINK_STATUSES and link.get("source_doctype") != "KE C2B Payment Register":
+	if (
+		visit
+		and link.source_doctype == "KE Payment Request"
+		and link.status in ACTIVE_LINK_STATUSES
+		and link.get("dispatch_state") != "Queued"
+	):
+		_gateway_error(
+			"SESSION_PAYMENT_UNCONFIRMED",
+			_(
+				"The original prompt may still collect money. Confirm its outcome with the provider before cancelling or sending another prompt."
+			),
+		)
+	if link.status in SUCCESSFUL_LINK_STATUSES and (
+		visit or link.get("source_doctype") != "KE C2B Payment Register"
+	):
 		_gateway_error(
 			"GATEWAY_PAYMENT_NOT_CANCELLABLE",
 			_("Paid gateway payment {0} cannot be cancelled from VunaPOS").format(link.name),
@@ -552,6 +636,9 @@ def expire_stale_gateway_payment_links():
 	for link_name in link_names:
 		link = frappe.get_doc("VunaPOS Gateway Payment Link", link_name)
 		link = _sync_link_from_source(link)
+		if link.get("restaurant_session"):
+			# A visit-owned receipt must not be silently released by a local timer.
+			continue
 		expirable_statuses = (
 			C2B_RESERVED_LINK_STATUSES
 			if link.get("source_doctype") == "KE C2B Payment Register"
@@ -572,7 +659,9 @@ def expire_stale_gateway_payment_links():
 	return {"expired": expired, "timeout_minutes": timeout_minutes}
 
 
-def _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=None, source=None):
+def _find_existing_link(
+	profile, opening_entry, mode_of_payment, idempotency_key=None, source=None, restaurant_session=None
+):
 	filters = {
 		"pos_profile": profile.name,
 		"opening_entry": opening_entry.name,
@@ -585,6 +674,8 @@ def _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key
 		filters["idempotency_key"] = idempotency_key
 	if source:
 		filters.update({"source_doctype": source.doctype, "source_name": source.name})
+	if restaurant_session:
+		filters["restaurant_session"] = restaurant_session
 	if not idempotency_key and not source:
 		return None
 	link_name = frappe.db.get_value("VunaPOS Gateway Payment Link", filters, "name")
@@ -603,9 +694,17 @@ def _create_gateway_link(
 	currency=None,
 	status=None,
 	idempotency_key=None,
+	restaurant_session=None,
+	payment_fingerprint=None,
+	dispatch_state=None,
 ):
 	existing = _find_existing_link(
-		profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key, source=source_doc
+		profile,
+		opening_entry,
+		mode_of_payment,
+		idempotency_key=idempotency_key,
+		source=source_doc,
+		restaurant_session=restaurant_session,
 	)
 	if existing:
 		return _sync_link_from_source(existing)
@@ -624,9 +723,16 @@ def _create_gateway_link(
 			"amount": amount if amount is not None else source_doc.get("amount"),
 			"currency": currency or source_doc.get("currency") or profile.currency,
 			"idempotency_key": idempotency_key,
+			"restaurant_session": restaurant_session,
+			"payment_fingerprint": payment_fingerprint,
+			"dispatch_state": dispatch_state,
 		}
 	)
 	link.insert(ignore_permissions=True)
+	if restaurant_session:
+		from vunapos.services.restaurant_payment_service import register
+
+		register(link)
 	return _sync_link_from_source(link)
 
 
@@ -639,6 +745,9 @@ def initiate_stk_gateway_payment(
 	currency=None,
 	idempotency_key=None,
 	account_reference=None,
+	restaurant_session=None,
+	bill_fingerprint=None,
+	loyalty_points=None,
 ):
 	_require_navari_ke_payments("KE Payment Request")
 	profile = resolve_pos_profile(pos_profile)
@@ -657,8 +766,34 @@ def initiate_stk_gateway_payment(
 	# the draft invoice/order name; retain a stable product label for legacy
 	# callers that do not have a document reference yet.
 	account_reference = (account_reference or "VUNAPOS").strip()
+	visit = None
+	if profile.get("vunapos_pos_mode") == "Restaurant" or restaurant_session:
+		from vunapos.services.restaurant_payment_service import enqueue_dispatch, prepare
 
-	existing = _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key)
+		visit, orders, existing = prepare(
+			profile,
+			restaurant_session,
+			bill_fingerprint,
+			amount,
+			mode_of_payment,
+			payment_gateway_account,
+			loyalty_points=loyalty_points,
+		)
+		if customer != visit.customer or currency != visit.currency:
+			_gateway_error(
+				"SESSION_PAYMENT_CONTEXT_MISMATCH", _("Payment customer or currency differs from this visit.")
+			)
+		if existing:
+			if existing.get("dispatch_state") == "Queued":
+				enqueue_dispatch(existing.name)
+			return gateway_payment_link_to_dict(existing)
+		account_reference = orders[0].name
+
+	existing = (
+		None
+		if visit
+		else _find_existing_link(profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key)
+	)
 	if existing:
 		return gateway_payment_link_to_dict(_sync_link_from_source(existing))
 
@@ -692,7 +827,13 @@ def initiate_stk_gateway_payment(
 		currency=currency,
 		status="Pending",
 		idempotency_key=idempotency_key,
+		restaurant_session=visit.name if visit else None,
+		payment_fingerprint=bill_fingerprint if visit else None,
+		dispatch_state="Queued" if visit else None,
 	)
+	if visit:
+		enqueue_dispatch(link.name)
+		return gateway_payment_link_to_dict(link)
 	request.submit()
 	request.reload()
 	return gateway_payment_link_to_dict(_sync_link_from_source(link))
@@ -706,6 +847,9 @@ def attach_c2b_gateway_payment(
 	customer=None,
 	currency=None,
 	idempotency_key=None,
+	restaurant_session=None,
+	bill_fingerprint=None,
+	loyalty_points=None,
 ):
 	_require_navari_ke_payments("KE C2B Payment Register")
 	profile = resolve_pos_profile(pos_profile)
@@ -729,7 +873,30 @@ def attach_c2b_gateway_payment(
 			"GATEWAY_PAYMENT_NOT_FOUND",
 			_("C2B payment {0} was not found").format(transaction_reference),
 		)
-	source_doc = frappe.get_doc("KE C2B Payment Register", source_name)
+	visit = None
+	if profile.get("vunapos_pos_mode") == "Restaurant" or restaurant_session:
+		# Session lock precedes the shared provider-source lock.
+		from vunapos.services.restaurant_payment_service import context, prepare
+
+		visit = context(restaurant_session, profile, open_only=True)
+	source_doc = frappe.get_doc("KE C2B Payment Register", source_name, for_update=True)
+	if visit:
+		visit, _orders, existing = prepare(
+			profile,
+			visit.name,
+			bill_fingerprint,
+			amount,
+			mode_of_payment,
+			payment_gateway_account,
+			source=source_doc,
+			loyalty_points=loyalty_points,
+		)
+		if customer != visit.customer or currency != visit.currency:
+			_gateway_error(
+				"SESSION_PAYMENT_CONTEXT_MISMATCH", _("Payment customer or currency differs from this visit.")
+			)
+		if existing:
+			return gateway_payment_link_to_dict(existing)
 	if (
 		source_doc.get("payment_gateway")
 		and payment_gateway
@@ -752,8 +919,12 @@ def attach_c2b_gateway_payment(
 			_("C2B payment {0} is not ready for checkout").format(source_doc.name),
 			{"status": source_doc.get("status")},
 		)
-	existing = _find_existing_link(
-		profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key, source=source_doc
+	existing = (
+		None
+		if visit
+		else _find_existing_link(
+			profile, opening_entry, mode_of_payment, idempotency_key=idempotency_key, source=source_doc
+		)
 	)
 	if existing:
 		_ensure_c2b_source_available(source_doc, current_link=existing.name)
@@ -770,6 +941,8 @@ def attach_c2b_gateway_payment(
 		currency=currency,
 		status="Paid",
 		idempotency_key=idempotency_key,
+		restaurant_session=visit.name if visit else None,
+		payment_fingerprint=bill_fingerprint if visit else None,
 	)
 	return gateway_payment_link_to_dict(link)
 

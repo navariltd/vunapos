@@ -135,6 +135,36 @@ class TestRestaurantBilling(IntegrationTestCase):
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "SESSION_FINISHED_STOCK_REQUIRED")
 
+	def test_billing_completes_only_the_remaining_partial_preparation(self):
+		placed = self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])
+		self.assertTrue(placed["ok"], placed)
+		ticket = self._tickets(placed["data"]["name"])[0]
+		for action, qty in (("Accept", 4), ("Start", 3), ("Ready", 2), ("Serve", 1)):
+			current = restaurant.get_kitchen_ticket(ticket)["data"]
+			response = restaurant.kitchen_action(
+				ticket,
+				action,
+				str(uuid4()),
+				current["status"],
+				quantities={"meal": qty},
+				expected_modified=str(current["modified"]),
+			)
+			self.assertTrue(response["ok"], response)
+		self.assertFalse(self._preview()["can_checkout"])
+		frappe.db.set_value("POS Profile", self.profile.name, "vunapos_complete_preparation_on_billing", 1)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+		response = self._checkout()
+		self.assertTrue(response["ok"], response)
+		current = restaurant.get_kitchen_ticket(ticket)["data"]
+		# Billing completes stock production, not the kitchen's real progress.
+		self.assertEqual((current["status"], current["production_completed_at_billing"]), ("Preparing", 1))
+		self.assertEqual(current["items"][0]["served_qty"], 1)
+		self.assertEqual(current["items"][0]["ready_to_serve_qty"], 1)
+		self.assertEqual(
+			frappe.db.get_value("Work Order", current["items"][0]["work_order"], "produced_qty"), 4
+		)
+		self.assertEqual(response["data"]["invoice"]["items"][0]["qty"], 4)
+
 	def test_placed_prices_survive_item_price_changes_without_rate_edit_permission(self):
 		self._ready()
 		before = self._preview()
@@ -429,6 +459,29 @@ class TestRestaurantBilling(IntegrationTestCase):
 			self.assertTrue(result["ok"], result)
 		self.assertEqual(frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1}), entries)
 		self.assertEqual(frappe.db.get_value("Kitchen Order Ticket", ticket, "status"), "Served")
+
+	def test_billed_early_ticket_supports_partial_progress_without_producing_twice(self):
+		self.assertTrue(self._send(items=[{"item_code": self.item, "qty": 4, "line_id": "meal"}])["ok"])
+		ticket = self._tickets()[0]
+		self._enable_billing_preparation()
+		result = self._checkout()
+		self.assertTrue(result["ok"], result)
+		work_order = frappe.db.get_value("Kitchen Order Ticket Item", {"parent": ticket}, "work_order")
+		entries = frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1})
+		for action, qty in (("Accept", 4), ("Start", 3), ("Ready", 2), ("Serve", 1)):
+			snapshot = restaurant.get_kitchen_ticket(ticket)["data"]
+			key = str(uuid4())
+			args = (ticket, action, key, snapshot["status"], {"meal": qty}, str(snapshot["modified"]))
+			result = restaurant.kitchen_action(*args)
+			self.assertTrue(result["ok"], result)
+			self.assertTrue(restaurant.kitchen_action(*args)["ok"])
+		line = result["data"]["items"][0]
+		self.assertEqual(
+			[line[field] for field in ("waiting_qty", "preparing_qty", "ready_to_serve_qty", "served_qty")],
+			[1, 1, 1, 1],
+		)
+		self.assertEqual(frappe.db.get_value("Work Order", work_order, "produced_qty"), 4)
+		self.assertEqual(frappe.db.count("Stock Entry", {"work_order": work_order, "docstatus": 1}), entries)
 
 	def test_waiter_order_billed_after_ready_is_unchanged(self):
 		self.assertTrue(self._send()["ok"])

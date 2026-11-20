@@ -95,6 +95,7 @@ export type {
 // ---- orders (vunapos/dto/restaurant.py, vunapos/services/restaurant_order_service.py) ----
 
 export type MenuDTO = {
+	availability_refresh_after?: number | null;
 	pricing_context?: {
 		tax_rows: import("../../lib/invoiceEngine").TaxTemplateRow[];
 		tax_settings: import("../../lib/invoiceEngine").EngineTaxSettings;
@@ -152,6 +153,8 @@ export type RestaurantOrderLineDTO = {
 export type RestaurantOrderStatus = "Open" | "Billed" | "Cancelled";
 
 export type RestaurantOrderDTO = {
+  can_cancel_items?: boolean;
+  cancellations?: Array<{ reason: string; actor: string; occurred_at: string; approved_by?: string | null; items: Array<{ item_name: string; qty: number; uom: string }> }>;
 	restaurant?: string | null;
 	branch?: string | null;
 	restaurant_session?: string | null;
@@ -233,6 +236,7 @@ export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> &
 	pos_profile: string; restaurant: string; branch: string; company: string;
 	selling_price_list?: string | null; currency?: string | null;
 	available_waiters?: Array<{ name: string; full_name: string }>;
+	walkout_reason?: string | null; walkout_by?: string | null; walkout_at?: string | null;
 	status: RestaurantSessionStatus;
 	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
 	rounds: RestaurantOrderDTO[];
@@ -294,7 +298,7 @@ export type ModifierGroupDTO = {
 export type SelectedModifier = { group: string; option: string; label: string; extra_rate: number };
 
 export type OrderPreviewDTO = { order: RestaurantOrderDTO; invoice: InvoiceDTO };
-export type SessionBillDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO; fingerprint: string; account_reference: string; gateway_links?: import("../pos/types").GatewayPaymentLinkDTO[]; can_checkout?: boolean; checkout_block_reason?: string | null; will_complete_preparation?: boolean };
+export type SessionBillDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO; fingerprint: string; account_reference: string; gateway_links?: import("../pos/types").GatewayPaymentLinkDTO[]; can_checkout?: boolean; can_record_walkout?: boolean; checkout_block_reason?: string | null; will_complete_preparation?: boolean };
 export type SessionSettlementDTO = { session: RestaurantSessionDTO; invoice: InvoiceDTO };
 
 export type KitchenRoutingIssue = {
@@ -310,22 +314,49 @@ export type KitchenTicketSummaryDTO = {
 };
 
 export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
+	can_remake?: boolean;
+	can_reject?: boolean;
+	can_stop_preparation?: boolean;
+	can_cancel_remake?: boolean;
+	replacement_stock_issues?: Array<{ name: string; docstatus: number }>;
+	remake_of?: string | null;
+	remake_reason?: string | null;
+	original_disposition?: string | null;
+	can_record_waste?: boolean;
 	modified?: string;
 	pos_profile?: string;
 	available_actions?: KitchenAction[];
 	can_cancel_order?: boolean;
 	requires_cancel_pin?: boolean;
-	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string }>;
+	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string; item_quantities?: { deltas: Record<string, number>; journal_entry?: string; invoice?: string; replacement_ticket?: string; disposition?: string; charge?: string; charge_item?: string; materials?: Array<{ id: string; item_name: string; used_qty: number; max_qty: number; uom: string; kind: string }>; stock_entries?: string[] } | null }>;
 	restaurant_session: string; table_labels?: string | null; service_type?: string | null;
-	sent_by: string; waiter?: string | null; order_note?: string | null;
+	sent_by: string; sent_by_name?: string | null; waiter?: string | null; waiter_name?: string | null; order_note?: string | null;
 	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
 		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null;
-		modifiers: Array<{ label: string }>; temporary_routing: boolean }>;
+		modifiers: Array<{ label: string }>; temporary_routing: boolean } & Partial<KitchenLineProgress>>;
 };
 
-export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve";
+export type KitchenLineProgress = {
+  rejected_qty?: number;
+  rejected_served_qty?: number;
+  remade_qty?: number;
+  retired_qty?: number;
+  cancelled_qty?: number;
+  accepted_qty: number;
+  started_qty: number;
+  ready_qty: number;
+  served_qty: number;
+  not_accepted_qty: number;
+  waiting_qty: number;
+  preparing_qty: number;
+  ready_to_serve_qty: number;
+  available_quantities: Partial<Record<KitchenAction, number>>;
+};
+
+export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve" | "Undo Serve" | "Cancel Remake";
 export type KitchenBoardDTO = {
-	stations: Array<{ name: string; station_name: string; enabled: number }>;
+	can_manage_availability?: boolean;
+	stations: Array<{ name: string; station_name: string; enabled: number; ordering_paused?: boolean; availability_reason?: string | null; unavailable_until?: string | null }>;
 	tickets: KitchenTicketDTO[];
 	has_more: boolean;
 	start: number;

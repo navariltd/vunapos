@@ -40,16 +40,57 @@
   "column_break_billing",
   "selling_price_list",
   "currency",
+  "walkout_section",
+  "walkout_reason",
+  "walkout_by",
+  "walkout_at",
   "context_section",
   "restaurant",
   "branch",
   "column_break_context",
   "company",
   "billing_fingerprint",
+  "gateway_attempts",
   "idempotency_key",
   "qr_guest_ref"
  ],
  "fields": [
+  {
+   "fieldname": "walkout_section",
+   "fieldtype": "Section Break",
+   "label": "Walkout Incident",
+   "depends_on": "eval:doc.walkout_reason"
+  },
+  {
+   "fieldname": "walkout_reason",
+   "fieldtype": "Small Text",
+   "label": "Walkout Reason",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "walkout_by",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Approved By",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "walkout_at",
+   "fieldtype": "Datetime",
+   "label": "Recorded At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "gateway_attempts",
+   "fieldtype": "JSON",
+   "label": "Gateway Attempt References",
+   "hidden": 1,
+   "read_only": 1,
+   "no_copy": 1
+  },
   {
    "fieldname": "billing_doctype",
    "label": "Billing Document Type",
@@ -381,7 +422,7 @@
    "if_owner": 1
   }
  ],
- "modified": "2026-11-20 06:08:22.372371",
+ "modified": "2026-11-20 09:42:36.388062",
  "creation": "2026-11-04 21:01:06.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

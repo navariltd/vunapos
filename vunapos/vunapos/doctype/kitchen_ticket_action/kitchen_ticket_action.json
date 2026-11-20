@@ -13,6 +13,7 @@
   "occurred_at",
   "from_status",
   "to_status",
+  "item_quantities",
   "approval_section",
   "reason",
   "approved_by",
@@ -27,10 +28,57 @@
   "branch",
   "company",
   "stock_entries",
+  "billing_doctype",
+  "billing_invoice",
+  "posting_invoice",
+  "journal_entry",
   "request_key",
-  "success_key"
+  "success_key",
+  "request_fingerprint"
  ],
  "fields": [
+  {
+   "fieldname": "billing_doctype",
+   "fieldtype": "Link",
+   "label": "Bill Type",
+   "options": "DocType",
+   "read_only": 1
+  },
+  {
+   "fieldname": "billing_invoice",
+   "fieldtype": "Dynamic Link",
+   "label": "Bill",
+   "options": "billing_doctype",
+   "read_only": 1
+  },
+  {
+   "fieldname": "posting_invoice",
+   "fieldtype": "Link",
+   "label": "Posted Sales Invoice",
+   "options": "Sales Invoice",
+   "read_only": 1
+  },
+  {
+   "fieldname": "journal_entry",
+   "fieldtype": "Link",
+   "label": "Waste Accounting Entry",
+   "options": "Journal Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "item_quantities",
+   "fieldtype": "JSON",
+   "label": "Preparation Quantities",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "request_fingerprint",
+   "fieldtype": "Data",
+   "label": "Request Fingerprint",
+   "read_only": 1,
+   "hidden": 1
+  },
   {
    "fieldname": "kitchen_ticket",
    "fieldtype": "Link",
@@ -80,7 +128,7 @@
    "fieldtype": "Select",
    "label": "Action",
    "read_only": 1,
-   "options": "Accept\nStart\nReady\nServe\nCancel Order\nComplete for Billing",
+   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Items\nCancel Order\nRecord Waste\nRequest Remake\nCancel Remake\nReject Items\nStop Preparation\nComplete for Billing",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
@@ -220,7 +268,7 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "modified": "2026-11-17 14:04:09.012244",
+ "modified": "2026-11-19 11:57:49.817722",
  "creation": "2026-11-05 10:39:27.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

@@ -293,6 +293,8 @@ def confirm_payment(session, pos_profile, fingerprint, payments=None, **options)
 
 def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 	"""Cancel a kiosk order nobody paid for, freeing its table. Nothing reached the kitchen."""
+	from vunapos.services.restaurant_payment_service import guard_order_change
+
 	if not set(frappe.get_roles()) & {CASHIER_ROLE, RESTAURANT_MANAGER_ROLE, "System Manager"}:
 		_permission_error(
 			"KIOSK_CANCEL_NOT_ALLOWED", _("Only a cashier or a manager can cancel a kiosk order.")
@@ -309,6 +311,8 @@ def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 	reason = _clean_note(reason)
 	if not reason:
 		fail("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
+	# A payment started from Confirm payment must be resolved first, as for any order.
+	guard_order_change(doc)
 	# The same rule as cancelling any restaurant order, from the cancelling till.
 	approved_by = None
 	if cint(till.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():

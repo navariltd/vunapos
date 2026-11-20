@@ -2,6 +2,7 @@ from functools import wraps
 from uuid import uuid4
 
 import frappe
+from frappe import _
 
 from vunapos.services import restaurant_order_service, restaurant_session_service
 from vunapos.services.floor_plan_service import get_floor_plan as get_floor_plan_service
@@ -10,6 +11,36 @@ from vunapos.services.menu_service import get_menu as get_menu_service
 from vunapos.services.menu_service import list_service_types
 from vunapos.services.profile_service import require_restaurant_staff
 from vunapos.utils.response import failure, success
+from vunapos.utils.transactions import DATABASE_CONFLICTS, rollback_savepoint, run_with_database_retry
+
+
+def _retry_database_conflicts(fn):
+	"""Restart only aborted DB transactions, never business failures or unknown payments.
+
+	An outer restaurant request owns retries; nested endpoints must propagate
+	conflicts rather than discard and replay only part of a larger command.
+	No commit happens here. Request keys, current locks and review checks remain
+	unchanged, and only the eventual successful transaction may be committed.
+	"""
+
+	@wraps(fn)
+	def wrapped(*args, **kwargs):
+		if frappe.flags.get("vunapos_retrying_database"):
+			return fn(*args, **kwargs)
+		previous = frappe.flags.get("vunapos_retrying_database")
+		frappe.flags.vunapos_retrying_database = True
+		try:
+			return run_with_database_retry(fn, *args, **kwargs)
+		except DATABASE_CONFLICTS:
+			return failure(
+				_("Another terminal changed this transaction. Refresh and retry the original request."),
+				code="RESTAURANT_TRANSACTION_CONFLICT",
+				meta={"retryable": True},
+			)
+		finally:
+			frappe.flags.vunapos_retrying_database = previous
+
+	return wrapped
 
 
 def _atomic_write(fn):
@@ -21,14 +52,17 @@ def _atomic_write(fn):
 		frappe.db.savepoint(savepoint)
 		try:
 			result = fn(*args, **kwargs)
-			if not result.get("ok"):
-				frappe.db.rollback(save_point=savepoint)
-			return result
-		except Exception:
-			frappe.db.rollback(save_point=savepoint)
+		except DATABASE_CONFLICTS:
+			# The outer retry boundary must restart the entire transaction.
 			raise
+		except Exception:
+			rollback_savepoint(savepoint)
+			raise
+		if not result.get("ok"):
+			rollback_savepoint(savepoint)
+		return result
 
-	return wrapped
+	return _retry_database_conflicts(wrapped)
 
 
 def _staff_only(fn):
@@ -42,10 +76,12 @@ def _staff_only(fn):
 			return _failure_from_exception(exc)
 		return fn(*args, **kwargs)
 
-	return wrapped
+	return _retry_database_conflicts(wrapped)
 
 
 def _failure_from_exception(exc):
+	if isinstance(exc, DATABASE_CONFLICTS) and frappe.flags.get("vunapos_retrying_database"):
+		raise exc
 	message = frappe.utils.strip_html(str(exc)).strip()
 	if not message and isinstance(exc, frappe.PermissionError):
 		message = "You do not have permission for this restaurant action. Ask a manager to check your role, Restaurant, Branch and Kitchen Station access."
@@ -76,6 +112,86 @@ def preview_session_bill(
 
 	try:
 		return success(preview(session, pos_profile, loyalty_points))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
+def preview_rejection(ticket: str):
+	from vunapos.services.restaurant_rejection_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def record_walkout(session: str, pos_profile: str, fingerprint: str, reason: str):
+	from vunapos.services.restaurant_walkout_service import record
+
+	try:
+		return success(record(session, pos_profile, fingerprint, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def handover_session_payment(link: str, session: str, pos_profile: str, reason: str):
+	from vunapos.services.restaurant_payment_service import handover
+
+	try:
+		return success(handover(link, session, pos_profile, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
+def preview_preparation_stop(ticket: str):
+	from vunapos.services.restaurant_stop_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def stop_preparation(
+	ticket: str,
+	line_ids: list | str,
+	used: dict | str,
+	request_key: str,
+	fingerprint: str,
+	reason: str,
+	charge: str,
+):
+	from vunapos.services.restaurant_stop_service import stop
+
+	try:
+		return success(stop(ticket, line_ids, used, request_key, fingerprint, reason, charge))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def reject_prepared_items(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, charge: str
+):
+	from vunapos.services.restaurant_rejection_service import reject
+
+	try:
+		return success(reject(ticket, quantities, request_key, fingerprint, reason, charge))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
@@ -118,13 +234,26 @@ def checkout_session(
 
 @frappe.whitelist(methods=["POST"])
 @_staff_only
-def kitchen_action(ticket: str, action: str, request_key: str, expected_status: str):
+def kitchen_action(
+	ticket: str,
+	action: str,
+	request_key: str,
+	expected_status: str,
+	quantities: dict | str | None = None,
+	expected_modified: str | None = None,
+	reason: str | None = None,
+):
 	from vunapos.services.kitchen_lifecycle_service import transition
+
+	if action == "Cancel Remake":
+		return cancel_remake(ticket, request_key, expected_status, expected_modified, reason)
 
 	# The command owns its rollback. A failure audit must survive an HTTP-200
 	# structured error, unlike the _atomic_write endpoints used for placement.
 	try:
-		return success(transition(ticket, action, request_key, expected_status))
+		return success(
+			transition(ticket, action, request_key, expected_status, quantities, expected_modified, reason)
+		)
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
@@ -138,6 +267,104 @@ def cancel_kitchen_order(
 
 	try:
 		return success(cancel_order(ticket, request_key, expected_status, reason, manager_pin_token))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
+def preview_item_cancellation(order: str):
+	from vunapos.services.restaurant_cancellation_service import preview
+
+	try:
+		return success(preview(order))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
+def preview_restaurant_waste(ticket: str):
+	from vunapos.services.restaurant_waste_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
+def preview_remake(ticket: str):
+	from vunapos.services.restaurant_remake_service import preview
+
+	try:
+		return success(preview(ticket))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def request_remake(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str, disposition: str
+):
+	from vunapos.services.restaurant_remake_service import request
+
+	try:
+		return success(request(ticket, quantities, request_key, fingerprint, reason, disposition))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def record_restaurant_waste(
+	ticket: str, quantities: dict | str, request_key: str, fingerprint: str, reason: str
+):
+	from vunapos.services.restaurant_waste_service import record
+
+	try:
+		return success(record(ticket, quantities, request_key, fingerprint, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def cancel_remake(
+	ticket: str,
+	request_key: str,
+	expected_status: str,
+	expected_modified: str | None = None,
+	reason: str | None = None,
+):
+	from vunapos.services.restaurant_remake_service import cancel
+
+	try:
+		return success(cancel(ticket, request_key, expected_status, expected_modified, reason))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+@_atomic_write
+def cancel_order_items(
+	order: str,
+	quantities: dict | str,
+	request_key: str,
+	fingerprint: str,
+	reason: str,
+	manager_pin_token: str | None = None,
+):
+	from vunapos.services.restaurant_cancellation_service import cancel
+
+	try:
+		return success(cancel(order, quantities, request_key, fingerprint, reason, manager_pin_token))
 	except Exception as exc:
 		return _failure_from_exception(exc)
 
@@ -209,6 +436,25 @@ def get_session(session: str):
 		return _failure_from_exception(exc)
 
 
+@frappe.whitelist(methods=["POST"])
+@_staff_only
+def recover_session_round(
+	pos_profile: str,
+	idempotency_key: str,
+	items: list | str,
+	order_note: str | None = None,
+	kitchen_routing: dict | str | None = None,
+	session: str | None = None,
+):
+	try:
+		result = restaurant_session_service.recover_round(
+			pos_profile, idempotency_key, items, order_note, kitchen_routing, session
+		)
+		return success(result or {"session": None, "order": None})
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
 @frappe.whitelist()
 @_staff_only
 def get_kitchen_ticket(ticket: str):
@@ -238,10 +484,13 @@ def update_session(
 	guest_count: int | None = None,
 	customer: str | None = None,
 	waiter: str | None = None,
+	expected_modified: str | None = None,
 ):
 	try:
 		return success(
-			restaurant_session_service.update_session(session, tables, guest_count, customer, waiter)
+			restaurant_session_service.update_session(
+				session, tables, guest_count, customer, waiter, expected_modified
+			)
 		)
 	except Exception as exc:
 		return _failure_from_exception(exc)

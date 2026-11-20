@@ -117,8 +117,52 @@ def order_summary_to_dict(row):
 	}
 
 
-def order_to_dict(doc):
+def cancellation_histories(names):
+	history = {name: [] for name in names}
+	if not names:
+		return history
+	rows = frappe.get_all(
+		"Restaurant Request",
+		filters={
+			"action": "Cancel Items",
+			"reference_doctype": "Sales Order",
+			"reference_name": ["in", names],
+		},
+		fields=["details", "owner", "creation", "reference_name"],
+		order_by="creation asc, name asc",
+	)
+	for event in rows:
+		details = frappe.parse_json(event.details) or {}
+		before = {row.get("vunapos_line_id") or row["name"]: row for row in details.get("before", [])}
+		history[event.reference_name].append(
+			{
+				"reason": details.get("reason"),
+				"actor": event.owner,
+				"occurred_at": event.creation,
+				"approved_by": details.get("approved_by"),
+				"items": [
+					{"item_name": before[line]["item_name"], "qty": qty, "uom": before[line]["uom"]}
+					for line, qty in details.get("quantities", {}).items()
+					if line in before
+				],
+			}
+		)
+	return history
+
+
+def order_to_dict(doc, cancellations=None):
+	from vunapos.services.kitchen_lifecycle_service import can_cancel
+
 	return {
+		"cancellations": cancellation_histories([doc.name])[doc.name]
+		if cancellations is None
+		else cancellations,
+		"can_cancel_items": bool(
+			doc.docstatus == 1
+			and not flt(doc.per_billed)
+			and not doc.get("vunapos_billing_invoice")
+			and can_cancel()
+		),
 		"restaurant_session": doc.get("vunapos_restaurant_session"),
 		"name": doc.name,
 		"status": order_status(doc),

@@ -19,6 +19,18 @@ STATION = "Kitchen Station"
 KITCHEN_EVENT = "vunapos_kitchen_ticket_created"
 
 
+def ticket_user_names(tickets):
+	users = {doc.get(field) for doc in tickets for field in ("waiter", "sent_by") if doc.get(field)}
+	if not users:
+		return {}
+	return {
+		row.name: row.full_name or row.name
+		for row in frappe.get_all(
+			"User", filters={"name": ["in", sorted(users)]}, fields=["name", "full_name"]
+		)
+	}
+
+
 def fail(code, message, meta=None):
 	exc = frappe.ValidationError(message)
 	exc.vuna_error_code = code
@@ -328,6 +340,9 @@ def route_lines(restaurant, lines, overrides=None, branch=None, floor=None):
 			),
 			{"items": list(unresolved.values()), "stations": stations},
 		)
+	from vunapos.services.restaurant_availability_service import check_stations
+
+	check_stations(restaurant, branch, {station for station, _temporary in resolved.values() if station})
 	for line in lines:
 		parent = line.get("parent_line_id") or line.line_id
 		if parent not in resolved:
@@ -354,7 +369,12 @@ def validate_ticket(doc):
 		reject_ticket_mutation()
 	if not doc.is_new() and doc.get_doc_before_save() and doc.get_doc_before_save().docstatus == 1:
 		reject_ticket_mutation()
-	if doc.event_key != event_key(doc.sales_order, doc.kitchen_station) or doc.status != "Sent":
+	expected = event_key(doc.sales_order, doc.kitchen_station)
+	if doc.get("remake_of"):
+		from vunapos.services.restaurant_remake_service import validate_replacement_ticket
+
+		expected = validate_replacement_ticket(doc)
+	if doc.event_key != expected or doc.status != "Sent":
 		fail("INVALID_KITCHEN_TICKET", _("Invalid initial kitchen ticket event."))
 	if not doc.items or any(flt(row.qty) <= 0 for row in doc.items):
 		fail("INVALID_KITCHEN_TICKET", _("Kitchen tickets require positive preparation quantities."))
@@ -510,6 +530,15 @@ def session_tickets(session):
 
 
 def protect_order_cancellation(order, method=None):
+	if order.get("vunapos_restaurant_session"):
+		from vunapos.services.kitchen_lifecycle_service import MANAGERS
+		from vunapos.services.restaurant_stop_service import charge_lines
+
+		if not set(frappe.get_roles()) & MANAGERS and charge_lines(order.name):
+			fail(
+				"STOP_CHARGE_MANAGER_REQUIRED",
+				_("A manager must review cancellation of an order with an approved cancellation charge."),
+			)
 	if frappe.flags.get("vunapos_cancelling_kitchen_order") == order.name:
 		return
 	if order.get("vunapos_restaurant_session") and frappe.db.exists(
@@ -523,19 +552,58 @@ def protect_order_cancellation(order, method=None):
 		)
 
 
-def get_ticket(name):
-	doc = frappe.get_doc(TICKET, name)
+def get_ticket(name, for_update=False):
+	doc = frappe.get_doc(TICKET, name, for_update=for_update)
 	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities
+	from vunapos.services.kitchen_progress_service import load
+
+	progress = load([doc], for_update=for_update)[doc.name]
+	user_names = ticket_user_names([doc])
 
 	return {
 		"modified": doc.modified,
+		"remake_of": doc.get("remake_of"),
+		"remake_reason": doc.get("remake_reason"),
+		"replacement_stock_issues": frappe.get_all(
+			"Stock Entry",
+			filters={"vunapos_remake_ticket": doc.name},
+			fields=["name", "docstatus"],
+			order_by="creation",
+		)
+		if doc.get("remake_of") and frappe.has_permission("Stock Entry", "read")
+		else [],
+		"original_disposition": doc.get("original_disposition"),
+		"can_stop_preparation": bool(set(frappe.get_roles()) & MANAGERS)
+		and not doc.get("remake_of")
+		and doc.status not in ("Cancelled", "Completed", "Served")
+		and any(row["started_qty"] > row["ready_qty"] for row in progress.values()),
+		"can_remake": bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled"
+		and any(
+			row.get("ready_qty", 0) > row.get("remade_qty", 0) + row.get("rejected_qty", 0)
+			for row in progress.values()
+		),
+		"can_reject": bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled"
+		and any(
+			row.get("ready_qty", 0) > row.get("remade_qty", 0) + row.get("rejected_qty", 0)
+			for row in progress.values()
+		)
+		and frappe.db.get_value("Restaurant Session", doc.restaurant_session, "status") == "Open",
+		"can_cancel_remake": bool(doc.get("remake_of"))
+		and bool(set(frappe.get_roles()) & MANAGERS)
+		and doc.status != "Cancelled",
 		"pos_profile": doc.pos_profile,
-		"available_actions": capabilities(doc.status),
+		"available_actions": capabilities(doc.status, progress),
+		"can_record_waste": bool(set(frappe.get_roles()) & MANAGERS)
+		and any(row.get("served_qty", 0) > 0 for row in progress.values())
+		and bool(frappe.db.get_value("Restaurant Session", doc.restaurant_session, "billing_invoice")),
 		"can_cancel_order": can_cancel()
-		and doc.status not in ("Served", "Cancelled")
+		and not doc.get("remake_of")
+		and doc.status not in ("Served", "Completed", "Cancelled")
 		and not doc.get("production_completed_at_billing"),
 		"production_completed_at_billing": cint(doc.get("production_completed_at_billing")),
 		"requires_cancel_pin": bool(
@@ -544,7 +612,7 @@ def get_ticket(name):
 			)
 		)
 		and not bool(set(frappe.get_roles()) & MANAGERS),
-		"actions": action_history(doc),
+		"actions": action_history(doc, for_update=for_update),
 		"name": doc.name,
 		"sales_order": doc.sales_order,
 		"restaurant_session": doc.restaurant_session,
@@ -555,7 +623,9 @@ def get_ticket(name):
 		"status": doc.status,
 		"sent_at": doc.sent_at,
 		"sent_by": doc.sent_by,
+		"sent_by_name": user_names.get(doc.sent_by) or doc.sent_by,
 		"waiter": doc.waiter,
+		"waiter_name": user_names.get(doc.waiter) or doc.waiter,
 		"order_note": doc.order_note,
 		"items": [
 			{
@@ -571,6 +641,7 @@ def get_ticket(name):
 				"note": row.note,
 				"modifiers": frappe.parse_json(row.modifiers or "[]"),
 				"temporary_routing": bool(row.temporary_routing),
+				**progress[row.line_id],
 			}
 			for row in doc.items
 		],

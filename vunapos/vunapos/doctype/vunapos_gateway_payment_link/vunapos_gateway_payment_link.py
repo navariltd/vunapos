@@ -2,6 +2,10 @@ import frappe
 from frappe.model.document import Document
 
 
+def on_doctype_update():
+	frappe.db.add_index("VunaPOS Gateway Payment Link", ["restaurant_session", "consumed"])
+
+
 class VunaPOSGatewayPaymentLink(Document):
 	def validate(self):
 		if self.consumed and not self.consumed_on:

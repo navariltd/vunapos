@@ -12,6 +12,20 @@ const invoice = (name: string, amount: number) => ({ doctype: "Sales Invoice", n
 ], taxes: [], payments: [], totals: { net_total: amount, grand_total: amount, rounded_total: amount } }) as unknown as InvoiceDTO;
 
 describe("controlled restaurant checkout", () => {
+  it("shows the native additional discount so a charge waiver is not a hidden total change", () => {
+    const bill = invoice("Pizza", 200);
+    bill.items[0].distributed_discount_amount = 100;
+    bill.totals.net_total = 100;
+    bill.totals.grand_total = 100;
+    bill.totals.rounded_total = 100;
+    const html = renderToStaticMarkup(<CheckoutDialog isOpen hideCartActions
+      presentation={{ invoice: bill, isSubmitting: false }}
+      modesOfPayment={[{ mode_of_payment: "Cash", default: 1 }]} currency="KES"
+      onClose={vi.fn()} onClear={vi.fn()} onHold={vi.fn()} onConfirm={vi.fn()} onPreviewLoyalty={vi.fn()} />);
+    expect(html).toContain("Additional discount (excl. tax)");
+    expect(html).toContain("100.00");
+  });
+
   it("renders the session bill without replacing the retail cart or offering cart mutation actions", () => {
     state.invoice = invoice("Retail item", 999);
     const html = renderToStaticMarkup(<CheckoutDialog isOpen hideCartActions

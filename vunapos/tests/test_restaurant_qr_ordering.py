@@ -250,6 +250,14 @@ class TestRestaurantQrOrdering(IntegrationTestCase):
 			restaurant.update_session(session.name, tables=[self.tables[1]]),
 		):
 			self.assertEqual(response["errors"][0]["code"], "QR_ORDER_PENDING", response)
+		# Nor can a gateway payment start on it.
+		from vunapos.services import restaurant_payment_service
+
+		with self.assertRaises(frappe.ValidationError) as pending:
+			restaurant_payment_service.prepare(
+				frappe.get_doc("POS Profile", self.till), session.name, "review", 1, "Cash", None
+			)
+		self.assertEqual(pending.exception.vuna_error_code, "QR_ORDER_PENDING")
 
 	def test_accepting_sends_the_order_to_the_kitchen_and_the_waiter_flow_continues(self):
 		placed = self._send(self.tables[0])
