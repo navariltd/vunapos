@@ -12,7 +12,7 @@ import { useBootstrapData } from "../../pos/hooks/useBootstrapData";
 import { useFloorPlan } from "../hooks/useFloorPlan";
 import { useNow } from "../hooks/useNow";
 import { useOpenOrders } from "../hooks/useOrderData";
-import { filterOrders, isAwaitingPayment, isFiltered, isPaidKioskOrder } from "../ordersFilter";
+import { filterOrders, isAwaitingPayment, isFiltered, isPaidKioskOrder, isPendingQrOrder, orderSourceLabel } from "../ordersFilter";
 import { useOrdersFilterStore } from "../stores/ordersFilterStore";
 import { elapsedLabel, sortedServiceTypes } from "../tableStatus";
 import { ClearTableButton } from "./ClearTableButton";
@@ -107,7 +107,11 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
             >
               <span
                 className={`flex size-11 shrink-0 items-center justify-center rounded-md text-sm font-semibold text-on-surface ${
-                  isPaidKioskOrder(order) ? "bg-status-paid-container" : "bg-status-occupied-container"
+                  isPendingQrOrder(order)
+                    ? "bg-status-qr-container"
+                    : isPaidKioskOrder(order)
+                      ? "bg-status-paid-container"
+                      : "bg-status-occupied-container"
                 }`}
               >
                 {order.table_label || "—"}
@@ -125,17 +129,24 @@ export function OrdersPage({ posProfile }: { posProfile?: string }) {
                 </span>
                 <span className="block truncate text-xs text-on-surface-variant">
                   {[
+                    orderSourceLabel(order),
                     order.table_label ? order.service_type : null,
                     order.pax
                       ? `${order.pax} ${order.pax === 1 ? "guest" : "guests"}`
                       : null,
-                    order.waiter_name || order.waiter,
+                    // A pending QR order has no waiter until someone accepts it.
+                    isPendingQrOrder(order) ? null : order.waiter_name || order.waiter,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-end gap-1">
+                {isPendingQrOrder(order) ? (
+                  <span className="rounded-full bg-status-qr-container px-2 py-1 text-xs font-semibold text-on-surface">
+                    New QR order
+                  </span>
+                ) : null}
                 {isAwaitingPayment(order) ? (
                   <span className="rounded-full bg-tertiary-container px-2 py-1 text-xs font-semibold text-on-tertiary-container">
                     Awaiting payment

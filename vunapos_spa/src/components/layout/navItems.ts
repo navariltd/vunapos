@@ -34,7 +34,7 @@ export type NavFeatureFlags = {
 
 const items: NavItem[] = [
   { label: "Home", title: "Home", icon: Home, modes: ["Retail", "Restaurant"] },
-  { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor"] },
+  { label: "Floor", title: "Floor", icon: UtensilsCrossed, modes: ["Restaurant"], activeFor: ["Floor Editor", "QR Codes"] },
   // The order screen is not a nav item; Orders stays highlighted while it is open.
   { label: "Orders", title: "Open Orders", icon: ClipboardList, modes: ["Restaurant"], activeFor: ["Order"] },
   { label: "Kitchen", title: "Kitchen", icon: CookingPot, modes: ["Restaurant"] },

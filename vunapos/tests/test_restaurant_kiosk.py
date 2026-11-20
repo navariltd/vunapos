@@ -95,6 +95,9 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		profile.update(
 			{
 				"vunapos_kiosk_mode": 1,
+				# A copy of a till with QR Table Ordering must not claim QR for the branch too.
+				"vunapos_qr_ordering": 0,
+				"vunapos_qr_user": None,
 				"vunapos_kiosk_payment_timing": KIOSK_PAY_FIRST,
 				"vunapos_kiosk_idle_seconds": 90,
 				"vunapos_kiosk_service_types": [
@@ -682,6 +685,19 @@ class TestRestaurantKiosk(IntegrationTestCase):
 			frappe.db.get_value("Restaurant Session", unapproved["session"], "cancel_approved_by")
 		)
 
+	def test_an_order_with_a_started_payment_is_not_cancelled(self):
+		from unittest.mock import patch
+
+		placed = self._place(table=self.tables[0])
+		# A gateway payment started from Confirm payment is pending or received.
+		with patch("vunapos.services.restaurant_payment_service.links", return_value=[frappe._dict()]):
+			response = kiosk.cancel_kiosk_order(placed["session"], "Never paid", self.till)
+		self.assertEqual(response["errors"][0]["code"], "SESSION_PAYMENT_UNRESOLVED")
+		self.assertTrue(frappe.db.exists("Sales Order", placed["sales_order"]))
+		self.assertEqual(
+			frappe.db.get_value("Restaurant Session", placed["session"], "kiosk_status"), "Awaiting Payment"
+		)
+
 	def test_a_paid_order_is_not_cancelled_here(self):
 		placed = self._place()
 		self._confirm(placed["session"])
@@ -725,6 +741,10 @@ class TestRestaurantKiosk(IntegrationTestCase):
 	def test_leaving_the_kiosk_needs_a_manager_pin(self):
 		from vunapos.api.pin import verify_manager
 
+		# The manager PIN works without the salesperson lock.
+		self.assertFalse(
+			frappe.db.get_value("POS Profile", self.kiosk_profile, "vunapos_enable_salesperson_pin")
+		)
 		frappe.set_user(KIOSK_USER)
 		self.assertEqual(
 			verify_manager(self.kiosk_profile, "0000", "kiosk_exit")["errors"][0]["code"],
@@ -736,6 +756,36 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		frappe.cache().delete_keys(f"vunapos:pin-attempts:{KIOSK_USER}")
 		response = verify_manager(self.till, MANAGER_PIN, "kiosk_exit")
 		self.assertEqual(response["errors"][0]["code"], "MANAGER_PIN_NOT_REQUIRED")
+
+	def test_manager_pins_approve_removal_and_cancellation_without_the_salesperson_lock(self):
+		from vunapos.api.pin import verify_manager, verify_salesperson
+		from vunapos.services.pin_service import consume_pin_token
+
+		frappe.db.set_value(
+			"POS Profile",
+			self.kiosk_profile,
+			{
+				"vunapos_enable_salesperson_pin": 0,
+				"vunapos_require_manager_pin_item_removal": 1,
+				"vunapos_require_manager_pin_order_cancel": 1,
+			},
+		)
+		frappe.clear_document_cache("POS Profile", self.kiosk_profile)
+		frappe.set_user(KIOSK_USER)
+		try:
+			removal = verify_manager(self.kiosk_profile, MANAGER_PIN, "item_removal")
+			cancellation = verify_manager(self.kiosk_profile, MANAGER_PIN, "order_cancel")
+			salesperson = verify_salesperson(self.kiosk_profile, self._manager(), MANAGER_PIN)
+			self.assertTrue(removal["ok"], removal)
+			self.assertTrue(cancellation["ok"], cancellation)
+			self.assertEqual(salesperson["errors"][0]["code"], "PIN_NOT_ENABLED")
+			# Each token is accepted for its own action, as item removal and order cancellation consume them.
+			profile = frappe.get_doc("POS Profile", self.kiosk_profile)
+			for response, purpose in ((removal, "manager"), (cancellation, "manager_order_cancel")):
+				state = consume_pin_token(response["data"]["token"], profile, purpose)
+				self.assertEqual(state["subject"], self._manager())
+		finally:
+			frappe.set_user("Administrator")
 
 	def test_the_slip_is_never_the_default_sales_order_format(self):
 		from vunapos.services.print_service import KIOSK_ORDER_SLIP, resolve_print_format

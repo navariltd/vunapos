@@ -13,7 +13,7 @@ from frappe.utils import cint, flt
 
 from vunapos.services.floor_plan_service import TABLE_DOCTYPE, require_restaurant_profile
 from vunapos.services.item_service import search_items
-from vunapos.services.profile_service import resolve_pos_profile
+from vunapos.services.profile_service import is_kiosk_user, is_qr_request, resolve_pos_profile
 from vunapos.services.restaurant_service import get_profile_restaurant, kiosk_floors
 from vunapos.services.service_type_service import (
 	get_profile_service_types,
@@ -211,7 +211,12 @@ def resolve_table_floor(profile_name, table):
 			_("Table {0} does not belong to restaurant {1}").format(table, restaurant),
 			{"table": table},
 		)
-	if cint(frappe.get_cached_value("POS Profile", profile_name, "vunapos_kiosk_mode")):
+	# Kiosk Floors limit kiosk logins only. Staff and QR orders on the same profile serve every floor.
+	if (
+		is_kiosk_user()
+		and not is_qr_request()
+		and cint(frappe.get_cached_value("POS Profile", profile_name, "vunapos_kiosk_mode"))
+	):
 		floors = kiosk_floors(frappe.get_cached_doc("POS Profile", profile_name))
 		if floors and row.floor not in floors:
 			_throw(

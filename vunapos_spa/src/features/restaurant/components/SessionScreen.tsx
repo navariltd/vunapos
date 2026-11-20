@@ -55,6 +55,7 @@ import { KitchenRoutingPicker } from "./KitchenRoutingPicker";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
 import { CancelOrderItems } from "./CancelOrderItems";
 import { KioskOrderBanner } from "./KioskOrderBanner";
+import { QrOrderBanner } from "./QrOrderBanner";
 import { SessionBill } from "./SessionBill";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
@@ -704,7 +705,8 @@ export function SessionScreen({
     Boolean(
       session &&
         (session.status !== "Open" ||
-          session.kiosk_status === "Awaiting Payment")
+          session.kiosk_status === "Awaiting Payment" ||
+          session.qr_status === "Pending")
     );
   const context = (
     <div className="mb-3 space-y-2">
@@ -719,6 +721,9 @@ export function SessionScreen({
           posProfile={posProfile}
           onChanged={() => void result.refresh()}
         />
+      ) : null}
+      {session?.order_source === "QR" && session.qr_status ? (
+        <QrOrderBanner session={session} posProfile={posProfile} onChanged={() => void result.refresh()} />
       ) : null}
       <div className="flex flex-wrap gap-2" aria-label="Service type">
         {serviceTypes?.map((service) => (
@@ -862,9 +867,11 @@ export function SessionScreen({
             View orders ({session.rounds.length})
           </Button>
         ) : null}
-        {/* A cashier confirms a kiosk order awaiting payment from its banner. */}
+        {/* A cashier confirms a kiosk order awaiting payment from its banner. A QR order
+            is billed only once accepted. */}
         {session &&
         posProfile &&
+        session.qr_status !== "Pending" &&
         !(
           session.kiosk_status === "Awaiting Payment" &&
           bootstrap.data?.can_take_payment

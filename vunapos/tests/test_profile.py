@@ -202,6 +202,21 @@ class TestVunaPOSProfile(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			resolve_pos_profile(profile_name)
 
+	def test_pin_users_show_for_every_pin_feature_but_the_lock_stays_salesperson_only(self):
+		meta = frappe.get_meta("POS Profile")
+		pin_users = meta.get_field("vunapos_pin_users").depends_on
+		for fieldname in (
+			"vunapos_enable_salesperson_pin",
+			"vunapos_require_manager_pin_item_removal",
+			"vunapos_require_manager_pin_order_cancel",
+			"vunapos_kiosk_mode",
+		):
+			self.assertIn(f"doc.{fieldname}", pin_users)
+		self.assertEqual(
+			meta.get_field("vunapos_require_pin_before_every_sale").depends_on,
+			"eval:doc.vunapos_enable_salesperson_pin",
+		)
+
 	def test_a_new_profile_saves_with_a_pin_row(self):
 		manager = frappe.get_doc(
 			{

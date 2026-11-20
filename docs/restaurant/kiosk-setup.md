@@ -89,7 +89,9 @@ was entered, as **Cancel Approved By**), the session is Cancelled and the table 
    - **Kiosk Service Types**: each must be offered at the restaurant branch.
    - **Kiosk Floors**: leave empty for every floor of the branch. When set, the kiosk
      only offers tables on those floors; their floor menus apply as usual. A
-     restaurant with one kiosk per floor uses one POS Profile per kiosk.
+     restaurant with one kiosk per floor uses one POS Profile per kiosk. Kiosk
+     Floors limit kiosk logins only: staff and QR orders on the same profile serve
+     every floor.
    - The profile also needs a **Customer** (kiosk orders are placed for it) and an
      enabled **Manager** row in the PIN users table (needed to leave the kiosk).
 2. **User** for the device with only the **VunaPOS Kiosk** role, added to the
@@ -113,8 +115,16 @@ Sales Order format. Printing goes through the browser's print dialog (DEF-007).
 The receipt printed when a cashier confirms a payment is the till's usual invoice
 receipt.
 
-## Starting at a table (later)
+## Kiosk Mode on a staff till
 
-The kiosk screen already accepts an order that starts at a given table, as a QR code
-on the table will: it skips the table step, and the customer can still go back and
-choose Takeaway, keeping the cart. QR codes themselves are not built yet.
+Kiosk Mode can be ticked on the till staff already use. Each login's screen follows
+its role: kiosk logins get the kiosk, staff the normal restaurant screens. The kiosk
+settings change nothing for staff, apart from the profile Customer (their default
+customer too) and the Manager PIN row the kiosk needs. Staff shifts, billing and
+Open Orders work as before. On a shared till, kiosk, QR and waiter orders all carry
+the same POS Profile, so use the visit's **Order Source** to tell them apart.
+
+## QR codes on tables
+
+Guests ordering from their own phone are set up separately, with **QR Table
+Ordering**: see the [QR table ordering guide](qr-ordering-setup.md).

@@ -62,6 +62,8 @@ export function useOpenOrders(posProfile?: string) {
         waiter: session.waiter,
         waiter_name: session.waiter_name,
         kiosk_status: session.kiosk_status ?? null,
+        order_source: session.order_source ?? null,
+        qr_status: session.qr_status ?? null,
         order_number: session.order_number ?? null,
         sales_orders: session.sales_orders ?? [],
         opened_at: session.opened_at,

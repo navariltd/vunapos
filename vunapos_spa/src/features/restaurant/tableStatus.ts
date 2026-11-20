@@ -4,14 +4,16 @@ import type { TableOrderRefDTO, TableStatusDTO } from "./types";
 // Status kinds drawn on the floor. Colours come from design decision 13; later
 // stages add "bill-requested", "in-kitchen", "served" and "reserved". "paid" is a
 // kiosk order paid at the counter first: settled, but its guests are still seated.
-export type TableStatusKind = "free" | "occupied" | "paid";
+// "qr" is a guest's QR order waiting for staff to accept or reject it.
+export type TableStatusKind = "free" | "occupied" | "paid" | "qr";
 
-export const TABLE_STATUS_ORDER: readonly TableStatusKind[] = ["free", "occupied", "paid"];
+export const TABLE_STATUS_ORDER: readonly TableStatusKind[] = ["free", "occupied", "paid", "qr"];
 
 export const TABLE_STATUS_LABEL: Record<TableStatusKind, string> = {
 	free: "Free",
 	occupied: "Occupied",
 	paid: "Paid",
+	qr: "New QR order",
 };
 
 export type TableStatusView = {
@@ -31,9 +33,11 @@ export function deriveTableStatuses(rows: TableStatusDTO[]): Map<string, TableSt
 	const result = new Map<string, TableStatusView>();
 	for (const row of rows) {
 		if (row.session) {
-			const kind = row.status === "Paid" || row.session.status === "Settled" ? "paid" : "occupied";
+			const qr = row.status === "New QR Order" || row.session.qr_status === "Pending";
+			const kind = qr ? "qr" : row.status === "Paid" || row.session.status === "Settled" ? "paid" : "occupied";
+			// A pending QR order has no waiter yet: whoever accepts it becomes the waiter.
 			result.set(row.table, { kind, orders: row.orders, guests: row.session.guest_count,
-				openedAt: row.session.opened_at, waiters: [row.session.waiter_name || row.session.waiter] });
+				openedAt: row.session.opened_at, waiters: qr ? [] : [row.session.waiter_name || row.session.waiter] });
 			continue;
 		}
 		if (row.status === "Free") {

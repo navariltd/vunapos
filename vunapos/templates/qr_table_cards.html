@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ _("Table QR codes") | e }}</title>
+<style>
+	@page { size: 105mm 148mm; margin: 0; }
+	* { box-sizing: border-box; }
+	html, body { margin: 0; padding: 0; background: #fff; color: #111; }
+	body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+	.card {
+		width: 105mm;
+		height: 148mm;
+		padding: 9mm 8mm;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		overflow: hidden;
+		break-after: page;
+		page-break-after: always;
+	}
+	.card:last-child { break-after: auto; page-break-after: auto; }
+	.logo { height: 16mm; width: 100%; display: flex; align-items: center; justify-content: center; }
+	.logo img { max-height: 16mm; max-width: 64mm; object-fit: contain; }
+	.restaurant { margin-top: 3mm; font-size: 13pt; font-weight: 600; }
+	.floor { margin-top: 5mm; font-size: 17pt; font-weight: 600; color: #333; }
+	.table { font-size: 32pt; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
+	.qr { margin-top: 4mm; width: 60mm; height: 60mm; }
+	.qr svg { display: block; width: 100%; height: 100%; }
+	.scan { margin-top: auto; font-size: 17pt; font-weight: 600; }
+</style>
+</head>
+<body>
+{% for card in cards %}
+<section class="card">
+	<div class="logo">{% if logo %}<img src="{{ logo | e }}" alt="">{% endif %}</div>
+	<div class="restaurant">{{ restaurant_name | e }}</div>
+	<div class="floor">{{ card.floor_name | e }}</div>
+	<div class="table">{{ card.table_label | e }}</div>
+	<div class="qr">{{ card.qr_svg }}</div>
+	<div class="scan">{{ _("Scan to order") | e }}</div>
+</section>
+{% endfor %}
+</body>
+</html>

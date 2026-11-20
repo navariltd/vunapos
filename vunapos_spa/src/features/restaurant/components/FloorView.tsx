@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, QrCode } from "lucide-react";
 
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
@@ -88,6 +88,13 @@ export function FloorView({ posProfile }: FloorViewProps) {
       <span className="hidden sm:inline">Edit</span>
     </Button>
   ) : null;
+  // Managers print each table's QR code for guests to order from their phone.
+  const qrButton = canEdit ? (
+    <Button variant="ghost" size="sm" className="shrink-0 gap-2" onClick={() => navigateToPosPage("QR Codes")}>
+      <QrCode className="size-4" aria-hidden="true" />
+      <span className="hidden sm:inline">QR codes</span>
+    </Button>
+  ) : null;
 
   let body;
   if (!plan && isLoading) {
@@ -135,6 +142,7 @@ export function FloorView({ posProfile }: FloorViewProps) {
             <span className="truncate text-sm text-on-surface-variant">{activeFloor.floor_name}</span>
           ) : null}
         </div>
+        {activeFloor ? qrButton : null}
         {activeFloor ? editButton : null}
         {restaurant && !pickingTableFor ? <NewOrderButton /> : null}
       </div>

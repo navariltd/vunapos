@@ -171,8 +171,10 @@ def prepare(
 	profile, session_name, fingerprint, amount, mode, gateway_account, *, source=None, loyalty_points=None
 ):
 	from vunapos.services import restaurant_billing_service as billing
+	from vunapos.services.restaurant_session_service import require_qr_order_accepted
 
 	session = context(session_name, profile, open_only=True)
+	require_qr_order_accepted(session)
 	orders = billing._orders(session, lock=True)
 	bill = billing._build(session, profile, orders, loyalty_points)
 	from vunapos.utils.permissions import require_create

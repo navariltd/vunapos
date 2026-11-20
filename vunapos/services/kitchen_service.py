@@ -389,9 +389,9 @@ def generate_tickets(order, method=None):
 
 	frappe.db.get_value("Sales Order", order.name, "name", for_update=True)
 	session = _load(order.vunapos_restaurant_session, for_update=True)
-	# A cashier confirming a kiosk payment submits the kiosk's draft; it passes the
-	# kiosk profile, which the cashier is not assigned to, in this request flag.
-	profile = frappe.flags.get("vunapos_kiosk_ticket_profile")
+	# Staff confirming a kiosk payment or accepting a QR order submit its draft; they
+	# pass the visit's profile, which they may not be assigned to, in this request flag.
+	profile = frappe.flags.get("vunapos_draft_ticket_profile")
 	if not profile or profile.name != order.vunapos_pos_profile:
 		profile = resolve_pos_profile(order.vunapos_pos_profile)
 	if (

@@ -35,12 +35,15 @@ from vunapos.services.restaurant_session_service import (
 	KIOSK_PAID,
 	KIOSK_SENT_TO_KITCHEN,
 	SESSION,
+	SOURCE_KIOSK,
 	TABLE_HOLDING_STATUSES,
 	_load,
+	cancel_unsent_visit,
 	create_round,
 	lock_tables,
 	open_session_doc,
 	session_to_dict,
+	submit_draft_rounds,
 )
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.setup.utils import CASHIER_ROLE, KIOSK_PAY_FIRST, KIOSK_ROLE, RESTAURANT_MANAGER_ROLE
@@ -156,15 +159,6 @@ def _clean_note(note):
 	return note or None
 
 
-def _rounds(session, docstatus):
-	return frappe.get_all(
-		"Sales Order",
-		filters={"vunapos_restaurant_session": session, "docstatus": docstatus},
-		pluck="name",
-		order_by="creation asc",
-	)
-
-
 def _result(session):
 	doc = frappe.get_doc(SESSION, session)
 	order = frappe.get_all(
@@ -188,25 +182,6 @@ def _result(session):
 		"currency": order.currency,
 		"print_format": KIOSK_ORDER_SLIP,
 	}
-
-
-def _submit_rounds(session, kiosk_profile):
-	"""Submit a visit's draft rounds after this module's checks; this sends them to the kitchen.
-
-	Neither the kiosk login nor the cashier has the right to submit them directly. The
-	kiosk's profile routes and prices the tickets; a cashier is not assigned to it.
-	"""
-	from vunapos.services.restaurant_order_service import submit_session_round
-
-	previous = frappe.flags.get("vunapos_kiosk_ticket_profile")
-	frappe.flags.vunapos_kiosk_ticket_profile = kiosk_profile
-	try:
-		for name in _rounds(session, 0):
-			order = frappe.get_doc("Sales Order", name, for_update=True)
-			order.flags.ignore_permissions = True
-			submit_session_round(order, session)
-	finally:
-		frappe.flags.vunapos_kiosk_ticket_profile = previous
 
 
 def place_order(pos_profile, service_type, items, idempotency_key, table=None, order_note=None):
@@ -239,7 +214,10 @@ def place_order(pos_profile, service_type, items, idempotency_key, table=None, o
 	)
 
 	pay_first = kiosk_payment_timing(profile) == KIOSK_PAY_FIRST
-	values = {"kiosk_status": KIOSK_AWAITING_PAYMENT if pay_first else KIOSK_SENT_TO_KITCHEN}
+	values = {
+		"kiosk_status": KIOSK_AWAITING_PAYMENT if pay_first else KIOSK_SENT_TO_KITCHEN,
+		"order_source": SOURCE_KIOSK,
+	}
 	if not existing:
 		values["order_date"] = nowdate()
 		values["order_number"] = next_order_number(profile.vunapos_branch, values["order_date"])
@@ -260,7 +238,7 @@ def place_order(pos_profile, service_type, items, idempotency_key, table=None, o
 		draft=True,
 	)
 	if not pay_first:
-		_submit_rounds(session.name, profile)
+		submit_draft_rounds(session.name, profile)
 	return _result(session.name)
 
 
@@ -309,12 +287,14 @@ def confirm_payment(session, pos_profile, fingerprint, payments=None, **options)
 	)
 	doc.flags.restaurant_session_write = True
 	doc.save()
-	_submit_rounds(doc.name, frappe.get_cached_doc("POS Profile", doc.pos_profile))
+	submit_draft_rounds(doc.name, frappe.get_cached_doc("POS Profile", doc.pos_profile))
 	return checkout(doc.name, till.name, fingerprint, payments, **options)
 
 
 def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 	"""Cancel a kiosk order nobody paid for, freeing its table. Nothing reached the kitchen."""
+	from vunapos.services.restaurant_payment_service import guard_order_change
+
 	if not set(frappe.get_roles()) & {CASHIER_ROLE, RESTAURANT_MANAGER_ROLE, "System Manager"}:
 		_permission_error(
 			"KIOSK_CANCEL_NOT_ALLOWED", _("Only a cashier or a manager can cancel a kiosk order.")
@@ -331,47 +311,11 @@ def cancel_order(session, reason, pos_profile, manager_pin_token=None):
 	reason = _clean_note(reason)
 	if not reason:
 		fail("CANCEL_REASON_REQUIRED", _("Enter a reason for cancelling the order"))
+	# A payment started from Confirm payment must be resolved first, as for any order.
+	guard_order_change(doc)
 	# The same rule as cancelling any restaurant order, from the cancelling till.
 	approved_by = None
 	if cint(till.get("vunapos_require_manager_pin_order_cancel")) and not is_floor_plan_manager():
 		approved_by = consume_pin_token(manager_pin_token, till, "manager_order_cancel").get("subject")
-	now = now_datetime()
-	# Nobody may delete or cancel these through Frappe; access and the PIN rule are checked above.
-	for name in _rounds(doc.name, 0):
-		frappe.delete_doc("Sales Order", name, ignore_permissions=True)
-	# Orders placed before kiosk drafts were submitted at once, without kitchen tickets.
-	for name in _rounds(doc.name, 1):
-		order = frappe.get_doc("Sales Order", name, for_update=True)
-		order.update(
-			{
-				"vunapos_cancel_reason": reason,
-				"vunapos_cancelled_by": frappe.session.user,
-				"vunapos_cancelled_at": now,
-			}
-		)
-		order.flags.ignore_permissions = True
-		order.cancel()
-	tables = [row.table for row in doc.tables if not row.released_at]
-	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
-	for row in doc.tables:
-		if not row.released_at:
-			row.update(
-				{
-					"released_at": now,
-					"released_by": frappe.session.user,
-					"release_reason": "Kiosk order cancelled",
-				}
-			)
-	doc.update(
-		{
-			"status": "Cancelled",
-			"closed_at": now,
-			"cancel_reason": reason,
-			"cancelled_by": frappe.session.user,
-			"cancel_approved_by": approved_by,
-			"cancelled_at": now,
-		}
-	)
-	doc.flags.restaurant_session_write = True
-	doc.save()
+	cancel_unsent_visit(doc, reason, "Kiosk order cancelled", approved_by)
 	return session_to_dict(doc)

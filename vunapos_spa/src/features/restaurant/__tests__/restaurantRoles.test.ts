@@ -36,7 +36,8 @@ describe("restaurantRoleLabel", () => {
 
 describe("isRestaurantPageAllowed", () => {
 	it("allows the floor, order pages and Profile to everyone", () => {
-		for (const page of ["Home", "Floor", "Floor Editor", "Orders", "Order", "Profile"] as const) {
+		// The QR Codes page itself shows managers only; the server checks every action.
+		for (const page of ["Home", "Floor", "Floor Editor", "QR Codes", "Orders", "Order", "Profile"] as const) {
 			expect(isRestaurantPageAllowed(page, false)).toBe(true);
 		}
 	});
