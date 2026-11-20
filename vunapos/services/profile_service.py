@@ -245,6 +245,11 @@ def is_kiosk_user(user=None):
 	return KIOSK_ROLE in roles and not roles & set(STAFF_ROLES)
 
 
+def is_qr_request():
+	"""A guest's QR table order, which runs as its branch's QR ordering user."""
+	return bool(frappe.flags.get("vunapos_qr_request"))
+
+
 def require_restaurant_staff():
 	"""Kiosk logins only place orders, through the kiosk actions."""
 	if is_kiosk_user():
