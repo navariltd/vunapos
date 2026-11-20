@@ -20,6 +20,7 @@ from vunapos.services.restaurant_session_service import (
 	KIOSK_PAID,
 	SESSION,
 	_load,
+	require_qr_order_accepted,
 	session_to_dict,
 )
 from vunapos.setup.utils import CASHIER_ROLE
@@ -80,7 +81,9 @@ def _orders(session, lock=False, unbilled=True, billing_invoice=None):
 
 
 def _require_kiosk_payment_confirmed(session):
-	# A kiosk order awaiting payment is billed only by confirming its payment.
+	# A kiosk order awaiting payment is billed only by confirming its payment, and a
+	# QR order only once staff accept it.
+	require_qr_order_accepted(session)
 	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:
 		fail(
 			"KIOSK_ORDER_AWAITING_PAYMENT",
@@ -303,6 +306,7 @@ def preview(session, pos_profile=None, loyalty_points=None):
 		}
 	if session.status != "Open":
 		fail("SESSION_NOT_OPEN", _("Only an open visit can be billed."))
+	require_qr_order_accepted(session)
 	orders = _orders(session)
 	bill = _build(session, profile, orders, loyalty_points)
 	if session.get("kiosk_status") == KIOSK_AWAITING_PAYMENT:

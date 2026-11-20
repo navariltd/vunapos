@@ -246,3 +246,166 @@ stock or written off when the dish was never made.
 
 - The refund appears in the shift that pays it out and in closing reconciliation.
 - A refunded order cannot be served or refunded again.
+
+## DEF-009 — Expire pending QR orders
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering
+- **Reason:** Agreed with the user: QR table ordering v1 (branch
+  `feature/restraunt-qr-ordering`) leaves a pending QR order until staff accept or
+  reject it. Related to [DEF-005](#def-005--expire-abandoned-kiosk-orders-automatically).
+
+### Current behavior
+
+A QR order waits as a pending draft and holds its table until a waiter, cashier or
+manager accepts or rejects it. A prank or forgotten order blocks the table until
+then.
+
+### Intended outcome
+
+A pending QR order nobody accepts within a configured time is rejected
+automatically: the draft is deleted, the reason recorded on the visit and the table
+freed.
+
+### Decision to resolve
+
+The timeout, where it is set (POS Profile or Restaurant) and whether staff are
+warned before expiry.
+
+### Completion checks
+
+- An order accepted while expiry runs is never removed (lock and status check).
+- The expiry reason and time show on the visit, like a staff rejection.
+
+## DEF-010 — Add rounds to a visit by scanning again
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering
+- **Reason:** Agreed with the user: in v1, items after acceptance are added by staff
+  through the waiter flow.
+
+### Current behavior
+
+Scanning a table that has an active visit shows "This table already has an order.
+Please ask a waiter to add items." and creates nothing.
+
+### Intended outcome
+
+Guests at a table with an accepted QR visit can send another round from their
+phone, which staff accept like the first one.
+
+### Decision to resolve
+
+How a scan proves it belongs to the seated party and not someone who photographed
+the code (see DEF-012), and whether visits opened by a waiter accept QR rounds.
+
+### Completion checks
+
+- Pending rounds never reach the kitchen or the bill before acceptance.
+- Billing and Confirm payment ignore or refuse pending rounds.
+
+## DEF-011 — Several visits or customers on one table
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / sessions / QR table ordering
+- **Reason:** Agreed with the user: v1 keeps one active visit per table.
+
+### Current behavior
+
+`lock_tables` lets one active visit hold a table, whatever the Restaurant's "Allow
+Multiple Open Orders per Table" setting says. That setting only affects older
+orders without a visit and the floor plan's table tap. A QR order only starts on a
+free table.
+
+### Intended outcome
+
+Two parties at one table can have separate visits and bills, from QR or from a
+waiter choosing to start a separate order on an occupied table.
+
+### Completion checks
+
+- Table status, Open Orders, transfer, join, Clear table and billing handle several
+  visits on a table.
+- The "Allow Multiple Open Orders per Table" setting governs visits as its label
+  says.
+
+## DEF-012 — Join codes for a QR visit
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering
+- **Reason:** Agreed with the user: not part of v1.
+
+### Intended outcome
+
+The first guest's phone shows a short code, and other guests at the table enter it
+to order into the same visit. Depends on DEF-010.
+
+### Completion checks
+
+- Codes are rate limited against guessing and stop working when the visit closes.
+
+## DEF-013 — Takeaway through QR ordering
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering
+- **Reason:** Agreed with the user: QR v1 is dine-in only.
+
+### Intended outcome
+
+A guest who scans a table code can switch to Takeaway (the kiosk flow already
+keeps the cart when switching service type).
+
+### Decision to resolve
+
+How a takeaway order nobody is seated for is collected and paid, and how staff tell
+it apart from a prank.
+
+## DEF-014 — Pay on the phone for QR orders
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering / payments
+- **Reason:** Agreed with the user: QR orders are billed at the end through the
+  waiter flow in v1. Related to [DEF-003](#def-003--take-payment-at-the-kiosk).
+
+### Intended outcome
+
+A guest pays the bill (or a pay-first order) from their phone, for example by
+M-PESA, without a cashier.
+
+### Completion checks
+
+- The payment lands in a cashier shift for closing reconciliation.
+- No customer or bill data is exposed to someone holding only the table code.
+
+## DEF-015 — Several QR cards per A4 sheet
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering / printing
+- **Reason:** Agreed with the user: v1 prints one A6 card per page.
+
+### Intended outcome
+
+Print all of a floor's cards on A4 sheets, several cards per sheet with cut marks.
+
+## DEF-016 — Regenerate QR codes in bulk
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Restaurant / QR table ordering
+- **Reason:** Agreed with the user: v1 regenerates one table at a time.
+
+### Intended outcome
+
+A manager regenerates every table's code on a floor or branch in one confirmed
+action (for example after codes leak), then prints the new cards.
+
+### Completion checks
+
+- Every old code stops working at once; tables without a token stay without one.

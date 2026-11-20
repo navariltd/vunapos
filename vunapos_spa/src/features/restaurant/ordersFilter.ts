@@ -43,6 +43,18 @@ export function isAwaitingPayment(order: RestaurantOrderSummaryDTO): boolean {
 	return order.kiosk_status === "Awaiting Payment";
 }
 
+// A guest's QR order waiting for staff to accept or reject it.
+export function isPendingQrOrder(order: RestaurantOrderSummaryDTO): boolean {
+	return order.qr_status === "Pending";
+}
+
+// Kiosk and QR orders name their source; a waiter's order does not.
+export function orderSourceLabel(order: RestaurantOrderSummaryDTO): string | null {
+	if (order.order_source === "QR") return "QR order";
+	if (order.order_source === "Kiosk" || order.kiosk_status) return "Kiosk order";
+	return null;
+}
+
 // A kiosk order paid at the counter first, whose table waits to be cleared.
 export function isPaidKioskOrder(order: RestaurantOrderSummaryDTO): boolean {
 	return order.kiosk_status === "Paid";

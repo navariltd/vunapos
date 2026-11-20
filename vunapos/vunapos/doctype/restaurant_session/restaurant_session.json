@@ -14,15 +14,19 @@
   "column_break_visit",
   "pos_profile",
   "waiter",
+  "order_source",
   "opened_at",
   "closed_at",
   "kiosk_section",
   "order_number",
   "kiosk_status",
+  "qr_status",
   "order_date",
   "column_break_kiosk",
   "confirmed_by",
   "confirmed_at",
+  "accepted_by",
+  "accepted_at",
   "cancel_reason",
   "cancelled_by",
   "cancel_approved_by",
@@ -42,7 +46,8 @@
   "column_break_context",
   "company",
   "billing_fingerprint",
-  "idempotency_key"
+  "idempotency_key",
+  "qr_guest_ref"
  ],
  "fields": [
   {
@@ -216,8 +221,8 @@
   {
    "fieldname": "kiosk_section",
    "fieldtype": "Section Break",
-   "label": "Kiosk Order",
-   "depends_on": "eval:doc.kiosk_status"
+   "label": "Self-Service Order",
+   "depends_on": "eval:doc.kiosk_status || doc.qr_status"
   },
   {
    "fieldname": "order_number",
@@ -293,6 +298,50 @@
    "label": "Cancelled At",
    "read_only": 1,
    "no_copy": 1
+  },
+  {
+   "fieldname": "order_source",
+   "fieldtype": "Select",
+   "label": "Order Source",
+   "options": "Waiter\nKiosk\nQR",
+   "default": "Waiter",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "qr_status",
+   "fieldtype": "Select",
+   "label": "QR Status",
+   "options": "\nPending\nAccepted\nRejected",
+   "read_only": 1,
+   "no_copy": 1,
+   "in_standard_filter": 1,
+   "description": "Pending: a guest sent this order from the table's QR code and nothing reaches the kitchen until staff accept it."
+  },
+  {
+   "fieldname": "accepted_by",
+   "fieldtype": "Link",
+   "label": "QR Order Accepted By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "accepted_at",
+   "fieldtype": "Datetime",
+   "label": "QR Order Accepted At",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "qr_guest_ref",
+   "fieldtype": "Data",
+   "label": "QR Guest Reference",
+   "read_only": 1,
+   "no_copy": 1,
+   "hidden": 1
   }
  ],
  "permissions": [
@@ -332,7 +381,7 @@
    "if_owner": 1
   }
  ],
- "modified": "2026-11-17 22:00:26.295869",
+ "modified": "2026-11-20 06:08:22.372371",
  "creation": "2026-11-04 21:01:06.000000",
  "owner": "Administrator",
  "modified_by": "Administrator"

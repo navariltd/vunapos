@@ -14,10 +14,15 @@ import { PosModeSwitch } from "./PosModeSwitch";
 import { PosOpeningGate } from "./PosOpeningGate";
 import { RestaurantApp } from "../features/restaurant/RestaurantApp";
 import { KioskApp } from "../features/kiosk/KioskApp";
+import { TableOrderApp } from "../features/tableOrder/TableOrderApp";
+import { tableTokenFromPath } from "../features/tableOrder/tableOrderFlow";
 import { VunaApiError, refreshSalespersonPin, vunaMethods } from "../services/vunaApi";
 import { useUiFeedbackStore } from "../features/pos/stores/uiFeedbackStore";
 
 export function App() {
+  // A guest who scanned a table's QR code: never signed in, never the staff app.
+  const tableToken = tableTokenFromPath(window.location.pathname);
+  if (tableToken) return <TableOrderApp token={tableToken} />;
   return (
     <AppProviders>
       <AuthGate>

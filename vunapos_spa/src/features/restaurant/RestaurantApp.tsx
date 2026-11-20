@@ -15,6 +15,7 @@ import { useBootstrapData } from "../pos/hooks/useBootstrapData";
 import { CloseShiftPage } from "../pos/components/CloseShiftPage";
 import { UserProfilePage } from "../pos/components/UserProfilePage";
 import { FloorEditor } from "./components/FloorEditor";
+import { QrCodesPage } from "./components/QrCodesPage";
 import { FloorView } from "./components/FloorView";
 import { OrderScreen } from "./components/OrderScreen";
 import { SessionScreen } from "./components/SessionScreen";
@@ -113,6 +114,8 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
           />
         ) : activePage === "Floor Editor" ? (
           <FloorEditor posProfile={posProfile} />
+        ) : activePage === "QR Codes" ? (
+          <QrCodesPage posProfile={posProfile} />
         ) : activePage === "Orders" ? (
           <OrdersPage posProfile={posProfile} />
         ) : activePage === "Kitchen" ? (

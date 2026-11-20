@@ -287,11 +287,80 @@ def _validate_profile_kiosk(profile):
 			)
 
 
+def _validate_profile_qr(profile):
+	from vunapos.services.service_type_service import get_profile_service_types
+
+	title = _("QR Table Ordering")
+	if not profile.get("customer"):
+		frappe.throw(_("Set the Customer that QR orders are placed for."), title=title)
+	service = next(
+		(
+			row
+			for row in get_profile_service_types(profile)
+			if row["name"] == profile.get("vunapos_qr_service_type")
+		),
+		None,
+	)
+	if not service:
+		frappe.throw(_("Choose a QR Service Type offered at this restaurant branch."), title=title)
+	if not service["requires_table"]:
+		frappe.throw(_("The QR Service Type must use tables, for example Dine In."), title=title)
+	if not cint(profile.get("disabled")):
+		other = frappe.db.get_value(
+			"POS Profile",
+			{
+				"name": ["!=", profile.name or ""],
+				"vunapos_restaurant": profile.get("vunapos_restaurant"),
+				"vunapos_branch": profile.get("vunapos_branch"),
+				"vunapos_qr_ordering": 1,
+				"disabled": 0,
+			},
+			"name",
+		)
+		if other:
+			frappe.throw(
+				_(
+					"POS Profile {0} already has QR Table Ordering for this restaurant branch. Switch it off there first."
+				).format(other),
+				title=title,
+			)
+	_ensure_qr_user(profile)
+
+
+def _ensure_qr_user(profile):
+	"""The user guest QR orders run as: disabled, so it can never sign in, and without a password."""
+	from vunapos.setup.utils import KIOSK_ROLE
+
+	user = profile.get("vunapos_qr_user")
+	if not user or not frappe.db.exists("User", user):
+		doc = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": f"qr-ordering-{frappe.generate_hash(length=10)}@vunapos.invalid",
+				"first_name": _("QR Ordering"),
+				"last_name": profile.get("vunapos_branch"),
+				"enabled": 0,
+				"send_welcome_email": 0,
+				"roles": [{"role": KIOSK_ROLE}],
+			}
+		)
+		doc.flags.no_welcome_mail = True
+		doc.insert(ignore_permissions=True)
+		user = profile.vunapos_qr_user = doc.name
+	if not any(row.user == user for row in profile.get("applicable_for_users") or []):
+		profile.append("applicable_for_users", {"user": user})
+
+
 def validate_profile_restaurant(profile, method=None):
 	"""POS Profile validate hook: a Restaurant-mode profile needs a restaurant of its company."""
 	if profile.get("vunapos_pos_mode") != "Restaurant":
 		if cint(profile.get("vunapos_kiosk_mode")):
 			frappe.throw(_("Kiosk Mode is available for Restaurant POS Profiles only."), title=_("Kiosk"))
+		if cint(profile.get("vunapos_qr_ordering")):
+			frappe.throw(
+				_("QR Table Ordering is available for Restaurant POS Profiles only."),
+				title=_("QR Table Ordering"),
+			)
 		return
 	if not profile.get("vunapos_restaurant"):
 		frappe.throw(
@@ -321,3 +390,5 @@ def validate_profile_restaurant(profile, method=None):
 			)
 	if cint(profile.get("vunapos_kiosk_mode")):
 		_validate_profile_kiosk(profile)
+	if cint(profile.get("vunapos_qr_ordering")):
+		_validate_profile_qr(profile)

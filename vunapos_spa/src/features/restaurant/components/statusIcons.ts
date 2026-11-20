@@ -1,4 +1,4 @@
-import { Check, Receipt, Users, type LucideIcon } from "lucide-react";
+import { Check, QrCode, Receipt, Users, type LucideIcon } from "lucide-react";
 
 import type { TableStatusKind } from "../tableStatus";
 
@@ -8,4 +8,5 @@ export const STATUS_ICON: Record<TableStatusKind, LucideIcon> = {
   free: Check,
   occupied: Users,
   paid: Receipt,
+  qr: QrCode,
 };

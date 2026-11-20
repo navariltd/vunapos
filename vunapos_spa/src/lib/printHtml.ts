@@ -20,9 +20,20 @@ export function printHtml(html: string) {
 	printDocument.write(html);
 	printDocument.close();
 
-	window.setTimeout(() => {
-		printFrame.contentWindow?.focus();
-		printFrame.contentWindow?.print();
-		window.setTimeout(() => printFrame.remove(), 1000);
-	}, 100);
+	// Images (a company logo) must load first or they print blank; never wait long.
+	const images = Array.from(printDocument.images).filter((image) => !image.complete);
+	const loaded = Promise.all(
+		images.map((image) => new Promise((resolve) => {
+			image.addEventListener("load", resolve, { once: true });
+			image.addEventListener("error", resolve, { once: true });
+		})),
+	);
+	const timeout = new Promise((resolve) => window.setTimeout(resolve, 3000));
+	void Promise.race([loaded, timeout]).then(() => {
+		window.setTimeout(() => {
+			printFrame.contentWindow?.focus();
+			printFrame.contentWindow?.print();
+			window.setTimeout(() => printFrame.remove(), 1000);
+		}, 100);
+	});
 }

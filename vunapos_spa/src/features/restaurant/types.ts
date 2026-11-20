@@ -129,7 +129,8 @@ export type TableStatusDTO = {
 	floor: string;
 	seats: number;
 	// Paid: a kiosk order paid at the counter first, waiting for staff to clear the table.
-	status: "Free" | "Occupied" | "Paid";
+	// New QR Order: a guest's QR order waiting for staff to accept or reject it.
+	status: "Free" | "Occupied" | "Paid" | "New QR Order";
 	orders: TableOrderRefDTO[];
 };
 
@@ -194,6 +195,8 @@ export type RestaurantOrderSummaryDTO = Pick<
 	preparation_status?: string;
 	billing_pending?: boolean;
 	kiosk_status?: KioskStatus | null;
+	order_source?: OrderSource | null;
+	qr_status?: QrOrderStatus | null;
 	order_number?: number | null;
 	// The session's Sales Orders, so Open Orders finds a visit by either name.
 	sales_orders?: string[];
@@ -204,6 +207,11 @@ export type RestaurantOrderSummaryDTO = Pick<
 // Its table stays taken until staff clear it. "Bill at the end" orders start as Sent to Kitchen.
 export type KioskStatus = "Awaiting Payment" | "Paid" | "Sent to Kitchen";
 
+// Where a visit started. A QR order is Pending until staff accept it, which sends it to
+// the kitchen, or reject it, which cancels the visit and frees the table.
+export type OrderSource = "Waiter" | "Kiosk" | "QR";
+export type QrOrderStatus = "Pending" | "Accepted" | "Rejected";
+
 export type RestaurantSessionStatus = "Open" | "Settling" | "Settled" | "Closed - Unpaid" | "Cancelled";
 
 export type RestaurantSessionSummaryDTO = {
@@ -213,6 +221,8 @@ export type RestaurantSessionSummaryDTO = {
 	guest_count: number; opened_at: string; service_type: string; modified: string;
 	tables: Array<{ table: string; table_label: string }>;
 	kiosk_status?: KioskStatus | null;
+	order_source?: OrderSource | null;
+	qr_status?: QrOrderStatus | null;
 	order_number?: number | null;
 	sales_orders?: string[];
 };
@@ -227,6 +237,7 @@ export type RestaurantSessionDTO = Omit<RestaurantSessionSummaryDTO, "tables"> &
 	customer_name: string; tables: Array<{ table: string; table_label: string; released_at: string | null }>;
 	rounds: RestaurantOrderDTO[];
 	confirmed_by?: string | null;
+	accepted_by?: string | null;
 };
 
 export type KioskSetupDTO = {
@@ -236,6 +247,29 @@ export type KioskSetupDTO = {
 	// Free, Occupied or Paid only: the kiosk never sees who holds a table.
 	tables: TableStatusDTO[];
 };
+
+export type QrTablesDTO = {
+	// Whether a POS Profile of the branch has QR Table Ordering switched on.
+	enabled: boolean;
+	qr_profile: string | null;
+	floors: Array<{
+		name: string;
+		floor_name: string;
+		tables: Array<{ table: string; table_label: string; has_code: boolean; code_created_at: string | null }>;
+	}>;
+};
+
+// What a guest's phone knows about the table it scanned: never who holds it.
+export type TableOrderSetupDTO = {
+	restaurant_name: string;
+	table_label: string;
+	floor_name: string | null;
+	service_type: string;
+	currency: string | null;
+	state: "available" | "occupied";
+};
+
+export type TableOrderResultDTO = { order: string; status: QrOrderStatus };
 
 export type KioskOrderDTO = {
 	session: string;

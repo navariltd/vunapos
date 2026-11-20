@@ -20,6 +20,10 @@ KIOSK_AWAITING_PAYMENT = "Awaiting Payment"
 KIOSK_PAID = "Paid"
 KIOSK_SENT_TO_KITCHEN = "Sent to Kitchen"
 TABLE_CLEARED = "Table cleared"
+SOURCE_WAITER, SOURCE_KIOSK, SOURCE_QR = "Waiter", "Kiosk", "QR"
+# A guest's QR order is a draft Sales Order until staff accept it, which sends it to the
+# kitchen, or reject it, which deletes it and cancels the visit.
+QR_PENDING, QR_ACCEPTED, QR_REJECTED = "Pending", "Accepted", "Rejected"
 
 
 def current_assignments(table):
@@ -131,6 +135,11 @@ def lock_tables(tables, restaurant, session=None, branch=None):
 				_fail("TABLE_OCCUPIED", _("Table {0} has an existing open order.").format(table))
 
 
+def require_qr_order_accepted(doc):
+	if doc.get("qr_status") == QR_PENDING:
+		_fail("QR_ORDER_PENDING", _("Accept or reject this QR order first."))
+
+
 def _load(session, for_update=False):
 	doc = frappe.get_doc(SESSION, session, for_update=for_update)
 	require_restaurant_access(doc.restaurant, branch=doc.branch)
@@ -182,6 +191,9 @@ def session_to_dict(doc):
 		"guest_count": cint(doc.guest_count),
 		"status": doc.status,
 		"kiosk_status": doc.get("kiosk_status") or None,
+		"order_source": doc.get("order_source") or SOURCE_WAITER,
+		"qr_status": doc.get("qr_status") or None,
+		"accepted_by": doc.get("accepted_by"),
 		"order_number": doc.get("order_number") or None,
 		"confirmed_by": doc.get("confirmed_by"),
 		"billing_doctype": doc.get("billing_doctype"),
@@ -256,6 +268,8 @@ def list_sessions(pos_profile):
 			"status",
 			"kiosk_status",
 			"order_number",
+			"order_source",
+			"qr_status",
 		],
 		order_by="opened_at asc",
 	)
@@ -305,8 +319,10 @@ def list_sessions(pos_profile):
 		fields=["name", "vunapos_restaurant_session", "docstatus"],
 		order_by="creation asc",
 	)
-	awaiting = {row.name for row in rows if row.kiosk_status == KIOSK_AWAITING_PAYMENT}
-	# Only a kiosk order awaiting payment is a draft; never list stray drafts.
+	awaiting = {
+		row.name for row in rows if row.kiosk_status == KIOSK_AWAITING_PAYMENT or row.qr_status == QR_PENDING
+	}
+	# Only a kiosk order awaiting payment or a pending QR order is a draft; never list stray drafts.
 	rounds = [
 		order for order in rounds if order.docstatus == 1 or order.vunapos_restaurant_session in awaiting
 	]
@@ -323,6 +339,7 @@ def update_session(session, tables=None, guest_count=None, customer=None, waiter
 	doc.check_permission("write")
 	if doc.status != "Open":
 		_fail("SESSION_NOT_OPEN", _("Only open sessions can be updated."))
+	require_qr_order_accepted(doc)
 	if customer is not None and customer != doc.customer:
 		if frappe.db.exists("Sales Order", {"vunapos_restaurant_session": doc.name, "docstatus": ["!=", 2]}):
 			_fail("SESSION_CUSTOMER_LOCKED", _("The customer cannot change after a round is submitted."))
@@ -438,6 +455,7 @@ def open_session_doc(
 				{"table": table, "assigned_at": now_datetime(), "assigned_by": frappe.session.user}
 				for table in tables
 			],
+			"order_source": SOURCE_WAITER,
 			**(values or {}),
 		}
 	)
@@ -461,6 +479,15 @@ def create_round(
 	idempotency_key = str(idempotency_key or "").strip()
 	if not idempotency_key:
 		_fail("IDEMPOTENCY_REQUIRED", _("An idempotency key is required for each round."))
+	if doc.get("qr_status") == QR_PENDING and frappe.db.exists(
+		"Sales Order",
+		{
+			"vunapos_restaurant_session": doc.name,
+			"docstatus": ["!=", 2],
+			"vunapos_idempotency_key": ["!=", idempotency_key],
+		},
+	):
+		require_qr_order_accepted(doc)
 	if doc.get("kiosk_status") == KIOSK_AWAITING_PAYMENT and frappe.db.exists(
 		"Sales Order",
 		{
@@ -552,11 +579,78 @@ def clear_table(session):
 	return session_to_dict(doc)
 
 
+def _session_rounds(session, docstatus):
+	return frappe.get_all(
+		"Sales Order",
+		filters={"vunapos_restaurant_session": session, "docstatus": docstatus},
+		pluck="name",
+		order_by="creation asc",
+	)
+
+
+def submit_draft_rounds(session, profile):
+	"""Submit a visit's draft rounds after the caller's checks; this sends them to the kitchen.
+
+	Kiosk and QR logins cannot submit orders, and the staff member doing it may not be
+	assigned to the visit's profile, which routes and prices the tickets.
+	"""
+	from vunapos.services.restaurant_order_service import submit_session_round
+
+	previous = frappe.flags.get("vunapos_draft_ticket_profile")
+	frappe.flags.vunapos_draft_ticket_profile = profile
+	try:
+		for name in _session_rounds(session, 0):
+			order = frappe.get_doc("Sales Order", name, for_update=True)
+			order.flags.ignore_permissions = True
+			submit_session_round(order, session)
+	finally:
+		frappe.flags.vunapos_draft_ticket_profile = previous
+
+
+def cancel_unsent_visit(doc, reason, release_reason, approved_by=None):
+	"""Cancel a locked visit whose orders never reached the kitchen, freeing its tables."""
+	now = now_datetime()
+	# Nobody may delete or cancel these through Frappe; the caller checked access and rules.
+	for name in _session_rounds(doc.name, 0):
+		frappe.delete_doc("Sales Order", name, ignore_permissions=True)
+	# Kiosk orders placed before kiosk drafts were submitted at once, without kitchen tickets.
+	for name in _session_rounds(doc.name, 1):
+		order = frappe.get_doc("Sales Order", name, for_update=True)
+		order.update(
+			{
+				"vunapos_cancel_reason": reason,
+				"vunapos_cancelled_by": frappe.session.user,
+				"vunapos_cancelled_at": now,
+			}
+		)
+		order.flags.ignore_permissions = True
+		order.cancel()
+	tables = [row.table for row in doc.tables if not row.released_at]
+	lock_tables(tables, doc.restaurant, session=doc.name, branch=doc.branch)
+	for row in doc.tables:
+		if not row.released_at:
+			row.update(
+				{"released_at": now, "released_by": frappe.session.user, "release_reason": release_reason}
+			)
+	doc.update(
+		{
+			"status": "Cancelled",
+			"closed_at": now,
+			"cancel_reason": reason,
+			"cancelled_by": frappe.session.user,
+			"cancel_approved_by": approved_by,
+			"cancelled_at": now,
+		}
+	)
+	doc.flags.restaurant_session_write = True
+	doc.save()
+
+
 def protect_session_round(doc, method=None):
 	"""Rounds enter a visit only through the restaurant actions; a draft is never re-saved.
 
 	A kiosk login may create Sales Orders, so without this it could insert one into
-	another visit through the REST API. A kiosk draft is only submitted or deleted.
+	another visit through the REST API. A kiosk or QR draft is only submitted or deleted.
 	"""
 	if not doc.get("vunapos_restaurant_session") or doc.docstatus != 0:
 		return
@@ -564,7 +658,7 @@ def protect_session_round(doc, method=None):
 		if not frappe.flags.get("vunapos_inserting_session_round"):
 			_fail("SESSION_MANAGED_OPERATION", _("Add orders to a visit through the restaurant actions."))
 		return
-	_fail("ROUND_ALREADY_COMMITTED", _("A kiosk order awaiting payment cannot be changed."))
+	_fail("ROUND_ALREADY_COMMITTED", _("An order awaiting payment or acceptance cannot be changed."))
 
 
 def protect_committed_round(doc, method=None):

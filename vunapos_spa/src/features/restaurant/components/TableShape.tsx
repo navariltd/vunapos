@@ -23,6 +23,7 @@ const STATUS_STYLE: Record<TableStatusKind, { fill: string; stroke: string; dash
   free: { fill: "var(--color-status-free-container)", stroke: "var(--color-status-free)", dash: true },
   occupied: { fill: "var(--color-status-occupied-container)", stroke: "var(--color-status-occupied)", dash: false },
   paid: { fill: "var(--color-status-paid-container)", stroke: "var(--color-status-paid)", dash: false },
+  qr: { fill: "var(--color-status-qr-container)", stroke: "var(--color-status-qr)", dash: true },
 };
 
 type TableShapeProps = {

@@ -20,7 +20,12 @@
   "y",
   "column_break_dimensions",
   "width",
-  "height"
+  "height",
+  "qr_section",
+  "qr_token",
+  "column_break_qr",
+  "qr_token_created_at",
+  "qr_token_created_by"
  ],
  "fields": [
   {
@@ -124,12 +129,52 @@
   {
    "fieldname": "column_break_dimensions",
    "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qr_section",
+   "fieldtype": "Section Break",
+   "label": "QR Code",
+   "collapsible": 1,
+   "permlevel": 1
+  },
+  {
+   "fieldname": "qr_token",
+   "fieldtype": "Data",
+   "label": "QR Token",
+   "description": "The secret in this table's QR ordering link. Created when a manager first prints the table's code.",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "search_index": 1,
+   "permlevel": 1
+  },
+  {
+   "fieldname": "column_break_qr",
+   "fieldtype": "Column Break",
+   "permlevel": 1
+  },
+  {
+   "fieldname": "qr_token_created_at",
+   "fieldtype": "Datetime",
+   "label": "QR Code Created At",
+   "read_only": 1,
+   "no_copy": 1,
+   "permlevel": 1
+  },
+  {
+   "fieldname": "qr_token_created_by",
+   "fieldtype": "Link",
+   "label": "QR Code Created By",
+   "options": "User",
+   "read_only": 1,
+   "no_copy": 1,
+   "permlevel": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-11-17 07:21:49.167442",
+ "modified": "2026-11-20 06:08:22.372371",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Restaurant Table",
@@ -179,6 +224,16 @@
   {
    "role": "VunaPOS Kiosk",
    "read": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "VunaPOS Restaurant Manager"
   }
  ],
  "row_format": "Dynamic",

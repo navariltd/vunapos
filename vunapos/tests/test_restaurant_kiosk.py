@@ -95,6 +95,9 @@ class TestRestaurantKiosk(IntegrationTestCase):
 		profile.update(
 			{
 				"vunapos_kiosk_mode": 1,
+				# A copy of a till with QR Table Ordering must not claim QR for the branch too.
+				"vunapos_qr_ordering": 0,
+				"vunapos_qr_user": None,
 				"vunapos_kiosk_payment_timing": KIOSK_PAY_FIRST,
 				"vunapos_kiosk_idle_seconds": 90,
 				"vunapos_kiosk_service_types": [

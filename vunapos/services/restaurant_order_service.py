@@ -993,6 +993,9 @@ def _table_status(session, orders):
 	if session and session.status == "Settled":
 		# A paid kiosk order waiting for staff to clear its table.
 		return "Paid"
+	if session and session.get("qr_status") == "Pending":
+		# A guest's QR order waiting for staff to accept or reject it.
+		return "New QR Order"
 	return "Occupied" if session or orders else "Free"
 
 

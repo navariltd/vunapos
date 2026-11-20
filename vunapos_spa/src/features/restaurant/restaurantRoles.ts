@@ -64,6 +64,7 @@ export function isRestaurantPageAllowed(
     "Home",
     "Floor",
     "Floor Editor",
+    "QR Codes",
     "Orders",
     "Order",
     "Profile",

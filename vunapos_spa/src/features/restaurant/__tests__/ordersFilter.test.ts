@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_ORDERS_FILTER, filterOrders, isFiltered, isPaidKioskOrder, type OrdersFilter } from "../ordersFilter";
+import {
+	DEFAULT_ORDERS_FILTER,
+	filterOrders,
+	isFiltered,
+	isPaidKioskOrder,
+	isPendingQrOrder,
+	orderSourceLabel,
+	type OrdersFilter,
+} from "../ordersFilter";
 import type { RestaurantOrderSummaryDTO } from "../types";
 
 const order = (
@@ -120,5 +128,18 @@ describe("isFiltered", () => {
 		expect(isFiltered({ ...DEFAULT_ORDERS_FILTER, sort: "newest", query: "  " })).toBe(false);
 		expect(isFiltered({ ...DEFAULT_ORDERS_FILTER, mine: true })).toBe(true);
 		expect(isFiltered({ ...DEFAULT_ORDERS_FILTER, floor: "Terrace" })).toBe(true);
+	});
+});
+
+describe("order sources", () => {
+	it("names kiosk and QR orders and marks a QR order staff have not accepted", () => {
+		const waiter = order("RS-1", "2026-11-20 12:00:00", { order_source: "Waiter" });
+		const kiosk = order("RS-2", "2026-11-20 12:00:00", { order_source: "Kiosk", kiosk_status: "Paid" });
+		// Kiosk visits from before Order Source existed still have a kiosk status.
+		const oldKiosk = order("RS-3", "2026-11-20 12:00:00", { kiosk_status: "Sent to Kitchen" });
+		const qr = order("RS-4", "2026-11-20 12:00:00", { order_source: "QR", qr_status: "Pending" });
+		expect([waiter, kiosk, oldKiosk, qr].map(orderSourceLabel)).toEqual([null, "Kiosk order", "Kiosk order", "QR order"]);
+		expect([waiter, kiosk, qr].map(isPendingQrOrder)).toEqual([false, false, true]);
+		expect(isPendingQrOrder({ ...qr, qr_status: "Accepted" })).toBe(false);
 	});
 });

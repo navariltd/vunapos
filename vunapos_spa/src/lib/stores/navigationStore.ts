@@ -9,11 +9,12 @@ export type POSPage =
 	| "Profile"
 	| "Floor"
 	| "Floor Editor"
+	| "QR Codes"
 	| "Orders"
 	| "Kitchen"
 	| "Order";
 
-export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor", "Orders", "Order", "Kitchen"];
+export const RESTAURANT_PAGES: readonly POSPage[] = ["Floor", "Floor Editor", "QR Codes", "Orders", "Order", "Kitchen"];
 
 const PAGE_PATHS: Record<POSPage, string> = {
 	Home: "/vunapos",
@@ -24,6 +25,7 @@ const PAGE_PATHS: Record<POSPage, string> = {
 	Profile: "/vunapos/profile",
 	Floor: "/vunapos/floor",
 	"Floor Editor": "/vunapos/floor/edit",
+	"QR Codes": "/vunapos/floor/qr",
 	Orders: "/vunapos/orders",
 	Kitchen: "/vunapos/kitchen",
 	// A new, unsaved order. A saved one is /vunapos/order/<name> (navigateToOrder).

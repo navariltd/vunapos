@@ -288,6 +288,51 @@ def ensure_vunapos_custom_fields():
 				"description": "Leave empty to offer every floor of the restaurant branch.",
 			},
 			{
+				"fieldname": "vunapos_qr_section",
+				"label": "QR Table Ordering",
+				"fieldtype": "Section Break",
+				"insert_after": "vunapos_kiosk_floors",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+			},
+			{
+				"fieldname": "vunapos_qr_ordering",
+				"label": "QR Table Ordering",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_qr_section",
+				"default": "0",
+				"description": (
+					"Guests scan a table's QR code and send an order from their phone. Staff accept it "
+					"before it reaches the kitchen. Covers every table of this restaurant branch; "
+					"only one profile per branch can have it."
+				),
+			},
+			{
+				"fieldname": "vunapos_qr_service_type",
+				"label": "QR Service Type",
+				"fieldtype": "Link",
+				"options": "Restaurant Service Type",
+				"insert_after": "vunapos_qr_ordering",
+				"depends_on": "eval:doc.vunapos_qr_ordering",
+				"mandatory_depends_on": "eval:doc.vunapos_qr_ordering",
+				"description": "QR orders are recorded as this service type, for example Dine In. It must use tables.",
+			},
+			{
+				"fieldname": "vunapos_qr_column_break",
+				"fieldtype": "Column Break",
+				"insert_after": "vunapos_qr_service_type",
+			},
+			{
+				"fieldname": "vunapos_qr_user",
+				"label": "QR Ordering User",
+				"fieldtype": "Link",
+				"options": "User",
+				"read_only": 1,
+				"no_copy": 1,
+				"insert_after": "vunapos_qr_column_break",
+				"depends_on": "eval:doc.vunapos_qr_user",
+				"description": "Created automatically. Guest QR orders are placed as this user, which can never sign in.",
+			},
+			{
 				# Defined in custom/pos_profile.json; re-anchored here so POS Mode
 				# stays first in the VunaPOS tab after a customisation sync.
 				"fieldname": "vunapos_sales_section",

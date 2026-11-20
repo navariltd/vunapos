@@ -81,6 +81,23 @@ describe("deriveTableStatuses", () => {
 		expect(statusFor(kiosk, "p1").kind).toBe("paid");
 		expect(legendStatuses(staff.values())).toEqual(["paid"]);
 	});
+	it("shows a guest's pending QR order as a new QR order with no waiter yet", () => {
+		const session = {
+			name: "RS-2", customer: "Walk-in", waiter: "qr-ordering-1@vunapos.invalid", waiter_name: "QR Ordering", guest_count: 0,
+			opened_at: "2026-11-20 12:00:00", service_type: "Dine In", modified: "", status: "Open" as const,
+			tables: [{ table: "q1", table_label: "Q1" }], order_source: "QR" as const, qr_status: "Pending" as const,
+		};
+		const staff = deriveTableStatuses([{ table: "q1", table_label: "Q1", floor: "f", seats: 2, status: "New QR Order", session, orders: [] }]);
+		const view = statusFor(staff, "q1");
+		expect(view).toMatchObject({ kind: "qr", waiters: [] });
+		expect(tableStatusLines(view, 2, new Date("2026-11-20T12:05:00"))).toEqual(["New QR order · 5 min"]);
+		expect(tableTapAction(view, false)).toEqual({ kind: "start" });
+		// Once accepted it is an ordinary occupied table with its waiter.
+		const accepted = deriveTableStatuses([{ table: "q1", table_label: "Q1", floor: "f", seats: 2, status: "Occupied",
+			session: { ...session, qr_status: "Accepted" as const, waiter: "jane@x", waiter_name: "Jane Wanjiku" }, orders: [] }]);
+		expect(statusFor(accepted, "q1")).toMatchObject({ kind: "occupied", waiters: ["Jane Wanjiku"] });
+		expect(legendStatuses([...deriveTableStatuses(rows).values(), view])).toEqual(["free", "occupied", "qr"]);
+	});
 });
 
 describe("legendStatuses", () => {

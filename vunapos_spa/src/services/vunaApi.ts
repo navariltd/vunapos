@@ -147,6 +147,11 @@ export const vunaMethods = {
 	placeKioskOrder: "vunapos.api.kiosk.place_kiosk_order",
 	confirmKioskPayment: "vunapos.api.kiosk.confirm_kiosk_payment",
 	cancelKioskOrder: "vunapos.api.kiosk.cancel_kiosk_order",
+	acceptQrOrder: "vunapos.api.table_order.accept_qr_order",
+	rejectQrOrder: "vunapos.api.table_order.reject_qr_order",
+	getQrTables: "vunapos.api.table_order.get_qr_tables",
+	printTableQrCards: "vunapos.api.table_order.print_table_qr_cards",
+	regenerateTableQr: "vunapos.api.table_order.regenerate_table_qr",
 	clearTable: "vunapos.api.restaurant.clear_table",
 	getTableStatus: "vunapos.api.restaurant.get_table_status",
 	listRestaurantOrders: "vunapos.api.restaurant.list_orders",
@@ -767,6 +772,31 @@ export function clearTable(call: FrappeCall, session: string) {
 
 export function cancelKioskOrder(call: FrappeCall, params: { session: string; reason: string; pos_profile: string; manager_pin_token?: string }) {
 	return callAndUnwrap<RestaurantSessionDTO>(call, params);
+}
+
+// ---- QR table orders (vunapos.api.table_order): staff accept or reject, managers print codes ----
+
+// Accepting submits the guest's draft, which sends it to the kitchen; the accepting
+// staff member becomes the visit's waiter. Rejecting deletes it and frees the table.
+export function acceptQrOrder(call: FrappeCall, params: { session: string; pos_profile: string }) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, params);
+}
+
+export function rejectQrOrder(call: FrappeCall, params: { session: string; reason: string; pos_profile: string }) {
+	return callAndUnwrap<RestaurantSessionDTO>(call, params);
+}
+
+export function getQrTables(call: FrappeCall, pos_profile: string) {
+	return callAndUnwrap<import("../features/restaurant/types").QrTablesDTO>(call, { pos_profile });
+}
+
+// The cards' HTML, one A6 card per page. A table without a code gets one now.
+export function printTableQrCards(call: FrappeCall, params: { pos_profile: string; tables: string[] }) {
+	return callAndUnwrap<{ html: string }>(call, { ...params, tables: JSON.stringify(params.tables) });
+}
+
+export function regenerateTableQr(call: FrappeCall, params: { pos_profile: string; table: string }) {
+	return callAndUnwrap<{ table: string; has_code: boolean }>(call, params);
 }
 
 export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string; station?: string; history?: number; start?: number }) {
