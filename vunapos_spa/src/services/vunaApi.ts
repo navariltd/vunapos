@@ -123,6 +123,7 @@ export const vunaMethods = {
 	clearInvoice: "vunapos.api.sales.clear_invoice",
 	updateInvoiceFromCart: "vunapos.api.sales.update_invoice_from_cart",
 	renderInvoice: "vunapos.api.print.render_invoice",
+	renderKitchenTicket: "vunapos.api.print.render_kitchen_ticket",
 	getCsrfToken: "vunapos.api.auth.get_csrf_token",
 	getClosingPreview: "vunapos.api.pos_closing.get_preview",
 	closePosSession: "vunapos.api.pos_closing.close_session",
@@ -833,7 +834,9 @@ export function regenerateTableQr(call: FrappeCall, params: { pos_profile: strin
 }
 
 export function getKitchenBoard(call: FrappeCall, params: { pos_profile: string; station?: string; history?: number; start?: number }) {
-	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params);
+	return callAndUnwrap<import("../features/restaurant/types").KitchenBoardDTO>(call, params).then(board => ({
+		...board, tickets: board.tickets.map(ticket => ({...ticket, server_now: board.server_now, received_at: Date.now()}))
+	}));
 }
 
 export function kitchenAction(call: FrappeCall, params: { ticket: string; action: import("../features/restaurant/types").KitchenAction; request_key: string; expected_status: string; expected_modified?: string; quantities?: Record<string, number>; reason?: string }) {

@@ -28,6 +28,7 @@ export function KitchenDishes({
           <p className="text-sm font-semibold">
             {quantity(dish.qty)} {dish.uom} × {dish.item_name}
           </p>
+          {dish.note_updated && <p className="font-semibold text-primary">Updated preparation notes</p>}
           {ticket.status !== "Cancelled" ? (
             <KitchenLineProgress line={dish} />
           ) : null}

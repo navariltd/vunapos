@@ -409,3 +409,13 @@ action (for example after codes leak), then prints the new cards.
 ### Completion checks
 
 - Every old code stops working at once; tables without a token stay without one.
+
+## DEF-017 — Shared-demo and physical kitchen printer validation
+
+- **Status:** Deferred
+- **Recorded:** 2026-11-20
+- **Area:** Kitchen printing
+- **Current behavior:** Local manual ticket rendering is implemented; shared-demo deployment and physical printer delivery are not verified.
+- **Intended outcome:** Validate the approved implementation on an assigned demo POS Profile and the selected printer, without changing unrelated demo data.
+- **Completion checks:** Confirm deployed commit and versions; verify station routing, cancellation notices, reprints, permissions, paper width and disconnected-printer behavior. Confirm printing does not repeat preparation, stock or accounting actions.
+- **Unresolved:** Demo deployment approval, test records, printer model and connection. Local focused code checks continue; this deferral is not release clearance.

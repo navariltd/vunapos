@@ -20,3 +20,10 @@ export function kitchenStatusClass(status: string) {
     return "bg-error-container text-on-error-container";
   return "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200";
 }
+
+export function kitchenElapsedMinutes(ticket: {sent_at: string; server_now?: string; received_at?: number}, now: number) {
+  const sent = Date.parse(ticket.sent_at.replace(" ", "T"));
+  const server = ticket.server_now && ticket.received_at !== undefined
+    ? Date.parse(ticket.server_now) + Math.max(0, now - ticket.received_at) : now;
+  return Math.max(0, Math.floor((server - sent) / 60000));
+}

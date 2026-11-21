@@ -1,0 +1,161 @@
+{
+ "doctype": "DocType",
+ "name": "Kitchen Print Job",
+ "module": "VunaPOS",
+ "autoname": "hash",
+ "engine": "InnoDB",
+ "field_order": [
+  "kitchen_ticket",
+  "kitchen_station",
+  "restaurant",
+  "branch",
+  "company",
+  "action_event",
+  "source_key",
+  "status",
+  "claim_token",
+  "claimed_by",
+  "printer_name",
+  "lease_until",
+  "attempts",
+  "last_error",
+  "delivery_history",
+  "ticket_kind"
+ ],
+ "fields": [
+  {
+   "fieldname": "kitchen_ticket",
+   "fieldtype": "Link",
+   "label": "Kitchen Ticket",
+   "read_only": 1,
+   "options": "Kitchen Order Ticket"
+  },
+  {
+   "fieldname": "kitchen_station",
+   "fieldtype": "Link",
+   "label": "Kitchen Station",
+   "read_only": 1,
+   "options": "Kitchen Station"
+  },
+  {
+   "fieldname": "restaurant",
+   "fieldtype": "Link",
+   "label": "Restaurant",
+   "read_only": 1,
+   "options": "Restaurant"
+  },
+  {
+   "fieldname": "branch",
+   "fieldtype": "Link",
+   "label": "Branch",
+   "read_only": 1,
+   "options": "Branch"
+  },
+  {
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "read_only": 1,
+   "options": "Company"
+  },
+  {
+   "fieldname": "action_event",
+   "fieldtype": "Link",
+   "label": "Action Event",
+   "read_only": 1,
+   "options": "Kitchen Ticket Action"
+  },
+  {
+   "fieldname": "source_key",
+   "fieldtype": "Data",
+   "label": "Source Key",
+   "read_only": 1,
+   "unique": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "read_only": 1,
+   "reqd": 1,
+   "in_list_view": 1,
+   "options": "Queued\nClaimed\nSending\nSubmitted\nFailed\nUncertain"
+  },
+  {
+   "fieldname": "claim_token",
+   "fieldtype": "Data",
+   "label": "Claim Token",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "claimed_by",
+   "fieldtype": "Data",
+   "label": "Claimed By",
+   "read_only": 1,
+   "hidden": 0
+  },
+  {
+   "fieldname": "printer_name",
+   "fieldtype": "Data",
+   "label": "Printer Name",
+   "read_only": 1,
+   "hidden": 0
+  },
+  {
+   "fieldname": "lease_until",
+   "fieldtype": "Datetime",
+   "label": "Lease Until",
+   "read_only": 1
+  },
+  {
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "delivery_history",
+   "fieldtype": "JSON",
+   "label": "Delivery History",
+   "read_only": 1
+  },
+  {
+   "fieldname": "ticket_kind",
+   "fieldtype": "Data",
+   "label": "Ticket Kind",
+   "read_only": 1
+  }
+ ],
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Restaurant Manager",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Kitchen User",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Waiter",
+   "read": 1
+  },
+  {
+   "role": "VunaPOS Cashier",
+   "read": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}
