@@ -20,7 +20,10 @@
   "warehouses_section",
   "raw_material_warehouse",
   "column_break_wasd",
-  "wip_warehouse"
+  "wip_warehouse",
+  "kitchen_printing",
+  "output_mode",
+  "printer_name"
  ],
  "fields": [
   {
@@ -117,6 +120,25 @@
    "fieldname": "floor_scope_section",
    "fieldtype": "Section Break",
    "label": "Floor Availability"
+  },
+  {
+   "fieldname": "kitchen_printing",
+   "fieldtype": "Section Break",
+   "label": "Kitchen printing"
+  },
+  {
+   "fieldname": "output_mode",
+   "fieldtype": "Select",
+   "label": "Output Mode",
+   "options": "KDS\nPrinter\nBoth",
+   "default": "KDS",
+   "reqd": 1
+  },
+  {
+   "fieldname": "printer_name",
+   "fieldtype": "Data",
+   "label": "Printer Name",
+   "description": "Exact printer name on the designated QZ Tray terminal."
   }
  ],
  "links": [],

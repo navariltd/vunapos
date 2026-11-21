@@ -250,7 +250,8 @@
   },
   {
    "role": "VunaPOS Kitchen User",
-   "read": 1
+   "read": 1,
+   "print": 1
   }
  ],
  "autoname": "KOT-.YYYY.-.#####",

@@ -822,16 +822,25 @@ def list_board(pos_profile, station=None, history=False, start=0):
 	from vunapos.services.kitchen_progress_service import load
 
 	progress = load(rows)
-	from vunapos.services.kitchen_service import ticket_user_names
+	from vunapos.services.kitchen_service import ticket_time, ticket_user_names
 
 	user_names = ticket_user_names(rows)
+	from vunapos.services.kitchen_notes import current_notes
+
 	for row in rows:
+		notes = current_notes(row.name)
+		for item in row.get("items"):
+			if item["line_id"] in notes:
+				item["note"] = notes[item["line_id"]]
+				item["note_updated"] = True
+		row.sent_at = ticket_time(row.sent_at)
 		row.waiter_name = user_names.get(row.waiter) or row.waiter
 		row.sent_by_name = user_names.get(row.sent_by) or row.sent_by
 		for item in row.get("items"):
 			item.update(progress[row.name][item["line_id"]])
 		row.available_actions = capabilities(row.status, progress[row.name])
 	return {
+		"server_now": ticket_time(now_datetime()),
 		"stations": stations,
 		"tickets": rows,
 		"has_more": has_more,

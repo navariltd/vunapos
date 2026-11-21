@@ -1,11 +1,15 @@
-import { useFrappeGetCall } from "frappe-react-sdk";
-import { useState } from "react";
+import { KitchenNotes } from "./KitchenNotes";
+import { useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
+import { useRef, useState } from "react";
 import { unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { KitchenTicketDTO } from "../types";
 import { Sheet } from "../../../components/ui/Sheet";
 import { KitchenActions } from "./KitchenActions";
 import { kitchenStatusClass } from "../kitchenStatus";
 import { KitchenDishes } from "./KitchenDishes";
+import { Button } from "../../../components/ui/Button";
+import { printHtml } from "../../../lib/printHtml";
+import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 
 export function KitchenTicketSheet({
   name,
@@ -16,6 +20,26 @@ export function KitchenTicketSheet({
 }) {
   const [linkedName, setLinkedName] = useState<string | null>(null);
   const activeName = linkedName || name;
+  const printCall = useFrappePostCall(vunaMethods.renderKitchenTicket);
+  const toast = useUiFeedbackStore((s) => s.showToast);
+  const printingRef = useRef(false);
+  const [printing, setPrinting] = useState(false);
+  async function printTicket(action?: string) {
+    if (printingRef.current) return;
+    printingRef.current = true;
+    setPrinting(true);
+    try {
+      const result = unwrapVunaResponse<{ ticket: string; html: string }>(
+        await printCall.call({ ticket: activeName, ...(action ? { action } : {}) })
+      );
+      printHtml(result.html);
+    } catch (error) {
+      toast({ type: "error", message: error instanceof Error ? error.message : "Unable to print ticket" });
+    } finally {
+      printingRef.current = false;
+      setPrinting(false);
+    }
+  }
   const response = useFrappeGetCall<unknown>(
     vunaMethods.getKitchenTicket,
     { ticket: activeName },
@@ -67,6 +91,16 @@ export function KitchenTicketSheet({
           onChanged={() => void response.mutate()}
         >
           <div className="space-y-4">
+            {ticket.can_print ? (
+              <div className="space-y-2">
+                <Button variant="ghost" disabled={printing} onClick={() => void printTicket()}>
+                  {printing ? "Opening print dialog…" : "Print ticket"}
+                </Button>
+                <p className="text-xs text-on-surface-variant">
+                  Prints a manual copy of the original order. Check current preparation activity before making food.
+                </p>
+              </div>
+            ) : null}
             {ticket.production_completed_at_billing ? (
               <p
                 role="status"
@@ -154,6 +188,7 @@ export function KitchenTicketSheet({
               </p>
             ) : null}
             <KitchenDishes ticket={ticket} details />
+            {ticket.can_update_notes ? <KitchenNotes key={ticket.name} ticket={ticket} refresh={() => void response.mutate()} /> : null}
             {ticket.actions?.length ? (
               <details className="rounded-md border border-outline-variant p-3">
                 <summary className="cursor-pointer text-sm font-medium">
@@ -187,6 +222,12 @@ export function KitchenTicketSheet({
                         </ul>
                       ) : null}
                       {action.reason ? <p>{action.reason}</p> : null}
+                      {ticket.can_print && action.outcome === "Succeeded" &&
+                        (["Cancel Items", "Stop Preparation", "Cancel Order", "Update preparation notes"].includes(action.action) || (action.action === "Cancel Remake" && ticket.remake_of && action.to_status === "Cancelled")) ? (
+                        <Button variant="ghost" disabled={printing} onClick={() => void printTicket(action.name)}>
+                          {action.action === "Update preparation notes" ? "Print ticket" : "Print cancellation"}
+                        </Button>
+                      ) : null}
                       {action.item_quantities?.charge ? (
                         <p className="font-medium">
                           Charge decision:{" "}

@@ -19,6 +19,18 @@ STATION = "Kitchen Station"
 KITCHEN_EVENT = "vunapos_kitchen_ticket_created"
 
 
+def ticket_time(value):
+	"""Frappe stores wall times in the site's timezone; never let browsers guess."""
+	from zoneinfo import ZoneInfo
+
+	from frappe.utils import get_datetime, get_system_timezone
+
+	dt = get_datetime(value)
+	if dt.tzinfo is None:
+		dt = dt.replace(tzinfo=ZoneInfo(get_system_timezone()))
+	return dt.isoformat()
+
+
 def ticket_user_names(tickets):
 	users = {doc.get(field) for doc in tickets for field in ("waiter", "sent_by") if doc.get(field)}
 	if not users:
@@ -45,6 +57,8 @@ def validate_station(doc):
 			"STATION_CONTEXT_MISMATCH",
 			_("Kitchen Station Company and Branch must match the selected Restaurant."),
 		)
+	if doc.get("output_mode") in ("Printer", "Both") and not (doc.get("printer_name") or "").strip():
+		fail("PRINTER_REQUIRED", _("Select the printer name before enabling kitchen printing."))
 	doc.company = context.company
 	validate_branch_company(doc.branch, doc.company)
 	if frappe.db.exists(
@@ -561,9 +575,15 @@ def get_ticket(name, for_update=False):
 	from vunapos.services.kitchen_progress_service import load
 
 	progress = load([doc], for_update=for_update)[doc.name]
+	from vunapos.services.kitchen_notes import current_notes
+
+	notes = current_notes(doc.name)
 	user_names = ticket_user_names([doc])
 
 	return {
+		"can_update_notes": bool(set(frappe.get_roles()) & (MANAGERS | {"VunaPOS Waiter", "VunaPOS Cashier"}))
+		and doc.status not in ("Cancelled", "Ready", "Served", "Completed"),
+		"can_print": bool(frappe.has_permission(TICKET, "print", doc=doc)) and doc.docstatus == 1,
 		"modified": doc.modified,
 		"remake_of": doc.get("remake_of"),
 		"remake_reason": doc.get("remake_reason"),
@@ -621,7 +641,7 @@ def get_ticket(name, for_update=False):
 		"table_labels": doc.table_labels,
 		"service_type": doc.service_type,
 		"status": doc.status,
-		"sent_at": doc.sent_at,
+		"sent_at": ticket_time(doc.sent_at),
 		"sent_by": doc.sent_by,
 		"sent_by_name": user_names.get(doc.sent_by) or doc.sent_by,
 		"waiter": doc.waiter,
@@ -638,7 +658,8 @@ def get_ticket(name, for_update=False):
 				"uom": row.uom,
 				"stock_qty": flt(row.stock_qty),
 				"stock_uom": row.stock_uom,
-				"note": row.note,
+				"note": notes.get(row.line_id, row.note),
+				"note_updated": row.line_id in notes,
 				"modifiers": frappe.parse_json(row.modifiers or "[]"),
 				"temporary_routing": bool(row.temporary_routing),
 				**progress[row.line_id],

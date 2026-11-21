@@ -14,6 +14,7 @@ describe("read-only kitchen ticket", () => {
           ok: true,
           data: {
             name: "KOT-1",
+            can_print: true,
             station_label: "Main Kitchen",
             status: "Sent",
             sales_order: "SO-1",
@@ -56,6 +57,8 @@ describe("read-only kitchen ticket", () => {
     const html = renderToStaticMarkup(
       <KitchenTicketSheet name="KOT-1" onClose={() => {}} />
     );
+    expect(html).toContain("Print ticket");
+    expect(html).toContain("manual copy");
     expect(html).toContain("Main Kitchen");
     expect(html).toContain("Waiter: Jane Wanjiku");
     expect(html).not.toContain("waiter@example.com");
@@ -66,6 +69,29 @@ describe("read-only kitchen ticket", () => {
     expect(html).toContain("Add-on");
     expect(html).toContain("Temporary station selection");
     expect(html).not.toContain("Grand total");
+  });
+  it("hides printing when the server does not grant print permission", () => {
+    sdk.get.mockReturnValue({ data: { message: { ok: true, data: {
+      name: "KOT-1", can_print: false, status: "Sent", station_label: "Kitchen",
+      sales_order: "SO-1", sent_at: "2026-11-19 12:00:00", items: []
+    } } } });
+    const html = renderToStaticMarkup(<KitchenTicketSheet name="KOT-1" onClose={() => {}} />);
+    expect(html).not.toContain("Print ticket");
+  });
+  it("offers cancellation copies only for successful cancellation events with print permission", () => {
+    for (const canPrint of [true, false]) {
+      sdk.get.mockReturnValue({ data: { message: { ok: true, data: {
+        name: "KOT-1", can_print: canPrint, status: "Preparing", station_label: "Kitchen", items: [],
+        sent_at: "2026-11-20 12:00:00", sales_order: "SO-1",
+        actions: [
+          { name: "A1", action: "Cancel Items", outcome: "Succeeded" },
+          { name: "A2", action: "Cancel Items", outcome: "Failed" },
+          { name: "A3", action: "Ready", outcome: "Succeeded" },
+        ],
+      } } } });
+      const html = renderToStaticMarkup(<KitchenTicketSheet name="KOT-1" onClose={() => {}} />);
+      expect((html.match(/Print cancellation/g) || []).length).toBe(canPrint ? 1 : 0);
+    }
   });
   it("handles error envelopes and HTML responses safely", () => {
     sdk.get.mockReturnValue({
