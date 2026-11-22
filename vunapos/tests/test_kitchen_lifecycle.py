@@ -38,6 +38,25 @@ class TestKitchenLifecycle(IntegrationTestCase):
 			response = self._act(name, action)
 			self.assertTrue(response["ok"], response)
 
+	def test_board_and_ticket_details_share_the_same_stage_timing(self):
+		name = self._placed()
+		for action, stage in (("Accept", "queue"), ("Start", "preparation"), ("Ready", "service")):
+			result = self._act(name, action)
+			self.assertTrue(result["ok"], result)
+			timing = result["data"]["timing"]
+			self.assertEqual(timing["current"]["stage"], stage)
+			self.assertTrue(timing["current"]["since"])
+			board = restaurant.get_kitchen_board(self.profile.name, self.station)
+			self.assertTrue(board["ok"], board)
+			row = next(row for row in board["data"]["tickets"] if row["name"] == name)
+			self.assertEqual(row["timing"]["current"], timing["current"])
+			self.assertNotIn("batches", row["timing"])
+		served = self._act(name, "Serve")
+		self.assertTrue(served["ok"], served)
+		self.assertIsNone(served["data"]["timing"]["current"])
+		self.assertTrue(served["data"]["timing"]["finished_at"])
+		self.assertEqual(len(served["data"]["timing"]["batches"]), 4)
+
 	def test_full_lifecycle_manufactures_once_and_serving_does_not_consume_again(self):
 		name = self._placed()
 		self._advance(name)

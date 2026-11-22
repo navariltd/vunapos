@@ -314,6 +314,7 @@ export type KitchenTicketSummaryDTO = {
 };
 
 export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
+	timing?: KitchenTimingDTO;
 	can_remake?: boolean;
 	can_reject?: boolean;
 	can_stop_preparation?: boolean;
@@ -334,6 +335,15 @@ export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
 	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
 		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null;
 		modifiers: Array<{ label: string }>; temporary_routing: boolean } & Partial<KitchenLineProgress>>;
+};
+
+export type KitchenTimingStage = "acceptance" | "queue" | "preparation" | "service";
+export type KitchenTimingDTO = {
+	sent_at: string | null;
+	current: { stage: KitchenTimingStage; since: string | null } | null;
+	finished_at: string | null;
+	stages?: Array<{ stage: KitchenTimingStage; pending: boolean; since: string | null }>;
+	batches?: Array<{ stage: KitchenTimingStage; line_id: string; qty: number; started_at: string | null; finished_at: string | null; seconds: number | null }>;
 };
 
 export type KitchenLineProgress = {

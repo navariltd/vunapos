@@ -558,12 +558,15 @@ def get_ticket(name, for_update=False):
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities
-	from vunapos.services.kitchen_progress_service import load
+	from vunapos.services.kitchen_progress_service import load, load_events
+	from vunapos.services.kitchen_timing_service import derive as derive_timing
 
-	progress = load([doc], for_update=for_update)[doc.name]
+	events = load_events([doc], for_update=for_update)
+	progress = load([doc], events_by_ticket=events)[doc.name]
 	user_names = ticket_user_names([doc])
 
 	return {
+		"timing": derive_timing(doc.items, doc.sent_at, doc.status, events[doc.name], progress, details=True),
 		"modified": doc.modified,
 		"remake_of": doc.get("remake_of"),
 		"remake_reason": doc.get("remake_reason"),

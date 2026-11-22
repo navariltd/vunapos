@@ -11,6 +11,7 @@ import { subscribeKitchenStation } from "../kitchenRealtime";
 import { KitchenActions } from "./KitchenActions";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
 import { KitchenDishes } from "./KitchenDishes";
+import { kitchenCardTiming } from "../kitchenTiming";
 import type { KitchenTicketDTO } from "../types";
 import { pendingKitchenTickets } from "../kitchenCommand";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
@@ -42,13 +43,7 @@ export function KitchenTicketCard({
   onOpen: () => void;
   onChanged: () => void;
 }) {
-  const minutes = Math.max(
-    0,
-    Math.floor(
-      (now.getTime() - new Date(ticket.sent_at.replace(" ", "T")).getTime()) /
-        60000
-    )
-  );
+  const timing = kitchenCardTiming(ticket, now);
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
@@ -92,13 +87,15 @@ export function KitchenTicketCard({
         </div>
         <p
           className={`mt-2 flex items-center gap-1 text-xs ${
-            minutes >= 20
+            timing.overdue
               ? "font-semibold text-error"
               : "text-on-surface-variant"
           }`}
         >
           <Clock3 className="size-3" aria-hidden="true" />
-          {Number.isFinite(minutes) ? minutes : "—"} min · {ticket.sales_order}
+          <span title="Current stage for the oldest outstanding quantities. See Ticket details for all stage times.">
+            {timing.text} · {ticket.sales_order}
+          </span>
         </p>
         {ticket.waiter ? (
           <p className="mt-1 truncate text-xs text-on-surface-variant">

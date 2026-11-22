@@ -819,13 +819,18 @@ def list_board(pos_profile, station=None, history=False, start=0):
 			and row.status not in ("Served", "Completed", "Cancelled")
 			and not row.production_completed_at_billing
 		)
-	from vunapos.services.kitchen_progress_service import load
+	from vunapos.services.kitchen_progress_service import load, load_events
+	from vunapos.services.kitchen_timing_service import derive as derive_timing
 
-	progress = load(rows)
+	events = load_events(rows)
+	progress = load(rows, events_by_ticket=events)
 	from vunapos.services.kitchen_service import ticket_user_names
 
 	user_names = ticket_user_names(rows)
 	for row in rows:
+		row.timing = derive_timing(
+			row.get("items"), row.sent_at, row.status, events[row.name], progress[row.name]
+		)
 		row.waiter_name = user_names.get(row.waiter) or row.waiter
 		row.sent_by_name = user_names.get(row.sent_by) or row.sent_by
 		for item in row.get("items"):
