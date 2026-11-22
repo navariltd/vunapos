@@ -57,6 +57,7 @@ import { CancelOrderItems } from "./CancelOrderItems";
 import { KioskOrderBanner } from "./KioskOrderBanner";
 import { QrOrderBanner } from "./QrOrderBanner";
 import { SessionBill } from "./SessionBill";
+import { SessionPlacedOrders } from "./SessionPlacedOrders";
 import { parseKitchenRoutingIssue } from "../kitchenRouting";
 import { ValidatedDraftQueue } from "../validatedDraftQueue";
 import { kitchenStatusClass } from "../kitchenStatus";
@@ -141,6 +142,10 @@ export function SessionScreen({
   const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [tableAction, setTableAction] = useState<"join" | "transfer">("join");
   const [roundsOpen, setRoundsOpen] = useState(false);
+  const [addingToSession, setAddingToSession] = useState<string | null>(null);
+  const viewingOrder = Boolean(
+    sessionName && addingToSession !== sessionName && !pendingPlacement
+  );
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cartOpen, setCartOpen] = useState(false);
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -199,7 +204,7 @@ export function SessionScreen({
     activeDraft?.table,
     session?.customer || header?.customer,
     session?.selling_price_list,
-    !needsTable
+    !needsTable && !viewingOrder
   );
   const floor = useFloorPlan(posProfile);
   const status = useTableStatus(posProfile);
@@ -273,7 +278,7 @@ export function SessionScreen({
     bootstrap.data,
     session?.selling_price_list,
     setError,
-    visibleDraft !== activeDraft || needsTable
+    visibleDraft !== activeDraft || needsTable || viewingOrder
   );
   const invoice = pricing.invoice;
   const checkedPrices = useRef(new WeakMap<OrderDraft, InvoiceDTO>());
@@ -530,6 +535,7 @@ export function SessionScreen({
       );
       if (useOrderDraftStore.getState().scope !== requestScope) return;
       store.finishPlacement(newSessionRound(visit, newId()));
+      setAddingToSession(null);
       markChanged();
       if (sessionName !== visit.name)
         navigateToRestaurantSession(visit.name, { replace: true });
@@ -708,6 +714,21 @@ export function SessionScreen({
           session.kiosk_status === "Awaiting Payment" ||
           session.qr_status === "Pending")
     );
+  const billAction =
+    session &&
+    posProfile &&
+    session.qr_status !== "Pending" &&
+    !(
+      session.kiosk_status === "Awaiting Payment" &&
+      bootstrap.data?.can_take_payment
+    ) ? (
+      <SessionBill
+        session={session}
+        posProfile={posProfile}
+        unsent={Boolean(activeDraft.unsent.length)}
+        onChanged={() => void result.refresh()}
+      />
+    ) : null;
   const context = (
     <div className="mb-3 space-y-2">
       {storageError ? (
@@ -715,15 +736,19 @@ export function SessionScreen({
           {storageError}
         </p>
       ) : null}
-      {session?.kiosk_status ? (
+      {session?.kiosk_status && !viewingOrder ? (
         <KioskOrderBanner
           session={session}
           posProfile={posProfile}
           onChanged={() => void result.refresh()}
         />
       ) : null}
-      {session?.order_source === "QR" && session.qr_status ? (
-        <QrOrderBanner session={session} posProfile={posProfile} onChanged={() => void result.refresh()} />
+      {session?.order_source === "QR" && session.qr_status && !viewingOrder ? (
+        <QrOrderBanner
+          session={session}
+          posProfile={posProfile}
+          onChanged={() => void result.refresh()}
+        />
       ) : null}
       <div className="flex flex-wrap gap-2" aria-label="Service type">
         {serviceTypes?.map((service) => (
@@ -764,6 +789,11 @@ export function SessionScreen({
         ))}
       </div>
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        {session && !viewingOrder ? (
+          <Button variant="ghost" onClick={() => setAddingToSession(null)}>
+            Back to order
+          </Button>
+        ) : null}
         {type?.requires_table ? (
           <Button
             variant="ghost"
@@ -869,20 +899,7 @@ export function SessionScreen({
         ) : null}
         {/* A cashier confirms a kiosk order awaiting payment from its banner. A QR order
             is billed only once accepted. */}
-        {session &&
-        posProfile &&
-        session.qr_status !== "Pending" &&
-        !(
-          session.kiosk_status === "Awaiting Payment" &&
-          bootstrap.data?.can_take_payment
-        ) ? (
-          <SessionBill
-            session={session}
-            posProfile={posProfile}
-            unsent={Boolean(activeDraft.unsent.length)}
-            onChanged={() => void result.refresh()}
-          />
-        ) : null}
+        {!viewingOrder ? billAction : null}
         {session?.preparation_status &&
         session.preparation_status !== "No preparation" ? (
           <span
@@ -1040,7 +1057,7 @@ export function SessionScreen({
           name={ticketName}
           onClose={() => {
             setTicketName(null);
-            setRoundsOpen(true);
+            if (!viewingOrder) setRoundsOpen(true);
           }}
         />
       ) : null}
@@ -1070,75 +1087,154 @@ export function SessionScreen({
           }}
         />
       ) : null}
-      <SellingWorkspace
-        items={needsTable ? [] : visibleItems}
-        isLoading={menu.isLoading}
-        currency={currency}
-        hideImages={bootstrap.data?.hide_images}
-        pendingItemCode={pending}
-        query={query}
-        onQueryChange={setQuery}
-        view={view}
-        onViewChange={(value) => {
-          setView(value);
-          window.localStorage.setItem("vunapos.catalogue-view", value);
-        }}
-        onAddItem={(item) => {
-          if (!readOnly) void addItem(item);
-        }}
-        onScan={scan}
-        onOpenCamera={() => {
-          if (needsTable) setTablePicker(true);
-          else setCameraOpen(true);
-        }}
-        categories={
-          <>
-            <div className="mt-3 xl:hidden">{context}</div>
-            {needsTable ? (
-              <div className="my-4 rounded-lg border border-outline-variant bg-surface-container-low p-4 text-sm">
-                <p className="mb-3">
-                  Select a table to view its menu and add dine-in items.
+      {viewingOrder && session ? (
+        <section
+          aria-label="Current order"
+          className="min-h-0 flex-1 overflow-y-auto p-4 pb-24 lg:pb-4"
+        >
+          <div className="mx-auto max-w-5xl space-y-4">
+            <header className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {session.tables
+                    .filter((row) => !row.released_at)
+                    .map((row) => `Table ${row.table_label}`)
+                    .join(" + ") || session.service_type}
+                </h2>
+                <p className="text-sm text-on-surface-variant">
+                  {session.name} · {session.customer_name || session.customer}
                 </p>
-                <Button onClick={() => setTablePicker(true)}>
-                  Select table
-                </Button>
+                <p className="text-sm text-on-surface-variant">
+                  Waiter: {session.waiter_name || session.waiter}
+                </p>
               </div>
+              <div className="flex flex-wrap gap-2">
+                {billAction}
+                {!readOnly ? (
+                  <Button onClick={() => setAddingToSession(session.name)}>
+                    {activeDraft.unsent.length
+                      ? `Continue adding items (${activeDraft.unsent.length})`
+                      : "Add items"}
+                  </Button>
+                ) : null}
+              </div>
+            </header>
+            {session.kiosk_status ? (
+              <KioskOrderBanner
+                session={session}
+                posProfile={posProfile}
+                onChanged={() => void result.refresh()}
+              />
             ) : null}
-            <div
-              className="mt-3 flex gap-2 overflow-x-auto"
-              aria-label="Menu categories"
-            >
-              {[
-                { item_group: "", label: "All" },
-                ...(menu.menu?.categories || []),
-              ].map((row) => (
-                <button
-                  key={row.item_group}
-                  type="button"
-                  aria-pressed={category === row.item_group}
-                  className={`shrink-0 cursor-pointer rounded-full border px-3 py-1 text-sm ${
-                    category === row.item_group
-                      ? "bg-primary text-on-primary"
-                      : "border-outline-variant"
-                  }`}
-                  onClick={() => setCategory(row.item_group)}
-                >
-                  {row.label}
-                </button>
-              ))}
-            </div>
-          </>
-        }
-        mobileCart={renderCart("min-h-0 flex-1")}
-        mobileCartOpen={cartOpen}
-        onMobileCartOpenChange={setCartOpen}
-        cartQuantity={(visibleDraft || activeDraft).unsent.reduce(
-          (sum, row) => sum + row.qty,
-          0
-        )}
-      >
-        {renderCart("hidden xl:flex")}
-      </SellingWorkspace>
+            {session.order_source === "QR" && session.qr_status ? (
+              <QrOrderBanner
+                session={session}
+                posProfile={posProfile}
+                onChanged={() => void result.refresh()}
+              />
+            ) : null}
+            {error ? (
+              <p role="alert" className="text-sm text-error">
+                {error}
+              </p>
+            ) : null}
+            {activeDraft.unsent.length ? (
+              <p className="rounded-md bg-tertiary-container p-3 text-sm">
+                You have unplaced items. Continue adding items to place or clear
+                them before reviewing the full bill.
+              </p>
+            ) : null}
+            <SessionPlacedOrders
+              session={session}
+              currency={currency}
+              onChanged={() => void result.refresh()}
+              onTicket={setTicketName}
+            />
+            <p className="flex justify-between border-t border-outline-variant pt-3 font-semibold">
+              <span>Placed total</span>
+              <span>
+                {formatCurrency(committedSessionTotal(session), currency)}
+              </span>
+            </p>
+            <details className="border-t border-outline-variant pt-3">
+              <summary className="cursor-pointer text-sm font-medium">
+                Order options
+              </summary>
+              <div className="mt-3">{context}</div>
+            </details>
+          </div>
+        </section>
+      ) : (
+        <SellingWorkspace
+          items={needsTable ? [] : visibleItems}
+          isLoading={menu.isLoading}
+          currency={currency}
+          hideImages={bootstrap.data?.hide_images}
+          pendingItemCode={pending}
+          query={query}
+          onQueryChange={setQuery}
+          view={view}
+          onViewChange={(value) => {
+            setView(value);
+            window.localStorage.setItem("vunapos.catalogue-view", value);
+          }}
+          onAddItem={(item) => {
+            if (!readOnly) void addItem(item);
+          }}
+          onScan={scan}
+          onOpenCamera={() => {
+            if (needsTable) setTablePicker(true);
+            else setCameraOpen(true);
+          }}
+          categories={
+            <>
+              <div className="mt-3 xl:hidden">{context}</div>
+              {needsTable ? (
+                <div className="my-4 rounded-lg border border-outline-variant bg-surface-container-low p-4 text-sm">
+                  <p className="mb-3">
+                    Select a table to view its menu and add dine-in items.
+                  </p>
+                  <Button onClick={() => setTablePicker(true)}>
+                    Select table
+                  </Button>
+                </div>
+              ) : null}
+              <div
+                className="mt-3 flex gap-2 overflow-x-auto"
+                aria-label="Menu categories"
+              >
+                {[
+                  { item_group: "", label: "All" },
+                  ...(menu.menu?.categories || []),
+                ].map((row) => (
+                  <button
+                    key={row.item_group}
+                    type="button"
+                    aria-pressed={category === row.item_group}
+                    className={`shrink-0 cursor-pointer rounded-full border px-3 py-1 text-sm ${
+                      category === row.item_group
+                        ? "bg-primary text-on-primary"
+                        : "border-outline-variant"
+                    }`}
+                    onClick={() => setCategory(row.item_group)}
+                  >
+                    {row.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          }
+          mobileCart={renderCart("min-h-0 flex-1")}
+          mobileCartOpen={cartOpen}
+          onMobileCartOpenChange={setCartOpen}
+          cartQuantity={(visibleDraft || activeDraft).unsent.reduce(
+            (sum, row) => sum + row.qty,
+            0
+          )}
+        >
+          {renderCart("hidden xl:flex")}
+        </SellingWorkspace>
+      )}
       {tablePicker ? (
         <TablePlanPicker
           plan={floor.plan}
