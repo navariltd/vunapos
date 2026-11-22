@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ _("Bill") }} · {{ session.name | e }}</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm; }
+    body { max-width: 72mm; margin: 0 auto; color: #111; font: 12px Arial, sans-serif; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    p { margin: 4px 0; }
+    header, footer { text-align: center; }
+    header { border-bottom: 1px dashed #555; padding-bottom: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { text-align: left; vertical-align: top; padding: 5px 0; }
+    th:last-child, td:last-child { text-align: right; white-space: nowrap; padding-left: 6px; }
+    th { border-bottom: 1px solid #999; }
+    .muted { font-size: 11px; }
+    .totals { border-top: 1px dashed #555; }
+    .total { font-size: 14px; font-weight: bold; }
+    footer { margin-top: 14px; border-top: 1px dashed #555; padding-top: 8px; }
+  </style>
+</head>
+<body>
+  {% macro money(value) %}{{ frappe.format(value, {"fieldtype": "Currency", "options": bill.currency}) | e }}{% endmacro %}
+  <header>
+    <h1>{{ restaurant_name | e }}</h1>
+    <p>{{ bill.company | e }}</p>
+    <p><strong>{{ _("BILL — UNPAID") }}</strong></p>
+    <p>{{ session.name | e }}</p>
+    {% if tables %}<p>{{ _("Table") }}: {{ tables | join(" + ") | e }}</p>{% endif %}
+    <p>{{ bill.customer_name | e }}</p>
+    <p class="muted">{{ frappe.format(printed_at, {"fieldtype": "Datetime"}) | e }}</p>
+  </header>
+  <table>
+    <thead><tr><th>{{ _("Item") }}</th><th>{{ _("Amount") }}</th></tr></thead>
+    <tbody>
+      {% for row in bill.items %}
+      <tr>
+        <td>{{ row.item_name | e }}<br><span class="muted">{{ frappe.format(row.qty, {"fieldtype": "Float"}) | e }} {{ row.uom | e }} × {{ money(row.rate) }}</span></td>
+        <td>{{ money(row.amount) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tbody class="totals">
+      <tr><td>{{ _("Subtotal") }}</td><td>{{ money(bill.net_total) }}</td></tr>
+      {% for row in bill.taxes %}
+      <tr><td>{{ row.description | e }}</td><td>{{ money(row.tax_amount_after_discount_amount) }}</td></tr>
+      {% endfor %}
+      {% if bill.discount_amount %}<tr><td>{{ _("Discount included") }}</td><td>{{ money(bill.discount_amount) }}</td></tr>{% endif %}
+      {% if bill.rounding_adjustment %}<tr><td>{{ _("Rounding") }}</td><td>{{ money(bill.rounding_adjustment) }}</td></tr>{% endif %}
+      <tr class="total"><td>{{ _("Total") }}</td><td>{{ money(bill.rounded_total or bill.grand_total) }}</td></tr>
+    </tbody>
+  </table>
+  <footer>
+    <p>{{ _("Not a payment receipt or tax invoice.") }}</p>
+    <p>{{ _("Please settle your bill with the cashier.") }}</p>
+    <p class="muted">{{ _("Items added after printing are not included.") }}</p>
+  </footer>
+</body>
+</html>

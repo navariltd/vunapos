@@ -15,6 +15,7 @@ import {
   confirmKioskPayment,
   previewSessionBill,
   renderInvoice,
+  renderSessionBill,
   searchCheckoutLinkOptions,
   getCustomerAddresses,
   getCustomerLoyalty,
@@ -53,6 +54,7 @@ export function SessionBill({
   const checkoutCall = useFrappePostCall(vunaMethods.checkoutSession);
   const confirmCall = useFrappePostCall(vunaMethods.confirmKioskPayment);
   const printCall = useFrappePostCall(vunaMethods.renderInvoice);
+  const unpaidPrintCall = useFrappePostCall(vunaMethods.renderSessionBill);
   const linkOptions = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
   const addressCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const loyaltyCall = useFrappePostCall(vunaMethods.getCustomerLoyalty);
@@ -95,14 +97,18 @@ export function SessionBill({
           session: session.name,
           pos_profile: posProfile,
         }),
-        getCustomerAddresses(addressCall.call, {
-          customer: session.customer,
-          pos_profile: posProfile,
-        }),
-        getCustomerLoyalty(loyaltyCall.call, {
-          customer: session.customer,
-          pos_profile: posProfile,
-        }),
+        canPay
+          ? getCustomerAddresses(addressCall.call, {
+              customer: session.customer,
+              pos_profile: posProfile,
+            })
+          : Promise.resolve([]),
+        canPay
+          ? getCustomerLoyalty(loyaltyCall.call, {
+              customer: session.customer,
+              pos_profile: posProfile,
+            })
+          : Promise.resolve(null),
       ]);
       const total = Number(
         next.invoice.totals.rounded_total ||
@@ -282,6 +288,36 @@ export function SessionBill({
             <Button variant="ghost" disabled={busy} onClick={() => void open()}>
               Refresh bill
             </Button>
+            {bill?.session.status === "Open" ? (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={async () => {
+                  if (running.current) return;
+                  running.current = true;
+                  setBusy(true);
+                  setError(null);
+                  try {
+                    const rendered = await renderSessionBill(
+                      unpaidPrintCall.call,
+                      {
+                        session: session.name,
+                        pos_profile: posProfile,
+                        fingerprint: bill.fingerprint,
+                      }
+                    );
+                    printHtml(rendered.html);
+                  } catch (cause) {
+                    failed(cause);
+                  } finally {
+                    running.current = false;
+                    setBusy(false);
+                  }
+                }}
+              >
+                Print bill
+              </Button>
+            ) : null}
             {canPay && bill?.session.status === "Open" ? (
               <RecordWalkout
                 bill={bill}

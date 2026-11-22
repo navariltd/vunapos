@@ -416,6 +416,39 @@ def preview(session, pos_profile=None, loyalty_points=None):
 	}
 
 
+def render_bill(session, pos_profile, fingerprint):
+	"""Render an unpaid bill from placed rounds without saving an invoice or payment."""
+	session = _load(session)
+	session.check_permission("print")
+	profile = _profile(session, pos_profile)
+	if session.status != "Open":
+		fail("SESSION_NOT_OPEN", _("Only an open visit can print an unpaid bill."))
+	require_qr_order_accepted(session)
+	orders = _orders(session)
+	bill = _build(session, profile, orders)
+	if not fingerprint or fingerprint != _review_fingerprint(orders, bill):
+		fail("SESSION_BILL_CHANGED", _("The bill changed. Refresh the bill before printing it."))
+	tables = [
+		frappe.get_cached_value("Restaurant Table", row.table, "table_label") or row.table
+		for row in session.tables
+		if not row.released_at
+	]
+	# Fixed, version-controlled template, never user-selected Jinja. Every dynamic
+	# string is escaped in the template; callers supply identities, not HTML.
+	html = frappe.render_template(  # nosemgrep: frappe-ssti
+		"templates/restaurant_bill.html",
+		{
+			"bill": bill,
+			"session": session,
+			"restaurant_name": frappe.get_cached_value("Restaurant", session.restaurant, "restaurant_name")
+			or session.restaurant,
+			"tables": tables,
+			"printed_at": now_datetime(),
+		},
+	)
+	return {"html": html, "session": session.name, "fingerprint": fingerprint}
+
+
 def _recover_payments(session, profile, orders):
 	from vunapos.services.restaurant_payment_service import recover
 

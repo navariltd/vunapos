@@ -49,6 +49,79 @@ class TestRestaurantBilling(IntegrationTestCase):
 			else [{"mode_of_payment": self.profile.payments[0].mode_of_payment, "amount": total}],
 		)
 
+	def test_print_unpaid_bill_does_not_bill_produce_or_release_the_visit(self):
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		before = {
+			doctype: frappe.db.count(doctype)
+			for doctype in ("Sales Invoice", "POS Invoice", "Stock Entry", "Payment Entry")
+		}
+		visit = frappe.get_doc("Restaurant Session", self.session).as_dict()
+		for _ in range(2):
+			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+			self.assertTrue(response["ok"], response)
+			self.assertIn("UNPAID", response["data"]["html"])
+			self.assertIn("Not a payment receipt or tax invoice.", response["data"]["html"])
+			self.assertIn(self.session, response["data"]["html"])
+			self.assertIn(self.item, response["data"]["html"])
+		for doctype, count in before.items():
+			self.assertEqual(frappe.db.count(doctype), count)
+		self.assertEqual(frappe.get_doc("Restaurant Session", self.session).as_dict(), visit)
+
+	def test_unpaid_bill_requires_an_up_to_date_review(self):
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		self.assertTrue(self._send()["ok"])
+		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "SESSION_BILL_CHANGED")
+
+	def test_unpaid_bill_escapes_restaurant_names_without_evaluating_them(self):
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		label = '<script>alert("x")</script>{{ 7 * 7 }}'
+		frappe.db.set_value("Restaurant", self.profile.vunapos_restaurant, "restaurant_name", label)
+		frappe.clear_document_cache("Restaurant", self.profile.vunapos_restaurant)
+		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		self.assertNotIn("<script>", response["data"]["html"])
+		self.assertIn("&lt;script&gt;", response["data"]["html"])
+		self.assertIn("{{ 7 * 7 }}", response["data"]["html"])
+
+	def test_waiter_can_print_unpaid_bill_without_cashier_or_invoice_permissions(self):
+		self.assertTrue(self._send()["ok"])
+		waiter = ensure_test_user(
+			f"print-waiter-{uuid4().hex[:8]}@example.com",
+			roles=["VunaPOS Waiter"],
+			pos_profile=self.profile.name,
+		)
+		frappe.set_user(waiter)
+		self.assertNotIn("VunaPOS Cashier", frappe.get_roles())
+		preview = self._preview()
+		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		self.assertFalse(self._checkout(preview)["ok"])
+
+	def test_unpaid_bill_enforces_session_print_permission(self):
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		visit = frappe.get_doc("Restaurant Session", self.session)
+		with (
+			patch("vunapos.services.restaurant_billing_service._load", return_value=visit),
+			patch.object(visit, "check_permission", side_effect=frappe.PermissionError("Printing denied")),
+		):
+			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "PermissionError")
+
+	def test_settled_visit_cannot_print_a_new_unpaid_bill(self):
+		self._ready()
+		preview = self._preview()
+		self.assertTrue(self._checkout(preview)["ok"])
+		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(response["errors"][0]["code"], "SESSION_NOT_OPEN")
+
 	def test_one_bill_combines_rounds_consumes_own_reservations_and_settles(self):
 		orders = [self._ready(2), self._ready(1)]
 		preview = self._preview()
