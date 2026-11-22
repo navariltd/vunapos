@@ -60,8 +60,6 @@ class TestRestaurantBilling(IntegrationTestCase):
 		for _ in range(2):
 			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
 			self.assertTrue(response["ok"], response)
-			self.assertIn("UNPAID", response["data"]["html"])
-			self.assertIn("Not a payment receipt or tax invoice.", response["data"]["html"])
 			self.assertIn(self.session, response["data"]["html"])
 			self.assertIn(self.item, response["data"]["html"])
 		for doctype, count in before.items():
@@ -76,17 +74,88 @@ class TestRestaurantBilling(IntegrationTestCase):
 		self.assertFalse(response["ok"], response)
 		self.assertEqual(response["errors"][0]["code"], "SESSION_BILL_CHANGED")
 
-	def test_unpaid_bill_escapes_restaurant_names_without_evaluating_them(self):
+	def _print_format(self, doctype="Sales Invoice"):
+		name = f"_Test Restaurant Bill {uuid4().hex[:8]}"
+		previous = self.profile.get("print_format")
+		frappe.get_doc(
+			{
+				"doctype": "Print Format",
+				"name": name,
+				"doc_type": doctype,
+				"custom_format": 1,
+				"print_format_type": "Jinja",
+				"html": "<h1>MY PROFILE DESIGN</h1><p>{{ doc.name | e }}</p><p>{{ doc.docstatus }}</p><p>{{ doc.paid_amount }}</p><p>{{ doc.outstanding_amount }}</p><p>{{ doc.vunapos_restaurant_session | e }}</p>{% if doc.docstatus == 0 %}<strong>PLEASE PAY AT COUNTER</strong>{% endif %}",
+			}
+		).insert(ignore_permissions=True)
+		frappe.db.set_value("POS Profile", self.profile.name, "print_format", name)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
+
+		def restore_format():
+			frappe.set_user("Administrator")
+			frappe.db.set_value("POS Profile", self.profile.name, "print_format", previous)
+			frappe.clear_document_cache("POS Profile", self.profile.name)
+			frappe.clear_document_cache("Print Format", name)
+
+		self.addCleanup(restore_format)
+		return name
+
+	def test_unpaid_bill_uses_standard_when_profile_has_no_format(self):
+		frappe.db.set_value("POS Profile", self.profile.name, "print_format", None)
+		frappe.clear_document_cache("POS Profile", self.profile.name)
 		self.assertTrue(self._send()["ok"])
 		preview = self._preview()
-		label = '<script>alert("x")</script>{{ 7 * 7 }}'
-		frappe.db.set_value("Restaurant", self.profile.vunapos_restaurant, "restaurant_name", label)
-		frappe.clear_document_cache("Restaurant", self.profile.vunapos_restaurant)
+		with patch("vunapos.services.print_service.resolve_print_format", return_value="Standard") as resolve:
+			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		resolve.assert_called_once_with("Sales Invoice", None)
+		self.assertEqual(response["data"]["print_format"], "Standard")
+
+	def test_unpaid_bill_uses_profile_print_format_and_user_defined_watermarks(self):
+		name = self._print_format()
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		with patch("frappe.get_print", wraps=frappe.get_print) as render:
+			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		snapshot = render.call_args.kwargs["doc"]
+		self.assertEqual(snapshot.docstatus, 0)
+		self.assertEqual(snapshot.paid_amount, 0)
+		self.assertGreater(snapshot.outstanding_amount, 0)
+		self.assertEqual(response["data"]["print_format"], name)
+		self.assertIn("MY PROFILE DESIGN", response["data"]["html"])
+		self.assertIn("PLEASE PAY AT COUNTER", response["data"]["html"])
+		self.assertNotIn("BILL — UNPAID", response["data"]["html"])
+		self.assertNotIn("Not a payment receipt or tax invoice.", response["data"]["html"])
+
+	def test_profile_format_can_be_changed_without_changing_the_bill(self):
+		name = self._print_format()
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		frappe.db.set_value("Print Format", name, "html", "<h1>UPDATED DESIGN WITHOUT WATERMARK</h1>")
+		frappe.clear_document_cache("Print Format", name)
 		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
 		self.assertTrue(response["ok"], response)
-		self.assertNotIn("<script>", response["data"]["html"])
-		self.assertIn("&lt;script&gt;", response["data"]["html"])
-		self.assertIn("{{ 7 * 7 }}", response["data"]["html"])
+		self.assertIn("UPDATED DESIGN WITHOUT WATERMARK", response["data"]["html"])
+		self.assertNotIn("PLEASE PAY AT COUNTER", response["data"]["html"])
+
+	def test_unpaid_print_restores_permission_flag_when_format_rendering_fails(self):
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		previous = frappe.flags.get("ignore_print_permissions")
+		with patch("frappe.get_print", side_effect=frappe.ValidationError("Broken format")):
+			response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertFalse(response["ok"], response)
+		self.assertEqual(frappe.flags.get("ignore_print_permissions"), previous)
+
+	def test_pos_invoice_snapshot_uses_the_same_profile_format_setting(self):
+		set_invoice_mode("POS Invoice")
+		name = self._print_format("POS Invoice")
+		self.assertTrue(self._send()["ok"])
+		preview = self._preview()
+		response = restaurant.render_session_bill(self.session, self.profile.name, preview["fingerprint"])
+		self.assertTrue(response["ok"], response)
+		self.assertEqual(response["data"]["print_format"], name)
+		self.assertIn("MY PROFILE DESIGN", response["data"]["html"])
 
 	def test_waiter_can_print_unpaid_bill_without_cashier_or_invoice_permissions(self):
 		self.assertTrue(self._send()["ok"])

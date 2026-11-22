@@ -184,6 +184,7 @@ export function SessionBill({
           const receipt = await renderInvoice(printCall.call, {
             invoice_doctype: result.invoice.doctype || "Sales Invoice",
             invoice_name: result.invoice.name,
+            print_format: bootstrap?.print_format || undefined,
           });
           printHtml(receipt.html);
         } catch (printError) {
