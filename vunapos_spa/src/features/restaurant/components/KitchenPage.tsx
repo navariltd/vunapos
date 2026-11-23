@@ -1,3 +1,4 @@
+import { AllDaySummary } from "./AllDaySummary";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { FrappeContext, useFrappePostCall } from "frappe-react-sdk";
 import { Clock3, RefreshCw } from "lucide-react";
@@ -6,7 +7,7 @@ import { EmptyState } from "../../../components/ui/EmptyState";
 import { getKitchenBoard, vunaMethods } from "../../../services/vunaApi";
 import { usePolledData } from "../hooks/usePolledData";
 import { useNow } from "../hooks/useNow";
-import { kitchenStatusClass } from "../kitchenStatus";
+import { kitchenStatusClass, kitchenElapsedMinutes } from "../kitchenStatus";
 import { subscribeKitchenStation } from "../kitchenRealtime";
 import { KitchenActions } from "./KitchenActions";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
@@ -42,13 +43,7 @@ export function KitchenTicketCard({
   onOpen: () => void;
   onChanged: () => void;
 }) {
-  const minutes = Math.max(
-    0,
-    Math.floor(
-      (now.getTime() - new Date(ticket.sent_at.replace(" ", "T")).getTime()) /
-        60000
-    )
-  );
+  const minutes = kitchenElapsedMinutes(ticket, now.getTime());
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
@@ -108,7 +103,7 @@ export function KitchenTicketCard({
       </header>
       <KitchenActions ticket={ticket} showCancel={false} onChanged={onChanged}>
         <div className="px-4">
-          <KitchenDishes ticket={ticket} />
+          <KitchenDishes ticket={ticket} onUpdated={onChanged} />
         </div>
         {ticket.order_note ? (
           <p className="mx-4 mb-3 whitespace-pre-wrap rounded bg-error-container p-2 text-sm font-medium text-on-error-container">
@@ -277,6 +272,7 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
           {result.error}
         </p>
       ) : null}
+      {posProfile && <AllDaySummary posProfile={posProfile} station={station} revision={result.data?.server_now} />}
       {!result.data && result.isLoading ? (
         <EmptyState
           title="Loading kitchen"

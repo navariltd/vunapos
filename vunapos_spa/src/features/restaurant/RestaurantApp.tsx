@@ -1,3 +1,4 @@
+import { KitchenPrinting } from "./components/KitchenPrinting";
 import { useEffect } from "react";
 
 import { AppShell } from "../../components/layout/AppShell";
@@ -105,6 +106,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
       <ConnectivityMonitor />
       <AppShell
         mode="Restaurant"
+        kitchenPrintWorker={posProfile && <KitchenPrinting user={user} posProfile={posProfile} kitchenPage={activePage === "Kitchen"} />}
         cashier={bootstrap.data?.current_user}
         features={features}
         posProfile={posProfile}

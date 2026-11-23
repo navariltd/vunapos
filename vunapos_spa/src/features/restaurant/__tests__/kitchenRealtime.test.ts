@@ -31,3 +31,14 @@ describe("scoped kitchen realtime subscriptions", () => {
     expect(listeners.get("doc_update")?.size).toBe(0);
   });
 });
+
+it("keeps a shared station subscribed until its final consumer leaves", () => {
+  const socket = {emit: vi.fn(), on: vi.fn(), off: vi.fn()};
+  const first = subscribeKitchenStation(socket, "Kitchen", vi.fn());
+  const second = subscribeKitchenStation(socket, "Kitchen", vi.fn());
+  expect(socket.emit).toHaveBeenCalledTimes(1);
+  first();
+  expect(socket.emit).toHaveBeenCalledTimes(1);
+  second();
+  expect(socket.emit).toHaveBeenLastCalledWith("doc_unsubscribe", "Kitchen Station", "Kitchen");
+});

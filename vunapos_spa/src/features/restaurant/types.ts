@@ -308,12 +308,14 @@ export type KitchenRoutingIssue = {
 
 export type KitchenTicketSummaryDTO = {
 	name: string; sales_order: string; kitchen_station: string; station_label: string;
-	status: string; sent_at: string;
+	status: string; sent_at: string; server_now?: string; received_at?: number;
 	// Billed before the kitchen finished: its stock already moved, and later steps only change the status.
 	production_completed_at_billing?: number;
 };
 
 export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
+	can_print?: boolean;
+	can_update_notes?: boolean;
 	can_remake?: boolean;
 	can_reject?: boolean;
 	can_stop_preparation?: boolean;
@@ -330,9 +332,9 @@ export type KitchenTicketDTO = KitchenTicketSummaryDTO & {
 	requires_cancel_pin?: boolean;
 	actions?: Array<{ name: string; action: string; outcome: "Succeeded" | "Failed"; from_status: string; to_status: string; actor: string; occurred_at: string; reason?: string; approved_by?: string; error_message?: string; stock_entries?: string; item_quantities?: { deltas: Record<string, number>; journal_entry?: string; invoice?: string; replacement_ticket?: string; disposition?: string; charge?: string; charge_item?: string; materials?: Array<{ id: string; item_name: string; used_qty: number; max_qty: number; uom: string; kind: string }>; stock_entries?: string[] } | null }>;
 	restaurant_session: string; table_labels?: string | null; service_type?: string | null;
-	sent_by: string; sent_by_name?: string | null; waiter?: string | null; waiter_name?: string | null; order_note?: string | null;
+	sent_by: string; sent_by_name?: string | null; waiter?: string | null; waiter_name?: string | null; order_note?: string | null; note_updated?: boolean;
 	items: Array<{ line_id: string; work_order?: string | null; parent_line_id?: string | null; item_code: string; item_name: string;
-		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null;
+		qty: number; uom: string; stock_qty: number; stock_uom: string; note?: string | null; note_updated?: boolean;
 		modifiers: Array<{ label: string }>; temporary_routing: boolean } & Partial<KitchenLineProgress>>;
 };
 
@@ -355,6 +357,7 @@ export type KitchenLineProgress = {
 
 export type KitchenAction = "Accept" | "Start" | "Ready" | "Serve" | "Undo Serve" | "Cancel Remake";
 export type KitchenBoardDTO = {
+	server_now?: string;
 	can_manage_availability?: boolean;
 	stations: Array<{ name: string; station_name: string; enabled: number; ordering_paused?: boolean; availability_reason?: string | null; unavailable_until?: string | null }>;
 	tickets: KitchenTicketDTO[];

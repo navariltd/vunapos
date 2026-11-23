@@ -80,7 +80,7 @@ def related_has_permission(doc, user=None, permission_type=None):
 	if branch and not frappe.has_permission("Branch", "read", doc=branch, user=user or frappe.session.user):
 		return False
 	if (
-		doc.doctype in ("Kitchen Order Ticket", "Kitchen Ticket Action")
+		doc.doctype in ("Kitchen Order Ticket", "Kitchen Ticket Action", "Kitchen Print Job")
 		and doc.get("kitchen_station")
 		and not frappe.has_permission(
 			"Kitchen Station", "read", doc=doc.kitchen_station, user=user or frappe.session.user
@@ -105,3 +105,7 @@ def gateway_link_has_permission(doc, user=None, permission_type=None):
 	if not doc.get("restaurant_session"):
 		return doc.get("cashier") == user or "System Manager" in frappe.get_roles(user)
 	return frappe.has_permission("Restaurant Session", "read", doc=doc.restaurant_session, user=user)
+
+
+def print_job_conditions(user=None):
+	return _station_scoped_conditions("Kitchen Print Job", user)

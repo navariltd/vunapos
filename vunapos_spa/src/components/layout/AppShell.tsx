@@ -7,6 +7,7 @@ import type { NavFeatureFlags, PosMode } from "./Sidebar";
 type AppShellProps = {
   allowOrderTypeChange?: boolean;
   children: ReactNode;
+  kitchenPrintWorker?: ReactNode;
   cashier?: string;
   features?: NavFeatureFlags;
   mode?: PosMode;
@@ -25,6 +26,7 @@ export function AppShell({
   allowOrderTypeChange,
   cashier,
   children,
+  kitchenPrintWorker,
   features,
   mode = "Retail",
   onOrderTypeChange,
@@ -47,6 +49,7 @@ export function AppShell({
         salespersonLocked={salespersonLocked}
         onLockSalesperson={onLockSalesperson}
       />
+      {kitchenPrintWorker}
       <div className="flex min-h-0 flex-1">
         <Sidebar
           cashier={cashier}

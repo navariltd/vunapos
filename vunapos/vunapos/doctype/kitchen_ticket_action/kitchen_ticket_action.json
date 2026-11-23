@@ -128,7 +128,7 @@
    "fieldtype": "Select",
    "label": "Action",
    "read_only": 1,
-   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Items\nCancel Order\nRecord Waste\nRequest Remake\nCancel Remake\nReject Items\nStop Preparation\nComplete for Billing",
+   "options": "Accept\nStart\nReady\nServe\nUndo Serve\nCancel Items\nCancel Order\nRecord Waste\nRequest Remake\nCancel Remake\nReject Items\nStop Preparation\nComplete for Billing\nUpdate preparation notes",
    "reqd": 1,
    "in_list_view": 1,
    "in_standard_filter": 1
