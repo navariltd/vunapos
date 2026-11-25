@@ -1134,6 +1134,7 @@ export function POSHomePage({
         <div className="grid min-h-0 flex-1 overflow-hidden border-t border-outline-variant bg-surface pb-[68px] lg:pb-0 xl:grid-cols-[minmax(0,1fr)_clamp(32rem,32vw,38rem)]">
           <section className="flex min-w-0 min-h-0 flex-col p-4">
             <ItemSearch
+              scannerEnabled={activePage === "Home" && !isCheckoutOpen && !isBarcodeScannerOpen && !salespersonLocked}
               isLoading={items.isLoading}
               value={itemSearchQuery}
               onChange={setItemSearchQuery}
