@@ -40,6 +40,7 @@ from vunapos.services.gateway_payment_service import (
 	payment_mode_gateway,
 	validate_gateway_payment_link,
 )
+from vunapos.services.payment_settings import require_bank_payment_reference
 from vunapos.services.pin_service import consume_pin_token, validate_pin_token
 from vunapos.services.price_list_service import resolve_price_list
 from vunapos.services.profile_service import (
@@ -491,6 +492,7 @@ def validate_payment_rows(
 	total_paid = Decimal("0")
 	non_cash_paid = Decimal("0")
 	validated_rows = []
+	require_reference = doc.doctype == "Sales Order" or require_bank_payment_reference()
 	for row in rows:
 		if not isinstance(row, dict):
 			_throw("INVALID_PAYMENT_MODE", _("Each payment row must be an object"))
@@ -513,25 +515,26 @@ def validate_payment_rows(
 		reference_no = cstr(row.get("reference_no") or "").strip() or None
 		reference_date = row.get("reference_date")
 		if not payment_gateway and _payment_mode_requires_reference(profile, mode_of_payment):
-			if not reference_no:
+			if require_reference and not reference_no:
 				_throw(
 					"PAYMENT_REFERENCE_REQUIRED",
 					_("A transaction reference is required for bank payment mode {0}").format(
 						mode_of_payment
 					),
 				)
-			if not reference_date:
-				_throw(
-					"PAYMENT_REFERENCE_DATE_REQUIRED",
-					_("A transaction date is required for bank payment mode {0}").format(mode_of_payment),
+			if reference_no:
+				reference_date = (
+					reference_date or doc.get("posting_date") or doc.get("transaction_date") or nowdate()
 				)
-			try:
-				reference_date = str(getdate(reference_date))
-			except (TypeError, ValueError):
-				_throw(
-					"PAYMENT_REFERENCE_DATE_INVALID",
-					_("Enter a valid transaction date for bank payment mode {0}").format(mode_of_payment),
-				)
+				try:
+					reference_date = str(getdate(reference_date))
+				except (TypeError, ValueError, frappe.ValidationError):
+					_throw(
+						"PAYMENT_REFERENCE_DATE_INVALID",
+						_("Enter a valid transaction date for bank payment mode {0}").format(mode_of_payment),
+					)
+			else:
+				reference_date = None
 		else:
 			reference_no = None
 			reference_date = None

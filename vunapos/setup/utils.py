@@ -149,7 +149,7 @@ def ensure_vunapos_custom_fields():
 		"POS Settings": [
 			{
 				"fieldname": "vunapos_checkout_section",
-				"label": "Checkout Fields",
+				"label": "Checkout",
 				"fieldtype": "Section Break",
 				"insert_after": "invoice_type",
 			},
@@ -163,6 +163,14 @@ def ensure_vunapos_custom_fields():
 					"Register additional fields that VunaPOS may display and persist during checkout. "
 					"The field must already exist on the selected transaction DocType."
 				),
+			},
+			{
+				"fieldname": "vunapos_require_bank_payment_reference",
+				"label": "Require Bank Reference at Invoice Checkout",
+				"fieldtype": "Check",
+				"insert_after": "vunapos_checkout_fields",
+				"default": "0",
+				"description": "Bank Payment Entries always require a reference, even when this option is off.",
 			},
 			{
 				"fieldname": "vunapos_security_section",
@@ -185,7 +193,7 @@ def ensure_vunapos_custom_fields():
 				"fieldname": "vunapos_gateway_section",
 				"label": "Payment Gateway",
 				"fieldtype": "Section Break",
-				"insert_after": "vunapos_checkout_fields",
+				"insert_after": "vunapos_require_bank_payment_reference",
 			},
 			{
 				"fieldname": "vunapos_gateway_payment_timeout_minutes",
@@ -769,6 +777,9 @@ def ensure_vunapos_custom_fields():
 		],
 	}
 	create_custom_fields(custom_fields, ignore_validate=True)
+	from vunapos.services.payment_settings import ensure_bank_payment_reference_default
+
+	ensure_bank_payment_reference_default()
 	ensure_sales_invoice_stock_reservation_option()
 
 

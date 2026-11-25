@@ -205,6 +205,7 @@ export type BootstrapData = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	require_bank_payment_reference?: boolean;
 	allow_credit_sales?: boolean;
 	auto_allocate_payment_balance?: boolean;
 	new_item_position?: "Top" | "Bottom";
@@ -471,6 +472,8 @@ export type PaymentInput = {
 	mode_of_payment: string;
 	amount: number;
 	gateway_payment_link?: string;
+	reference_no?: string;
+	reference_date?: string;
 };
 
 export type GatewayPaymentLinkDTO = {

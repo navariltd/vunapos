@@ -191,6 +191,7 @@ def invoice_to_dict(doc):
 				"amount": row.get("amount"),
 				"default": row.get("default"),
 				"transaction_reference": _payment_reference(row),
+				"reference_no": row.get("reference_no"),
 				"transaction_date": row.get("ke_transaction_date"),
 				"ke_payment_request": row.get("ke_payment_request"),
 			}
