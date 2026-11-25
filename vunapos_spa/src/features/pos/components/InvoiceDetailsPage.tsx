@@ -21,6 +21,7 @@ import {
 import { applyWorkflowAction, unwrapVunaResponse, vunaMethods } from "../../../services/vunaApi";
 import type { CustomerDTO, InvoiceDTO } from "../types";
 import { statusBadgeClass } from "../utils";
+import { useBootstrapData } from "../hooks/useBootstrapData";
 
 type Details = InvoiceDTO & {
   currency?: string;
@@ -88,6 +89,7 @@ export function InvoiceDetailsPage({
 	onEdit,
   onCheckout,
 }: Props) {
+  const { data: bootstrap, isLoading: profileLoading } = useBootstrapData();
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnQty, setReturnQty] = useState<Record<string, string>>({});
   const [returnReason, setReturnReason] = useState("");
@@ -146,11 +148,15 @@ export function InvoiceDetailsPage({
     }
   }
   async function printReceipt() {
-    if (!details) return;
+    if (!details || profileLoading) return;
     try {
       const response = await printCall.call({
         invoice_doctype: details.doctype,
         invoice_name: details.name,
+        print_format:
+          bootstrap?.pos_profile === posProfile
+            ? bootstrap?.print_format || undefined
+            : undefined,
       });
       const payload = unwrapVunaResponse<{ html: string }>(response);
       const frame = window.open("", "_blank");
@@ -330,7 +336,7 @@ export function InvoiceDetailsPage({
                 Return items
               </Button>
             ) : null}
-            <Button variant="ghost" onClick={printReceipt}>
+            <Button variant="ghost" onClick={printReceipt} disabled={profileLoading}>
               <Printer className="mr-2 size-4" />
               Print receipt
             </Button>
