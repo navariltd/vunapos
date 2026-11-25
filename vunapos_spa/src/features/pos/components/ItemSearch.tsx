@@ -1,19 +1,22 @@
 import { Camera, Grid2X2, List } from "lucide-react";
+import { useHardwareScanner } from "../hooks/useHardwareScanner";
 
 export type CatalogueView = "grid" | "list";
 
 type ItemSearchProps = {
   value: string;
   onChange: (value: string) => void;
-  onScan: (barcode: string) => void;
+  onScan: (barcode: string) => void | Promise<void>;
   onOpenCamera: () => void;
   isLoading?: boolean;
+  scannerEnabled?: boolean;
   view?: CatalogueView;
   onViewChange?: (view: CatalogueView) => void;
 };
 
 export function ItemSearch({
   isLoading,
+  scannerEnabled = true,
   onChange,
   onOpenCamera,
   onScan,
@@ -21,6 +24,7 @@ export function ItemSearch({
   view = "grid",
   value,
 }: ItemSearchProps) {
+  const scan = useHardwareScanner(onScan, scannerEnabled);
   return (
     <div className="sticky top-0 z-20 border-b border-outline-variant bg-surface pb-4">
       <div className="flex items-center gap-3">
@@ -34,19 +38,27 @@ export function ItemSearch({
           onKeyDown={(event) => {
             if (event.key === "Enter" && value.trim()) {
               event.preventDefault();
-              onScan(value);
+              scan(value);
             }
           }}
         />
         {onViewChange ? (
           <button
             type="button"
-            aria-label={view === "grid" ? "Switch to list view" : "Switch to grid view"}
-            title={view === "grid" ? "Switch to list view" : "Switch to grid view"}
+            aria-label={
+              view === "grid" ? "Switch to list view" : "Switch to grid view"
+            }
+            title={
+              view === "grid" ? "Switch to list view" : "Switch to grid view"
+            }
             className="flex h-touch w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-outline-variant bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
             onClick={() => onViewChange(view === "grid" ? "list" : "grid")}
           >
-            {view === "grid" ? <List className="size-4" /> : <Grid2X2 className="size-4" />}
+            {view === "grid" ? (
+              <List className="size-4" />
+            ) : (
+              <Grid2X2 className="size-4" />
+            )}
           </button>
         ) : null}
         <button
