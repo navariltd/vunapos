@@ -80,7 +80,7 @@ type CheckoutDialogProps = {
     taxId?: string,
 	shippingAddressName?: string,
 	checkoutFields?: Record<string, string | number | boolean | null>,
-  ) => void;
+  ) => void | Promise<void>;
   onHold: () => void;
   onAttachC2bGatewayPayment?: (params: {
     mode_of_payment: string;
@@ -260,7 +260,10 @@ function CheckoutDialogContent({
 	workflow,
 }: Omit<CheckoutDialogProps, "isOpen">) {
   const invoice = useCartStore((s) => s.invoice);
-  const isSubmitting = useCartStore((s) => s.isMutating);
+  const storedSubmitting = useCartStore((s) => s.isMutating);
+  const [confirming, setConfirming] = useState(false);
+  const confirmInFlight = useRef(false);
+  const isSubmitting = confirming || storedSubmitting;
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
   const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
@@ -819,6 +822,7 @@ function CheckoutDialogContent({
             type="button"
             className="rounded-md p-2 hover:bg-surface-container"
             onClick={onClose}
+            disabled={isSubmitting}
           >
             <X className="size-5" />
           </button>
@@ -1360,6 +1364,12 @@ function CheckoutDialogContent({
             />
           </div>
         </div>
+        {isSubmitting ? (
+          <p role="status" className="flex shrink-0 items-center gap-2 px-4 py-2 text-sm text-on-surface-variant">
+            <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+            Finalising checkout… Please wait.
+          </p>
+        ) : null}
         <div className="grid shrink-0 grid-cols-2 items-center gap-2 border-t border-outline-variant px-3 py-3 xl:flex xl:px-6">
           <Button
             variant="ghost"
@@ -1388,60 +1398,77 @@ function CheckoutDialogContent({
           <Button
             disabled={!isPayable || isSubmitting || deliveryApplying}
             onClick={async () => {
+              if (
+                confirmInFlight.current || isSubmitting || deliveryApplying || !isPayable
+              ) return;
               if (requiredFieldMissing) {
                 showToast({ type: "error", message: `${requiredFieldMissing.label} is required before checkout.` });
                 return;
               }
-              if (
-                deliveryEnabled &&
-                onApplyDeliveryCharge &&
-                Number.isFinite(Number(deliveryAmount)) &&
-                Number(deliveryAmount) > 0
-              ) {
-                const amount = Number(deliveryAmount);
-                setDeliveryApplying(true);
-                try {
-                  await onApplyDeliveryCharge(
-                    Number.isFinite(amount) && amount > 0 ? amount : undefined,
-                  );
-                } finally {
-                  setDeliveryApplying(false);
+              confirmInFlight.current = true;
+              setConfirming(true);
+              try {
+                if (
+                  deliveryEnabled &&
+                  onApplyDeliveryCharge &&
+                  Number.isFinite(Number(deliveryAmount)) &&
+                  Number(deliveryAmount) > 0
+                ) {
+                  const amount = Number(deliveryAmount);
+                  setDeliveryApplying(true);
+                  try {
+                    await onApplyDeliveryCharge(
+                      Number.isFinite(amount) && amount > 0 ? amount : undefined,
+                    );
+                  } finally {
+                    setDeliveryApplying(false);
+                  }
                 }
+                await onConfirm(
+                  isSalesOrder && !showSalesOrderPayments
+                    ? []
+                    : buildPaymentInputs(availableModes, amounts, precision).map(
+                        (payment) => {
+                          const gatewayLink =
+                            gatewayLinks[payment.mode_of_payment];
+                          return gatewayLink &&
+                            isSuccessfulGatewayLink(gatewayLink)
+                            ? {
+                                ...payment,
+                                gateway_payment_link: gatewayLink.name,
+                              }
+                            : payment;
+                        },
+                      ),
+                  idempotencyKey.current,
+                  isSalesOrder ? false : isCreditSale,
+                  isSalesOrder || isCreditSale ? dueDate : undefined,
+                  isSalesOrder ? undefined : appliedLoyaltyPoints || undefined,
+                  isWalkinCustomer
+                    ? checkoutTaxId.trim() || undefined
+                    : undefined,
+                  shippingAddressName || undefined,
+                  additionalFields,
+                );
+              } catch (cause) {
+                showToast({
+                  type: "error",
+                  message: cause instanceof Error
+                    ? cause.message
+                    : "Checkout could not be completed. Review the sale before retrying.",
+                });
+              } finally {
+                confirmInFlight.current = false;
+                setConfirming(false);
               }
-              onConfirm(
-                isSalesOrder && !showSalesOrderPayments
-                  ? []
-                  : buildPaymentInputs(availableModes, amounts, precision).map(
-                      (payment) => {
-                        const gatewayLink =
-                          gatewayLinks[payment.mode_of_payment];
-                        return gatewayLink &&
-                          isSuccessfulGatewayLink(gatewayLink)
-                          ? {
-                              ...payment,
-                              gateway_payment_link: gatewayLink.name,
-                            }
-                          : payment;
-                      },
-                    ),
-                idempotencyKey.current,
-                isSalesOrder ? false : isCreditSale,
-                isSalesOrder || isCreditSale ? dueDate : undefined,
-                isSalesOrder ? undefined : appliedLoyaltyPoints || undefined,
-                isWalkinCustomer
-                  ? checkoutTaxId.trim() || undefined
-                  : undefined,
-                shippingAddressName || undefined,
-                additionalFields,
-              );
             }}
           >
             <span className="sm:hidden">
-              {isSubmitting ? "..." : isSalesOrder ? "Order" : "Complete"}
+              {isSubmitting ? "Processing…" : isSalesOrder ? "Order" : "Complete"}
             </span>
             <span className="hidden sm:inline">
               {isSubmitting
-                ? "Submitting..."
+                ? "Processing…"
                 : isSalesOrder
                   ? "Create Sales Order"
                   : isCreditSale
