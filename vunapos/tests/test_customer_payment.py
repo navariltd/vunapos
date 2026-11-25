@@ -149,7 +149,28 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 			"Account", {"company": company, "account_type": "Bank", "is_group": 0}, "name"
 		)
 		if not bank_account:
-			self.skipTest("Test company has no Bank account")
+			parent = frappe.db.get_value(
+				"Account", {"company": company, "root_type": "Asset", "is_group": 1}, "name"
+			)
+			bank_account = (
+				frappe.get_doc(
+					{
+						"doctype": "Account",
+						"account_name": "_Test VunaPOS Reference Bank",
+						"company": company,
+						"parent_account": parent,
+						"account_type": "Bank",
+						"is_group": 0,
+					}
+				)
+				.insert(ignore_permissions=True)
+				.name
+			)
+		previous = frappe.db.get_single_value("POS Settings", "vunapos_require_bank_payment_reference")
+		self.addCleanup(
+			frappe.db.set_single_value, "POS Settings", "vunapos_require_bank_payment_reference", previous
+		)
+		frappe.db.set_single_value("POS Settings", "vunapos_require_bank_payment_reference", 0)
 		with patch("vunapos.services.payment_service._mode_account", return_value=bank_account):
 			with self.assertRaises(frappe.ValidationError):
 				receive_customer_payment_service(
@@ -157,6 +178,15 @@ class TestVunaPOSCustomerPayment(IntegrationTestCase):
 					customer=self.customer,
 					amount=10,
 					mode_of_payment=self.mode,
+					idempotency_key=frappe.generate_hash(length=20),
+				)
+			with self.assertRaises(frappe.ValidationError):
+				receive_customer_payment_service(
+					pos_profile=self.profile,
+					customer=self.customer,
+					amount=10,
+					mode_of_payment=self.mode,
+					reference_no="BANK-123",
 					idempotency_key=frappe.generate_hash(length=20),
 				)
 

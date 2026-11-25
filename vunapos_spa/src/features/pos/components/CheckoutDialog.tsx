@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Award,
@@ -16,6 +16,7 @@ import {
 
 import { Button } from "../../../components/ui/Button";
 import { useGatewayPaymentRealtime } from "../hooks/useGatewayPaymentRealtime";
+import { missingBankReference } from "../paymentReferences";
 import {
   allocateAllToMode,
 	allocatePaymentRemainderToNextMode,
@@ -48,6 +49,7 @@ import { formatCurrency, getInvoiceTotal } from "../utils";
 type CheckoutDialogProps = {
   allowCreditSales?: boolean;
   allowPartialPayment?: boolean;
+  requireBankPaymentReference?: boolean;
 	autoAllocatePaymentBalance?: boolean;
   allowSalesOrderPayments?: boolean;
   allowDeliveryCharges?: boolean;
@@ -141,6 +143,7 @@ function isPendingGatewayLink(link?: GatewayPaymentLinkDTO) {
 export function CheckoutDialog({
   allowCreditSales,
   allowPartialPayment,
+  requireBankPaymentReference,
 	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
@@ -185,6 +188,7 @@ export function CheckoutDialog({
       key={`${allowCreditSales ? "credit-enabled" : "credit-disabled"}-${orderType}-${allowSalesOrderPayments ? "deposits" : "no-deposits"}`}
       allowCreditSales={allowCreditSales}
       allowPartialPayment={allowPartialPayment}
+      requireBankPaymentReference={requireBankPaymentReference}
 	  autoAllocatePaymentBalance={autoAllocatePaymentBalance}
       allowSalesOrderPayments={allowSalesOrderPayments}
       allowDeliveryCharges={allowDeliveryCharges}
@@ -225,6 +229,7 @@ export function CheckoutDialog({
 function CheckoutDialogContent({
   allowCreditSales,
   allowPartialPayment,
+  requireBankPaymentReference = false,
 	autoAllocatePaymentBalance,
   allowSalesOrderPayments,
   allowDeliveryCharges,
@@ -266,6 +271,13 @@ function CheckoutDialogContent({
   const isSubmitting = confirming || storedSubmitting;
   const showToast = useUiFeedbackStore((s) => s.showToast);
   const isSalesOrder = orderType === "Sales Order";
+  const requireReference = requireBankPaymentReference || isSalesOrder;
+  const referenceId = useId();
+  const referenceInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [referenceNumbers, setReferenceNumbers] = useState<Record<string, string>>(() =>
+    Object.fromEntries((invoice?.payments || []).map((payment) => [payment.mode_of_payment, payment.reference_no || ""]))
+  );
+  const [referenceAttempted, setReferenceAttempted] = useState(false);
   const showSalesOrderPayments = isSalesOrder && Boolean(allowSalesOrderPayments);
   const activeWorkflow = workflow?.enabled ? workflow.workflows[orderType] : undefined;
 
@@ -281,6 +293,12 @@ function CheckoutDialogContent({
     [modesOfPayment],
   );
   const scale = currencyScale(precision);
+  const showReferenceColumn = requireReference && availableModes.some(
+    (mode) => mode.requires_reference && !mode.payment_gateway,
+  );
+  const paymentColumns = showReferenceColumn
+    ? "md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(10rem,1fr)]"
+    : "md:grid-cols-[minmax(0,1fr)_minmax(11rem,15rem)]";
   const totalMinor = totalToMinorUnits(total, precision);
   const loyaltyFactor = Number(customerLoyalty?.conversion_factor || 0);
   const availableLoyaltyPoints = Math.max(
@@ -809,7 +827,7 @@ function CheckoutDialogContent({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-2 sm:p-4">
-      <div className="flex h-[calc(100dvh-1rem)] max-h-[52rem] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface shadow-lg sm:h-[calc(100dvh-2rem)]">
+      <div className="flex h-[calc(100dvh-1rem)] max-h-[52rem] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-outline-variant bg-surface shadow-lg sm:h-[calc(100dvh-2rem)]">
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-outline-variant px-4 py-4 sm:px-6">
           <div>
             <h2 className="text-lg font-semibold text-on-surface">Checkout</h2>
@@ -1175,6 +1193,11 @@ function CheckoutDialogContent({
                     />
                   </div>
                   <div className="my-3 h-64 max-h-64 shrink-0 overflow-y-auto rounded-md bg-surface-container-low/70 px-2 shadow-sm lg:h-72 lg:max-h-72">
+                    <div aria-hidden="true" className={`sticky top-0 z-10 hidden gap-2 bg-surface-container-low px-1 py-2 text-xs font-medium text-on-surface-variant md:grid ${paymentColumns}`}>
+                      <span>Amount</span>
+                      {showReferenceColumn ? <span>Reference No</span> : null}
+                      <span>Payment mode</span>
+                    </div>
                     {availableModes.map((mode) => {
                       const isGatewayControlled = Boolean(mode.payment_gateway);
                       const amount = amounts[mode.mode_of_payment] ?? "";
@@ -1195,55 +1218,8 @@ function CheckoutDialogContent({
                       return (
                         <div
                           key={mode.mode_of_payment}
-                          className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-b border-outline-variant/40 py-2 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_minmax(11rem,15rem)] sm:py-3"
+                          className={`grid grid-cols-1 items-start gap-2 border-b border-outline-variant/40 py-2 last:border-b-0 sm:py-3 ${paymentColumns}`}
                         >
-                          <button
-                            type="button"
-                            aria-pressed={isAll}
-                            className={`order-2 col-span-1 inline-flex h-touch min-w-44 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold shadow-sm transition-colors sm:col-span-1 ${isAll ? "border-secondary bg-secondary/80 text-on-secondary" : "border-transparent bg-surface-container-highest text-on-surface hover:bg-surface-container-high"} ${isGatewayControlled ? "cursor-pointer" : ""}`}
-                            onClick={() => {
-                              if (isGatewayControlled) {
-                                openGatewayDialog(mode);
-                                return;
-                              }
-                              setAmounts(
-                                allocateAllToMode(
-                                  availableModes,
-                                  mode.mode_of_payment,
-                                  payableMinor,
-                                  precision,
-                                ),
-                              );
-                            }}
-                          >
-                            {isAll && !isGatewayControlled ? (
-                              <Check className="size-4" />
-                            ) : null}
-                            {mode.mode_of_payment}
-                            {mode.default ? (
-                              <span className="ml-2 text-xs text-on-surface-variant">
-                                Default
-                              </span>
-                            ) : null}
-                            {isGatewayControlled ? (
-                              <span className="ml-2 text-xs text-primary">
-                                Gateway
-                              </span>
-                            ) : null}
-                            {isGatewayControlled && gatewayLink ? (
-                              <span
-                                className={
-                                  gatewayPaid
-                                    ? "ml-2 text-xs text-secondary"
-                                    : "ml-2 text-xs text-on-surface-variant"
-                                }
-                              >
-                                {gatewayPaid
-                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
-                                  : `Status: ${gatewayLink.status}`}
-                              </span>
-                            ) : null}
-                          </button>
                           <div className="order-1 relative">
                             <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-xs text-on-surface-variant">
                               {currency}
@@ -1296,8 +1272,77 @@ function CheckoutDialogContent({
                               }}
                             />
                           </div>
+                          {requireReference && !isGatewayControlled && mode.requires_reference &&
+                          (parsePaymentAmount(amount, precision) || 0) > 0 ? (
+                            <div className="order-2 min-w-0">
+                              <label htmlFor={`${referenceId}-${encodeURIComponent(mode.mode_of_payment)}`} className="mb-1 block text-xs font-medium text-on-surface-variant md:sr-only">
+                                Reference No {requireReference ? "*" : "(optional)"}
+                              </label>
+                              <input
+                                id={`${referenceId}-${encodeURIComponent(mode.mode_of_payment)}`}
+                                ref={(element) => { referenceInputs.current[mode.mode_of_payment] = element; }}
+                                aria-label={`${mode.mode_of_payment} reference number`}
+                                aria-invalid={referenceAttempted && requireReference && !referenceNumbers[mode.mode_of_payment]?.trim()}
+                                aria-describedby={referenceAttempted && requireReference && !referenceNumbers[mode.mode_of_payment]?.trim() ? `${referenceId}-${encodeURIComponent(mode.mode_of_payment)}-error` : undefined}
+                                required={requireReference}
+                                placeholder={requireReference ? "Required" : "Optional"}
+                                disabled={isSubmitting}
+                                value={referenceNumbers[mode.mode_of_payment] || ""}
+                                onChange={(event) => setReferenceNumbers((current) => ({ ...current, [mode.mode_of_payment]: event.target.value }))}
+                                className="h-touch w-full rounded-md border border-outline-variant bg-surface px-3 text-sm outline-none focus:border-primary"
+                              />
+                              {referenceAttempted && requireReference && !referenceNumbers[mode.mode_of_payment]?.trim() ? <p id={`${referenceId}-${encodeURIComponent(mode.mode_of_payment)}-error`} className="mt-1 text-xs text-error">Enter the transaction reference.</p> : null}
+                            </div>
+                          ) : showReferenceColumn ? <div aria-hidden="true" className="order-2 hidden md:block" /> : null}
+                          <button
+                            type="button"
+                            aria-pressed={isAll}
+                            className={`order-3 col-span-1 inline-flex h-touch w-full min-w-0 items-center justify-center gap-2 rounded-md border px-3 text-sm font-semibold shadow-sm transition-colors ${isAll ? "border-secondary bg-secondary/80 text-on-secondary" : "border-transparent bg-surface-container-highest text-on-surface hover:bg-surface-container-high"} ${isGatewayControlled ? "cursor-pointer" : ""}`}
+                            onClick={() => {
+                              if (isGatewayControlled) {
+                                openGatewayDialog(mode);
+                                return;
+                              }
+                              setAmounts(
+                                allocateAllToMode(
+                                  availableModes,
+                                  mode.mode_of_payment,
+                                  payableMinor,
+                                  precision,
+                                ),
+                              );
+                            }}
+                          >
+                            {isAll && !isGatewayControlled ? (
+                              <Check className="size-4" />
+                            ) : null}
+                            {mode.mode_of_payment}
+                            {mode.default ? (
+                              <span className="ml-2 text-xs text-on-surface-variant">
+                                Default
+                              </span>
+                            ) : null}
+                            {isGatewayControlled ? (
+                              <span className="ml-2 text-xs text-primary">
+                                Gateway
+                              </span>
+                            ) : null}
+                            {isGatewayControlled && gatewayLink ? (
+                              <span
+                                className={
+                                  gatewayPaid
+                                    ? "ml-2 text-xs text-secondary"
+                                    : "ml-2 text-xs text-on-surface-variant"
+                                }
+                              >
+                                {gatewayPaid
+                                  ? `Paid${gatewayLink.transaction_reference ? ` · ${gatewayLink.transaction_reference}` : ""}`
+                                  : `Status: ${gatewayLink.status}`}
+                              </span>
+                            ) : null}
+                          </button>
                           {isGatewayControlled ? (
-                            <div className="order-3 col-span-2 flex items-center justify-between gap-2 text-xs text-on-surface-variant sm:col-span-2">
+                            <div className={`order-4 flex items-center justify-between gap-2 text-xs text-on-surface-variant ${showReferenceColumn ? "md:col-span-3" : "md:col-span-2"}`}>
                               <span>
                                 {gatewayPaid
                                   ? "Verified gateway payment"
@@ -1405,6 +1450,14 @@ function CheckoutDialogContent({
                 showToast({ type: "error", message: `${requiredFieldMissing.label} is required before checkout.` });
                 return;
               }
+              const missingReference = isSalesOrder && !showSalesOrderPayments ? undefined
+                : missingBankReference(availableModes, amounts, referenceNumbers, precision, requireReference);
+              if (missingReference) {
+                setReferenceAttempted(true);
+                referenceInputs.current[missingReference.mode_of_payment]?.focus();
+                showToast({ type: "error", message: `Enter a reference number for ${missingReference.mode_of_payment}.` });
+                return;
+              }
               confirmInFlight.current = true;
               setConfirming(true);
               try {
@@ -1427,7 +1480,7 @@ function CheckoutDialogContent({
                 await onConfirm(
                   isSalesOrder && !showSalesOrderPayments
                     ? []
-                    : buildPaymentInputs(availableModes, amounts, precision).map(
+                    : buildPaymentInputs(availableModes, amounts, precision, referenceNumbers).map(
                         (payment) => {
                           const gatewayLink =
                             gatewayLinks[payment.mode_of_payment];

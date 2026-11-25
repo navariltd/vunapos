@@ -1287,6 +1287,7 @@ export function POSHomePage({
         allowSalesOrderPayments={bootstrap.data?.allow_sales_order_payments}
         allowCreditSales={bootstrap.data?.allow_credit_sales}
         allowPartialPayment={bootstrap.data?.allow_partial_payment}
+        requireBankPaymentReference={bootstrap.data?.require_bank_payment_reference}
 		    autoAllocatePaymentBalance={bootstrap.data?.auto_allocate_payment_balance}
         allowDeliveryCharges={bootstrap.data?.allow_delivery_charges}
         allowDeliveryChargeChange={bootstrap.data?.allow_delivery_charge_change}

@@ -5,6 +5,7 @@ from frappe.utils import cint
 from vunapos.dto.customer import customer_to_dict
 from vunapos.services.checkout_field_service import get_global_checkout_fields
 from vunapos.services.checkout_queue_service import get_queue_limits
+from vunapos.services.payment_settings import require_bank_payment_reference
 from vunapos.services.pin_settings import get_salesperson_pin_session_minutes
 from vunapos.services.price_list_service import get_permitted_price_lists
 from vunapos.services.workflow_service import get_pos_workflow_metadata
@@ -71,6 +72,7 @@ def profile_to_dict(profile, invoice_mode):
 		),
 		"rounding_method": frappe.get_system_settings("rounding_method") or "Banker's Rounding (legacy)",
 		"allow_partial_payment": bool(profile.get("allow_partial_payment")),
+		"require_bank_payment_reference": require_bank_payment_reference(),
 		"allow_credit_sales": allow_credit_sales,
 		"auto_allocate_payment_balance": bool(profile.get("vunapos_auto_allocate_payment_balance")),
 		"new_item_position": profile.get("vunapos_new_item_position") or "Bottom",
