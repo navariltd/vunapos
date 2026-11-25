@@ -139,16 +139,30 @@ export function canCompletePaymentAllocation(
 }
 
 export function buildPaymentInputs(
-	modes: ModeOfPaymentDTO[],
-	amounts: PaymentAmounts,
-	precision: number,
+  modes: ModeOfPaymentDTO[],
+  amounts: PaymentAmounts,
+  precision: number,
+  references: Record<string, string> = {}
 ): PaymentInput[] {
-	return modes.flatMap((mode) => {
-		const amountMinor = parsePaymentAmount(amounts[mode.mode_of_payment] || "", precision);
-		return amountMinor && amountMinor > 0
-			? [{ mode_of_payment: mode.mode_of_payment, amount: amountMinor / currencyScale(precision) }]
-			: [];
-	});
+  return modes.flatMap((mode) => {
+    const amountMinor = parsePaymentAmount(
+      amounts[mode.mode_of_payment] || "",
+      precision
+    );
+    return amountMinor && amountMinor > 0
+      ? [
+          {
+            mode_of_payment: mode.mode_of_payment,
+            amount: amountMinor / currencyScale(precision),
+            ...(!mode.payment_gateway &&
+            mode.requires_reference &&
+            references[mode.mode_of_payment]?.trim()
+              ? { reference_no: references[mode.mode_of_payment].trim() }
+              : {}),
+          },
+        ]
+      : [];
+  });
 }
 
 export function normalizeCurrencyPrecision(precision: number): number {

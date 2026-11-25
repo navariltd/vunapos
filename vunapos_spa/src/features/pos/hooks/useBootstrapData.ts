@@ -36,6 +36,7 @@ export function useBootstrapData() {
 			smallest_currency_fraction_value: profile.smallest_currency_fraction_value,
 			rounding_method: profile.rounding_method,
 			allow_partial_payment: profile.allow_partial_payment,
+			require_bank_payment_reference: profile.require_bank_payment_reference,
 			allow_credit_sales: profile.allow_credit_sales,
 			auto_allocate_payment_balance: profile.auto_allocate_payment_balance,
 			new_item_position: profile.new_item_position,
