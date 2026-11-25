@@ -12,6 +12,7 @@ import { StockOperationsPage } from "../features/stock/StockOperationsPage";
 import { stockMethods, type StockCapabilities } from "../features/stock/types";
 import { unwrapVunaResponse } from "../services/vunaApi";
 import { InstallPrompt } from "../components/InstallPrompt";
+import { PrintFeedback } from "../components/PrintFeedback";
 import { POSHomePage } from "../features/pos/POSHomePage";
 import { useBootstrapData } from "../features/pos/hooks/useBootstrapData";
 import { AppProviders } from "./AppProviders";
@@ -31,6 +32,7 @@ export function App() {
     <AppProviders>
       <AuthGate>
         <BootstrapGate>
+          <PrintFeedback />
           <PosOpeningGate>
             <AuthenticatedApp />
           </PosOpeningGate>
