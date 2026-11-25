@@ -106,6 +106,7 @@ export type CachedPaymentMode = {
 	default?: boolean;
 	type?: "Cash" | "Bank" | "General" | "Phone" | string;
 	payment_gateway?: string | null;
+	requires_reference?: boolean;
 };
 
 export type CachedProfile = {
@@ -121,6 +122,7 @@ export type CachedProfile = {
 	smallest_currency_fraction_value?: number | null;
 	rounding_method?: string;
 	allow_partial_payment?: boolean;
+	require_bank_payment_reference?: boolean;
 	allow_credit_sales?: boolean;
 	auto_allocate_payment_balance?: boolean;
 	new_item_position?: "Top" | "Bottom";

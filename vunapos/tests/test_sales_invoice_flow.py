@@ -1297,7 +1297,10 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 		doc.precision = lambda _fieldname: 2
 		profile = frappe._dict({"payments": [frappe._dict({"mode_of_payment": "Bank transfer"})]})
 
-		with patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True):
+		with (
+			patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True),
+			patch("vunapos.services.invoice_service.require_bank_payment_reference", return_value=True),
+		):
 			with self.assertRaises(frappe.ValidationError) as context:
 				validate_payment_rows(doc, [{"mode_of_payment": "Bank transfer", "amount": 100}], profile)
 			self.assertEqual(context.exception.vuna_error_code, "PAYMENT_REFERENCE_REQUIRED")
@@ -1317,6 +1320,39 @@ class TestVunaPOSSalesInvoiceFlow(IntegrationTestCase):
 
 		self.assertEqual(rows[0]["reference_no"], "RCP-001")
 		self.assertEqual(rows[0]["reference_date"], "2026-09-08")
+
+	def test_invoice_checkout_preserves_bank_references_without_a_cashier_date(self):
+		profile = ensure_test_pos_profile()
+		ensure_open_pos_opening_entry(profile, period_start_date=f"{nowdate()} 00:00:00")
+		previous = frappe.db.get_single_value("POS Settings", "invoice_type")
+		self.addCleanup(set_invoice_mode, previous)
+		with patch("vunapos.services.invoice_service._payment_mode_requires_reference", return_value=True):
+			for doctype in ("Sales Invoice", "POS Invoice"):
+				set_invoice_mode(doctype)
+				for required, reference in ((True, "BANK-REQUIRED"), (False, None), (False, "BANK-OPTIONAL")):
+					draft = create_invoice_from_cart(
+						pos_profile=profile, items=[{"item_code": ensure_test_item(), "qty": 1}]
+					)
+					self.assertTrue(draft["ok"], draft)
+					invoice = draft["data"]
+					payment = {"mode_of_payment": "Cash", "amount": invoice["totals"]["grand_total"]}
+					if reference:
+						payment["reference_no"] = reference
+					with patch(
+						"vunapos.services.invoice_service.require_bank_payment_reference",
+						return_value=required,
+					):
+						response = checkout_invoice(
+							doctype,
+							invoice["name"],
+							payments=[payment],
+							idempotency_key=frappe.generate_hash(length=20),
+						)
+					self.assertTrue(response["ok"], response)
+					self.assertEqual(response["data"]["docstatus"], 1)
+					stored = frappe.get_doc(doctype, invoice["name"])
+					self.assertEqual(stored.payments[0].reference_no or None, reference)
+					self.assertEqual(response["data"]["payments"][0]["reference_no"] or None, reference)
 
 	def test_payment_validation_subtracts_loyalty_redemption_from_amount_due(self):
 		doc = frappe._dict({"rounded_total": 100, "grand_total": 100, "loyalty_amount": 25})
