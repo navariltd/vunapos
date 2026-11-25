@@ -120,13 +120,11 @@ export function PaymentsPage({
   const activeTab = availableTabs.includes(tab)
     ? tab
     : availableTabs[0] || "receive";
+  // Keep the fallback selected if permissions later restore the previous tab.
+  if (activeTab !== tab) setTab(activeTab);
   useEffect(() => {
-    if (activeTab !== tab) {
-      setTab(activeTab);
-      return;
-    }
     window.localStorage.setItem(PAYMENT_TAB_STORAGE_KEY, activeTab);
-  }, [activeTab, tab]);
+  }, [activeTab]);
   const [receiveCustomer, setReceiveCustomer] = useState(
     initial.get("customer") || "",
   );

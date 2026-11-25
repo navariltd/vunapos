@@ -15,6 +15,7 @@ class TestKitchenDelivery(unittest.TestCase):
 			raise exc(message)
 
 		for target, kwargs in [
+			("vunapos.services.kitchen_printing._", {"side_effect": lambda value: value}),
 			("frappe.throw", {"side_effect": throw}),
 			("vunapos.services.kitchen_printing.now_datetime", {"side_effect": datetime.now}),
 		]:
@@ -70,6 +71,53 @@ class TestKitchenDelivery(unittest.TestCase):
 			service.dispatch("job", "token")
 			self.assertEqual(save.call_args.args[1], "Failed")
 
+	def test_releases_owned_undispatched_claim(self):
+		doc = SimpleNamespace(
+			status="Claimed",
+			claim_token="hashed",
+			lease_until=datetime.now(),
+		)
+		with (
+			patch.object(service, "_claimed", return_value=doc) as claimed,
+			patch.object(service, "_save") as save,
+		):
+			service.release_claim("job", "token", "POS A")
+			claimed.assert_called_once_with("job", "token", "POS A")
+			self.assertIsNone(doc.claim_token)
+			self.assertIsNone(doc.lease_until)
+			save.assert_called_once_with(doc, "Queued", "Terminal released claim before dispatch.")
+
+	def test_cannot_release_after_dispatch_or_without_claim(self):
+		for status in ("Sending", "Submitted", "Uncertain", "Failed", "Queued"):
+			with self.subTest(status=status):
+				doc = SimpleNamespace(status=status, claim_token="hashed")
+				with (
+					patch.object(service, "_claimed", return_value=doc),
+					patch.object(service, "_save") as save,
+				):
+					with self.assertRaises(frappe.ValidationError):
+						service.release_claim("job", "token")
+					save.assert_not_called()
+					self.assertEqual(doc.claim_token, "hashed")
+
+	def test_cannot_release_another_users_claim(self):
+		doc = SimpleNamespace(
+			kitchen_station="station",
+			status="Claimed",
+			claimed_by="cook",
+			claim_token=hashlib.sha256(b"private").hexdigest(),
+		)
+		with (
+			patch.object(service, "station_access"),
+			patch.object(frappe, "get_doc", return_value=doc),
+			patch.object(frappe, "db", MagicMock()),
+			patch.object(frappe, "session", SimpleNamespace(user="other")),
+			patch.object(service, "_save") as save,
+		):
+			with self.assertRaises(frappe.PermissionError):
+				service.release_claim("job", "private")
+			save.assert_not_called()
+
 	def test_acknowledgement_replay_does_not_downgrade_submitted(self):
 		with (
 			patch.object(service, "_claimed", return_value=SimpleNamespace(status="Submitted")),
@@ -119,14 +167,27 @@ class TestKitchenDelivery(unittest.TestCase):
 	def test_realtime_uses_station_room_after_commit_without_claim_secrets(self):
 		from vunapos.vunapos.doctype.kitchen_print_job.kitchen_print_job import KitchenPrintJob
 
-		doc = SimpleNamespace(kitchen_station="station-a", status="Queued", ticket_kind="NEW ORDER")
+		doc = SimpleNamespace(
+			name="job-001",
+			kitchen_station="station-a",
+			status="Queued",
+			ticket_kind="NEW ORDER",
+		)
 		with patch.object(frappe, "publish_realtime") as publish:
 			KitchenPrintJob.on_update(doc)
 			self.assertEqual(
 				publish.call_args.kwargs,
 				{"doctype": "Kitchen Station", "docname": "station-a", "after_commit": True},
 			)
-			self.assertEqual(set(publish.call_args.args[1]), {"kitchen_station", "status", "ticket_kind"})
+			payload = publish.call_args.args[1]
+			self.assertEqual(payload["name"], doc.name)
+			self.assertEqual(payload["kitchen_station"], doc.kitchen_station)
+			self.assertEqual(payload["status"], doc.status)
+			self.assertEqual(payload["ticket_kind"], doc.ticket_kind)
+			self.assertEqual(
+				set(payload),
+				{"name", "kitchen_station", "status", "ticket_kind"},
+			)
 
 	def test_all_day_covers_next_page_and_keeps_units_separate(self):
 		def ticket(qty, ready=0, cancelled=0, uom="Nos"):
@@ -173,3 +234,130 @@ class TestKitchenDelivery(unittest.TestCase):
 			self.assertEqual(publish.call_args.args[0], "vunapos_kitchen_action_saved")
 			self.assertTrue(publish.call_args.kwargs["after_commit"])
 			self.assertEqual(publish.call_args.kwargs["docname"], "station")
+			payload = publish.call_args.args[1]
+			self.assertEqual(payload["name"], doc.name)
+			self.assertEqual(payload["kitchen_station"], doc.kitchen_station)
+			self.assertEqual(payload["action"], doc.action)
+
+
+class TestCashierPrintingPermissions(unittest.TestCase):
+	def setUp(self):
+		def throw(message, exc=frappe.ValidationError):
+			raise exc(message)
+
+		self.station = MagicMock()
+		self.station.restaurant = "Restaurant A"
+		self.station.branch = "Branch A"
+
+		self.profile = frappe._dict(
+			vunapos_branch="Branch A",
+			disabled=0,
+			custom_run_kitchen_print_worker_on_pos=1,
+		)
+
+		self.roles = patch.object(
+			frappe,
+			"get_roles",
+			return_value=["VunaPOS Cashier"],
+		).start()
+
+		self.get_doc = patch.object(
+			frappe,
+			"get_doc",
+			side_effect=self.get_document,
+		).start()
+
+		self.restaurant_access = patch.object(
+			service,
+			"require_restaurant_access",
+		).start()
+
+		self.profile_access = patch(
+			"vunapos.services.floor_plan_service.require_restaurant_profile",
+			return_value="Restaurant A",
+		).start()
+
+		patch.object(frappe, "throw", side_effect=throw).start()
+		patch.object(service, "_", side_effect=lambda value: value).start()
+
+		self.addCleanup(patch.stopall)
+
+	def get_document(self, doctype, name, **kwargs):
+		if doctype == "POS Profile":
+			return self.profile
+		if doctype == service.STATION:
+			return self.station
+		raise AssertionError(f"Unexpected DocType: {doctype}")
+
+	def test_assigned_cashier_can_access_matching_station(self):
+		self.assertIs(
+			service.station_access("Station A", "POS A"),
+			self.station,
+		)
+		self.profile_access.assert_called_once_with("POS A")
+		self.restaurant_access.assert_called_once_with(
+			"Restaurant A",
+			branch="Branch A",
+		)
+		self.station.check_permission.assert_called_once_with("read")
+
+	def test_cashier_without_profile_is_denied(self):
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A")
+
+	def test_unassigned_cashier_is_denied(self):
+		self.profile_access.side_effect = frappe.PermissionError
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A", "POS A")
+
+	def test_cashier_with_printing_disabled_is_denied(self):
+		self.profile.custom_run_kitchen_print_worker_on_pos = 0
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A", "POS A")
+
+	def test_disabled_profile_is_denied(self):
+		self.profile.disabled = 1
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A", "POS A")
+
+	def test_cross_branch_access_is_denied(self):
+		self.station.branch = "Branch B"
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station B", "POS A")
+
+	def test_cross_restaurant_access_is_denied(self):
+		self.station.restaurant = "Restaurant B"
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station B", "POS A")
+
+	def test_station_permission_is_still_required(self):
+		self.station.check_permission.side_effect = frappe.PermissionError
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A", "POS A")
+
+	def test_waiter_only_cannot_operate_worker(self):
+		self.roles.return_value = ["VunaPOS Waiter"]
+		with self.assertRaises(frappe.PermissionError):
+			service.station_access("Station A", "POS A")
+
+	def test_cashier_cannot_retry_uncertain_delivery(self):
+		with self.assertRaises(frappe.PermissionError):
+			service.retry("job", "Checked printer")
+
+	def test_cashier_cannot_confirm_delivery(self):
+		with self.assertRaises(frappe.PermissionError):
+			service.confirm_delivery("job", "Verified paper")
+
+	def test_existing_worker_roles_remain_authorized(self):
+		for role in (
+			"System Manager",
+			"VunaPOS Restaurant Manager",
+			"VunaPOS Kitchen User",
+		):
+			with self.subTest(role=role):
+				self.roles.return_value = [role]
+				self.assertIs(
+					service.station_access("Station A"),
+					self.station,
+				)
+		self.profile_access.assert_not_called()

@@ -1,8 +1,9 @@
 import { retainKitchenStation } from "../kitchenRealtime";
-import { useContext, useEffect, useRef, useState } from "react";
+import { createKitchenAudioEventHandlers } from "../kitchenAudioEvents";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { FrappeContext, useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk";
 import { Button } from "../../../components/ui/Button";
-import { deliverKitchenJob, listAvailablePrinters, printTestSlip } from "../../../services/kitchenPrinting";
+import { createKitchenStationDrainer, deliverKitchenJob, listAvailablePrinters, printTestSlip } from "../../../services/kitchenPrinting";
 import { usePrintLeaderLock } from "../hooks/usePrintLeaderLock";
 import { enableKitchenAudio, playKitchenTone } from "../kitchenAudio";
 
@@ -27,6 +28,7 @@ export function KitchenPrintWorker({config, posProfile}: {config: Config; posPro
   const [printers, setPrinters] = useState<string[]>([]);
   const [selected, setSelected] = useState(() => stored(`vunapos_print_station:${scope}`));
   const [error, setError] = useState("");
+  const [stationErrors, setStationErrors] = useState<Record<string, string>>({});
   const [review, setReview] = useState<{job: Job; confirm: boolean} | null>(null);
   const [reason, setReason] = useState("");
   const [sound, setSound] = useState(false);
@@ -37,17 +39,25 @@ export function KitchenPrintWorker({config, posProfile}: {config: Config; posPro
   const audioLeader = usePrintLeaderLock(`audio:${config.user}`, sound);
   const stationKey = JSON.stringify(config.stations.filter(row => ["Printer", "Both"].includes(row.output_mode) && row.printer_name && printers.includes(row.printer_name) && (!selected || selected === row.name)).map(row => row.name).sort());
   const claims = useFrappePostCall(base + "claim_many");
+  const releaseClaim = useFrappePostCall(base + "release_claim");
   const dispatch = useFrappePostCall(base + "dispatch");
   const ack = useFrappePostCall(base + "acknowledge");
   const retry = useFrappePostCall(base + "retry");
   const confirm = useFrappePostCall(base + "confirm_delivery");
   const printerConfigKey = JSON.stringify(config.stations);
   const statusNames = JSON.stringify(config.stations.map(row => row.name));
-  const result = useFrappeGetCall<{message: Job[]}>(base + "status_many", {stations: statusNames}, config.stations.length ? `print-status:${scope}:${statusNames}` : null, {refreshInterval: 15000});
-  const ops = useRef({claims, dispatch, ack, refresh: result.mutate});
-  useEffect(() => {ops.current = {claims, dispatch, ack, refresh: result.mutate};}, [claims, dispatch, ack, result.mutate]);
+  const audioHandlers = useMemo(
+    () => createKitchenAudioEventHandlers(
+      JSON.parse(statusNames) as string[],
+      playKitchenTone,
+    ),
+    [statusNames],
+  );
+  const result = useFrappeGetCall<{message: Job[]}>(base + "status_many", {stations: statusNames, pos_profile: posProfile}, config.stations.length ? `print-status:${scope}:${statusNames}` : null, {refreshInterval: 15000});
+  const ops = useRef({claims, releaseClaim, dispatch, ack, refresh: result.mutate});
+  useEffect(() => {ops.current = {claims, releaseClaim, dispatch, ack, refresh: result.mutate};}, [claims, releaseClaim, dispatch, ack, result.mutate]);
   function stop(message = "") {
-    setRunning(false); setError(message);
+    setRunning(false); setError(message); setStationErrors({});
     try {localStorage.removeItem(preferenceKey);} catch { /* Session state still stops the worker. */ }
   }
   useEffect(() => {
@@ -72,35 +82,54 @@ export function KitchenPrintWorker({config, posProfile}: {config: Config; posPro
     if (!leader || stationKey === "[]") return;
     let active = true;
     let busy = false;
-    let wake = false;
-    let cursor = 0;
     const stationNames: string[] = JSON.parse(stationKey);
+
+    const drain = createKitchenStationDrainer(
+      stationNames,
+      station => {
+        const api = ops.current;
+
+        return deliverKitchenJob({
+          claim: async () => (await api.claims.call({
+            stations: [station], pos_profile: posProfile,
+          })).message,
+          release: job => api.releaseClaim.call({
+            ...job, pos_profile: posProfile,
+          }),
+          dispatch: async job => (await api.dispatch.call({
+            ...job, pos_profile: posProfile,
+          })).message,
+          acknowledge: (job, submitted, error) => api.ack.call({
+            ...job, submitted: submitted ? 1 : 0, error,
+            pos_profile: posProfile,
+          }),
+        }, () => active);
+      },
+      (station, message) => {
+        setStationErrors(current => {
+          const next = {...current};
+
+          if (message) next[station] = message;
+          else delete next[station];
+
+          return next;
+        });
+      },
+    );
+
     async function tick() {
-      if (!active) return;
-      if (busy) {wake = true; return;}
+      if (!active || busy) return;
+
       busy = true;
+
       try {
-        // Round-robin stations: a hot printer or a blocked queue must not starve another.
-        let misses = 0;
-        let delivered = 0;
-        do {
-          wake = false;
-          const station = stationNames[cursor++ % stationNames.length];
-          const api = ops.current;
-          const printed = await deliverKitchenJob({
-            claim: async () => (await api.claims.call({stations: [station]})).message,
-            dispatch: async job => (await api.dispatch.call(job)).message,
-            acknowledge: (job, submitted, error) => api.ack.call({...job, submitted: submitted ? 1 : 0, error}),
-          }, () => active);
-          if (printed) {misses = 0; delivered++;} else misses++;
-        } while (active && delivered < 50 && (wake || misses < stationNames.length));
-        void ops.current.refresh();
-      } catch (caught) {
-        if (active) {
-          setRunning(false); setError(caught instanceof Error ? caught.message : "Printing stopped. Review delivery status.");
-          try {localStorage.removeItem(preferenceKey);} catch { /* Stop locally even if storage is unavailable. */ }
-        }
-      } finally {busy = false;}
+        await drain(() => active);
+        if (active) await ops.current.refresh();
+      } catch {
+        // Status refresh failures must not stop station delivery.
+      } finally {
+        busy = false;
+      }
     }
     const update = (value: unknown) => {
       const event = value as {kitchen_station?: string; status?: string; ticket_kind?: string} | null;
@@ -119,29 +148,45 @@ export function KitchenPrintWorker({config, posProfile}: {config: Config; posPro
       socket?.off("connect", subscribe); socket?.off("vunapos_kitchen_print_job_queued", update);
       releases.forEach(release => release());
     };
-  }, [leader, stationKey, socket, preferenceKey]);
+  }, [leader, stationKey, socket, posProfile]);
   useEffect(() => {
     if (!audioLeader || !socket) return;
+
     const stations: string[] = JSON.parse(statusNames);
     const releases = stations.map(name => retainKitchenStation(socket, name));
-    const arrival = (value: unknown) => {
-      const event = value as {kitchen_station?: string};
-      if (stations.includes(event?.kitchen_station || "")) playKitchenTone("new");
+
+    socket.on("vunapos_kitchen_ticket_created", audioHandlers.arrival);
+    socket.on("vunapos_kitchen_print_job_queued", audioHandlers.printJob);
+    socket.on("vunapos_kitchen_action_saved", audioHandlers.action);
+
+    return () => {
+      socket.off("vunapos_kitchen_ticket_created", audioHandlers.arrival);
+      socket.off("vunapos_kitchen_print_job_queued", audioHandlers.printJob);
+      socket.off("vunapos_kitchen_action_saved", audioHandlers.action);
+      releases.forEach(release => release());
     };
-    const alert = (value: unknown) => {
-      const event = value as {kitchen_station?: string; status?: string; action?: string};
-      if (stations.includes(event?.kitchen_station || "") && (event.status === "Uncertain" || ["Cancel Items", "Stop Preparation", "Cancel Order", "Cancel Remake"].includes(event.action || ""))) playKitchenTone("alert");
-    };
-    socket.on("vunapos_kitchen_ticket_created", arrival); socket.on("vunapos_kitchen_print_job_queued", alert); socket.on("vunapos_kitchen_action_saved", alert);
-    return () => {socket.off("vunapos_kitchen_ticket_created", arrival); socket.off("vunapos_kitchen_print_job_queued", alert); socket.off("vunapos_kitchen_action_saved", alert); releases.forEach(release => release());};
-  }, [audioLeader, socket, statusNames]);
+  }, [audioLeader, socket, statusNames, audioHandlers]);
+  const stationWarnings = config.stations.filter(
+    row => stationErrors[row.name] && (!selected || selected === row.name),
+  );
   const unresolved = result.data?.message?.filter(job => ["Uncertain", "Failed"].includes(job.status)) || [];
   const missing = config.stations.filter(row => ["Printer", "Both"].includes(row.output_mode) && !printers.includes(row.printer_name));
   return <div className="border-b border-outline-variant bg-surface px-4 py-2 text-sm">
     <button type="button" className="rounded-full border px-3 py-1 font-medium" onClick={() => setDetail(!detail)}>
-      Printer: {error ? "Stopped" : unresolved.length ? `${unresolved.length} need review` : running ? leader ? "Active" : "Waiting for other tab" : "Off"}
+      Printer: {running
+        ? leader
+          ? stationWarnings.length || unresolved.length
+            ? "Active — needs review"
+            : "Active"
+          : "Waiting for other tab"
+        : error ? "Stopped" : "Off"}
     </button>
     {error && <span role="alert" className="ml-2 text-error">{error}</span>}
+    {running && stationWarnings.map(row => (
+      <p key={row.name} role="alert" className="mt-1 text-error">
+        {row.station_name}: last delivery error — {stationErrors[row.name]}
+      </p>
+    ))}
     {detail && <div className="mt-2 space-y-2">
       <p>Submitted means accepted by the print service, not confirmed on paper. Select an 80mm roll in the printer driver.</p>
       <select aria-label="Printing stations" value={selected} disabled={running} onChange={e => {setSelected(e.target.value); try {localStorage.setItem(`vunapos_print_station:${scope}`, e.target.value);} catch {setError("Station selection could not be saved.");}}}>
@@ -152,6 +197,7 @@ export function KitchenPrintWorker({config, posProfile}: {config: Config; posPro
         if (running) {stop(); return;}
         if (!navigator.locks) {setError("This browser does not support safe single-tab printing. Use a browser with Web Locks."); return;}
         setError("");
+        setStationErrors({});
         void listAvailablePrinters().then(found => {
           if (!config.stations.some(row => ["Printer", "Both"].includes(row.output_mode) && found.includes(row.printer_name) && (!selected || selected === row.name))) throw new Error("No configured station printer is available on this terminal.");
           setPrinters(found); localStorage.setItem(preferenceKey, "1"); setRunning(true);

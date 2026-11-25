@@ -38,9 +38,11 @@ export function subscribeKitchenStation(socket: KitchenSocket, station: string, 
 
   socket.on("doc_update", update);
   socket.on("vunapos_kitchen_ticket_created", update);
+  socket.on("vunapos_kitchen_action_saved", update);
   return () => {
     release();
     socket.off("doc_update", update);
     socket.off("vunapos_kitchen_ticket_created", update);
+    socket.off("vunapos_kitchen_action_saved", update);
   };
 }

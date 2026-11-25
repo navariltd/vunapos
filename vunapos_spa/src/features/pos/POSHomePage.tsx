@@ -258,16 +258,26 @@ export function POSHomePage({
   const customerAddressesCall = useFrappePostCall(vunaMethods.getCustomerAddresses);
   const checkoutLinkOptionsCall = useFrappePostCall(vunaMethods.searchCheckoutLinkOptions);
   const activeCustomerName = activeCustomer?.customer;
+  const [addressContext, setAddressContext] = useState<{
+    customer: string | undefined;
+    posProfile: string | undefined;
+  }>({ customer: undefined, posProfile: undefined });
+
+  // Reset before children render so a new customer/profile never sees stale
+  // addresses or a shipping selection from the previous request.
+  if (
+    addressContext.customer !== activeCustomerName ||
+    addressContext.posProfile !== bootstrap.data?.pos_profile
+  ) {
+    setAddressContext({ customer: activeCustomerName, posProfile: bootstrap.data?.pos_profile });
+    setCustomerAddresses([]);
+    setCustomerAddressesCustomer(null);
+    setShippingAddressName("");
+    setCustomerAddressesLoading(Boolean(activeCustomerName));
+  }
 
   useEffect(() => {
-    if (!activeCustomerName) {
-      setCustomerAddresses([]);
-      setCustomerAddressesCustomer(null);
-      setShippingAddressName("");
-      setCustomerAddressesLoading(false);
-      return;
-    }
-    setCustomerAddressesLoading(true);
+    if (!activeCustomerName) return;
     let cancelled = false;
     void getCustomerAddresses(customerAddressesCall.call, {
       pos_profile: bootstrap.data?.pos_profile,

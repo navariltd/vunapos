@@ -32,6 +32,7 @@ export function createPoller({
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	let running = false;
 	let inFlight: Promise<void> | null = null;
+	let refreshPending = false;
 	let unsubscribe: (() => void) | null = null;
 
 	const clear = () => {
@@ -45,7 +46,10 @@ export function createPoller({
 	};
 
 	const run = (): Promise<void> => {
-		if (inFlight) return inFlight;
+		if (inFlight) {
+			refreshPending = true;
+			return inFlight;
+		}
 		clear();
 		inFlight = Promise.resolve()
 			.then(task)
@@ -55,6 +59,10 @@ export function createPoller({
 			)
 			.finally(() => {
 				inFlight = null;
+				if (refreshPending) {
+					refreshPending = false;
+					return run();
+				}
 				schedule();
 			});
 		return inFlight;
@@ -73,6 +81,7 @@ export function createPoller({
 		},
 		stop() {
 			running = false;
+			refreshPending = false;
 			clear();
 			unsubscribe?.();
 			unsubscribe = null;

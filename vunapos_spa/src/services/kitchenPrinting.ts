@@ -35,6 +35,7 @@ export async function prepareKitchenPrinter(name: string) {
 
 export type KitchenDeliveryApi = {
   claim(): Promise<{name: string; token: string; printer: string} | null>;
+  release(job: {name: string; token: string}): Promise<unknown>;
   dispatch(job: {name: string; token: string}): Promise<{html: string; error?: string}>;
   acknowledge(job: {name: string; token: string}, submitted: boolean, error?: string): Promise<unknown>;
 };
@@ -43,10 +44,30 @@ export async function deliverKitchenJob(api: KitchenDeliveryApi, active: () => b
   const job = await api.claim();
   if (!job) return false;
   const identity = {name: job.name, token: job.token};
+  async function releaseBeforeDispatch() {
+    try {
+      await api.release(identity);
+    } catch {
+      // If release cannot reach the server, lease recovery still applies.
+    }
+  }
+
+  let print: Awaited<ReturnType<typeof prepareKitchenPrinter>>;
+
+  try {
+    print = await prepare(job.printer);
+  } catch (error) {
+    await releaseBeforeDispatch();
+    throw error;
+  }
+
+  if (!active()) {
+    await releaseBeforeDispatch();
+    return false;
+  }
+
   let sending = false;
   try {
-    const print = await prepare(job.printer);
-    if (!active()) return;
     sending = true;
     const payload = await api.dispatch(identity);
     if (payload.error) { sending = false; throw new Error(payload.error); }
@@ -74,4 +95,58 @@ export function escapePrintText(text: string) {
 export async function printTestSlip(name: string, stationLabel: string) {
   const print = await prepareKitchenPrinter(name);
   await print(`<div style="width:68mm;padding:2mm;font-family:monospace"><h2>PRINTER ALIGNMENT TEST</h2><p>${escapePrintText(stationLabel)}</p><p>${escapePrintText(name)}</p><p>80mm roll / 72mm printable area</p><hr><p>TEST ONLY — NOT AN ORDER</p></div>`);
+}
+
+
+/**
+ * Drain independent station queues without letting a delivery error
+ * stop unrelated stations. Server-side delivery states remain authoritative.
+ */
+export function createKitchenStationDrainer(
+  stations: string[],
+  deliver: (station: string) => Promise<boolean | undefined>,
+  onResult: (station: string, error: string | null) => void,
+  now = Date.now,
+) {
+  let cursor = 0;
+  const retryAfter = new Map<string, number>();
+
+  return async function drain(active: () => boolean) {
+    let misses = 0;
+    let delivered = 0;
+
+    while (active() && delivered < 50 && misses < stations.length) {
+      const station = stations[cursor++ % stations.length];
+
+      if ((retryAfter.get(station) ?? 0) > now()) {
+        misses++;
+        continue;
+      }
+
+      try {
+        const printed = await deliver(station);
+
+        if (printed) {
+          misses = 0;
+          delivered++;
+          retryAfter.delete(station);
+          if (active()) onResult(station, null);
+        } else {
+          misses++;
+        }
+      } catch (caught) {
+        misses++;
+        retryAfter.set(station, now() + 15000);
+
+        if (active()) {
+          onResult(
+            station,
+            caught instanceof Error
+              ? caught.message
+              : "Delivery interrupted. Review printing status.",
+          );
+        }
+      }
+    }
+  };
 }

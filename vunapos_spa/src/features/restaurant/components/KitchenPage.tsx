@@ -43,7 +43,9 @@ export function KitchenTicketCard({
   onOpen: () => void;
   onChanged: () => void;
 }) {
-  const minutes = kitchenElapsedMinutes(ticket, now.getTime());
+  const minutes = ["Sent", "Accepted", "Preparing", "Ready"].includes(ticket.status)
+    ? kitchenElapsedMinutes(ticket, now.getTime())
+    : null;
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
@@ -87,13 +89,16 @@ export function KitchenTicketCard({
         </div>
         <p
           className={`mt-2 flex items-center gap-1 text-xs ${
-            minutes >= 20
+            minutes !== null && minutes >= 20
               ? "font-semibold text-error"
               : "text-on-surface-variant"
           }`}
         >
-          <Clock3 className="size-3" aria-hidden="true" />
-          {Number.isFinite(minutes) ? minutes : "—"} min · {ticket.sales_order}
+          {minutes !== null && <>
+            <Clock3 className="size-3" aria-hidden="true" />
+            {Number.isFinite(minutes) ? minutes : "—"} min · {" "}
+          </>}
+          {ticket.sales_order}
         </p>
         {ticket.waiter ? (
           <p className="mt-1 truncate text-xs text-on-surface-variant">

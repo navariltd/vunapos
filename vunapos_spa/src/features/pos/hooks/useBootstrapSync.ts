@@ -102,7 +102,7 @@ export function useBootstrapSync() {
 			window.removeEventListener("focus", refreshOnFocus);
 			document.removeEventListener("visibilitychange", refreshOnVisibility);
 		};
-	}, []);
+	}, [setError, setPhase]);
 
 	return { phase, error, errorCode, retry: () => window.location.reload() };
 }

@@ -4,13 +4,18 @@ from vunapos.services import kitchen_printing as service
 
 
 @frappe.whitelist(methods=["POST"])
-def claim(station: str) -> dict | None:
-	return service.claim(station)
+def claim(station: str, pos_profile: str | None = None) -> dict | None:
+	return service.claim(station, pos_profile)
 
 
 @frappe.whitelist(methods=["POST"])
-def dispatch(name: str, token: str) -> dict:
-	return service.dispatch(name, token)
+def release_claim(name: str, token: str, pos_profile: str | None = None) -> None:
+	service.release_claim(name, token, pos_profile)
+
+
+@frappe.whitelist(methods=["POST"])
+def dispatch(name: str, token: str, pos_profile: str | None = None) -> dict:
+	return service.dispatch(name, token, pos_profile)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -19,8 +24,9 @@ def acknowledge(
 	token: str,
 	submitted: bool | int | str = False,
 	error: str | None = None,
+	pos_profile: str | None = None,
 ) -> dict:
-	return service.acknowledge(name, token, submitted, error)
+	return service.acknowledge(name, token, submitted, error, pos_profile)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -29,8 +35,8 @@ def retry(name: str, reason: str) -> dict:
 
 
 @frappe.whitelist()
-def status(station: str) -> list[dict]:
-	return service.status(station)
+def status(station: str, pos_profile: str | None = None) -> list[dict]:
+	return service.status(station, pos_profile)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -48,13 +54,13 @@ def confirm_delivery(name: str, reason: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def claim_many(stations: str | list[str]) -> dict | None:
-	return service.claim_many(stations)
+def claim_many(stations: str | list[str], pos_profile: str | None = None) -> dict | None:
+	return service.claim_many(stations, pos_profile)
 
 
 @frappe.whitelist()
-def status_many(stations: str | list[str]) -> list[dict]:
-	return service.status_many(stations)
+def status_many(stations: str | list[str], pos_profile: str | None = None) -> list[dict]:
+	return service.status_many(stations, pos_profile)
 
 
 @frappe.whitelist()

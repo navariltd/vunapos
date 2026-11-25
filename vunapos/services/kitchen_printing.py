@@ -13,6 +13,11 @@ from vunapos.services.kitchen_service import STATION, TICKET
 from vunapos.services.restaurant_service import require_restaurant_access
 
 JOB = "Kitchen Print Job"
+PRINT_WORKER_ROLES = {
+	"System Manager",
+	"VunaPOS Restaurant Manager",
+	"VunaPOS Kitchen User",
+}
 PRINT_ACTIONS = (
 	"Cancel Items",
 	"Stop Preparation",
@@ -32,12 +37,45 @@ def writing():
 		frappe.flags.kitchen_print_job_write = old
 
 
-def station_access(name):
+def _cashier_print_profile(pos_profile):
+	from vunapos.services.floor_plan_service import require_restaurant_profile
+
+	if not pos_profile:
+		frappe.throw(
+			_("A POS Profile is required for cashier printing."),
+			frappe.PermissionError,
+		)
+
+	restaurant = require_restaurant_profile(pos_profile)
+	profile = frappe.get_doc("POS Profile", pos_profile)
+
+	if profile.get("disabled") or not profile.get("custom_run_kitchen_print_worker_on_pos"):
+		frappe.throw(
+			_("POS terminal printing is not enabled for this profile."),
+			frappe.PermissionError,
+		)
+
+	return restaurant, profile
+
+
+def station_access(name, pos_profile=None):
 	doc = frappe.get_doc(STATION, name)
 	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
-	if not set(frappe.get_roles()) & {"System Manager", "VunaPOS Restaurant Manager", "VunaPOS Kitchen User"}:
-		frappe.throw(_("Kitchen printing requires kitchen or manager access."), frappe.PermissionError)
+	roles = set(frappe.get_roles())
+
+	if roles & PRINT_WORKER_ROLES:
+		return doc
+
+	if "VunaPOS Cashier" in roles:
+		restaurant, profile = _cashier_print_profile(pos_profile)
+		if doc.restaurant == restaurant and doc.branch == profile.vunapos_branch:
+			return doc
+
+	frappe.throw(
+		_("Kitchen printing is not permitted for this station."),
+		frappe.PermissionError,
+	)
 	return doc
 
 
@@ -51,7 +89,7 @@ def enqueue_action(doc, method=None):
 	if doc.outcome == "Succeeded" and doc.action in PRINT_ACTIONS:
 		frappe.publish_realtime(
 			"vunapos_kitchen_action_saved",
-			{"kitchen_station": doc.kitchen_station, "action": doc.action},
+			{"name": doc.name, "kitchen_station": doc.kitchen_station, "action": doc.action},
 			doctype=STATION,
 			docname=doc.kitchen_station,
 			after_commit=True,
@@ -161,8 +199,8 @@ def recover():
 		_recover_station(station)
 
 
-def claim(station):
-	config = station_access(station)
+def claim(station, pos_profile=None):
+	config = station_access(station, pos_profile)
 	if (
 		not config.enabled
 		or config.get("output_mode") not in ("Printer", "Both")
@@ -196,9 +234,9 @@ def claim(station):
 	return dict(name=doc.name, token=token, printer=doc.printer_name)
 
 
-def _claimed(name, token):
+def _claimed(name, token, pos_profile=None):
 	base = frappe.get_doc(JOB, name)
-	station_access(base.kitchen_station)
+	station_access(base.kitchen_station, pos_profile)
 	frappe.db.get_value(STATION, base.kitchen_station, "name", for_update=True)
 	doc = frappe.get_doc(JOB, name, for_update=True)
 	if (
@@ -210,10 +248,21 @@ def _claimed(name, token):
 	return doc
 
 
-def dispatch(name, token):
+def release_claim(name, token, pos_profile=None):
+	"""Release an owned claim only before dispatch."""
+	doc = _claimed(name, token, pos_profile)
+	if doc.status != "Claimed":
+		frappe.throw(_("Only undispatched claims can be released."))
+
+	doc.claim_token = None
+	doc.lease_until = None
+	_save(doc, "Queued", "Terminal released claim before dispatch.")
+
+
+def dispatch(name, token, pos_profile=None):
 	from vunapos.services.print_service import render_kitchen_ticket
 
-	doc = _claimed(name, token)
+	doc = _claimed(name, token, pos_profile)
 	if doc.status != "Claimed" or get_datetime(doc.lease_until) < now_datetime():
 		frappe.throw(_("Delivery claim expired. Refresh printing status."))
 	try:
@@ -230,10 +279,10 @@ def dispatch(name, token):
 	return payload
 
 
-def acknowledge(name, token, submitted=False, error=None):
+def acknowledge(name, token, submitted=False, error=None, pos_profile=None):
 	from frappe.utils import cint
 
-	doc = _claimed(name, token)
+	doc = _claimed(name, token, pos_profile)
 	if doc.status == "Submitted":
 		return
 	if doc.status != "Sending":
@@ -256,8 +305,8 @@ def retry(name, reason):
 	_save(doc, "Queued", reason)
 
 
-def status(station):
-	station_access(station)
+def status(station, pos_profile=None):
+	station_access(station, pos_profile)
 	return frappe.get_list(
 		JOB,
 		filters={"kitchen_station": station},
@@ -293,22 +342,22 @@ def _normalize_stations(stations):
 	return sorted(set(stations))
 
 
-def claim_many(stations):
+def claim_many(stations, pos_profile=None):
 	names = _normalize_stations(stations)
 	# Validate the whole request before claiming anything. Stable lock order avoids deadlocks.
 	for name in names:
-		station_access(name)
+		station_access(name, pos_profile)
 	for name in names:
-		job = claim(name)
+		job = claim(name, pos_profile)
 		if job:
 			return job
 	return None
 
 
-def status_many(stations):
+def status_many(stations, pos_profile=None):
 	names = _normalize_stations(stations)
 	for name in names:
-		station_access(name)
+		station_access(name, pos_profile)
 	# Fetch unresolved jobs first so recent successful jobs cannot hide a blocked queue.
 	return frappe.get_list(
 		JOB,
@@ -334,7 +383,14 @@ def configuration(pos_profile):
 	profile = frappe.get_doc("POS Profile", pos_profile)
 	require_restaurant_access(restaurant, branch=profile.vunapos_branch)
 	roles = set(frappe.get_roles())
-	can_print = bool(roles & {"System Manager", "VunaPOS Restaurant Manager", "VunaPOS Kitchen User"})
+	can_print = bool(
+		roles & PRINT_WORKER_ROLES
+		or (
+			"VunaPOS Cashier" in roles
+			and not profile.get("disabled")
+			and profile.get("custom_run_kitchen_print_worker_on_pos")
+		)
+	)
 	stations = (
 		frappe.get_list(
 			STATION,

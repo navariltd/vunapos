@@ -12,7 +12,12 @@ class KitchenPrintJob(Document):
 		# Permission-checked station rooms; never broadcast order identifiers site-wide.
 		frappe.publish_realtime(
 			"vunapos_kitchen_print_job_queued",
-			{"kitchen_station": self.kitchen_station, "status": self.status, "ticket_kind": self.ticket_kind},
+			{
+				"name": self.name,
+				"kitchen_station": self.kitchen_station,
+				"status": self.status,
+				"ticket_kind": self.ticket_kind,
+			},
 			doctype="Kitchen Station",
 			docname=self.kitchen_station,
 			after_commit=True,

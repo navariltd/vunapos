@@ -103,6 +103,7 @@ export function useCartActions() {
 			submitCartAction,
 			holdCartAction,
 			restoreHeldInvoiceAction,
+			editDraftInvoiceAction,
 		],
 	);
 }
