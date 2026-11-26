@@ -26,8 +26,8 @@ add_to_apps_screen = [
 	},
 	{
 		"name": "vunapos_setup",
-		"logo": app_logo_url,
-		"title": "VunaPOS Setup",
+		"logo": "/assets/vunapos/workspace_logo.png",
+		"title": "POS Setup",
 		"route": "/desk/vunapos/pos-profile",
 		"has_permission": "vunapos.permissions.has_app_permission",
 	},
