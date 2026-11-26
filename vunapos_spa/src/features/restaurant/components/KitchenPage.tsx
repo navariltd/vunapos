@@ -1,6 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import { FrappeContext, useFrappePostCall } from "frappe-react-sdk";
-import { Clock3, RefreshCw } from "lucide-react";
+import { Clock3, RefreshCw, Volume2, VolumeX } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { getKitchenBoard, vunaMethods } from "../../../services/vunaApi";
@@ -11,23 +11,28 @@ import { subscribeKitchenStation } from "../kitchenRealtime";
 import { KitchenActions } from "./KitchenActions";
 import { KitchenTicketSheet } from "./KitchenTicketSheet";
 import { KitchenDishes } from "./KitchenDishes";
+import { kitchenCardTiming } from "../kitchenTiming";
 import type { KitchenTicketDTO } from "../types";
 import { pendingKitchenTickets } from "../kitchenCommand";
 import { useOrderDraftStore } from "../stores/orderDraftStore";
+import { useKitchenSound } from "../hooks/useKitchenSound";
+import type { SoundPreferences } from "../soundPreferences";
 
 function StationSubscription({
   name,
   refresh,
+  onCreated,
 }: {
   name: string;
   refresh: () => Promise<void>;
+  onCreated: (name: string) => void;
 }) {
   const context = useContext(FrappeContext);
   const socket = context?.socket;
   useEffect(() => {
     if (!socket) return;
-    return subscribeKitchenStation(socket, name, refresh);
-  }, [socket, name, refresh]);
+    return subscribeKitchenStation(socket, name, refresh, onCreated);
+  }, [socket, name, refresh, onCreated]);
   return null;
 }
 
@@ -42,13 +47,7 @@ export function KitchenTicketCard({
   onOpen: () => void;
   onChanged: () => void;
 }) {
-  const minutes = Math.max(
-    0,
-    Math.floor(
-      (now.getTime() - new Date(ticket.sent_at.replace(" ", "T")).getTime()) /
-        60000
-    )
-  );
+  const timing = kitchenCardTiming(ticket, now);
   return (
     <article className="flex flex-col rounded-xl border border-outline-variant bg-surface shadow-sm">
       <header className="border-b border-outline-variant p-4">
@@ -92,13 +91,15 @@ export function KitchenTicketCard({
         </div>
         <p
           className={`mt-2 flex items-center gap-1 text-xs ${
-            minutes >= 20
+            timing.overdue
               ? "font-semibold text-error"
               : "text-on-surface-variant"
           }`}
         >
           <Clock3 className="size-3" aria-hidden="true" />
-          {Number.isFinite(minutes) ? minutes : "—"} min · {ticket.sales_order}
+          <span title="Current stage for the oldest outstanding quantities. See Ticket details for all stage times.">
+            {timing.text} · {ticket.sales_order}
+          </span>
         </p>
         {ticket.waiter ? (
           <p className="mt-1 truncate text-xs text-on-surface-variant">
@@ -125,7 +126,13 @@ export function KitchenTicketCard({
   );
 }
 
-export function KitchenPage({ posProfile }: { posProfile?: string }) {
+export function KitchenPage({
+  posProfile,
+  soundSettings,
+}: {
+  posProfile?: string;
+  soundSettings?: SoundPreferences;
+}) {
   const call = useFrappePostCall(vunaMethods.getKitchenBoard);
   const scope = useOrderDraftStore((state) => state.scope);
   const [station, setStation] = useState("");
@@ -133,6 +140,7 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
   const [start, setStart] = useState(0);
   const [ticket, setTicket] = useState<string | null>(null);
   const now = useNow(15000);
+  const sound = useKitchenSound("newKot", soundSettings);
   const fetcher = useCallback(
     () =>
       getKitchenBoard(call.call, {
@@ -158,16 +166,43 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
     <section className="flex h-full min-h-0 flex-col overflow-y-auto p-4 pb-24 lg:pb-4">
       {(result.data?.stations || [])
         .filter((row) => !station || row.name === station)
-        .slice(0, 20)
         .map((row) => (
           <StationSubscription
             key={row.name}
             name={row.name}
             refresh={result.refresh}
+            onCreated={sound.onCreated}
           />
         ))}
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-semibold">Kitchen</h2>
+        <Button
+          variant="ghost"
+          disabled={sound.busy || !sound.configured}
+          aria-pressed={sound.enabled}
+          title="Sound alerts for new tickets at the stations shown. Keep this kitchen screen open."
+          onClick={() => (sound.enabled ? sound.mute() : void sound.enable())}
+        >
+          {sound.enabled ? (
+            <Volume2 className="mr-2 size-4" aria-hidden="true" />
+          ) : (
+            <VolumeX className="mr-2 size-4" aria-hidden="true" />
+          )}
+          {!sound.configured ? "Sound disabled in settings" : sound.busy
+            ? "Starting sound…"
+            : sound.enabled
+            ? "Mute sound"
+            : "Enable sound"}
+        </Button>
+        {sound.enabled ? (
+          <Button
+            variant="ghost"
+            disabled={sound.busy}
+            onClick={() => void sound.preview()}
+          >
+            Test sound
+          </Button>
+        ) : null}
         {result.data?.can_manage_availability ? (
           <a
             className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-primary hover:bg-surface-container"
@@ -217,6 +252,11 @@ export function KitchenPage({ posProfile }: { posProfile?: string }) {
           <RefreshCw className="size-4" />
         </Button>
       </header>
+      {sound.error ? (
+        <p role="alert" className="mb-3 text-sm text-error">
+          {sound.error}
+        </p>
+      ) : null}
       {result.data?.stations
         .filter(
           (row) => row.ordering_paused && (!station || row.name === station)

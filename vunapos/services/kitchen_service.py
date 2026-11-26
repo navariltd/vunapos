@@ -19,6 +19,21 @@ STATION = "Kitchen Station"
 KITCHEN_EVENT = "vunapos_kitchen_ticket_created"
 
 
+def publish_ticket_created(doc):
+	frappe.publish_realtime(
+		KITCHEN_EVENT,
+		{
+			"name": doc.name,
+			"restaurant_session": doc.restaurant_session,
+			"sales_order": doc.sales_order,
+			"kitchen_station": doc.kitchen_station,
+		},
+		doctype=STATION,
+		docname=doc.kitchen_station,
+		after_commit=True,
+	)
+
+
 def ticket_user_names(tickets):
 	users = {doc.get(field) for doc in tickets for field in ("waiter", "sent_by") if doc.get(field)}
 	if not users:
@@ -502,18 +517,7 @@ def generate_tickets(order, method=None):
 			doc.insert(ignore_permissions=True)
 			doc.submit()
 			created.append(doc.name)
-			frappe.publish_realtime(
-				KITCHEN_EVENT,
-				{
-					"name": doc.name,
-					"restaurant_session": session.name,
-					"sales_order": order.name,
-					"kitchen_station": station,
-				},
-				doctype=STATION,
-				docname=station,
-				after_commit=True,
-			)
+			publish_ticket_created(doc)
 	finally:
 		frappe.flags.vunapos_generating_kot = previous
 	return created
@@ -558,12 +562,15 @@ def get_ticket(name, for_update=False):
 	doc.check_permission("read")
 	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
 	from vunapos.services.kitchen_lifecycle_service import MANAGERS, action_history, can_cancel, capabilities
-	from vunapos.services.kitchen_progress_service import load
+	from vunapos.services.kitchen_progress_service import load, load_events
+	from vunapos.services.kitchen_timing_service import derive as derive_timing
 
-	progress = load([doc], for_update=for_update)[doc.name]
+	events = load_events([doc], for_update=for_update)
+	progress = load([doc], events_by_ticket=events)[doc.name]
 	user_names = ticket_user_names([doc])
 
 	return {
+		"timing": derive_timing(doc.items, doc.sent_at, doc.status, events[doc.name], progress, details=True),
 		"modified": doc.modified,
 		"remake_of": doc.get("remake_of"),
 		"remake_reason": doc.get("remake_reason"),

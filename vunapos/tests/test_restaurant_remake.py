@@ -113,6 +113,22 @@ class TestRestaurantRemake(IntegrationTestCase):
 		stale = self._request(quote=quote)
 		self.assertEqual(stale["errors"][0]["code"], "REMAKE_REVIEW_CHANGED")
 
+	def test_remake_announces_one_new_ticket_after_commit_and_not_on_retry(self):
+		self._source()
+		quote = restaurant.preview_remake(self.ticket)
+		key = str(uuid4())
+		with patch("frappe.publish_realtime") as publish:
+			first = self._request(quote=quote, key=key)
+			second = self._request(quote=quote, key=key)
+		name = self._replacement(first)
+		self.assertEqual(self._replacement(second), name)
+		calls = [call for call in publish.call_args_list if call.args[0] == "vunapos_kitchen_ticket_created"]
+		self.assertEqual(len(calls), 1)
+		self.assertEqual(calls[0].args[1]["name"], name)
+		self.assertEqual(calls[0].kwargs["doctype"], "Kitchen Station")
+		self.assertEqual(calls[0].kwargs["docname"], self.station)
+		self.assertTrue(calls[0].kwargs["after_commit"])
+
 	def test_replacement_can_itself_be_remade_with_auditable_lineage(self):
 		self._source(qty=1)
 		first = self._replacement(self._request())

@@ -121,6 +121,7 @@ export type CachedServiceType = {
 };
 
 export type CachedRestaurantSettings = {
+	sound_settings?: RestaurantSoundSettings;
 	restaurant_name?: string | null;
 	service_types: CachedServiceType[];
 	allow_multiple_orders_per_table: boolean;
@@ -133,6 +134,12 @@ export type CachedRestaurantSettings = {
 };
 
 export type KioskPaymentTiming = "Pay at the counter first" | "Bill at the end";
+
+export type RestaurantSoundSettings = Record<"newKot" | "ready", {
+	enabled: boolean;
+	tone: "chime" | "bell" | "double-beep" | "soft-ding";
+	volume: number;
+}>;
 
 export type CachedProfile = {
 	name: string;

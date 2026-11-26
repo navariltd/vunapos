@@ -137,7 +137,7 @@ def derive(items, status, events):
 	return result
 
 
-def load(tickets, for_update=False):
+def load_events(tickets, for_update=False):
 	"""One batch history read for a KDS page; never one query per dish or action."""
 	names = [doc.name for doc in tickets]
 	if not names:
@@ -145,17 +145,21 @@ def load(tickets, for_update=False):
 	query = frappe.qb.get_query(
 		"Kitchen Ticket Action",
 		filters={"kitchen_ticket": ["in", names], "outcome": "Succeeded"},
-		fields=["kitchen_ticket", "action", "item_quantities"],
+		fields=["kitchen_ticket", "action", "item_quantities", "occurred_at", "to_status"],
 		order_by="creation asc, name asc",
 		ignore_permissions=True,
 		for_update=for_update,
 	)
 	events = query.run(as_dict=True)
+	return {name: [event for event in events if event.kitchen_ticket == name] for name in names}
+
+
+def load(tickets, for_update=False, events_by_ticket=None):
+	events_by_ticket = (
+		load_events(tickets, for_update=for_update) if events_by_ticket is None else events_by_ticket
+	)
 	return {
-		doc.name: derive(
-			doc.get("items"), doc.status, [event for event in events if event.kitchen_ticket == doc.name]
-		)
-		for doc in tickets
+		doc.name: derive(doc.get("items"), doc.status, events_by_ticket.get(doc.name, [])) for doc in tickets
 	}
 
 

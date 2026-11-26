@@ -15,7 +15,7 @@ from frappe.utils import flt, get_datetime, now_datetime
 from vunapos.services import kitchen_lifecycle_service as kitchen
 from vunapos.services import kitchen_progress_service as progress
 from vunapos.services import restaurant_request_service as requests
-from vunapos.services.kitchen_service import TICKET, fail
+from vunapos.services.kitchen_service import TICKET, fail, publish_ticket_created
 
 ACTION = "Request Remake"
 EPS = progress.EPSILON
@@ -374,6 +374,7 @@ def request(ticket, quantities, request_key, fingerprint, reason, disposition):
 	)
 	kitchen._publish(doc)
 	kitchen._publish(replacement)
+	publish_ticket_created(replacement)
 	return kitchen.ticket_detail(doc.name)
 
 

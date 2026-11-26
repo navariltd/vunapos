@@ -6,6 +6,8 @@ import { Sheet } from "../../../components/ui/Sheet";
 import { KitchenActions } from "./KitchenActions";
 import { kitchenStatusClass } from "../kitchenStatus";
 import { KitchenDishes } from "./KitchenDishes";
+import { KitchenTimings } from "./KitchenTimings";
+import { useNow } from "../hooks/useNow";
 
 export function KitchenTicketSheet({
   name,
@@ -15,6 +17,7 @@ export function KitchenTicketSheet({
   onClose: () => void;
 }) {
   const [linkedName, setLinkedName] = useState<string | null>(null);
+  const now = useNow();
   const activeName = linkedName || name;
   const response = useFrappeGetCall<unknown>(
     vunaMethods.getKitchenTicket,
@@ -154,6 +157,7 @@ export function KitchenTicketSheet({
               </p>
             ) : null}
             <KitchenDishes ticket={ticket} details />
+            <KitchenTimings ticket={ticket} now={now} />
             {ticket.actions?.length ? (
               <details className="rounded-md border border-outline-variant p-3">
                 <summary className="cursor-pointer text-sm font-medium">

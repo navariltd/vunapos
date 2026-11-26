@@ -416,6 +416,40 @@ def preview(session, pos_profile=None, loyalty_points=None):
 	}
 
 
+def render_bill(session, pos_profile, fingerprint):
+	"""Render an unpaid bill from placed rounds without saving an invoice or payment."""
+	from vunapos.services.print_service import resolve_print_format
+
+	session = _load(session)
+	session.check_permission("print")
+	profile = _profile(session, pos_profile)
+	if session.status != "Open":
+		fail("SESSION_NOT_OPEN", _("Only an open visit can print an unpaid bill."))
+	require_qr_order_accepted(session)
+	orders = _orders(session)
+	bill = _build(session, profile, orders)
+	if not fingerprint or fingerprint != _review_fingerprint(orders, bill):
+		fail("SESSION_BILL_CHANGED", _("The bill changed. Refresh the bill before printing it."))
+	print_format = resolve_print_format(bill.doctype, profile.get("print_format"))
+	# Give the unsaved snapshot a printable visit reference, not an invoice number.
+	# It remains docstatus 0 and is never inserted or submitted.
+	bill.name = session.name
+	previous = frappe.flags.get("ignore_print_permissions")
+	try:
+		# The session's read/print permissions and profile access were checked
+		# above. Waiters can print this snapshot without invoice permissions.
+		frappe.flags.ignore_print_permissions = True
+		html = frappe.get_print(
+			bill.doctype,
+			doc=bill,
+			print_format=print_format,
+			settings={"allow_print_for_draft": 1},
+		)
+	finally:
+		frappe.flags.ignore_print_permissions = previous
+	return {"html": html, "session": session.name, "fingerprint": fingerprint, "print_format": print_format}
+
+
 def _recover_payments(session, profile, orders):
 	from vunapos.services.restaurant_payment_service import recover
 

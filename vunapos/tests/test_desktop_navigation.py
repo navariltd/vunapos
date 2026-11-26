@@ -16,8 +16,11 @@ class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 	def test_apps_screen_keeps_terminal_and_setup_as_separate_entries(self):
 		entries = {entry["title"]: entry for entry in add_to_apps_screen}
 		self.assertEqual(entries["VunaPOS"]["route"], "/vunapos")
-		self.assertEqual(entries["VunaPOS Setup"]["route"], "/desk/vunapos/pos-profile")
-		self.assertNotEqual(entries["VunaPOS"]["name"], entries["VunaPOS Setup"]["name"])
+		self.assertEqual(entries["POS Setup"]["route"], "/desk/vunapos/pos-profile")
+		self.assertNotEqual(entries["VunaPOS"]["name"], entries["POS Setup"]["name"])
+		self.assertEqual(entries["VunaPOS"]["logo"], "/assets/vunapos/logo.png")
+		self.assertEqual(entries["POS Setup"]["logo"], "/assets/vunapos/workspace_logo.png")
+		self.assertTrue((Path(__file__).resolve().parents[1] / "public" / "workspace_logo.png").is_file())
 		for entry in entries.values():
 			self.assertEqual(entry["has_permission"], "vunapos.permissions.has_app_permission")
 
@@ -26,15 +29,16 @@ class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 
 		entries = {entry["title"]: entry for entry in get_apps() if entry["name"] == "vunapos"}
 		self.assertEqual(entries["VunaPOS"]["route"], "/vunapos")
-		self.assertEqual(entries["VunaPOS Setup"]["route"], "/desk/vunapos/pos-profile")
+		self.assertEqual(entries["POS Setup"]["route"], "/desk/vunapos/pos-profile")
 
 	def test_desktop_grid_fixture_opens_the_existing_sidebar(self):
 		root = Path(__file__).resolve().parents[1]
 		icon = json.loads((root / "desktop_icon" / "vunapos_setup.json").read_text())
 		sidebar = json.loads((root / "vunapos" / "sidebar" / "vunapos" / "vunapos.json").read_text())
-		self.assertEqual(icon["label"], "VunaPOS Setup")
+		self.assertEqual(icon["label"], "POS Setup")
 		self.assertEqual(icon["link"], "/desk/vunapos/pos-profile")
 		self.assertEqual(icon["link_type"], "External")
+		self.assertEqual(icon["logo_url"], "/assets/vunapos/workspace_logo.png")
 		self.assertEqual(sidebar["name"], "VunaPOS")
 		self.assertTrue(any(row.get("link_to") == "POS Profile" for row in sidebar["items"]))
 		# Restaurant navigation can live in its own sidebar; this launcher opens POS setup.
@@ -48,8 +52,9 @@ class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 		add_setup_app_entry(boot)
 		setup = [row for row in boot.app_data if row.get("app_name") == "vunapos_setup"]
 		self.assertEqual(len(setup), 1)
-		self.assertEqual(setup[0]["app_title"], "VunaPOS Setup")
+		self.assertEqual(setup[0]["app_title"], "POS Setup")
 		self.assertEqual(setup[0]["app_route"], "/desk/vunapos/pos-profile")
+		self.assertEqual(setup[0]["app_logo_url"], "/assets/vunapos/workspace_logo.png")
 		terminal = next(row for row in boot.app_data if row.get("app_name") == "vunapos")
 		self.assertEqual(terminal["app_route"], "/vunapos")
 
@@ -83,7 +88,9 @@ class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 			patch("frappe.cache.delete_key"),
 		):
 			execute()
-			self.assertEqual(get_all.call_args.kwargs["filters"]["label"], ["!=", "VunaPOS Setup"])
+			self.assertEqual(
+				get_all.call_args.kwargs["filters"]["label"], ["not in", ["VunaPOS Setup", "POS Setup"]]
+			)
 			set_value.assert_called_once_with(
 				"Desktop Icon",
 				"VunaPOS",

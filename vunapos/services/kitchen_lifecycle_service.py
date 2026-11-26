@@ -145,7 +145,7 @@ def _record(
 	old = frappe.flags.get("vunapos_recording_kitchen_action")
 	try:
 		frappe.flags.vunapos_recording_kitchen_action = True
-		frappe.get_doc(
+		return frappe.get_doc(
 			{
 				"doctype": ACTION,
 				"kitchen_ticket": doc.name,
@@ -178,6 +178,43 @@ def _record(
 		).insert(ignore_permissions=True)
 	finally:
 		frappe.flags.vunapos_recording_kitchen_action = old
+
+
+def _notify_waiter_ready(doc, event, quantities):
+	"""Use the visit's current waiter, not the ticket's historical assignment."""
+	session = frappe.get_doc("Restaurant Session", doc.restaurant_session)
+	waiter = session.waiter
+	if not waiter or not frappe.get_cached_value("User", waiter, "enabled"):
+		return
+	profiles = frappe.get_all(
+		"POS Profile",
+		filters={"vunapos_restaurant": doc.restaurant, "vunapos_branch": doc.branch, "disabled": 0},
+		pluck="name",
+	)
+	if not profiles or not frappe.db.exists("POS Profile User", {"parent": ["in", profiles], "user": waiter}):
+		return
+	if not session.has_permission("read", user=waiter):
+		return
+	labels = [
+		frappe.get_cached_value("Restaurant Table", row.table, "table_label") or row.table
+		for row in session.tables
+		if not row.released_at
+	]
+	frappe.publish_realtime(
+		"vunapos_kitchen_ready",
+		{
+			"event_id": event.name,
+			"waiter": waiter,
+			"ticket": doc.name,
+			"session": session.name,
+			"sales_order": doc.sales_order,
+			"station_label": doc.station_label,
+			"table_labels": ", ".join(labels),
+			"ready_qty": sum(quantities.values()),
+		},
+		user=waiter,
+		after_commit=True,
+	)
 
 
 def _publish(doc):
@@ -525,7 +562,7 @@ def _apply_transition(
 		progress[line][field] = total
 	target = progress_service.status_for(doc.items, progress)
 	doc.db_set("status", target)
-	_record(
+	event = _record(
 		doc,
 		action,
 		key,
@@ -535,6 +572,8 @@ def _apply_transition(
 		quantities={"deltas": quantities, "before": before},
 		request_fingerprint=request_fingerprint,
 	)
+	if action == "Ready":
+		_notify_waiter_ready(doc, event, quantities)
 
 
 def complete_for_billing(ticket, profile, kiosk=False):
@@ -819,13 +858,18 @@ def list_board(pos_profile, station=None, history=False, start=0):
 			and row.status not in ("Served", "Completed", "Cancelled")
 			and not row.production_completed_at_billing
 		)
-	from vunapos.services.kitchen_progress_service import load
+	from vunapos.services.kitchen_progress_service import load, load_events
+	from vunapos.services.kitchen_timing_service import derive as derive_timing
 
-	progress = load(rows)
+	events = load_events(rows)
+	progress = load(rows, events_by_ticket=events)
 	from vunapos.services.kitchen_service import ticket_user_names
 
 	user_names = ticket_user_names(rows)
 	for row in rows:
+		row.timing = derive_timing(
+			row.get("items"), row.sent_at, row.status, events[row.name], progress[row.name]
+		)
 		row.waiter_name = user_names.get(row.waiter) or row.waiter
 		row.sent_by_name = user_names.get(row.sent_by) or row.sent_by
 		for item in row.get("items"):

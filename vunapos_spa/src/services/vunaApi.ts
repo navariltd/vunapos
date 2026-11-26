@@ -154,6 +154,7 @@ export const vunaMethods = {
 	createSessionRound: "vunapos.api.restaurant.create_session_round",
 	recoverSessionRound: "vunapos.api.restaurant.recover_session_round",
 	previewSessionBill: "vunapos.api.restaurant.preview_session_bill",
+	renderSessionBill: "vunapos.api.restaurant.render_session_bill",
 	checkoutSession: "vunapos.api.restaurant.checkout_session",
 	recordWalkout: "vunapos.api.restaurant.record_walkout",
 	saveFloorPlan: "vunapos.api.restaurant.save_floor_plan",
@@ -736,6 +737,10 @@ export function cancelEmptyRestaurantSession(call: FrappeCall, session: string) 
 
 export function previewSessionBill(call: FrappeCall, params: { session: string; pos_profile: string; loyalty_points?: number }) {
   return callAndUnwrap<import("../features/restaurant/types").SessionBillDTO>(call, params);
+}
+
+export function renderSessionBill(call: FrappeCall, params: { session: string; pos_profile: string; fingerprint: string }) {
+  return callAndUnwrap<{ html: string; session: string; fingerprint: string }>(call, params);
 }
 
 export function checkoutSession(call: FrappeCall, params: {

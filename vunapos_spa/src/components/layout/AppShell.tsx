@@ -5,6 +5,7 @@ import { BottomNav, Sidebar } from "./Sidebar";
 import type { NavFeatureFlags, PosMode } from "./Sidebar";
 
 type AppShellProps = {
+  headerActions?: ReactNode;
   allowOrderTypeChange?: boolean;
   children: ReactNode;
   cashier?: string;
@@ -22,6 +23,7 @@ type AppShellProps = {
 };
 
 export function AppShell({
+  headerActions,
   allowOrderTypeChange,
   cashier,
   children,
@@ -39,6 +41,7 @@ export function AppShell({
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-surface text-on-background">
       <Header
+        actions={headerActions}
         allowOrderTypeChange={allowOrderTypeChange}
         orderType={orderType}
         onOrderTypeChange={onOrderTypeChange}
