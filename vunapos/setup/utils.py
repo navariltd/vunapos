@@ -263,7 +263,7 @@ def ensure_vunapos_custom_fields():
 				"fieldname": "vunapos_kiosk_section",
 				"label": "Kiosk",
 				"fieldtype": "Section Break",
-				"insert_after": "vunapos_cancellation_charge_item",
+				"insert_after": "vunapos_ready_sound_volume",
 				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
 			},
 			{
@@ -1116,7 +1116,12 @@ def ensure_vunapos_custom_fields():
 			"description": "Extras linked to ERPNext Items, priced using the transaction's selling price list. These choices are optional and apply per main selling unit.",
 		},
 	]
+	from vunapos.services.restaurant_sound_settings import ensure_sound_defaults, sound_custom_fields
+
+	custom_fields["POS Settings"].extend(sound_custom_fields())
+	custom_fields["POS Profile"].extend(sound_custom_fields(profile=True))
 	create_custom_fields(custom_fields, ignore_validate=True)
+	ensure_sound_defaults()
 	from vunapos.services.restaurant_service import backfill_branch_companies
 
 	backfill_branch_companies()

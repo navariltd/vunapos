@@ -213,7 +213,10 @@ doc_events = {
 	)
 }
 doc_events["POS Settings"] = {
-	"validate": "vunapos.services.checkout_field_service.validate_global_checkout_fields",
+	"validate": [
+		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
+		"vunapos.services.restaurant_sound_settings.validate_sound_settings",
+	],
 	"on_update": "vunapos.realtime.publish_configuration_change",
 	"on_trash": "vunapos.realtime.publish_configuration_change",
 }
@@ -221,6 +224,7 @@ doc_events["POS Profile"] = {
 	"validate": [
 		"vunapos.services.checkout_field_service.validate_global_checkout_fields",
 		"vunapos.services.restaurant_service.validate_profile_restaurant",
+		"vunapos.services.restaurant_sound_settings.validate_sound_settings",
 		"vunapos.services.customer_service.validate_profile_customer_defaults",
 		"vunapos.services.pin_service.name_new_pin_rows",
 	],
