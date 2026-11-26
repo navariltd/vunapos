@@ -19,6 +19,21 @@ STATION = "Kitchen Station"
 KITCHEN_EVENT = "vunapos_kitchen_ticket_created"
 
 
+def publish_ticket_created(doc):
+	frappe.publish_realtime(
+		KITCHEN_EVENT,
+		{
+			"name": doc.name,
+			"restaurant_session": doc.restaurant_session,
+			"sales_order": doc.sales_order,
+			"kitchen_station": doc.kitchen_station,
+		},
+		doctype=STATION,
+		docname=doc.kitchen_station,
+		after_commit=True,
+	)
+
+
 def ticket_user_names(tickets):
 	users = {doc.get(field) for doc in tickets for field in ("waiter", "sent_by") if doc.get(field)}
 	if not users:
@@ -502,18 +517,7 @@ def generate_tickets(order, method=None):
 			doc.insert(ignore_permissions=True)
 			doc.submit()
 			created.append(doc.name)
-			frappe.publish_realtime(
-				KITCHEN_EVENT,
-				{
-					"name": doc.name,
-					"restaurant_session": session.name,
-					"sales_order": order.name,
-					"kitchen_station": station,
-				},
-				doctype=STATION,
-				docname=station,
-				after_commit=True,
-			)
+			publish_ticket_created(doc)
 	finally:
 		frappe.flags.vunapos_generating_kot = previous
 	return created

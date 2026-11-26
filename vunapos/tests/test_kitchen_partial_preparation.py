@@ -64,6 +64,58 @@ class TestPartialPreparation(IntegrationTestCase):
 		self.assertEqual(final["status"], "Served")
 		self.assertEqual(frappe.db.get_value("Work Order", line["work_order"], "produced_qty"), 4)
 
+	def test_ready_alert_targets_current_waiter_once_per_successful_partial_action(self):
+		from vunapos.tests.helpers import ensure_test_user
+
+		ticket = self._placed()
+		self._ok(ticket, "Accept")
+		self._ok(ticket, "Start")
+		waiter = f"ready-waiter-{self.token}@example.com"
+		ensure_test_user(waiter, roles=("VunaPOS Waiter",), pos_profile=self.profile.name)
+		frappe.db.set_value("Restaurant Session", self.session, "waiter", waiter)
+		snapshot = restaurant.get_kitchen_ticket(ticket)["data"]
+		key = str(uuid4())
+		with patch("frappe.publish_realtime") as publish:
+			first = self._act(ticket, "Ready", {"main": 1}, key, snapshot)
+			retry = self._act(ticket, "Ready", {"main": 1}, key, snapshot)
+			self.assertTrue(first["ok"], first)
+			self.assertTrue(retry["ok"], retry)
+			self.assertEqual(first["data"]["status"], "Preparing")
+			self._ok(ticket, "Ready", {"main": 3})
+		calls = [call for call in publish.call_args_list if call.args[0] == "vunapos_kitchen_ready"]
+		self.assertEqual(len(calls), 2)
+		self.assertNotEqual(calls[0].args[1]["event_id"], calls[1].args[1]["event_id"])
+		for call, qty in zip(calls, (1, 3), strict=True):
+			self.assertEqual(call.kwargs, {"user": waiter, "after_commit": True})
+			self.assertEqual(call.args[1]["waiter"], waiter)
+			self.assertEqual(call.args[1]["ticket"], ticket)
+			self.assertEqual(call.args[1]["session"], self.session)
+			self.assertEqual(call.args[1]["ready_qty"], qty)
+			self.assertTrue(frappe.db.exists("Kitchen Ticket Action", call.args[1]["event_id"]))
+
+	def test_non_ready_and_failed_actions_do_not_send_waiter_alerts(self):
+		ticket = self._placed()
+		with patch("frappe.publish_realtime") as publish:
+			self._ok(ticket, "Accept")
+			self._ok(ticket, "Start")
+			with patch.object(kitchen, "_produce", side_effect=frappe.ValidationError("Production failed")):
+				response = self._act(ticket, "Ready", {"main": 1})
+				self.assertFalse(response["ok"], response)
+		self.assertFalse(any(call.args[0] == "vunapos_kitchen_ready" for call in publish.call_args_list))
+
+	def test_ready_does_not_notify_a_waiter_without_restaurant_assignment(self):
+		from vunapos.tests.helpers import ensure_test_user
+
+		ticket = self._placed()
+		self._ok(ticket, "Accept")
+		self._ok(ticket, "Start")
+		waiter = f"ready-outsider-{self.token}@example.com"
+		ensure_test_user(waiter, roles=("VunaPOS Waiter",))
+		frappe.db.set_value("Restaurant Session", self.session, "waiter", waiter)
+		with patch("frappe.publish_realtime") as publish:
+			self._ok(ticket, "Ready")
+		self.assertFalse(any(call.args[0] == "vunapos_kitchen_ready" for call in publish.call_args_list))
+
 	def test_addons_follow_the_parent_completion_ratio(self):
 		from vunapos.services import kitchen_progress_service as progress
 
