@@ -2,6 +2,33 @@ import { describe, expect, it, vi } from "vitest";
 import { createKitchenAudioEventHandlers } from "../kitchenAudioEvents";
 
 describe("kitchen audio events", () => {
+  it("identifies correction and failure alerts for the shared sound engine", () => {
+    const play = vi.fn();
+    const handlers = createKitchenAudioEventHandlers(["Kitchen"], play);
+    const event = {
+      name: "ACTION-1",
+      kitchen_station: "Kitchen",
+      action: "Update preparation notes",
+    };
+    handlers.action(event);
+    handlers.action(event);
+    expect(play).toHaveBeenCalledExactlyOnceWith("alert", "action:ACTION-1");
+    handlers.printJob({
+      name: "JOB-1",
+      kitchen_station: "Kitchen",
+      status: "Failed",
+    });
+    handlers.printJob({
+      name: "JOB-1",
+      kitchen_station: "Kitchen",
+      status: "Failed",
+    });
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenLastCalledWith(
+      "alert",
+      expect.stringContaining("print:JOB-1:Failed:")
+    );
+  });
   it("plays arrival sound once per ticket", () => {
     const play = vi.fn();
     const handlers = createKitchenAudioEventHandlers(["Kitchen"], play);
@@ -15,7 +42,7 @@ describe("kitchen audio events", () => {
     handlers.arrival(event);
 
     expect(play).toHaveBeenCalledTimes(1);
-    expect(play).toHaveBeenCalledWith("new");
+    expect(play).toHaveBeenCalledWith("new", "KOT-001");
   });
 
   it("ignores arrivals from unrelated stations", () => {
@@ -45,7 +72,7 @@ describe("kitchen audio events", () => {
     handlers.printJob({ ...event, status: "Uncertain" });
 
     expect(play).toHaveBeenCalledTimes(1);
-    expect(play).toHaveBeenCalledWith("alert");
+    expect(play).toHaveBeenCalledWith("alert", expect.any(String));
   });
 
   it("alerts again if a retried job becomes uncertain", () => {
@@ -98,8 +125,8 @@ describe("kitchen audio events", () => {
     });
 
     expect(play).toHaveBeenCalledTimes(2);
-    expect(play).toHaveBeenNthCalledWith(1, "alert");
-    expect(play).toHaveBeenNthCalledWith(2, "alert");
+    expect(play).toHaveBeenNthCalledWith(1, "alert", expect.any(String));
+    expect(play).toHaveBeenNthCalledWith(2, "alert", expect.any(String));
   });
 
   it("ignores cancellation actions from unrelated stations", () => {

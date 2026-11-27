@@ -8,11 +8,12 @@ type SheetProps = {
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
+  size?: "default" | "wide";
 };
 
 // A bottom sheet on phones and a centred dialog on larger screens. Escape, the
 // backdrop and the close button dismiss it.
-export function Sheet({ isOpen, title, description, children, footer, onClose }: SheetProps) {
+export function Sheet({ isOpen, title, description, children, footer, onClose, size = "default" }: SheetProps) {
   const titleId = useId();
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -36,7 +37,7 @@ export function Sheet({ isOpen, title, description, children, footer, onClose }:
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[85dvh] w-full min-w-0 flex-col rounded-t-xl border border-outline-variant bg-surface shadow-xl sm:max-w-lg sm:rounded-xl"
+        className={`flex max-h-[85dvh] w-full min-w-0 flex-col rounded-t-xl border border-outline-variant bg-surface shadow-xl sm:rounded-xl ${size === "wide" ? "sm:max-w-4xl" : "sm:max-w-lg"}`}
       >
         <div className="flex items-start gap-3 border-b border-outline-variant px-4 py-3">
           <div className="min-w-0 flex-1">

@@ -10,6 +10,8 @@ import {
   subscribeSoundActivation,
 } from "../soundActivation";
 
+export type KitchenSoundControl = ReturnType<typeof useKitchenSound>;
+
 export function useKitchenSound(
   kind: SoundAlertKind = "newKot",
   settings?: SoundPreferences

@@ -12,20 +12,19 @@ const CANCELLATION_ACTIONS = new Set([
   "Stop Preparation",
   "Cancel Order",
   "Cancel Remake",
+  "Update preparation notes",
 ]);
 
 const MAX_TRACKED_EVENTS = 500;
 
 function asEvent(value: unknown): KitchenAudioEvent | null {
   return value !== null && typeof value === "object"
-    ? value as KitchenAudioEvent
+    ? (value as KitchenAudioEvent)
     : null;
 }
 
 function field(value: unknown): string | null {
-  return typeof value === "string" && value.trim()
-    ? value.trim()
-    : null;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function trimOldest<K, V>(map: Map<K, V>) {
@@ -43,12 +42,13 @@ function rememberOnce(seen: Map<string, true>, key: string): boolean {
 
 export function createKitchenAudioEventHandlers(
   stations: readonly string[],
-  play: (tone: KitchenAudioTone) => void,
+  play: (tone: KitchenAudioTone, eventId: string) => void
 ) {
   const allowedStations = new Set(stations);
   const seenTickets = new Map<string, true>();
   const seenActions = new Map<string, true>();
   const printJobStatuses = new Map<string, string>();
+  let sequence = 0;
 
   function belongsToStation(event: KitchenAudioEvent) {
     const station = field(event.kitchen_station);
@@ -64,7 +64,7 @@ export function createKitchenAudioEventHandlers(
     // Older backend events without an identifier retain their old behaviour.
     if (ticket && !rememberOnce(seenTickets, ticket)) return;
 
-    play("new");
+    play("new", ticket || `legacy-ticket:${sequence++}`);
   }
 
   function printJob(value: unknown) {
@@ -78,7 +78,8 @@ export function createKitchenAudioEventHandlers(
 
     // Backward compatibility with older event payloads.
     if (!job) {
-      if (status === "Uncertain") play("alert");
+      if (status === "Uncertain" || status === "Failed")
+        play("alert", `legacy-print:${sequence++}`);
       return;
     }
 
@@ -89,8 +90,11 @@ export function createKitchenAudioEventHandlers(
     printJobStatuses.set(job, status);
     trimOldest(printJobStatuses);
 
-    if (status === "Uncertain" && previousStatus !== "Uncertain") {
-      play("alert");
+    if (
+      (status === "Uncertain" || status === "Failed") &&
+      previousStatus !== status
+    ) {
+      play("alert", `print:${job}:${status}:${sequence++}`);
     }
   }
 
@@ -105,7 +109,10 @@ export function createKitchenAudioEventHandlers(
 
     if (eventName && !rememberOnce(seenActions, eventName)) return;
 
-    play("alert");
+    play(
+      "alert",
+      eventName ? `action:${eventName}` : `legacy-action:${sequence++}`
+    );
   }
 
   return { arrival, printJob, action };

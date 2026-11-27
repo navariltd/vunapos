@@ -1,5 +1,6 @@
 import { KitchenPrinting } from "./components/KitchenPrinting";
-import { useEffect } from "react";
+import { useKitchenSound } from "./hooks/useKitchenSound";
+import { useEffect, useState } from "react";
 
 import { AppShell } from "../../components/layout/AppShell";
 import {
@@ -56,6 +57,8 @@ export function RestaurantApp() {
 
 function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
   const bootstrap = useBootstrapData();
+  const [printerToolbar, setPrinterToolbar] = useState<HTMLDivElement | null>(null);
+  const kitchenSound = useKitchenSound("newKot", bootstrap.data?.restaurant?.sound_settings);
   const user = bootstrap.data?.current_user;
   const profile = bootstrap.data?.pos_profile;
   const scope = useOrderDraftStore((state) => state.scope);
@@ -112,7 +115,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
           ) : undefined
         }
         mode="Restaurant"
-        kitchenPrintWorker={posProfile && <KitchenPrinting user={user} posProfile={posProfile} kitchenPage={activePage === "Kitchen"} />}
+        kitchenPrintWorker={posProfile && <KitchenPrinting user={user} posProfile={posProfile} kitchenPage={activePage === "Kitchen"} sound={kitchenSound} toolbarTarget={printerToolbar} />}
         cashier={bootstrap.data?.current_user}
         features={features}
         posProfile={posProfile}
@@ -157,7 +160,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
         ) : activePage === "Orders" ? (
           <OrdersPage posProfile={posProfile} />
         ) : activePage === "Kitchen" ? (
-          <KitchenPage posProfile={posProfile} soundSettings={bootstrap.data?.restaurant?.sound_settings} />
+          <KitchenPage posProfile={posProfile} sound={kitchenSound} printerControlsRef={setPrinterToolbar} />
         ) : activePage === "Order" && getOrderFromPath(currentPath) ? (
           <OrderScreen posProfile={posProfile} />
         ) : activePage === "Order" || activePage === "Home" ? (

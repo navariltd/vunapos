@@ -1,4 +1,5 @@
 import { AllDaySummary } from "./AllDaySummary";
+import { KitchenOptions } from "./KitchenOptions";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { FrappeContext, useFrappePostCall } from "frappe-react-sdk";
 import { Clock3, RefreshCw, Volume2, VolumeX } from "lucide-react";
@@ -129,9 +130,11 @@ export function KitchenTicketCard({
 export function KitchenPage({
   posProfile,
   sound,
+  printerControlsRef,
 }: {
   posProfile?: string;
   sound: KitchenSoundControl;
+  printerControlsRef?: (node: HTMLDivElement | null) => void;
 }) {
   const call = useFrappePostCall(vunaMethods.getKitchenBoard);
   const scope = useOrderDraftStore((state) => state.scope);
@@ -175,43 +178,22 @@ export function KitchenPage({
         ))}
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-semibold">Kitchen</h2>
+        {history && <span className="text-xs text-on-surface-variant">Completed included</span>}
+        <div ref={printerControlsRef} className="contents" />
         <Button
           variant="ghost"
           disabled={sound.busy || !sound.configured}
           aria-pressed={sound.enabled}
-          title="Sound alerts for new tickets at the stations shown. Keep this kitchen screen open."
+          aria-label={!sound.configured ? "Kitchen sound disabled in settings" : sound.busy ? "Starting kitchen sound" : sound.enabled ? "Mute kitchen sound" : "Enable kitchen sound"}
+          title={!sound.configured ? "Sound disabled in POS Settings" : sound.enabled ? "Mute kitchen sound" : "Enable kitchen sound"}
           onClick={() => (sound.enabled ? sound.mute() : void sound.enable())}
         >
           {sound.enabled ? (
-            <Volume2 className="mr-2 size-4" aria-hidden="true" />
+            <Volume2 className="size-4" aria-hidden="true" />
           ) : (
-            <VolumeX className="mr-2 size-4" aria-hidden="true" />
+            <VolumeX className="size-4" aria-hidden="true" />
           )}
-          {!sound.configured ? "Sound disabled in settings" : sound.busy
-            ? "Starting sound…"
-            : sound.enabled
-            ? "Mute sound"
-            : "Enable sound"}
         </Button>
-        {sound.enabled ? (
-          <Button
-            variant="ghost"
-            disabled={sound.busy}
-            onClick={() => void sound.preview()}
-          >
-            Test sound
-          </Button>
-        ) : null}
-        {result.data?.can_manage_availability ? (
-          <a
-            className="inline-flex min-h-10 items-center rounded-md px-3 text-sm font-medium text-primary hover:bg-surface-container"
-            href="/desk/restaurant-availability"
-            target="_blank"
-            rel="noreferrer"
-          >
-            Ordering availability
-          </a>
-        ) : null}
         <label className="text-sm">
           <span className="sr-only">Kitchen station</span>
           <select
@@ -232,17 +214,8 @@ export function KitchenPage({
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={history}
-            onChange={(event) => {
-              setHistory(event.target.checked);
-              setStart(0);
-            }}
-          />
-          Include completed
-        </label>
+        {posProfile && <AllDaySummary posProfile={posProfile} station={station} revision={result.data?.server_now} />}
+        <KitchenOptions sound={sound} history={history} canManageAvailability={Boolean(result.data?.can_manage_availability)} onHistoryChange={value => { setHistory(value); setStart(0); }} />
         <Button
           variant="ghost"
           onClick={() => void result.refresh()}
@@ -278,10 +251,6 @@ export function KitchenPage({
             </p>
           </div>
         ))}
-      <p className="mb-3 text-xs text-on-surface-variant">
-        Mark meals ready as they finish, then mark them served as they leave the
-        kitchen.
-      </p>
       {recoveryError ? (
         <p role="alert" className="mb-3 text-sm text-error">
           Kitchen recovery storage could not be read. Check browser storage
@@ -316,7 +285,6 @@ export function KitchenPage({
           {result.error}
         </p>
       ) : null}
-      {posProfile && <AllDaySummary posProfile={posProfile} station={station} revision={result.data?.server_now} />}
       {!result.data && result.isLoading ? (
         <EmptyState
           title="Loading kitchen"
