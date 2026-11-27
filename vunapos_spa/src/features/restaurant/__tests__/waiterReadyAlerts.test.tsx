@@ -17,15 +17,15 @@ describe("waiter ready sound control", () => {
       />
     );
     expect(html).toContain("Ready sound disabled in settings");
-    expect(html).toContain('disabled=""');
+    expect(html).not.toContain("<button");
   });
-  it("starts muted with a labelled, keyboard-accessible control", () => {
+  it("shows activation status without a staff mute or enable control", () => {
     const html = renderToStaticMarkup(
       <WaiterReadyAlerts user="waiter@example.com" />
     );
-    expect(html).toContain('aria-label="Enable ready alerts"');
-    expect(html).toContain('aria-pressed="false"');
-    expect(html).toContain("Ready alerts off");
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("<button");
+    expect(html).toContain("Tap anywhere to activate ready alerts");
     expect(html).not.toContain('role="alert"');
   });
 });

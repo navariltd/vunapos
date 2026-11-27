@@ -108,12 +108,47 @@ export function KitchenPrintWorker({
   toolbarTarget?: HTMLElement | null;
 }) {
   const scope = `${config.user}:${posProfile}`;
-  const preferenceKey = `vunapos_autoprint_enabled:${scope}`;
-  const [running, setRunning] = useState(() => preference(preferenceKey));
+  const terminalScope = `terminal:${posProfile}`;
+  const preferenceKey = `vunapos_autoprint_enabled:${terminalScope}`;
+  const [running, setRunning] = useState(() => {
+    // Preserve a manager's existing opt-in when upgrading this terminal.
+    if (
+      config.can_manage &&
+      !stored(preferenceKey) &&
+      preference(`vunapos_autoprint_enabled:${scope}`)
+    ) {
+      try {
+        localStorage.setItem(preferenceKey, "1");
+        localStorage.setItem(
+          `vunapos_print_station:${terminalScope}`,
+          stored(`vunapos_print_station:${scope}`)
+        );
+      } catch {
+        /* Storage may be unavailable on a restricted terminal. */
+      }
+    }
+    return preference(preferenceKey);
+  });
   const [printers, setPrinters] = useState<string[]>([]);
   const [selected, setSelected] = useState(() =>
-    stored(`vunapos_print_station:${scope}`)
+    stored(`vunapos_print_station:${terminalScope}`)
   );
+  useEffect(() => {
+    const sync = (event: StorageEvent) => {
+      if (event.storageArea !== localStorage) return;
+      if (event.key === preferenceKey || event.key === null) {
+        setRunning(preference(preferenceKey));
+      }
+      if (
+        event.key === `vunapos_print_station:${terminalScope}` ||
+        event.key === null
+      ) {
+        setSelected(stored(`vunapos_print_station:${terminalScope}`));
+      }
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
+  }, [preferenceKey, terminalScope]);
   const [error, setError] = useState("");
   const [stationErrors, setStationErrors] = useState<Record<string, string>>(
     {}
@@ -127,7 +162,7 @@ export function KitchenPrintWorker({
   const [connecting, setConnecting] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const socket = useContext(FrappeContext)?.socket;
-  const leader = usePrintLeaderLock(scope, running);
+  const leader = usePrintLeaderLock(terminalScope, running);
   // The KDS owns its station-scoped alerts. Never play the same event in both places.
   const audioLeader = usePrintLeaderLock(
     `audio:${scope}`,
@@ -188,7 +223,7 @@ export function KitchenPrintWorker({
     setError(message);
     setStationErrors({});
     try {
-      localStorage.removeItem(preferenceKey);
+      localStorage.setItem(preferenceKey, "0");
     } catch {
       /* Session state still stops the worker. */
     }
@@ -216,11 +251,8 @@ export function KitchenPrintWorker({
         if (!cancelled) {
           setRunning(false);
           setError(caught.message);
-          try {
-            localStorage.removeItem(preferenceKey);
-          } catch {
-            /* No persisted opt-in available. */
-          }
+          // Keep the manager's opt-in: a temporary connection failure must not
+          // require a manager to set up this terminal again after refresh.
         }
       });
     return () => {
@@ -368,6 +400,7 @@ export function KitchenPrintWorker({
     error || stationWarnings.length || unresolved.length || result.error
   );
   async function togglePrinting() {
+    if (!config.can_manage) return;
     if (running) {
       stop();
       return;
@@ -419,16 +452,31 @@ export function KitchenPrintWorker({
       }
     >
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          variant="ghost"
-          onClick={() => setDetail(true)}
-          aria-label="Manage printer"
-          title="Manage kitchen printer"
-        >
-          <Printer className="mr-2 size-4" aria-hidden="true" />
-          <span role="status">
+        {config.can_manage ? (
+          <Button
+            variant="ghost"
+            onClick={() => setDetail(true)}
+            aria-label="Manage printer"
+            title="Manage kitchen printer"
+          >
+            <Printer className="mr-2 size-4" aria-hidden="true" />
+            <span role="status">
+              Printer:{" "}
+              {connecting
+                ? "Connecting…"
+                : running
+                ? leader
+                  ? "On"
+                  : "Another tab"
+                : "Off"}
+            </span>
+          </Button>
+        ) : (
+          <span role="status" className="text-on-surface-variant">
             Printer:{" "}
-            {connecting
+            {error || needsReview
+              ? "Needs attention — contact a manager"
+              : connecting
               ? "Connecting…"
               : running
               ? leader
@@ -436,8 +484,8 @@ export function KitchenPrintWorker({
                 : "Another tab"
               : "Off"}
           </span>
-        </Button>
-        {needsReview && (
+        )}
+        {needsReview && config.can_manage && (
           <button
             type="button"
             onClick={() => setDetail(true)}
@@ -451,7 +499,7 @@ export function KitchenPrintWorker({
         )}
       </div>
       <Sheet
-        isOpen={detail}
+        isOpen={detail && config.can_manage}
         onClose={() => setDetail(false)}
         title="Kitchen printer"
         description="Set up printing for this terminal."
@@ -492,7 +540,7 @@ export function KitchenPrintWorker({
                 setSelected(e.target.value);
                 try {
                   localStorage.setItem(
-                    `vunapos_print_station:${scope}`,
+                    `vunapos_print_station:${terminalScope}`,
                     e.target.value
                   );
                 } catch {
@@ -534,20 +582,6 @@ export function KitchenPrintWorker({
           )}
           {!kitchenPage && (
             <>
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={!sound.configured || sound.busy}
-                onClick={() =>
-                  sound.enabled ? sound.mute() : void sound.enable()
-                }
-              >
-                {!sound.configured
-                  ? "Sound disabled in settings"
-                  : sound.enabled
-                  ? "Mute alerts"
-                  : "Enable sound"}
-              </Button>
               {sound.enabled && (
                 <Button
                   size="sm"

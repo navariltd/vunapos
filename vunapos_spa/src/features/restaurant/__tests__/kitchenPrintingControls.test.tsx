@@ -30,6 +30,7 @@ const config = {
 describe("shared kitchen printing sound controls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mocks.lock.mockReturnValue(false);
     mocks.sound.mockReturnValue({
       configured: true,
@@ -41,6 +42,67 @@ describe("shared kitchen printing sound controls", () => {
       mute: vi.fn(),
       preview: vi.fn(),
     });
+  });
+
+  it("resumes the manager-enabled terminal for another authorized user without exposing setup", () => {
+    localStorage.setItem("vunapos_autoprint_enabled:terminal:Counter 1", "1");
+    const html = renderToStaticMarkup(
+      <KitchenPrintWorker
+        config={{ ...config, user: "chef@example.com" }}
+        posProfile="Counter 1"
+        sound={mocks.sound()}
+      />
+    );
+    expect(mocks.lock).toHaveBeenCalledWith("terminal:Counter 1", true);
+    expect(html).not.toContain("Manage printer");
+    expect(html).not.toContain("Discover printers");
+    expect(html).not.toContain("Stop printing");
+  });
+
+  it("only migrates a legacy per-user printing opt-in for managers", () => {
+    localStorage.setItem(
+      "vunapos_autoprint_enabled:cashier@example.com:Counter 1",
+      "1"
+    );
+    renderToStaticMarkup(
+      <KitchenPrintWorker
+        config={config}
+        posProfile="Counter 1"
+        sound={mocks.sound()}
+      />
+    );
+    expect(
+      localStorage.getItem("vunapos_autoprint_enabled:terminal:Counter 1")
+    ).toBeNull();
+    renderToStaticMarkup(
+      <KitchenPrintWorker
+        config={{ ...config, can_manage: true }}
+        posProfile="Counter 1"
+        sound={mocks.sound()}
+      />
+    );
+    expect(
+      localStorage.getItem("vunapos_autoprint_enabled:terminal:Counter 1")
+    ).toBe("1");
+  });
+
+  it("does not override a manager's explicit terminal stop with an older user preference", () => {
+    localStorage.setItem("vunapos_autoprint_enabled:terminal:Counter 1", "0");
+    localStorage.setItem(
+      "vunapos_autoprint_enabled:cashier@example.com:Counter 1",
+      "1"
+    );
+    renderToStaticMarkup(
+      <KitchenPrintWorker
+        config={{ ...config, can_manage: true }}
+        posProfile="Counter 1"
+        sound={mocks.sound()}
+      />
+    );
+    expect(mocks.lock).toHaveBeenCalledWith("terminal:Counter 1", false);
+    expect(
+      localStorage.getItem("vunapos_autoprint_enabled:terminal:Counter 1")
+    ).toBe("0");
   });
 
   it("uses the shared sound controller instead of a printer-specific controller", () => {
@@ -65,7 +127,8 @@ describe("shared kitchen printing sound controls", () => {
         sound={mocks.sound()}
       />
     );
-    expect(html).toContain("Manage printer");
+    expect(html).not.toContain("Manage printer");
+    expect(html).toContain("Printer:");
     expect(html).not.toContain("Start printing");
     expect(html).not.toContain("Discover printers");
     expect(html).not.toContain("Print orders for");
@@ -82,7 +145,7 @@ describe("shared kitchen printing sound controls", () => {
       await act(async () =>
         root.render(
           <KitchenPrintWorker
-            config={config}
+            config={{ ...config, can_manage: true }}
             posProfile="Counter 1"
             sound={mocks.sound()}
           />
@@ -136,7 +199,7 @@ describe("shared kitchen printing sound controls", () => {
       await act(async () =>
         root.render(
           <KitchenPrintWorker
-            config={config}
+            config={{ ...config, can_manage: true }}
             posProfile="Counter 1"
             sound={mocks.sound()}
             kitchenPage
@@ -155,7 +218,7 @@ describe("shared kitchen printing sound controls", () => {
       await act(async () =>
         root.render(
           <KitchenPrintWorker
-            config={config}
+            config={{ ...config, can_manage: true }}
             posProfile="Counter 1"
             sound={mocks.sound()}
           />
@@ -206,13 +269,7 @@ describe("shared kitchen printing sound controls", () => {
         sound={mocks.sound()}
       />
     );
-    expect(mocks.lock).toHaveBeenCalledWith(
-      "cashier@example.com:Counter 1",
-      false
-    );
-    expect(mocks.lock).toHaveBeenCalledWith(
-      "cashier@example.com:Counter 2",
-      false
-    );
+    expect(mocks.lock).toHaveBeenCalledWith("terminal:Counter 1", false);
+    expect(mocks.lock).toHaveBeenCalledWith("terminal:Counter 2", false);
   });
 });

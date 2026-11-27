@@ -55,11 +55,8 @@ it("keeps secondary actions behind More and preserves their behavior", async () 
     node.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click()
   );
   expect(change).toHaveBeenCalledWith(true);
-  const preview = Array.from(node.querySelectorAll("button")).find(
-    (button) => button.textContent === "Test sound"
-  )!;
-  await act(async () => preview.click());
-  expect(sound.preview).toHaveBeenCalledOnce();
+  expect(node.textContent).not.toContain("Test sound");
+  expect(sound.preview).not.toHaveBeenCalled();
   await act(async () =>
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))
   );
@@ -69,6 +66,11 @@ it("keeps secondary actions behind More and preserves their behavior", async () 
 
 it("shows manager availability tools and dismisses on an outside click", async () => {
   await show(true);
+  const preview = Array.from(node.querySelectorAll("button")).find(
+    (button) => button.textContent === "Test sound"
+  )!;
+  await act(async () => preview.click());
+  expect(sound.preview).toHaveBeenCalledOnce();
   expect(node.querySelector("a")?.getAttribute("href")).toBe(
     "/desk/restaurant-availability"
   );

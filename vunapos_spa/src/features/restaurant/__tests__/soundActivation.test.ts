@@ -38,6 +38,34 @@ function fixture() {
 }
 
 describe("restaurant automatic sound activation", () => {
+  it("resumes a pending automatic attempt synchronously on a real interaction", async () => {
+    const { activation, context, change } = fixture();
+    let finish!: () => void;
+    context.resume.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        })
+    );
+    context.resume.mockImplementationOnce(async () => {
+      finish();
+    });
+    const pending = activation.activate();
+    await activation.activate(true);
+    expect(await pending).toBe(true);
+    expect(context.resume).toHaveBeenCalledTimes(2);
+    expect(change.mock.lastCall?.[0].enabled).toBe(true);
+    expect(playKitchenChime).not.toHaveBeenCalled();
+  });
+
+  it("does not keep resuming running audio on routine staff interactions", async () => {
+    const { activation, context } = fixture();
+    await activation.activate();
+    await activation.activate(true);
+    await activation.activate(true);
+    expect(context.resume).toHaveBeenCalledOnce();
+    expect(playKitchenChime).not.toHaveBeenCalled();
+  });
   it("releases the controls when a browser never finishes resuming audio", async () => {
     vi.useFakeTimers();
     try {
@@ -114,7 +142,7 @@ describe("restaurant automatic sound activation", () => {
     const { activation, context, change } = fixture();
     context.resume.mockRejectedValueOnce(new Error("blocked"));
     expect(await activation.activate()).toBe(false);
-    expect(change.mock.lastCall?.[0].error).toContain("Enable sound");
+    expect(change.mock.lastCall?.[0].error).toContain("Tap anywhere");
     expect(await activation.activate()).toBe(false);
     expect(context.resume).toHaveBeenCalledOnce();
     expect(await activation.activate(true)).toBe(true);

@@ -2,7 +2,7 @@ import { AllDaySummary } from "./AllDaySummary";
 import { KitchenOptions } from "./KitchenOptions";
 import { useCallback, useContext, useEffect, useState } from "react";
 import { FrappeContext, useFrappePostCall } from "frappe-react-sdk";
-import { Clock3, RefreshCw, Volume2, VolumeX } from "lucide-react";
+import { Clock3, RefreshCw } from "lucide-react";
 import { Button } from "../../../components/ui/Button";
 import { EmptyState } from "../../../components/ui/EmptyState";
 import { getKitchenBoard, vunaMethods } from "../../../services/vunaApi";
@@ -178,22 +178,19 @@ export function KitchenPage({
         ))}
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="mr-auto text-lg font-semibold">Kitchen</h2>
-        {history && <span className="text-xs text-on-surface-variant">Completed included</span>}
+        {history && (
+          <span className="text-xs text-on-surface-variant">
+            Completed included
+          </span>
+        )}
         <div ref={printerControlsRef} className="contents" />
-        <Button
-          variant="ghost"
-          disabled={sound.busy || !sound.configured}
-          aria-pressed={sound.enabled}
-          aria-label={!sound.configured ? "Kitchen sound disabled in settings" : sound.busy ? "Starting kitchen sound" : sound.enabled ? "Mute kitchen sound" : "Enable kitchen sound"}
-          title={!sound.configured ? "Sound disabled in POS Settings" : sound.enabled ? "Mute kitchen sound" : "Enable kitchen sound"}
-          onClick={() => (sound.enabled ? sound.mute() : void sound.enable())}
-        >
-          {sound.enabled ? (
-            <Volume2 className="size-4" aria-hidden="true" />
-          ) : (
-            <VolumeX className="size-4" aria-hidden="true" />
-          )}
-        </Button>
+        <span role="status" className="text-xs text-on-surface-variant">
+          {!sound.configured
+            ? "Sound disabled in settings"
+            : sound.enabled
+            ? "Sound on"
+            : "Tap anywhere to activate sound"}
+        </span>
         <label className="text-sm">
           <span className="sr-only">Kitchen station</span>
           <select
@@ -214,8 +211,22 @@ export function KitchenPage({
             ))}
           </select>
         </label>
-        {posProfile && <AllDaySummary posProfile={posProfile} station={station} revision={result.data?.server_now} />}
-        <KitchenOptions sound={sound} history={history} canManageAvailability={Boolean(result.data?.can_manage_availability)} onHistoryChange={value => { setHistory(value); setStart(0); }} />
+        {posProfile && (
+          <AllDaySummary
+            posProfile={posProfile}
+            station={station}
+            revision={result.data?.server_now}
+          />
+        )}
+        <KitchenOptions
+          sound={sound}
+          history={history}
+          canManageAvailability={Boolean(result.data?.can_manage_availability)}
+          onHistoryChange={(value) => {
+            setHistory(value);
+            setStart(0);
+          }}
+        />
         <Button
           variant="ghost"
           onClick={() => void result.refresh()}

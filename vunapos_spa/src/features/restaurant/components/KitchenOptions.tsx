@@ -60,7 +60,7 @@ export function KitchenOptions({
             />
             Include completed
           </label>
-          {sound.configured && (
+          {canManageAvailability && sound.configured && (
             <button
               type="button"
               className="min-h-10 w-full cursor-pointer rounded-md px-3 text-left hover:bg-surface-container disabled:opacity-50"
