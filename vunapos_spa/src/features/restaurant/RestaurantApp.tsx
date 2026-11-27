@@ -23,6 +23,7 @@ import { SessionScreen } from "./components/SessionScreen";
 import { OrdersPage } from "./components/OrdersPage";
 import { KitchenPage } from "./components/KitchenPage";
 import { RestaurantToast } from "./components/RestaurantToast";
+import { WaiterReadyAlerts } from "./components/WaiterReadyAlerts";
 import { SharedRestaurantPages } from "./components/SharedRestaurantPages";
 import { draftScope, useOrderDraftStore } from "./stores/orderDraftStore";
 import {
@@ -105,6 +106,11 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
     <>
       <ConnectivityMonitor />
       <AppShell
+        headerActions={
+          !kitchenOnly ? (
+            <WaiterReadyAlerts key={`${user}:${profile}`} user={user} soundSettings={bootstrap.data?.restaurant?.sound_settings} />
+          ) : undefined
+        }
         mode="Restaurant"
         kitchenPrintWorker={posProfile && <KitchenPrinting user={user} posProfile={posProfile} kitchenPage={activePage === "Kitchen"} />}
         cashier={bootstrap.data?.current_user}
@@ -151,7 +157,7 @@ function RestaurantShell({ canTakePayment }: { canTakePayment: boolean }) {
         ) : activePage === "Orders" ? (
           <OrdersPage posProfile={posProfile} />
         ) : activePage === "Kitchen" ? (
-          <KitchenPage posProfile={posProfile} />
+          <KitchenPage posProfile={posProfile} soundSettings={bootstrap.data?.restaurant?.sound_settings} />
         ) : activePage === "Order" && getOrderFromPath(currentPath) ? (
           <OrderScreen posProfile={posProfile} />
         ) : activePage === "Order" || activePage === "Home" ? (

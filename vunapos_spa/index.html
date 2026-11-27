@@ -15,7 +15,7 @@
     <div id="root"></div>
     <script>
       window.csrf_token = "{{ frappe.session.csrf_token }}";
-      window.frappe_site_name = "{{ frappe.local.site }}";
+      window.frappe_site_name = "{{ vunapos_site_name }}";
     </script>
     <script>
       // Runs before main.tsx mounts anything, so the very first paint already has

@@ -410,12 +410,59 @@ action (for example after codes leak), then prints the new cards.
 
 - Every old code stops working at once; tables without a token stay without one.
 
-## DEF-017 — Shared-demo and physical kitchen printer validation
+## DEF-017 — Separate item/menu caching from stock-balance refreshes
 
 - **Status:** Deferred
-- **Recorded:** 2026-11-20
-- **Area:** Kitchen printing
-- **Current behavior:** Local manual ticket rendering is implemented; shared-demo deployment and physical printer delivery are not verified.
-- **Intended outcome:** Validate the approved implementation on an assigned demo POS Profile and the selected printer, without changing unrelated demo data.
-- **Completion checks:** Confirm deployed commit and versions; verify station routing, cancellation notices, reprints, permissions, paper width and disconnected-printer behavior. Confirm printing does not repeat preparation, stock or accounting actions.
-- **Unresolved:** Demo deployment approval, test records, printer model and connection. Local focused code checks continue; this deferral is not release clearance.
+- **Recorded:** 2026-11-22
+- **Area:** Retail and Restaurant / catalogue performance / stock freshness
+- **Reason:** User explicitly postponed this cache architecture and related menu
+  loading improvements for a later iteration. No cache changes implemented.
+
+### Current behavior
+
+Retail keeps the catalogue in browser memory and refreshes the sold items' cached
+quantities after a successful sale. Background catalogue syncs also refresh data.
+On the server, the short-lived catalogue response cache bundles item information
+and available stock. Stock/tracking hooks are configured to invalidate the whole
+catalogue cache, rather than only the affected item/warehouse balance.
+
+Restaurant menus reuse the server item-search cache, but assemble the menu again
+on each menu request. The browser menu hook keys requests by table and hides the
+previous result while loading the next one, including switches within one floor.
+
+### Intended outcome
+
+- Cache stable item/menu information independently of changing stock balances;
+  retain it until relevant item, menu, modifier, pricing or configuration changes.
+- Keep stock availability separately scoped to item and warehouse, refreshing or
+  invalidating affected balances after sales, returns, receipts, transfers,
+  manufacturing and reservation changes, including transactions made in Desk.
+- Reuse valid browser menus across tables sharing the same menu context, without
+  rebuilding stable menu information just because stock moved. Scope reuse to
+  user/access context, POS Profile, floor, service type, customer and price list;
+  account for branch restrictions and temporary restaurant availability rules.
+- Refresh changing balances in the background while preserving authoritative
+  server validation when placing orders or completing sales. Cached display data
+  must not permit overselling or bypass QSR ingredient checks.
+
+### Decisions to resolve
+
+- Define cache keys, invalidation events, retention/fallback limits and whether
+  the server stock layer needs its own cache or targeted live balance reads.
+- Verify which native ERPNext stock/reservation paths actually fire document
+  hooks; do not assume every direct database update triggers invalidation.
+- Decide how to preload floor menus without weakening the existing requirement
+  to select a table before adding dine-in items.
+
+### Completion checks
+
+- Measure cold/warm menu loading and table switching before and after changes;
+  same-context warm switches should not blank or rebuild the menu unnecessarily.
+- Stock movements refresh affected balances without rebuilding unchanged item
+  metadata; stock is consistent across terminals and relevant warehouses.
+- Cover reservations, batch/serial stock, Product Bundles and QSR ingredients.
+- Item/menu/price edits and availability pauses or expiry refresh the right data.
+- Switching user, profile, floor, service type, customer or price list cannot
+  expose another context's items or reuse incorrect prices and restrictions.
+- Test concurrent sales, missed realtime events, refresh failures and recovery;
+  stale cache data cannot bypass server-side permissions or stock validation.

@@ -118,6 +118,17 @@ def preview_session_bill(
 
 @frappe.whitelist()
 @_staff_only
+def render_session_bill(session: str, pos_profile: str, fingerprint: str):
+	from vunapos.services.restaurant_billing_service import render_bill
+
+	try:
+		return success(render_bill(session, pos_profile, fingerprint))
+	except Exception as exc:
+		return _failure_from_exception(exc)
+
+
+@frappe.whitelist()
+@_staff_only
 def preview_rejection(ticket: str):
 	from vunapos.services.restaurant_rejection_service import preview
 

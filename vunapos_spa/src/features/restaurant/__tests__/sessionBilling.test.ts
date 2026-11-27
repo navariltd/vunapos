@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { checkoutSession, previewSessionBill, vunaMethods } from "../../../services/vunaApi";
+import { checkoutSession, previewSessionBill, renderSessionBill, vunaMethods } from "../../../services/vunaApi";
 
 describe("session billing transport", () => {
+  it("prints the reviewed server bill without sending cart lines or payments", async () => {
+    const call = vi.fn().mockResolvedValue({ message: { ok: true, data: { html: "<p>UNPAID</p>", session: "RS-1" } } });
+    const params = { session: "RS-1", pos_profile: "Counter 1", fingerprint: "reviewed" };
+    expect((await renderSessionBill(call, params)).html).toContain("UNPAID");
+    expect(call).toHaveBeenCalledWith(params);
+    expect(call.mock.lastCall?.[0]).not.toHaveProperty("items");
+    expect(call.mock.lastCall?.[0]).not.toHaveProperty("payments");
+    expect(vunaMethods.renderSessionBill).toBe("vunapos.api.restaurant.render_session_bill");
+  });
   it("previews by server session identity, not client cart items", async () => {
     const call = vi.fn().mockResolvedValue({ message: { ok: true, data: { fingerprint: "reviewed" } } });
     expect((await previewSessionBill(call, { session: "RS-1", pos_profile: "Counter 1" })).fingerprint).toBe("reviewed");

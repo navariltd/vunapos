@@ -17,6 +17,13 @@ const ticket: KitchenTicketDTO = {
 };
 
 describe("kitchen display", () => {
+  it("labels the current-stage timer instead of displaying total ticket age", () => {
+    const ready: KitchenTicketDTO = { ...ticket, status: "Ready", timing: { sent_at: "2026-11-05T10:00:00Z", current: { stage: "service", since: "2026-11-05T10:20:00Z" }, finished_at: null } };
+    const html = renderToStaticMarkup(<KitchenTicketCard ticket={ready} now={new Date("2026-11-05T10:25:00Z")} onOpen={() => {}} onChanged={() => {}} />);
+    expect(html).toContain("Awaiting service · 5 min");
+    expect(html).not.toContain("25 min");
+    expect(html).not.toContain("font-semibold text-error");
+  });
   it("shows the waiter's full name instead of the user email", () => {
     const html = renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, waiter: "waiter@example.com", waiter_name: "Jane Wanjiku" }} now={new Date()} onOpen={() => {}} onChanged={() => {}} />);
     expect(html).toContain("Waiter: Jane Wanjiku");
@@ -81,7 +88,8 @@ describe("kitchen display", () => {
 
   it("keeps the 20-minute waiting warning on active tickets only", () => {
     for (const status of ["Sent", "Accepted", "Preparing", "Ready"]) {
-      const render = (time: string) => renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, status }} now={new Date(time)} onOpen={() => {}} onChanged={() => {}} />);
+      const stage = ({ Sent: "acceptance", Accepted: "queue", Preparing: "preparation", Ready: "service" } as const)[status as "Sent" | "Accepted" | "Preparing" | "Ready"];
+      const render = (time: string) => renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, status, timing: { sent_at: ticket.sent_at, current: { stage, since: "2026-11-05T10:00:00" }, finished_at: null } }} now={new Date(time)} onOpen={() => {}} onChanged={() => {}} />);
       expect(render("2026-11-05T10:19:00")).not.toContain("font-semibold text-error");
       expect(render("2026-11-05T10:20:00")).toContain("font-semibold text-error");
     }

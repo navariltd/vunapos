@@ -9,6 +9,8 @@ import { KitchenDishes } from "./KitchenDishes";
 import { Button } from "../../../components/ui/Button";
 import { printHtml } from "../../../lib/printHtml";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
+import { KitchenTimings } from "./KitchenTimings";
+import { useNow } from "../hooks/useNow";
 
 export function KitchenTicketSheet({
   name,
@@ -18,6 +20,7 @@ export function KitchenTicketSheet({
   onClose: () => void;
 }) {
   const [linkedName, setLinkedName] = useState<string | null>(null);
+  const now = useNow();
   const activeName = linkedName || name;
   const printCall = useFrappePostCall(vunaMethods.renderKitchenTicket);
   const toast = useUiFeedbackStore((s) => s.showToast);
@@ -187,6 +190,7 @@ export function KitchenTicketSheet({
               </p>
             ) : null}
             <KitchenDishes ticket={ticket} details onUpdated={() => void response.mutate()} />
+            <KitchenTimings ticket={ticket} now={now} />
             {ticket.actions?.length ? (
               <details className="rounded-md border border-outline-variant p-3">
                 <summary className="cursor-pointer text-sm font-medium">

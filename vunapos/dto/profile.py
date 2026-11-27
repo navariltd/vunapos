@@ -14,6 +14,7 @@ from vunapos.services.restaurant_service import (
 	kiosk_idle_seconds,
 	kiosk_payment_timing,
 )
+from vunapos.services.restaurant_sound_settings import get_sound_settings
 from vunapos.services.service_type_service import get_profile_service_types
 from vunapos.services.workflow_service import get_pos_workflow_metadata
 
@@ -35,6 +36,7 @@ def _restaurant_settings(profile):
 		"kiosk_mode": bool(cint(profile.get("vunapos_kiosk_mode"))),
 		"kiosk_payment_timing": kiosk_payment_timing(profile),
 		"kiosk_idle_seconds": kiosk_idle_seconds(profile),
+		"sound_settings": get_sound_settings(profile),
 	}
 
 
