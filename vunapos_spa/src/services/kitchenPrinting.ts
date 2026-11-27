@@ -3,8 +3,9 @@ import {
   kitchenRollHtml,
   measureKitchenRoll,
 } from "./kitchenRoll";
+import { configureKitchenSigning, type QzSigning } from "./kitchenSigning";
 
-type Qz = {
+type Qz = QzSigning & {
   websocket: { isActive(): boolean; connect(): Promise<void> };
   printers: { find(name: string): Promise<string>; find(): Promise<string[]> };
   configs: { create(name: string, options: object): unknown };
@@ -12,7 +13,8 @@ type Qz = {
 };
 let loading: Promise<Qz> | undefined;
 let connecting: Promise<void> | undefined;
-export function connectKitchenPrinter(): Promise<Qz> {
+let signing: { qz: Qz; profile: string; ready: Promise<void> } | undefined;
+export function connectKitchenPrinter(posProfile?: string): Promise<Qz> {
   const global = window as unknown as { qz?: Qz };
   loading ||= new Promise<Qz>((resolve, reject) => {
     if (global.qz) return resolve(global.qz);
@@ -32,6 +34,18 @@ export function connectKitchenPrinter(): Promise<Qz> {
     throw error;
   });
   return loading.then(async (qz) => {
+    if (!posProfile)
+      throw new Error(
+        "Select a POS Profile before connecting kitchen printing."
+      );
+    if (!signing || signing.qz !== qz || signing.profile !== posProfile) {
+      const ready = configureKitchenSigning(qz, posProfile);
+      signing = { qz, profile: posProfile, ready };
+      ready.catch(() => {
+        if (signing?.ready === ready) signing = undefined;
+      });
+    }
+    await signing.ready;
     if (!qz.websocket.isActive()) {
       connecting ||= qz.websocket.connect().finally(() => {
         connecting = undefined;
@@ -42,8 +56,8 @@ export function connectKitchenPrinter(): Promise<Qz> {
   });
 }
 
-export async function prepareKitchenPrinter(name: string) {
-  const qz = await connectKitchenPrinter();
+export async function prepareKitchenPrinter(name: string, posProfile?: string) {
+  const qz = await connectKitchenPrinter(posProfile);
   const found = await qz.printers.find(name);
   if (found !== name)
     throw new Error("Configured printer was not found by its exact name.");
@@ -132,8 +146,10 @@ export async function deliverKitchenJob(
   }
 }
 
-export async function listAvailablePrinters(): Promise<string[]> {
-  const qz = await connectKitchenPrinter();
+export async function listAvailablePrinters(
+  posProfile?: string
+): Promise<string[]> {
+  const qz = await connectKitchenPrinter(posProfile);
   const printers = await qz.printers.find();
   return Array.isArray(printers) ? printers : [printers];
 }
@@ -146,8 +162,12 @@ export function escapePrintText(text: string) {
       ]!)
   );
 }
-export async function printTestSlip(name: string, stationLabel: string) {
-  const print = await prepareKitchenPrinter(name);
+export async function printTestSlip(
+  name: string,
+  stationLabel: string,
+  posProfile?: string
+) {
+  const print = await prepareKitchenPrinter(name, posProfile);
   await print(
     `<div style="width:68mm;padding:2mm;font-family:monospace"><h2>PRINTER ALIGNMENT TEST</h2><p>${escapePrintText(
       stationLabel

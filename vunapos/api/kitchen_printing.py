@@ -1,4 +1,5 @@
 import frappe
+from frappe.rate_limiter import rate_limit
 
 from vunapos.services import kitchen_printing as service
 
@@ -71,3 +72,18 @@ def configuration(pos_profile: str) -> dict:
 @frappe.whitelist()
 def all_day(pos_profile: str, station: str | None = None) -> dict:
 	return service.all_day(pos_profile, station)
+
+
+@frappe.whitelist()
+def signing_certificate(pos_profile: str) -> dict:
+	from vunapos.services.qz_signing import certificate
+
+	return certificate(pos_profile)
+
+
+@frappe.whitelist(methods=["POST"])
+@rate_limit(limit=300, seconds=60)
+def sign_request(message: str, pos_profile: str) -> str:
+	from vunapos.services.qz_signing import sign
+
+	return sign(message, pos_profile)

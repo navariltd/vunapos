@@ -12,12 +12,14 @@ import {
   deliverKitchenJob,
   listAvailablePrinters,
   printTestSlip,
+  prepareKitchenPrinter,
 } from "../../../services/kitchenPrinting";
 import { usePrintLeaderLock } from "../hooks/usePrintLeaderLock";
 import type { KitchenSoundControl } from "../hooks/useKitchenSound";
 import { Printer } from "lucide-react";
 import { Sheet } from "../../../components/ui/Sheet";
 import { createPortal } from "react-dom";
+import { downloadKitchenTrustCertificate } from "../../../services/kitchenSigning";
 
 const base = "vunapos.api.kitchen_printing.";
 type Station = {
@@ -32,6 +34,7 @@ type Config = {
   can_print: boolean;
   can_manage: boolean;
   run_on_pos: boolean;
+  signing_enabled?: boolean;
 };
 type Job = {
   name: string;
@@ -193,7 +196,7 @@ export function KitchenPrintWorker({
   useEffect(() => {
     if (!running) return;
     let cancelled = false;
-    void listAvailablePrinters()
+    void listAvailablePrinters(posProfile)
       .then((found) => {
         const stations: Station[] = JSON.parse(printerConfigKey);
         if (
@@ -223,7 +226,7 @@ export function KitchenPrintWorker({
     return () => {
       cancelled = true;
     };
-  }, [running, preferenceKey, printerConfigKey, selected]);
+  }, [running, preferenceKey, printerConfigKey, selected, posProfile]);
   useEffect(() => {
     if (!review) return;
     const node = dialog.current;
@@ -270,7 +273,8 @@ export function KitchenPrintWorker({
                 pos_profile: posProfile,
               }),
           },
-          () => active
+          () => active,
+          (name) => prepareKitchenPrinter(name, posProfile)
         );
       },
       (station, message) => {
@@ -379,7 +383,7 @@ export function KitchenPrintWorker({
     setError("");
     setStationErrors({});
     try {
-      const found = await listAvailablePrinters();
+      const found = await listAvailablePrinters(posProfile);
       setPrinters(found);
       if (
         !config.stations.some(
@@ -508,13 +512,26 @@ export function KitchenPrintWorker({
             size="sm"
             variant="ghost"
             onClick={() =>
-              void listAvailablePrinters()
+              void listAvailablePrinters(posProfile)
                 .then(setPrinters)
                 .catch((caught: Error) => setError(caught.message))
             }
           >
             Discover printers
           </Button>
+          {config.signing_enabled && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                void downloadKitchenTrustCertificate(posProfile).catch(
+                  (caught: Error) => setError(caught.message)
+                )
+              }
+            >
+              Download trust certificate
+            </Button>
+          )}
           {!kitchenPage && (
             <>
               <Button
@@ -576,7 +593,8 @@ export function KitchenPrintWorker({
                   onClick={() =>
                     void printTestSlip(
                       row.printer_name,
-                      row.station_name
+                      row.station_name,
+                      posProfile
                     ).catch((caught: Error) => setError(caught.message))
                   }
                 >

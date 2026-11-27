@@ -408,6 +408,7 @@ def configuration(pos_profile):
 		can_manage=bool(roles & {"System Manager", "VunaPOS Restaurant Manager"}),
 		user=frappe.session.user,
 		run_on_pos=bool(profile.get("custom_run_kitchen_print_worker_on_pos")),
+		signing_enabled=bool(frappe.conf.get("vunapos_qz_signing_enabled")),
 	)
 
 
