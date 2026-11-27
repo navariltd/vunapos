@@ -50,7 +50,8 @@ def render_kitchen_ticket(ticket, action=None, delivery=False):
 	doc = frappe.get_doc(TICKET, ticket)
 	require_restaurant_access(doc.restaurant, branch=doc.branch)
 	doc.check_permission("read")
-	frappe.get_doc(STATION, doc.kitchen_station).check_permission("read")
+	station = frappe.get_doc(STATION, doc.kitchen_station)
+	station.check_permission("read")
 	doc.check_permission("print")
 	if doc.docstatus != 1:
 		frappe.throw(_("Only submitted kitchen tickets can be printed."))
@@ -111,12 +112,18 @@ def render_kitchen_ticket(ticket, action=None, delivery=False):
 			lines=lines,
 		)
 	doc.print_delivery = frappe._dict(delivery) if isinstance(delivery, dict) else bool(delivery)
-	# Fail closed instead of silently falling back to a generic document layout.
-	print_format = frappe.get_doc("Print Format", "Kitchen Order Ticket")
-	if print_format.disabled or print_format.doc_type != TICKET or print_format.raw_printing:
-		frappe.throw(_("The Kitchen Order Ticket print format is not available."))
+	print_format = station.get("print_format") or frappe.get_meta(TICKET).default_print_format or "Standard"
+	validate_kitchen_print_format(print_format)
 	return {
 		"ticket": doc.name,
-		"print_format": print_format.name,
-		"html": frappe.get_print(TICKET, doc.name, print_format=print_format.name, doc=doc, no_letterhead=1),
+		"print_format": print_format,
+		"html": frappe.get_print(TICKET, doc.name, print_format=print_format, doc=doc, no_letterhead=1),
 	}
+
+
+def validate_kitchen_print_format(name):
+	if name == "Standard":
+		return
+	print_format = frappe.get_doc("Print Format", name)
+	if print_format.disabled or print_format.doc_type != "Kitchen Order Ticket" or print_format.raw_printing:
+		frappe.throw(_("Choose an enabled HTML Print Format for Kitchen Order Ticket."))

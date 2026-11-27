@@ -23,7 +23,8 @@
   "wip_warehouse",
   "kitchen_printing",
   "output_mode",
-  "printer_name"
+  "printer_name",
+  "print_format"
  ],
  "fields": [
   {
@@ -135,6 +136,13 @@
    "reqd": 1
   },
   {
+   "fieldname": "print_format",
+   "fieldtype": "Link",
+   "label": "Print Format",
+   "options": "Print Format",
+   "description": "Leave blank to use the Kitchen Order Ticket default print format."
+  },
+  {
    "fieldname": "printer_name",
    "fieldtype": "Data",
    "label": "Printer Name",
@@ -142,7 +150,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-17 07:21:49.167442",
+ "modified": "2026-11-27 05:33:27.611691",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Kitchen Station",

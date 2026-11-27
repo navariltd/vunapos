@@ -1,3 +1,9 @@
+import {
+  kitchenRollConfig,
+  kitchenRollHtml,
+  measureKitchenRoll,
+} from "./kitchenRoll";
+
 type Qz = {
   websocket: { isActive(): boolean; connect(): Promise<void> };
   printers: { find(name: string): Promise<string>; find(): Promise<string[]> };
@@ -12,13 +18,24 @@ export function connectKitchenPrinter(): Promise<Qz> {
     if (global.qz) return resolve(global.qz);
     const script = document.createElement("script");
     script.src = "/assets/frappe/node_modules/qz-tray/qz-tray.js";
-    script.onload = () => global.qz ? resolve(global.qz) : reject(new Error("QZ library unavailable"));
-    script.onerror = () => { script.remove(); reject(new Error("Unable to load QZ Tray")); };
+    script.onload = () =>
+      global.qz
+        ? resolve(global.qz)
+        : reject(new Error("QZ library unavailable"));
+    script.onerror = () => {
+      script.remove();
+      reject(new Error("Unable to load QZ Tray"));
+    };
     document.head.appendChild(script);
-  }).catch((error) => { loading = undefined; throw error; });
+  }).catch((error) => {
+    loading = undefined;
+    throw error;
+  });
   return loading.then(async (qz) => {
     if (!qz.websocket.isActive()) {
-      connecting ||= qz.websocket.connect().finally(() => { connecting = undefined; });
+      connecting ||= qz.websocket.connect().finally(() => {
+        connecting = undefined;
+      });
       await connecting;
     }
     return qz;
@@ -28,22 +45,44 @@ export function connectKitchenPrinter(): Promise<Qz> {
 export async function prepareKitchenPrinter(name: string) {
   const qz = await connectKitchenPrinter();
   const found = await qz.printers.find(name);
-  if (found !== name) throw new Error("Configured printer was not found by its exact name.");
-  return (html: string) => qz.print(qz.configs.create(name, { jobName: "Kitchen Order Ticket", copies: 1, units: "mm", margins: 0, scaleContent: false }),
-    [{ type: "pixel", format: "html", flavor: "plain", data: html }]);
+  if (found !== name)
+    throw new Error("Configured printer was not found by its exact name.");
+  return async (html: string) => {
+    const roll = kitchenRollHtml(html);
+    const height = await measureKitchenRoll(roll);
+    return qz.print(qz.configs.create(name, kitchenRollConfig(height)), [
+      {
+        type: "pixel",
+        format: "html",
+        flavor: "plain",
+        data: roll,
+        options: { pageWidth: 80, pageHeight: height },
+      },
+    ]);
+  };
 }
 
 export type KitchenDeliveryApi = {
-  claim(): Promise<{name: string; token: string; printer: string} | null>;
-  release(job: {name: string; token: string}): Promise<unknown>;
-  dispatch(job: {name: string; token: string}): Promise<{html: string; error?: string}>;
-  acknowledge(job: {name: string; token: string}, submitted: boolean, error?: string): Promise<unknown>;
+  claim(): Promise<{ name: string; token: string; printer: string } | null>;
+  release(job: { name: string; token: string }): Promise<unknown>;
+  dispatch(job: {
+    name: string;
+    token: string;
+  }): Promise<{ html: string; error?: string }>;
+  acknowledge(
+    job: { name: string; token: string },
+    submitted: boolean,
+    error?: string
+  ): Promise<unknown>;
 };
-export async function deliverKitchenJob(api: KitchenDeliveryApi, active: () => boolean,
-  prepare = prepareKitchenPrinter) {
+export async function deliverKitchenJob(
+  api: KitchenDeliveryApi,
+  active: () => boolean,
+  prepare = prepareKitchenPrinter
+) {
   const job = await api.claim();
   if (!job) return false;
-  const identity = {name: job.name, token: job.token};
+  const identity = { name: job.name, token: job.token };
   async function releaseBeforeDispatch() {
     try {
       await api.release(identity);
@@ -70,19 +109,28 @@ export async function deliverKitchenJob(api: KitchenDeliveryApi, active: () => b
   try {
     sending = true;
     const payload = await api.dispatch(identity);
-    if (payload.error) { sending = false; throw new Error(payload.error); }
+    if (payload.error) {
+      sending = false;
+      throw new Error(payload.error);
+    }
     await print(payload.html);
     await api.acknowledge(identity, true);
     return true;
   } catch (error) {
     if (sending) {
-      try { await api.acknowledge(identity, false, error instanceof Error ? error.message : "Delivery interrupted"); }
-      catch { /* The server lease flags unresolved sending jobs for review. */ }
+      try {
+        await api.acknowledge(
+          identity,
+          false,
+          error instanceof Error ? error.message : "Delivery interrupted"
+        );
+      } catch {
+        /* The server lease flags unresolved sending jobs for review. */
+      }
     }
     throw error;
   }
 }
-
 
 export async function listAvailablePrinters(): Promise<string[]> {
   const qz = await connectKitchenPrinter();
@@ -90,13 +138,24 @@ export async function listAvailablePrinters(): Promise<string[]> {
   return Array.isArray(printers) ? printers : [printers];
 }
 export function escapePrintText(text: string) {
-  return text.replace(/[&<>"']/g, char => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"})[char]!);
+  return text.replace(
+    /[&<>"']/g,
+    (char) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[
+        char
+      ]!)
+  );
 }
 export async function printTestSlip(name: string, stationLabel: string) {
   const print = await prepareKitchenPrinter(name);
-  await print(`<div style="width:68mm;padding:2mm;font-family:monospace"><h2>PRINTER ALIGNMENT TEST</h2><p>${escapePrintText(stationLabel)}</p><p>${escapePrintText(name)}</p><p>80mm roll / 72mm printable area</p><hr><p>TEST ONLY — NOT AN ORDER</p></div>`);
+  await print(
+    `<div style="width:68mm;padding:2mm;font-family:monospace"><h2>PRINTER ALIGNMENT TEST</h2><p>${escapePrintText(
+      stationLabel
+    )}</p><p>${escapePrintText(
+      name
+    )}</p><p>80mm roll / 72mm printable area</p><hr><p>TEST ONLY — NOT AN ORDER</p></div>`
+  );
 }
-
 
 /**
  * Drain independent station queues without letting a delivery error
@@ -106,7 +165,7 @@ export function createKitchenStationDrainer(
   stations: string[],
   deliver: (station: string) => Promise<boolean | undefined>,
   onResult: (station: string, error: string | null) => void,
-  now = Date.now,
+  now = Date.now
 ) {
   let cursor = 0;
   const retryAfter = new Map<string, number>();
@@ -143,7 +202,7 @@ export function createKitchenStationDrainer(
             station,
             caught instanceof Error
               ? caught.message
-              : "Delivery interrupted. Review printing status.",
+              : "Delivery interrupted. Review printing status."
           );
         }
       }

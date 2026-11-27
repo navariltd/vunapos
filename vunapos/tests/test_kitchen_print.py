@@ -19,6 +19,7 @@ class TestKitchenPrint(TestCase):
 		self.ticket.kitchen_station = "Station A"
 		self.ticket.docstatus = 1
 		self.station = Mock()
+		self.station.get.return_value = None
 		self.format = SimpleNamespace(
 			name="Kitchen Order Ticket", doc_type="Kitchen Order Ticket", disabled=0, raw_printing=0
 		)
@@ -27,6 +28,9 @@ class TestKitchenPrint(TestCase):
 		self.render = patch("frappe.get_print", return_value="<p>Ticket</p>").start()
 		self.throw = patch("frappe.throw", side_effect=frappe.ValidationError).start()
 		self.translate = patch("vunapos.services.print_service._", side_effect=lambda value: value).start()
+		patch(
+			"frappe.get_meta", return_value=SimpleNamespace(default_print_format="Kitchen Order Ticket")
+		).start()
 		self.addCleanup(patch.stopall)
 
 	def test_renders_saved_ticket_without_mutating_or_submitting_it(self):
@@ -51,6 +55,22 @@ class TestKitchenPrint(TestCase):
 		with self.assertRaises(frappe.PermissionError):
 			render_kitchen_ticket("KOT-1")
 		self.render.assert_not_called()
+
+	def test_station_format_overrides_doctype_default(self):
+		self.station.get.return_value = "Compact Kitchen Ticket"
+		self.format.name = "Compact Kitchen Ticket"
+		result = render_kitchen_ticket("KOT-1")
+		self.assertEqual(result["print_format"], "Compact Kitchen Ticket")
+		self.assertEqual(self.render.call_args.kwargs["print_format"], "Compact Kitchen Ticket")
+
+	def test_respects_changed_doctype_default(self):
+		with patch("frappe.get_meta", return_value=SimpleNamespace(default_print_format="Branch Default")):
+			self.format.name = "Branch Default"
+			self.assertEqual(render_kitchen_ticket("KOT-1")["print_format"], "Branch Default")
+
+	def test_standard_fallback_when_doctype_has_no_default(self):
+		with patch("frappe.get_meta", return_value=SimpleNamespace(default_print_format=None)):
+			self.assertEqual(render_kitchen_ticket("KOT-1")["print_format"], "Standard")
 
 	def test_denied_station_never_renders(self):
 		self.station.check_permission.side_effect = frappe.PermissionError
@@ -149,6 +169,36 @@ class TestKitchenPrint(TestCase):
 
 
 class TestKitchenPrintTemplate(TestCase):
+	def test_delivery_hides_internal_job_id_but_preserves_retry_warning(self):
+		path = (
+			Path(__file__).parents[1] / "vunapos/print_format/kitchen_order_ticket/kitchen_order_ticket.json"
+		)
+		template = Environment(autoescape=False).from_string(json.loads(path.read_text())["html"])
+		doc = SimpleNamespace(
+			station_label="Kitchen",
+			service_type="Takeaway",
+			table_labels="",
+			name="KOT-1",
+			sales_order="SO-1",
+			print_action=SimpleNamespace(
+				action="Cancel Order",
+				occurred_at="2026-11-27 08:00",
+				actor="Waiter",
+				reason="Cancelled",
+				lines=[],
+			),
+		)
+		for attempt in (1, 2):
+			doc.print_delivery = SimpleNamespace(name="internal-random-hash", attempt=attempt)
+			html = template.render(
+				doc=doc,
+				_=lambda value: value,
+				frappe=SimpleNamespace(utils=SimpleNamespace(get_system_timezone=lambda: "Africa/Nairobi")),
+			)
+			self.assertNotIn("internal-random-hash", html)
+			self.assertIn("KOT-1", html)
+			self.assertEqual("RETRY — CHECK FOR AN EARLIER COPY" in html, attempt > 1)
+
 	def test_escapes_notes_and_marks_cancelled_replacement_as_manual_copy(self):
 		path = (
 			Path(__file__).parents[1] / "vunapos/print_format/kitchen_order_ticket/kitchen_order_ticket.json"

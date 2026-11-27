@@ -1,5 +1,8 @@
 frappe.ui.form.on("Kitchen Station", {
 	setup(frm) {
+		frm.set_query("print_format", () => ({
+			filters: { doc_type: "Kitchen Order Ticket", disabled: 0, raw_printing: 0 },
+		}));
 		frm.set_query("floor", "floors", () => ({
 			filters: {
 				restaurant: frm.doc.restaurant || "",

@@ -69,5 +69,5 @@ def configuration(pos_profile: str) -> dict:
 
 
 @frappe.whitelist()
-def all_day(pos_profile: str, station: str | None = None) -> list[dict]:
+def all_day(pos_profile: str, station: str | None = None) -> dict:
 	return service.all_day(pos_profile, station)

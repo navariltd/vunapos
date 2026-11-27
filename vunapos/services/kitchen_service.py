@@ -74,6 +74,10 @@ def validate_station(doc):
 		)
 	if doc.get("output_mode") in ("Printer", "Both") and not (doc.get("printer_name") or "").strip():
 		fail("PRINTER_REQUIRED", _("Select the printer name before enabling kitchen printing."))
+	if doc.get("print_format"):
+		from vunapos.services.print_service import validate_kitchen_print_format
+
+		validate_kitchen_print_format(doc.print_format)
 	doc.company = context.company
 	validate_branch_company(doc.branch, doc.company)
 	if frappe.db.exists(
