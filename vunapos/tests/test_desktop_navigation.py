@@ -1,4 +1,5 @@
 import json
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,6 +13,16 @@ from vunapos.hooks import add_to_apps_screen
 class TestVunaPOSDesktopNavigation(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+
+	def test_sidebar_logo_uses_the_current_app_asset(self):
+		root = Path(__file__).resolve().parents[1]
+		sprite = ET.parse(root / "public" / "icons" / "vunapos-icons.svg")
+		image = sprite.find(
+			".//{http://www.w3.org/2000/svg}symbol[@id='icon-vunapos-duotone']/{http://www.w3.org/2000/svg}image"
+		)
+		self.assertIsNotNone(image)
+		self.assertEqual(image.get("href"), "/assets/vunapos/logo.png")
+		self.assertTrue((root / "public" / "logo.png").is_file())
 
 	def test_apps_screen_keeps_terminal_and_setup_as_separate_entries(self):
 		entries = {entry["title"]: entry for entry in add_to_apps_screen}
