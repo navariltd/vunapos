@@ -33,7 +33,13 @@ export function createSoundActivation(
     onChange(state);
   };
   const activate = async (manual = false, test = false) => {
-    if (!configured() || state.busy) return false;
+    if (!configured()) return false;
+    if (state.busy) {
+      // An automatic resume may still be pending when the first real gesture arrives.
+      if (manual && context) void context.resume().catch(() => undefined);
+      return false;
+    }
+    if (state.enabled && context?.state === "running" && !test) return true;
     if (!manual && (state.muted || state.enabled || automaticAttempted))
       return false;
     automaticAttempted = true;
@@ -68,7 +74,7 @@ export function createSoundActivation(
         update({
           enabled: false,
           error:
-            "Sound could not start. Use Enable sound and check this browser’s sound permissions.",
+            "Sound could not start. Tap anywhere in POS and check this browser’s sound permissions.",
         });
       return false;
     } finally {
@@ -97,7 +103,7 @@ export function createSoundActivation(
         update({
           enabled: false,
           error:
-            "Sound was paused by the browser. Click in POS or enable sound again.",
+            "Sound was paused by the browser. Tap anywhere in POS to resume alerts.",
         });
       }
     },

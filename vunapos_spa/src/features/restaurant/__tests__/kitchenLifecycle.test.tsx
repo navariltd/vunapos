@@ -77,6 +77,24 @@ describe("kitchen display", () => {
     expect(html).not.toContain("Mark ready");
   });
 
+  it("does not show a live waiting timer on closed or cancelled history tickets", () => {
+    for (const status of ["Served", "Completed", "Cancelled"]) {
+      const html = renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, status, available_actions: [] }} now={new Date("2026-11-05T10:25:00")} onOpen={() => {}} onChanged={() => {}} />);
+      expect(html).not.toContain(" min · ");
+      expect(html).not.toContain("font-semibold text-error");
+      expect(html).toContain("SO-1");
+    }
+  });
+
+  it("keeps the 20-minute waiting warning on active tickets only", () => {
+    for (const status of ["Sent", "Accepted", "Preparing", "Ready"]) {
+      const stage = ({ Sent: "acceptance", Accepted: "queue", Preparing: "preparation", Ready: "service" } as const)[status as "Sent" | "Accepted" | "Preparing" | "Ready"];
+      const render = (time: string) => renderToStaticMarkup(<KitchenTicketCard ticket={{ ...ticket, status, timing: { sent_at: ticket.sent_at, current: { stage, since: "2026-11-05T10:00:00" }, finished_at: null } }} now={new Date(time)} onOpen={() => {}} onChanged={() => {}} />);
+      expect(render("2026-11-05T10:19:00")).not.toContain("font-semibold text-error");
+      expect(render("2026-11-05T10:20:00")).toContain("font-semibold text-error");
+    }
+  });
+
   it("renders only the server-permitted action for the current state", () => {
     const html = renderToStaticMarkup(<KitchenActions ticket={{ ...ticket, status: "Ready", available_actions: ["Serve"] }} onChanged={() => {}} />);
     expect(html).toContain("Serve all");

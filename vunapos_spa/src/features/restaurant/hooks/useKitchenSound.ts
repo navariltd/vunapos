@@ -10,6 +10,8 @@ import {
   subscribeSoundActivation,
 } from "../soundActivation";
 
+export type KitchenSoundControl = ReturnType<typeof useKitchenSound>;
+
 export function useKitchenSound(
   kind: SoundAlertKind = "newKot",
   settings?: SoundPreferences
@@ -25,10 +27,11 @@ export function useKitchenSound(
   );
   useEffect(() => {
     activation.setPreference(preference);
+    void activation.activate();
   }, [activation, preference]);
   useEffect(() => {
     const unsubscribe = subscribeSoundActivation(window, () => {
-      void activation.activate();
+      void activation.activate(true);
     });
     return () => {
       unsubscribe();
@@ -41,8 +44,6 @@ export function useKitchenSound(
     muted: state.muted,
     error: state.error,
     busy: state.busy,
-    enable: () => activation.activate(true),
-    mute: activation.mute,
     onCreated: activation.notify,
     preview: () => activation.activate(true, true),
   };

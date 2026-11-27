@@ -423,3 +423,10 @@ website_route_rules = [
 	{"from_route": "/vunapos/<path:app_path>", "to_route": "vunapos"},
 	{"from_route": "/vunapos", "to_route": "vunapos"},
 ]
+
+# Delivery records commit atomically with their immutable kitchen source events.
+doc_events["Kitchen Order Ticket"] = {"on_submit": "vunapos.services.kitchen_printing.enqueue_ticket"}
+doc_events["Kitchen Ticket Action"] = {"after_insert": "vunapos.services.kitchen_printing.enqueue_action"}
+permission_query_conditions["Kitchen Print Job"] = "vunapos.restaurant_permissions.print_job_conditions"
+has_permission["Kitchen Print Job"] = "vunapos.restaurant_permissions.related_has_permission"
+scheduler_events["cron"]["* * * * *"] = ["vunapos.services.kitchen_printing.recover"]

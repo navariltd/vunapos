@@ -86,6 +86,44 @@ describe("createPoller", () => {
 		poller.stop();
 	});
 
+
+	it("coalesces refreshes during an in-flight request into one immediate follow-up", async () => {
+		let releaseFirst: () => void = () => {};
+		const task = vi.fn(async () => {});
+		task.mockImplementationOnce(
+			() => new Promise<void>((resolve) => (releaseFirst = resolve)),
+		);
+		const poller = createPoller({
+			intervalMs: 12_000,
+			task,
+			isVisible: () => true,
+			onVisibilityChange: () => () => {},
+		});
+
+		poller.start();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(task).toHaveBeenCalledTimes(1);
+
+		const firstRefresh = poller.refresh();
+		const secondRefresh = poller.refresh();
+
+		expect(task).toHaveBeenCalledTimes(1);
+
+		releaseFirst();
+		await Promise.all([firstRefresh, secondRefresh]);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(task).toHaveBeenCalledTimes(2);
+
+		await vi.advanceTimersByTimeAsync(11_999);
+		expect(task).toHaveBeenCalledTimes(2);
+
+		await vi.advanceTimersByTimeAsync(1);
+		expect(task).toHaveBeenCalledTimes(3);
+
+		poller.stop();
+	});
+
 	it("keeps polling after a failed request, and stops for good on stop", async () => {
 		const task = vi.fn(() => Promise.reject(new Error("offline")));
 		const poller = createPoller({ intervalMs: 1_000, task, isVisible: () => true, onVisibilityChange: () => () => {} });

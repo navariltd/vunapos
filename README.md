@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="./vunapos/public/logo.png" alt="VunaPOS Logo" height="250px" width="200xp"/>
+	<img src="./vunapos/public/logo.png" alt="VunaPOS orange logo" height="250" width="250"/>
     <p align="center">
         <p>Fast, flexible point-of-sale for ERPNext</p>
     </p>

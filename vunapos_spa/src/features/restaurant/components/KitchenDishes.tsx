@@ -1,3 +1,4 @@
+import { KitchenNotes } from "./KitchenNotes";
 import type { KitchenTicketDTO } from "../types";
 import { kitchenDishGroups } from "../kitchenDishes";
 import { KitchenLineProgress } from "./KitchenLineProgress";
@@ -17,9 +18,11 @@ function Instruction({ note }: { note?: string | null }) {
 export function KitchenDishes({
   ticket,
   details = false,
+  onUpdated,
 }: {
   ticket: KitchenTicketDTO;
   details?: boolean;
+  onUpdated?: () => void;
 }) {
   return (
     <ul className="flex-1 divide-y divide-outline-variant">
@@ -28,6 +31,7 @@ export function KitchenDishes({
           <p className="text-sm font-semibold">
             {quantity(dish.qty)} {dish.uom} × {dish.item_name}
           </p>
+          {dish.note_updated && <p className="font-semibold text-primary">Updated preparation notes</p>}
           {ticket.status !== "Cancelled" ? (
             <KitchenLineProgress line={dish} />
           ) : null}
@@ -51,6 +55,7 @@ export function KitchenDishes({
                     {label}
                   </p>
                   <Instruction note={note} />
+                  {ticket.can_update_notes && onUpdated && <KitchenNotes ticket={ticket} lineId={line.line_id} refresh={onUpdated} />}
                   {details && line.work_order ? (
                     <p className="text-xs text-on-surface-variant">
                       Production: {line.work_order}
@@ -66,6 +71,7 @@ export function KitchenDishes({
             </ul>
           ) : null}
           <Instruction note={dish.note} />
+          {ticket.can_update_notes && onUpdated && <KitchenNotes ticket={ticket} lineId={dish.line_id} refresh={onUpdated} />}
           {details ? (
             <>
               {dish.work_order ? (

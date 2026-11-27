@@ -200,6 +200,15 @@ def ensure_vunapos_custom_fields():
 		],
 		"POS Profile": [
 			{
+				"fieldname": "custom_run_kitchen_print_worker_on_pos",
+				"label": "Print Kitchen Tickets from POS Terminal",
+				"fieldtype": "Check",
+				"default": "0",
+				"insert_after": "vunapos_restaurant_section",
+				"depends_on": "eval:doc.vunapos_pos_mode=='Restaurant'",
+				"description": "Allow an opted-in terminal with kitchen permissions to print while the POS is open.",
+			},
+			{
 				"fieldname": "vunapos_pos_mode_section",
 				"label": "POS Mode",
 				"fieldtype": "Section Break",

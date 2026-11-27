@@ -1,7 +1,5 @@
 import { useCallback, useContext, useEffect } from "react";
 import { FrappeContext } from "frappe-react-sdk";
-import { Volume2, VolumeX } from "lucide-react";
-import { Button } from "../../../components/ui/Button";
 import { useUiFeedbackStore } from "../../pos/stores/uiFeedbackStore";
 import { useKitchenSound } from "../hooks/useKitchenSound";
 import {
@@ -42,28 +40,13 @@ export function WaiterReadyAlerts({
 
   return (
     <div className="flex items-center gap-1">
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={sound.busy || !sound.configured}
-        aria-pressed={sound.enabled}
-        aria-label={sound.enabled ? "Mute ready alerts" : "Enable ready alerts"}
-        title={
-          sound.enabled
-            ? "Mute sounds when your orders are ready"
-            : "Enable sounds when your orders are ready"
-        }
-        onClick={() => (sound.enabled ? sound.mute() : void sound.enable())}
-      >
-        {sound.enabled ? (
-          <Volume2 className="mr-1 size-4" aria-hidden="true" />
-        ) : (
-          <VolumeX className="mr-1 size-4" aria-hidden="true" />
-        )}
+      <span role="status" className="text-xs text-on-surface-variant">
         {sound.configured
-          ? `Ready alerts ${sound.enabled ? "on" : "off"}`
+          ? sound.enabled
+            ? "Ready alerts on"
+            : "Tap anywhere to activate ready alerts"
           : "Ready sound disabled in settings"}
-      </Button>
+      </span>
       {sound.error ? (
         <span
           role="alert"

@@ -20,7 +20,11 @@
   "warehouses_section",
   "raw_material_warehouse",
   "column_break_wasd",
-  "wip_warehouse"
+  "wip_warehouse",
+  "kitchen_printing",
+  "output_mode",
+  "printer_name",
+  "print_format"
  ],
  "fields": [
   {
@@ -117,10 +121,36 @@
    "fieldname": "floor_scope_section",
    "fieldtype": "Section Break",
    "label": "Floor Availability"
+  },
+  {
+   "fieldname": "kitchen_printing",
+   "fieldtype": "Section Break",
+   "label": "Kitchen printing"
+  },
+  {
+   "fieldname": "output_mode",
+   "fieldtype": "Select",
+   "label": "Output Mode",
+   "options": "KDS\nPrinter\nBoth",
+   "default": "KDS",
+   "reqd": 1
+  },
+  {
+   "fieldname": "print_format",
+   "fieldtype": "Link",
+   "label": "Print Format",
+   "options": "Print Format",
+   "description": "Leave blank to use the Kitchen Order Ticket default print format."
+  },
+  {
+   "fieldname": "printer_name",
+   "fieldtype": "Data",
+   "label": "Printer Name",
+   "description": "Exact printer name on the designated QZ Tray terminal."
   }
  ],
  "links": [],
- "modified": "2026-11-17 07:21:49.167442",
+ "modified": "2026-11-27 05:33:27.611691",
  "modified_by": "Administrator",
  "module": "VunaPOS",
  "name": "Kitchen Station",
